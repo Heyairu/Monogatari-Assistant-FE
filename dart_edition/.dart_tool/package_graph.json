@@ -12,7 +12,7 @@
         "intl",
         "path",
         "path_provider",
-        "xml"
+        "uuid"
       ],
       "devDependencies": [
         "flutter_launcher_icons",
@@ -59,12 +59,13 @@
       ]
     },
     {
-      "name": "xml",
-      "version": "6.6.1",
+      "name": "uuid",
+      "version": "4.5.1",
       "dependencies": [
-        "collection",
+        "crypto",
+        "fixnum",
         "meta",
-        "petitparser"
+        "sprintf"
       ]
     },
     {
@@ -252,11 +253,20 @@
       ]
     },
     {
-      "name": "petitparser",
-      "version": "7.0.1",
+      "name": "fixnum",
+      "version": "1.1.1",
+      "dependencies": []
+    },
+    {
+      "name": "sprintf",
+      "version": "7.0.0",
+      "dependencies": []
+    },
+    {
+      "name": "crypto",
+      "version": "3.0.6",
       "dependencies": [
-        "collection",
-        "meta"
+        "typed_data"
       ]
     },
     {
@@ -385,6 +395,15 @@
       ]
     },
     {
+      "name": "xml",
+      "version": "6.6.1",
+      "dependencies": [
+        "collection",
+        "meta",
+        "petitparser"
+      ]
+    },
+    {
       "name": "archive",
       "version": "4.0.7",
       "dependencies": [
@@ -435,6 +454,13 @@
       ]
     },
     {
+      "name": "typed_data",
+      "version": "1.4.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
       "name": "platform",
       "version": "3.1.6",
       "dependencies": []
@@ -448,6 +474,14 @@
       ]
     },
     {
+      "name": "petitparser",
+      "version": "7.0.1",
+      "dependencies": [
+        "collection",
+        "meta"
+      ]
+    },
+    {
       "name": "posix",
       "version": "6.0.3",
       "dependencies": [
@@ -457,23 +491,9 @@
       ]
     },
     {
-      "name": "crypto",
-      "version": "3.0.6",
-      "dependencies": [
-        "typed_data"
-      ]
-    },
-    {
       "name": "vm_service",
       "version": "15.0.2",
       "dependencies": []
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
-      "dependencies": [
-        "collection"
-      ]
     }
   ],
   "configVersion": 1

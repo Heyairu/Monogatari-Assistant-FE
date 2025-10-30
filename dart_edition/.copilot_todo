@@ -1,0 +1,17 @@
+[
+	{
+		"id": 1,
+		"title": "Inspect current drag pointer tracking logic",
+			"status": "complete"
+	},
+	{
+		"id": 2,
+		"title": "Adjust zone detection to use pointer location reliably",
+			"status": "complete"
+	},
+	{
+		"id": 3,
+		"title": "Test hover zone transitions visually or via logs",
+		"status": "pending"
+	}
+]

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+<Type>
+  <Name>Outline</Name>
+  <Storyline Name="主線 1" Type="起" UUID="04805182-754D-488C-A765-0C15EFA9D502">
+    <Memo>AB
+CD</Memo>
+    <People>
+      <Person>1</Person>
+    </People>
+    <Items>
+      <Item>2</Item>
+    </Items>
+    <Event Name="事件 1" UUID="3FD72275-C86A-46F9-A7E6-69876F77F3D1">
+      <Memo>你是一個一個一個
+Memo阿</Memo>
+      <People>
+        <Person>3</Person>
+      </People>
+      <Items>
+        <Item>4</Item>
+      </Items>
+      <Scene Name="場景 A" UUID="57DBB841-BFAA-45A0-AEE3-6C429EA06606">
+        <Time>56</Time>
+        <Location>78</Location>
+        <People>
+          <Person>9</Person>
+        </People>
+        <Items>
+          <Item>10</Item>
+        </Items>
+        <Doings>
+          <Doing>11</Doing>
+        </Doings>
+        <Memo>你是
+一個一個一個
+簡介阿</Memo>
+      </Scene>
+    </Event>
+  </Storyline>
+</Type>
+</Project>
