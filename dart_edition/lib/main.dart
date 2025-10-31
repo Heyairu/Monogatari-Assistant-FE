@@ -671,7 +671,7 @@ class _ContentViewState extends State<ContentView> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < 10; i++)
+                for (int i = 0; i < 9; i++)
                   _buildMobileNavigationChip(i),
               ],
             ),
@@ -681,9 +681,9 @@ class _ContentViewState extends State<ContentView> {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePage.clamp(0, 9),
+            index: slidePage.clamp(0, 8),
             children: [
-              for (int i = 0; i < 10; i++)
+              for (int i = 0; i < 9; i++)
                 _buildSpecificPageContent(i),
             ],
           ),
@@ -873,7 +873,7 @@ class _ContentViewState extends State<ContentView> {
   
   // 獲取 NavigationRail 的選中索引
   int _getNavigationIndex() {
-    return slidePage > 9 ? 0 : slidePage.clamp(0, 9);
+    return slidePage > 8 ? 0 : slidePage.clamp(0, 8);
   }
 
   // 頁面內容

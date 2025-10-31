@@ -647,13 +647,16 @@ class _BaseInfoViewState extends State<BaseInfoView> {
           color: Theme.of(context).colorScheme.onTertiaryContainer.withOpacity(0.7),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onTertiaryContainer,
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         Text(
           value,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
