@@ -29,6 +29,82 @@ class MainApp extends StatelessWidget {
   }
 }
 
+// 自定義 TextEditingController，支持高亮顯示
+class HighlightTextEditingController extends TextEditingController {
+  List<TextSelection> searchMatches = [];
+  int currentMatchIndex = -1;
+  Color? highlightColor;
+  Color? currentHighlightColor;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (searchMatches.isEmpty) {
+      return TextSpan(text: text, style: style);
+    }
+
+    final List<TextSpan> spans = [];
+    int lastEnd = 0;
+
+    for (int i = 0; i < searchMatches.length; i++) {
+      final match = searchMatches[i];
+      
+      // 添加匹配項之前的普通文本
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: style,
+        ));
+      }
+
+      // 添加高亮的匹配項
+      final isCurrentMatch = i == currentMatchIndex;
+      spans.add(TextSpan(
+        text: text.substring(match.start, match.end),
+        style: style?.copyWith(
+          backgroundColor: isCurrentMatch
+              ? (currentHighlightColor ?? Colors.orange.withOpacity(0.6))
+              : (highlightColor ?? Colors.yellow.withOpacity(0.4)),
+        ),
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // 添加最後一個匹配項之後的文本
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: style,
+      ));
+    }
+
+    return TextSpan(children: spans, style: style);
+  }
+
+  void updateHighlights({
+    required List<TextSelection> matches,
+    required int currentIndex,
+    Color? highlight,
+    Color? currentHighlight,
+  }) {
+    searchMatches = matches;
+    currentMatchIndex = currentIndex;
+    highlightColor = highlight;
+    currentHighlightColor = currentHighlight;
+    notifyListeners();
+  }
+
+  void clearHighlights() {
+    searchMatches = [];
+    currentMatchIndex = -1;
+    notifyListeners();
+  }
+}
+
 // 數據模型類別（BaseInfoData, ChapterData, SegmentData 現在從模組導入）
 
 class SimpleLocation {
@@ -70,13 +146,14 @@ class _ContentViewState extends State<ContentView> {
   
   // 主編輯器文字
   String contentText = "";
-  final TextEditingController textController = TextEditingController();
+  final HighlightTextEditingController textController = HighlightTextEditingController();
   
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
   final TextEditingController findController = TextEditingController();
   final TextEditingController replaceController = TextEditingController();
   final FindReplaceOptions findReplaceOptions = FindReplaceOptions();
+  final FocusNode editorFocusNode = FocusNode();
   
   // 搜尋狀態
   int _currentMatchIndex = -1;
@@ -145,6 +222,11 @@ class _ContentViewState extends State<ContentView> {
         setState(() {
           contentText = textController.text;
           totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
+          
+          // 當文字內容變化時，清除所有高亮和搜尋狀態
+          _searchMatches = [];
+          _currentMatchIndex = -1;
+          textController.clearHighlights();
         });
       }
     });
@@ -155,6 +237,7 @@ class _ContentViewState extends State<ContentView> {
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
+    editorFocusNode.dispose();
     super.dispose();
   }
   
@@ -176,6 +259,10 @@ class _ContentViewState extends State<ContentView> {
     
     if (_searchMatches.isEmpty) {
       _currentMatchIndex = -1;
+      textController.updateHighlights(
+        matches: [],
+        currentIndex: -1,
+      );
       setState(() {}); // 更新 UI 以顯示 0 個匹配
       return;
     }
@@ -187,9 +274,18 @@ class _ContentViewState extends State<ContentView> {
       _currentMatchIndex = (_currentMatchIndex - 1 + _searchMatches.length) % _searchMatches.length;
     }
     
+    // 更新高亮顯示
+    textController.updateHighlights(
+      matches: _searchMatches,
+      currentIndex: _currentMatchIndex,
+    );
+    
     // 選中當前匹配項
     final match = _searchMatches[_currentMatchIndex];
     textController.selection = match;
+    
+    // 請求焦點以顯示選取效果
+    editorFocusNode.requestFocus();
     
     setState(() {}); // 更新 UI 以顯示當前匹配數
   }
@@ -264,6 +360,7 @@ class _ContentViewState extends State<ContentView> {
       totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
       _currentMatchIndex = -1;
       _searchMatches = [];
+      textController.clearHighlights();
     });
   }
   
@@ -891,6 +988,7 @@ class _ContentViewState extends State<ContentView> {
                   margin: const EdgeInsets.all(16),
                   child: TextField(
                     controller: textController,
+                    focusNode: editorFocusNode,
                     maxLines: null,
                     expands: true,
                     decoration: InputDecoration(
@@ -952,9 +1050,38 @@ class _ContentViewState extends State<ContentView> {
             onReplaceAll: (findText, replaceText, options) {
               _performReplaceAll(findText, replaceText, options);
             },
+            onSearchChanged: (findText, options) {
+              // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
+              if (findText.isNotEmpty) {
+                final text = textController.text;
+                if (text.isNotEmpty) {
+                  setState(() {
+                    _searchMatches = _findAllMatches(text, findText, options);
+                    // 如果當前選中的匹配項仍然有效，保持它
+                    if (_currentMatchIndex >= _searchMatches.length) {
+                      _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
+                    }
+                    // 更新高亮顯示
+                    textController.updateHighlights(
+                      matches: _searchMatches,
+                      currentIndex: _currentMatchIndex,
+                    );
+                  });
+                }
+              } else {
+                setState(() {
+                  _searchMatches = [];
+                  _currentMatchIndex = -1;
+                  textController.clearHighlights();
+                });
+              }
+            },
             onClose: () {
               setState(() {
                 showFindReplaceWindow = false;
+                _searchMatches = [];
+                _currentMatchIndex = -1;
+                textController.clearHighlights();
               });
             },
           ),
