@@ -4,20 +4,359 @@ import 'package:flutter/material.dart';
 class FindReplaceOptions {
   bool matchCase; // 大小寫相同
   bool wholeWord; // 全字拼寫需相符(限半形字元)
-  bool useWildcard; // 使用萬用字元
+  bool useRegexp; // 使用正則表示(萬用字元)
   bool matchWidth; // 全半形須相符
   bool ignorePunctuation; // 略過標點符號
   bool ignoreWhitespace; // 略過空白字元
 
   FindReplaceOptions({
-    this.matchCase = false,
+    this.matchCase = true,
     this.wholeWord = false,
-    this.useWildcard = false,
-    this.matchWidth = false,
+    this.useRegexp = false,
+    this.matchWidth = true,
     this.ignorePunctuation = false,
     this.ignoreWhitespace = false,
   });
 }
+
+// ==================== 搜尋功能函數 ====================
+
+/// 找出所有匹配項
+List<TextSelection> findAllMatches(String text, String findText, FindReplaceOptions options) {
+  final matches = <TextSelection>[];
+  
+  if (findText.isEmpty) return matches;
+  
+  // 簡單的搜尋模式：逐個位置檢查是否匹配
+  for (int i = 0; i <= text.length - findText.length; i++) {
+    // 檢查當前位置是否可能匹配
+    bool couldMatch = true;
+    int textIndex = i;
+    int patternIndex = 0;
+    
+    while (patternIndex < findText.length && textIndex < text.length) {
+      final textChar = text[textIndex];
+      final patternChar = findText[patternIndex];
+      
+      // 檢查字元是否匹配（考慮所有選項）
+      if (!charsMatch(textChar, patternChar, options)) {
+        couldMatch = false;
+        break;
+      }
+      
+      textIndex++;
+      patternIndex++;
+    }
+    
+    // 如果所有字元都匹配，記錄此匹配項
+    if (couldMatch && patternIndex == findText.length) {
+      // 檢查全字匹配
+      if (options.wholeWord) {
+        // 檢查前一個字元
+        if (i > 0) {
+          final prevChar = text[i - 1];
+          if (isWordChar(prevChar)) {
+            continue;
+          }
+        }
+        // 檢查後一個字元
+        if (textIndex < text.length) {
+          final nextChar = text[textIndex];
+          if (isWordChar(nextChar)) {
+            continue;
+          }
+        }
+      }
+      
+      matches.add(TextSelection(
+        baseOffset: i,
+        extentOffset: textIndex,
+      ));
+    }
+  }
+  
+  return matches;
+}
+
+/// 判斷字元是否為單字字元（用於全字匹配）
+bool isWordChar(String char) {
+  if (char.isEmpty) return false;
+  final code = char.codeUnitAt(0);
+  // 字母和數字
+  return (code >= 0x0030 && code <= 0x0039) || // 0-9
+         (code >= 0x0041 && code <= 0x005A) || // A-Z
+         (code >= 0x0061 && code <= 0x007A) || // a-z
+         (code >= 0x00C0 && code <= 0x00FF) || // 擴展拉丁字母
+         (code == 0x005F);                      // 底線
+}
+
+/// 檢查兩個字元是否匹配（考慮搜尋選項）
+bool charsMatch(String char1, String char2, FindReplaceOptions options) {
+  String c1 = char1;
+  String c2 = char2;
+  
+  // 略過空白字元
+  if (options.ignoreWhitespace) {
+    if (RegExp(r'\s').hasMatch(c1) && RegExp(r'\s').hasMatch(c2)) {
+      return true;
+    }
+  }
+  
+  // 略過標點符號
+  if (options.ignorePunctuation) {
+    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
+    if (punctuation.hasMatch(c1) && punctuation.hasMatch(c2)) {
+      return true;
+    }
+  }
+  
+  // 大小寫正規化
+  if (!options.matchCase) {
+    c1 = normalizeCase(c1);
+    c2 = normalizeCase(c2);
+  }
+  
+  // 全半形正規化
+  if (!options.matchWidth) {
+    c1 = normalizeWidth(c1);
+    c2 = normalizeWidth(c2);
+  }
+  
+  return c1 == c2;
+}
+
+/// 檢查文字是否匹配（考慮所有選項）
+bool textMatches(String text, String pattern, FindReplaceOptions options) {
+  String processedText = text;
+  String processedPattern = pattern;
+  
+  if (options.ignoreWhitespace) {
+    processedText = processedText.replaceAll(RegExp(r'\s+'), '');
+    processedPattern = processedPattern.replaceAll(RegExp(r'\s+'), '');
+  }
+  
+  if (options.ignorePunctuation) {
+    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
+    processedText = processedText.replaceAll(punctuation, '');
+    processedPattern = processedPattern.replaceAll(punctuation, '');
+  }
+  
+  if (!options.matchCase) {
+    processedText = normalizeCase(processedText);
+    processedPattern = normalizeCase(processedPattern);
+  }
+  
+  // 全半形正規化（當不需要嚴格匹配時）
+  if (!options.matchWidth) {
+    processedText = normalizeWidth(processedText);
+    processedPattern = normalizeWidth(processedPattern);
+  }
+  
+  // 如果需要嚴格匹配全半形，額外檢查
+  if (options.matchWidth && !checkWidthMatch(text, pattern)) {
+    return false;
+  }
+  
+  return processedText == processedPattern;
+}
+
+/// 檢查全半形是否匹配
+bool checkWidthMatch(String text, String pattern) {
+  if (text.length != pattern.length) return false;
+  
+  for (int i = 0; i < text.length; i++) {
+    final textChar = text[i];
+    final patternChar = pattern[i];
+    
+    final textIsFullWidth = isFullWidth(textChar);
+    final patternIsFullWidth = isFullWidth(patternChar);
+    
+    if (textIsFullWidth != patternIsFullWidth) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/// 判斷字元是否為全形
+bool isFullWidth(String char) {
+  if (char.isEmpty) return false;
+  final code = char.codeUnitAt(0);
+  // 全形字元範圍：0xFF00-0xFFEF (全形ASCII)
+  // CJK字元範圍：0x4E00-0x9FFF
+  return (code >= 0xFF00 && code <= 0xFFEF) || (code >= 0x4E00 && code <= 0x9FFF);
+}
+
+/// 正規化文字大小寫（支援多語言）
+/// 支援：拉丁字母、全形字母、希臘語、西里爾字母等
+String normalizeCase(String text) {
+  if (text.isEmpty) return text;
+  
+  final buffer = StringBuffer();
+  
+  for (int i = 0; i < text.length; i++) {
+    final char = text[i];
+    final code = char.codeUnitAt(0);
+    String normalized = char;
+    
+    // 1. 基本拉丁字母大寫 A-Z (U+0041-U+005A) -> 小寫 a-z
+    if (code >= 0x0041 && code <= 0x005A) {
+      normalized = String.fromCharCode(code + 32);
+    }
+    // 2. 拉丁字母補充-1 大寫 (U+00C0-U+00DE，含西歐語言重音符號)
+    else if (code >= 0x00C0 && code <= 0x00DE && code != 0x00D7) {
+      // 跳過 × (乘號，U+00D7)
+      normalized = String.fromCharCode(code + 32);
+    }
+    // 3. 希臘字母大寫 Α-Ω (U+0391-U+03A9) -> 小寫 α-ω
+    else if (code >= 0x0391 && code <= 0x03A9) {
+      normalized = String.fromCharCode(code + 32);
+    }
+    // 4. 希臘字母帶重音符號大寫 (U+0386, U+0388-U+038F)
+    else if (code == 0x0386) {
+      normalized = '\u03AC'; // Ά -> ά
+    }
+    else if (code >= 0x0388 && code <= 0x038A) {
+      normalized = String.fromCharCode(code + 37); // Έ-Ί -> έ-ί
+    }
+    else if (code == 0x038C) {
+      normalized = '\u03CC'; // Ό -> ό
+    }
+    else if (code >= 0x038E && code <= 0x038F) {
+      normalized = String.fromCharCode(code + 63); // Ύ-Ώ -> ύ-ώ
+    }
+    // 5. 西里爾字母大寫 А-Я (U+0410-U+042F) -> 小寫 а-я
+    else if (code >= 0x0410 && code <= 0x042F) {
+      normalized = String.fromCharCode(code + 32);
+    }
+    // 6. 全形拉丁字母大寫 Ａ-Ｚ (U+FF21-U+FF3A) -> 小寫 ａ-ｚ
+    else if (code >= 0xFF21 && code <= 0xFF3A) {
+      normalized = String.fromCharCode(code + 32);
+    }
+    // 7. 拉丁擴展-A 區域的大寫字母 (U+0100-U+017F)
+    // 這個區域包含中歐、東歐語言的字母
+    else if (code >= 0x0100 && code <= 0x017F) {
+      // 偶數碼點通常是大寫，奇數是小寫
+      if (code % 2 == 0) {
+        normalized = String.fromCharCode(code + 1);
+      }
+    }
+    // 8. 土耳其語特殊字母
+    else if (code == 0x0130) { // İ -> i
+      normalized = 'i';
+    }
+    else if (code == 0x0049 && i + 1 < text.length && text.codeUnitAt(i + 1) == 0x0307) {
+      // I with dot above -> i
+      normalized = 'i';
+    }
+    
+    buffer.write(normalized);
+  }
+  
+  return buffer.toString();
+}
+
+/// 正規化全半形字元（統一轉為半形）
+/// 支援：全形ASCII、全形標點、全形假名、半形假名
+String normalizeWidth(String text) {
+  if (text.isEmpty) return text;
+  
+  final buffer = StringBuffer();
+  
+  for (int i = 0; i < text.length; i++) {
+    final char = text[i];
+    final code = char.codeUnitAt(0);
+    String normalized = char;
+    
+    // 1. 全形ASCII字元 (U+FF01-U+FF5E) -> 半形 (U+0021-U+007E)
+    // 包含：！"＃＄％＆'（）＊＋，－．／０-９：；＜＝＞？＠Ａ-Ｚ［＼］＾＿｀ａ-ｚ｛｜｝～
+    if (code >= 0xFF01 && code <= 0xFF5E) {
+      normalized = String.fromCharCode(code - 0xFEE0);
+    }
+    // 2. 全形空格 (U+3000) -> 半形空格 (U+0020)
+    else if (code == 0x3000) {
+      normalized = ' ';
+    }
+    // 3. 全形片假名 (U+30A1-U+30FE) -> 半形片假名 (U+FF66-U+FF9F)
+    // 這個轉換比較複雜，需要特別處理濁音、半濁音
+    else if (code >= 0x30A1 && code <= 0x30FE) {
+      normalized = convertFullKatakanaToHalf(char, text, i);
+    }
+    // 4. 半形片假名 (U+FF61-U+FF9F) 保持不變（已經是半形）
+    // 包含：｡｢｣､･ｦ-ﾟ
+    else if (code >= 0xFF61 && code <= 0xFF9F) {
+      normalized = char;
+    }
+    // 5. 全形平假名 (U+3041-U+309F) -> 先轉為片假名再轉半形
+    else if (code >= 0x3041 && code <= 0x309F) {
+      // 平假名 -> 片假名：+0x0060
+      final katakanaCode = code + 0x0060;
+      final katakana = String.fromCharCode(katakanaCode);
+      normalized = convertFullKatakanaToHalf(katakana, text, i);
+    }
+    // 6. 全形中文標點符號轉換
+    else if (code == 0x3001) { // 、-> ,
+      normalized = ',';
+    }
+    else if (code == 0x3002) { // 。-> .
+      normalized = '.';
+    }
+    else if (code == 0x300C) { // 「-> "
+      normalized = '"';
+    }
+    else if (code == 0x300D) { // 」-> "
+      normalized = '"';
+    }
+    else if (code == 0x300E) { // 『-> '
+      normalized = "'";
+    }
+    else if (code == 0x300F) { // 』-> '
+      normalized = "'";
+    }
+    else if (code == 0x3014) { // 〔-> [
+      normalized = '[';
+    }
+    else if (code == 0x3015) { // 〕-> ]
+      normalized = ']';
+    }
+    
+    buffer.write(normalized);
+  }
+  
+  return buffer.toString();
+}
+
+/// 將全形片假名轉為半形片假名
+String convertFullKatakanaToHalf(String char, String text, int index) {
+  final code = char.codeUnitAt(0);
+  
+  // 全形片假名 -> 半形片假名映射表
+  final Map<int, String> fullToHalfKatakana = {
+    0x30A1: 'ｧ', 0x30A2: 'ｱ', 0x30A3: 'ｨ', 0x30A4: 'ｲ', 0x30A5: 'ｩ',
+    0x30A6: 'ｳ', 0x30A7: 'ｪ', 0x30A8: 'ｴ', 0x30A9: 'ｫ', 0x30AA: 'ｵ',
+    0x30AB: 'ｶ', 0x30AC: 'ｶﾞ', 0x30AD: 'ｷ', 0x30AE: 'ｷﾞ', 0x30AF: 'ｸ',
+    0x30B0: 'ｸﾞ', 0x30B1: 'ｹ', 0x30B2: 'ｹﾞ', 0x30B3: 'ｺ', 0x30B4: 'ｺﾞ',
+    0x30B5: 'ｻ', 0x30B6: 'ｻﾞ', 0x30B7: 'ｼ', 0x30B8: 'ｼﾞ', 0x30B9: 'ｽ',
+    0x30BA: 'ｽﾞ', 0x30BB: 'ｾ', 0x30BC: 'ｾﾞ', 0x30BD: 'ｿ', 0x30BE: 'ｿﾞ',
+    0x30BF: 'ﾀ', 0x30C0: 'ﾀﾞ', 0x30C1: 'ﾁ', 0x30C2: 'ﾁﾞ', 0x30C3: 'ｯ',
+    0x30C4: 'ﾂ', 0x30C5: 'ﾂﾞ', 0x30C6: 'ﾃ', 0x30C7: 'ﾃﾞ', 0x30C8: 'ﾄ',
+    0x30C9: 'ﾄﾞ', 0x30CA: 'ﾅ', 0x30CB: 'ﾆ', 0x30CC: 'ﾇ', 0x30CD: 'ﾈ',
+    0x30CE: 'ﾉ', 0x30CF: 'ﾊ', 0x30D0: 'ﾊﾞ', 0x30D1: 'ﾊﾟ', 0x30D2: 'ﾋ',
+    0x30D3: 'ﾋﾞ', 0x30D4: 'ﾋﾟ', 0x30D5: 'ﾌ', 0x30D6: 'ﾌﾞ', 0x30D7: 'ﾌﾟ',
+    0x30D8: 'ﾍ', 0x30D9: 'ﾍﾞ', 0x30DA: 'ﾍﾟ', 0x30DB: 'ﾎ', 0x30DC: 'ﾎﾞ',
+    0x30DD: 'ﾎﾟ', 0x30DE: 'ﾏ', 0x30DF: 'ﾐ', 0x30E0: 'ﾑ', 0x30E1: 'ﾒ',
+    0x30E2: 'ﾓ', 0x30E3: 'ｬ', 0x30E4: 'ﾔ', 0x30E5: 'ｭ', 0x30E6: 'ﾕ',
+    0x30E7: 'ｮ', 0x30E8: 'ﾖ', 0x30E9: 'ﾗ', 0x30EA: 'ﾘ', 0x30EB: 'ﾙ',
+    0x30EC: 'ﾚ', 0x30ED: 'ﾛ', 0x30EE: 'ﾜ', 0x30EF: 'ﾜ', 0x30F0: 'ｲ',
+    0x30F1: 'ｴ', 0x30F2: 'ｦ', 0x30F3: 'ﾝ', 0x30F4: 'ｳﾞ', 0x30F5: 'ｶ',
+    0x30F6: 'ｹ', 0x30FB: '･', 0x30FC: 'ｰ',
+  };
+  
+  return fullToHalfKatakana[code] ?? char;
+}
+
+// ==================== UI 組件 ====================
 
 // 全域函數:顯示查找取代浮動視窗
 void showFindReplaceWindow(
@@ -413,12 +752,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         // 檢查搜尋框內容
                         final findText = widget.findController.text;
                         final hasFullWidth = _containsFullWidth(findText);
-                        final useWildcard = widget.options.useWildcard;
+                        final useRegexp = widget.options.useRegexp;
                         
                         // 計算禁用狀態
-                        final disableWholeWord = hasFullWidth || useWildcard;
-                        final disableMatchCase = useWildcard;
-                        final disableMatchWidth = useWildcard;
+                        final disableWholeWord = hasFullWidth || useRegexp;
+                        final disableMatchCase = useRegexp;
+                        final disableMatchWidth = useRegexp;
                         
                         return Wrap(
                           spacing: 8,
@@ -447,12 +786,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               },
                             ),
                             _buildOptionChip(
-                              label: '使用萬用字元',
-                              value: widget.options.useWildcard,
+                              label: "使用正則表示",
+                              value: widget.options.useRegexp,
                               onChanged: (value) {
                                 setState(() {
-                                  widget.options.useWildcard = value;
-                                  // 當啟用萬用字元時，強制禁用相關選項
+                                  widget.options.useRegexp = value;
+                                  // 當啟用正則表示時，強制禁用相關選項
                                   if (value) {
                                     widget.options.matchCase = false;
                                     widget.options.wholeWord = false;

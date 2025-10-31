@@ -254,8 +254,8 @@ class _ContentViewState extends State<ContentView> {
       return;
     }
     
-    // 找出所有匹配項
-    _searchMatches = _findAllMatches(text, findText, options);
+    // 找出所有匹配項（使用 findreplace.dart 的函數）
+    _searchMatches = findAllMatches(text, findText, options);
     
     if (_searchMatches.isEmpty) {
       _currentMatchIndex = -1;
@@ -303,9 +303,9 @@ class _ContentViewState extends State<ContentView> {
       return;
     }
     
-    // 檢查當前選取的文字是否匹配搜尋內容
+    // 檢查當前選取的文字是否匹配搜尋內容（使用 findreplace.dart 的函數）
     final selectedText = textController.text.substring(selection.start, selection.end);
-    if (_textMatches(selectedText, findText, options)) {
+    if (textMatches(selectedText, findText, options)) {
       // 執行取代
       final newText = textController.text.replaceRange(
         selection.start,
@@ -338,8 +338,8 @@ class _ContentViewState extends State<ContentView> {
       return;
     }
     
-    // 找出所有匹配項
-    final matches = _findAllMatches(text, findText, options);
+    // 找出所有匹配項（使用 findreplace.dart 的函數）
+    final matches = findAllMatches(text, findText, options);
     
     if (matches.isEmpty) {
       return;
@@ -362,131 +362,6 @@ class _ContentViewState extends State<ContentView> {
       _searchMatches = [];
       textController.clearHighlights();
     });
-  }
-  
-  /// 找出所有匹配項
-  List<TextSelection> _findAllMatches(String text, String findText, FindReplaceOptions options) {
-    final matches = <TextSelection>[];
-    
-    // 預處理文字（根據選項）
-    String processedText = text;
-    String processedFindText = findText;
-    
-    if (options.ignoreWhitespace) {
-      processedText = processedText.replaceAll(RegExp(r'\s+'), '');
-      processedFindText = processedFindText.replaceAll(RegExp(r'\s+'), '');
-    }
-    
-    if (options.ignorePunctuation) {
-      final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
-      processedText = processedText.replaceAll(punctuation, '');
-      processedFindText = processedFindText.replaceAll(punctuation, '');
-    }
-    
-    if (!options.matchCase) {
-      processedText = processedText.toLowerCase();
-      processedFindText = processedFindText.toLowerCase();
-    }
-    
-    // 使用正則表達式進行搜尋
-    String pattern = processedFindText;
-    
-    if (options.useWildcard) {
-      // 萬用字元：? 代表單一字元，* 代表任意字元
-      pattern = pattern.replaceAll('?', '.').replaceAll('*', '.*');
-    } else {
-      // 轉義特殊字元
-      pattern = RegExp.escape(pattern);
-    }
-    
-    if (options.wholeWord) {
-      // 全字匹配（只對英文字母和數字有效）
-      pattern = r'\b' + pattern + r'\b';
-    }
-    
-    try {
-      // 在原始文字中尋找匹配項
-      final regex = RegExp(
-        pattern,
-        caseSensitive: options.matchCase,
-        unicode: true,
-      );
-      
-      for (final match in regex.allMatches(text)) {
-        // 檢查全半形
-        if (options.matchWidth) {
-          final matchedText = text.substring(match.start, match.end);
-          if (!_checkWidthMatch(matchedText, findText)) {
-            continue;
-          }
-        }
-        
-        matches.add(TextSelection(
-          baseOffset: match.start,
-          extentOffset: match.end,
-        ));
-      }
-    } catch (e) {
-      _showError("搜尋錯誤：${e.toString()}");
-    }
-    
-    return matches;
-  }
-  
-  /// 檢查文字是否匹配（考慮所有選項）
-  bool _textMatches(String text, String pattern, FindReplaceOptions options) {
-    String processedText = text;
-    String processedPattern = pattern;
-    
-    if (options.ignoreWhitespace) {
-      processedText = processedText.replaceAll(RegExp(r'\s+'), '');
-      processedPattern = processedPattern.replaceAll(RegExp(r'\s+'), '');
-    }
-    
-    if (options.ignorePunctuation) {
-      final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
-      processedText = processedText.replaceAll(punctuation, '');
-      processedPattern = processedPattern.replaceAll(punctuation, '');
-    }
-    
-    if (!options.matchCase) {
-      processedText = processedText.toLowerCase();
-      processedPattern = processedPattern.toLowerCase();
-    }
-    
-    if (options.matchWidth && !_checkWidthMatch(text, pattern)) {
-      return false;
-    }
-    
-    return processedText == processedPattern;
-  }
-  
-  /// 檢查全半形是否匹配
-  bool _checkWidthMatch(String text, String pattern) {
-    if (text.length != pattern.length) return false;
-    
-    for (int i = 0; i < text.length; i++) {
-      final textChar = text[i];
-      final patternChar = pattern[i];
-      
-      final textIsFullWidth = _isFullWidth(textChar);
-      final patternIsFullWidth = _isFullWidth(patternChar);
-      
-      if (textIsFullWidth != patternIsFullWidth) {
-        return false;
-      }
-    }
-    
-    return true;
-  }
-  
-  /// 判斷字元是否為全形
-  bool _isFullWidth(String char) {
-    if (char.isEmpty) return false;
-    final code = char.codeUnitAt(0);
-    // 全形字元範圍：0xFF00-0xFFEF (全形ASCII)
-    // CJK字元範圍：0x4E00-0x9FFF
-    return (code >= 0xFF00 && code <= 0xFFEF) || (code >= 0x4E00 && code <= 0x9FFF);
   }
 
   @override
@@ -1056,7 +931,7 @@ class _ContentViewState extends State<ContentView> {
                 final text = textController.text;
                 if (text.isNotEmpty) {
                   setState(() {
-                    _searchMatches = _findAllMatches(text, findText, options);
+                    _searchMatches = findAllMatches(text, findText, options);
                     // 如果當前選中的匹配項仍然有效，保持它
                     if (_currentMatchIndex >= _searchMatches.length) {
                       _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
