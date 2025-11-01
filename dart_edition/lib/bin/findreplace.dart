@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import "package:flutter/material.dart";
 
 // 搜尋選項類別
 class FindReplaceOptions {
@@ -27,20 +27,65 @@ List<TextSelection> findAllMatches(String text, String findText, FindReplaceOpti
   
   if (findText.isEmpty) return matches;
   
-  // 簡單的搜尋模式：逐個位置檢查是否匹配
-  for (int i = 0; i <= text.length - findText.length; i++) {
-    // 檢查當前位置是否可能匹配
-    bool couldMatch = true;
+  // 如果使用正則表達式
+  if (options.useRegexp) {
+    try {
+      // 正則表達式模式固定啟用大小寫和全半形相符
+      final regex = RegExp(findText, caseSensitive: true);
+      final regexMatches = regex.allMatches(text);
+      
+      for (final match in regexMatches) {
+        matches.add(TextSelection(
+          baseOffset: match.start,
+          extentOffset: match.end,
+        ));
+      }
+      
+      return matches;
+    } catch (e) {
+      // 如果正則表達式無效，返回空列表
+      return matches;
+    }
+  }
+  
+  // 一般搜尋模式：支持略過標點符號和空白字元
+  int i = 0;
+  while (i < text.length) {
+    // 嘗試從當前位置開始匹配
     int textIndex = i;
     int patternIndex = 0;
+    int matchStart = i;
     
     while (patternIndex < findText.length && textIndex < text.length) {
       final textChar = text[textIndex];
       final patternChar = findText[patternIndex];
       
-      // 檢查字元是否匹配（考慮所有選項）
+      // 如果需要略過標點符號，跳過文本中的標點符號
+      if (options.ignorePunctuation && isPunctuation(textChar)) {
+        textIndex++;
+        continue;
+      }
+      
+      // 如果需要略過空白字元，跳過文本中的空白字元
+      if (options.ignoreWhitespace && isWhitespace(textChar)) {
+        textIndex++;
+        continue;
+      }
+      
+      // 如果需要略過標點符號，跳過模式中的標點符號
+      if (options.ignorePunctuation && isPunctuation(patternChar)) {
+        patternIndex++;
+        continue;
+      }
+      
+      // 如果需要略過空白字元，跳過模式中的空白字元
+      if (options.ignoreWhitespace && isWhitespace(patternChar)) {
+        patternIndex++;
+        continue;
+      }
+      
+      // 檢查字元是否匹配
       if (!charsMatch(textChar, patternChar, options)) {
-        couldMatch = false;
         break;
       }
       
@@ -48,14 +93,27 @@ List<TextSelection> findAllMatches(String text, String findText, FindReplaceOpti
       patternIndex++;
     }
     
-    // 如果所有字元都匹配，記錄此匹配項
-    if (couldMatch && patternIndex == findText.length) {
+    // 處理模式結尾可能剩餘的標點符號或空白字元
+    while (patternIndex < findText.length) {
+      final patternChar = findText[patternIndex];
+      if (options.ignorePunctuation && isPunctuation(patternChar)) {
+        patternIndex++;
+      } else if (options.ignoreWhitespace && isWhitespace(patternChar)) {
+        patternIndex++;
+      } else {
+        break;
+      }
+    }
+    
+    // 如果所有字元都匹配
+    if (patternIndex == findText.length) {
       // 檢查全字匹配
       if (options.wholeWord) {
         // 檢查前一個字元
-        if (i > 0) {
-          final prevChar = text[i - 1];
+        if (matchStart > 0) {
+          final prevChar = text[matchStart - 1];
           if (isWordChar(prevChar)) {
+            i++;
             continue;
           }
         }
@@ -63,15 +121,22 @@ List<TextSelection> findAllMatches(String text, String findText, FindReplaceOpti
         if (textIndex < text.length) {
           final nextChar = text[textIndex];
           if (isWordChar(nextChar)) {
+            i++;
             continue;
           }
         }
       }
       
       matches.add(TextSelection(
-        baseOffset: i,
+        baseOffset: matchStart,
         extentOffset: textIndex,
       ));
+      
+      // 跳過已匹配的範圍，避免重疊匹配
+      i = textIndex;
+    } else {
+      // 沒有匹配，移動到下一個位置
+      i++;
     }
   }
   
@@ -90,25 +155,23 @@ bool isWordChar(String char) {
          (code == 0x005F);                      // 底線
 }
 
+/// 判斷字元是否為標點符號
+bool isPunctuation(String char) {
+  if (char.isEmpty) return false;
+  final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+  return punctuation.hasMatch(char);
+}
+
+/// 判斷字元是否為空白字元
+bool isWhitespace(String char) {
+  if (char.isEmpty) return false;
+  return RegExp(r"\s").hasMatch(char);
+}
+
 /// 檢查兩個字元是否匹配（考慮搜尋選項）
 bool charsMatch(String char1, String char2, FindReplaceOptions options) {
   String c1 = char1;
   String c2 = char2;
-  
-  // 略過空白字元
-  if (options.ignoreWhitespace) {
-    if (RegExp(r'\s').hasMatch(c1) && RegExp(r'\s').hasMatch(c2)) {
-      return true;
-    }
-  }
-  
-  // 略過標點符號
-  if (options.ignorePunctuation) {
-    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
-    if (punctuation.hasMatch(c1) && punctuation.hasMatch(c2)) {
-      return true;
-    }
-  }
   
   // 大小寫正規化
   if (!options.matchCase) {
@@ -136,9 +199,9 @@ bool textMatches(String text, String pattern, FindReplaceOptions options) {
   }
   
   if (options.ignorePunctuation) {
-    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·]''');
-    processedText = processedText.replaceAll(punctuation, '');
-    processedPattern = processedPattern.replaceAll(punctuation, '');
+    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    processedText = processedText.replaceAll(punctuation, "");
+    processedPattern = processedPattern.replaceAll(punctuation, "");
   }
   
   if (!options.matchCase) {
@@ -215,13 +278,13 @@ String normalizeCase(String text) {
     }
     // 4. 希臘字母帶重音符號大寫 (U+0386, U+0388-U+038F)
     else if (code == 0x0386) {
-      normalized = '\u03AC'; // Ά -> ά
+      normalized = "\u03AC"; // Ά -> ά
     }
     else if (code >= 0x0388 && code <= 0x038A) {
       normalized = String.fromCharCode(code + 37); // Έ-Ί -> έ-ί
     }
     else if (code == 0x038C) {
-      normalized = '\u03CC'; // Ό -> ό
+      normalized = "\u03CC"; // Ό -> ό
     }
     else if (code >= 0x038E && code <= 0x038F) {
       normalized = String.fromCharCode(code + 63); // Ύ-Ώ -> ύ-ώ
@@ -244,11 +307,11 @@ String normalizeCase(String text) {
     }
     // 8. 土耳其語特殊字母
     else if (code == 0x0130) { // İ -> i
-      normalized = 'i';
+      normalized = "i";
     }
     else if (code == 0x0049 && i + 1 < text.length && text.codeUnitAt(i + 1) == 0x0307) {
       // I with dot above -> i
-      normalized = 'i';
+      normalized = "i";
     }
     
     buffer.write(normalized);
@@ -276,7 +339,7 @@ String normalizeWidth(String text) {
     }
     // 2. 全形空格 (U+3000) -> 半形空格 (U+0020)
     else if (code == 0x3000) {
-      normalized = ' ';
+      normalized = " ";
     }
     // 3. 全形片假名 (U+30A1-U+30FE) -> 半形片假名 (U+FF66-U+FF9F)
     // 這個轉換比較複雜，需要特別處理濁音、半濁音
@@ -297,16 +360,16 @@ String normalizeWidth(String text) {
     }
     // 6. 全形中文標點符號轉換
     else if (code == 0x3001) { // 、-> ,
-      normalized = ',';
+      normalized = ",";
     }
     else if (code == 0x3002) { // 。-> .
-      normalized = '.';
+      normalized = ".";
     }
     else if (code == 0x300C) { // 「-> "
-      normalized = '"';
+      normalized = "\"";
     }
     else if (code == 0x300D) { // 」-> "
-      normalized = '"';
+      normalized = "\"";
     }
     else if (code == 0x300E) { // 『-> '
       normalized = "'";
@@ -315,10 +378,10 @@ String normalizeWidth(String text) {
       normalized = "'";
     }
     else if (code == 0x3014) { // 〔-> [
-      normalized = '[';
+      normalized = "[";
     }
     else if (code == 0x3015) { // 〕-> ]
-      normalized = ']';
+      normalized = "]";
     }
     
     buffer.write(normalized);
@@ -333,24 +396,24 @@ String convertFullKatakanaToHalf(String char, String text, int index) {
   
   // 全形片假名 -> 半形片假名映射表
   final Map<int, String> fullToHalfKatakana = {
-    0x30A1: 'ｧ', 0x30A2: 'ｱ', 0x30A3: 'ｨ', 0x30A4: 'ｲ', 0x30A5: 'ｩ',
-    0x30A6: 'ｳ', 0x30A7: 'ｪ', 0x30A8: 'ｴ', 0x30A9: 'ｫ', 0x30AA: 'ｵ',
-    0x30AB: 'ｶ', 0x30AC: 'ｶﾞ', 0x30AD: 'ｷ', 0x30AE: 'ｷﾞ', 0x30AF: 'ｸ',
-    0x30B0: 'ｸﾞ', 0x30B1: 'ｹ', 0x30B2: 'ｹﾞ', 0x30B3: 'ｺ', 0x30B4: 'ｺﾞ',
-    0x30B5: 'ｻ', 0x30B6: 'ｻﾞ', 0x30B7: 'ｼ', 0x30B8: 'ｼﾞ', 0x30B9: 'ｽ',
-    0x30BA: 'ｽﾞ', 0x30BB: 'ｾ', 0x30BC: 'ｾﾞ', 0x30BD: 'ｿ', 0x30BE: 'ｿﾞ',
-    0x30BF: 'ﾀ', 0x30C0: 'ﾀﾞ', 0x30C1: 'ﾁ', 0x30C2: 'ﾁﾞ', 0x30C3: 'ｯ',
-    0x30C4: 'ﾂ', 0x30C5: 'ﾂﾞ', 0x30C6: 'ﾃ', 0x30C7: 'ﾃﾞ', 0x30C8: 'ﾄ',
-    0x30C9: 'ﾄﾞ', 0x30CA: 'ﾅ', 0x30CB: 'ﾆ', 0x30CC: 'ﾇ', 0x30CD: 'ﾈ',
-    0x30CE: 'ﾉ', 0x30CF: 'ﾊ', 0x30D0: 'ﾊﾞ', 0x30D1: 'ﾊﾟ', 0x30D2: 'ﾋ',
-    0x30D3: 'ﾋﾞ', 0x30D4: 'ﾋﾟ', 0x30D5: 'ﾌ', 0x30D6: 'ﾌﾞ', 0x30D7: 'ﾌﾟ',
-    0x30D8: 'ﾍ', 0x30D9: 'ﾍﾞ', 0x30DA: 'ﾍﾟ', 0x30DB: 'ﾎ', 0x30DC: 'ﾎﾞ',
-    0x30DD: 'ﾎﾟ', 0x30DE: 'ﾏ', 0x30DF: 'ﾐ', 0x30E0: 'ﾑ', 0x30E1: 'ﾒ',
-    0x30E2: 'ﾓ', 0x30E3: 'ｬ', 0x30E4: 'ﾔ', 0x30E5: 'ｭ', 0x30E6: 'ﾕ',
-    0x30E7: 'ｮ', 0x30E8: 'ﾖ', 0x30E9: 'ﾗ', 0x30EA: 'ﾘ', 0x30EB: 'ﾙ',
-    0x30EC: 'ﾚ', 0x30ED: 'ﾛ', 0x30EE: 'ﾜ', 0x30EF: 'ﾜ', 0x30F0: 'ｲ',
-    0x30F1: 'ｴ', 0x30F2: 'ｦ', 0x30F3: 'ﾝ', 0x30F4: 'ｳﾞ', 0x30F5: 'ｶ',
-    0x30F6: 'ｹ', 0x30FB: '･', 0x30FC: 'ｰ',
+    0x30A1: "ｧ", 0x30A2: "ｱ", 0x30A3: "ｨ", 0x30A4: "ｲ", 0x30A5: "ｩ",
+    0x30A6: "ｳ", 0x30A7: "ｪ", 0x30A8: "ｴ", 0x30A9: "ｫ", 0x30AA: "ｵ",
+    0x30AB: "ｶ", 0x30AC: "ｶﾞ", 0x30AD: "ｷ", 0x30AE: "ｷﾞ", 0x30AF: "ｸ",
+    0x30B0: "ｸﾞ", 0x30B1: "ｹ", 0x30B2: "ｹﾞ", 0x30B3: "ｺ", 0x30B4: "ｺﾞ",
+    0x30B5: "ｻ", 0x30B6: "ｻﾞ", 0x30B7: "ｼ", 0x30B8: "ｼﾞ", 0x30B9: "ｽ",
+    0x30BA: "ｽﾞ", 0x30BB: "ｾ", 0x30BC: "ｾﾞ", 0x30BD: "ｿ", 0x30BE: "ｿﾞ",
+    0x30BF: "ﾀ", 0x30C0: "ﾀﾞ", 0x30C1: "ﾁ", 0x30C2: "ﾁﾞ", 0x30C3: "ｯ",
+    0x30C4: "ﾂ", 0x30C5: "ﾂﾞ", 0x30C6: "ﾃ", 0x30C7: "ﾃﾞ", 0x30C8: "ﾄ",
+    0x30C9: "ﾄﾞ", 0x30CA: "ﾅ", 0x30CB: "ﾆ", 0x30CC: "ﾇ", 0x30CD: "ﾈ",
+    0x30CE: "ﾉ", 0x30CF: "ﾊ", 0x30D0: "ﾊﾞ", 0x30D1: "ﾊﾟ", 0x30D2: "ﾋ",
+    0x30D3: "ﾋﾞ", 0x30D4: "ﾋﾟ", 0x30D5: "ﾌ", 0x30D6: "ﾌﾞ", 0x30D7: "ﾌﾟ",
+    0x30D8: "ﾍ", 0x30D9: "ﾍﾞ", 0x30DA: "ﾍﾟ", 0x30DB: "ﾎ", 0x30DC: "ﾎﾞ",
+    0x30DD: "ﾎﾟ", 0x30DE: "ﾏ", 0x30DF: "ﾐ", 0x30E0: "ﾑ", 0x30E1: "ﾒ",
+    0x30E2: "ﾓ", 0x30E3: "ｬ", 0x30E4: "ﾔ", 0x30E5: "ｭ", 0x30E6: "ﾕ",
+    0x30E7: "ｮ", 0x30E8: "ﾖ", 0x30E9: "ﾗ", 0x30EA: "ﾘ", 0x30EB: "ﾙ",
+    0x30EC: "ﾚ", 0x30ED: "ﾛ", 0x30EE: "ﾜ", 0x30EF: "ﾜ", 0x30F0: "ｲ",
+    0x30F1: "ｴ", 0x30F2: "ｦ", 0x30F3: "ﾝ", 0x30F4: "ｳﾞ", 0x30F5: "ｶ",
+    0x30F6: "ｹ", 0x30FB: "･", 0x30FC: "ｰ",
   };
   
   return fullToHalfKatakana[code] ?? char;
@@ -396,6 +459,444 @@ void showFindReplaceWindow(
   );
 }
 
+// 新的 Bar 樣式搜尋取代組件
+class FindReplaceBar extends StatefulWidget {
+  final TextEditingController findController;
+  final TextEditingController replaceController;
+  final FindReplaceOptions options;
+  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindNext;
+  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindPrevious;
+  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplace;
+  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplaceAll;
+  final Function(String findText, FindReplaceOptions options)? onSearchChanged;
+  final int? currentMatchIndex;
+  final int? totalMatches;
+  final VoidCallback? onClose;
+
+  const FindReplaceBar({
+    Key? key,
+    required this.findController,
+    required this.replaceController,
+    required this.options,
+    this.onFindNext,
+    this.onFindPrevious,
+    this.onReplace,
+    this.onReplaceAll,
+    this.onSearchChanged,
+    this.currentMatchIndex,
+    this.totalMatches,
+    this.onClose,
+  }) : super(key: key);
+
+  @override
+  State<FindReplaceBar> createState() => _FindReplaceBarState();
+}
+
+class _FindReplaceBarState extends State<FindReplaceBar> {
+  bool _isExpanded = false;
+  bool _showOptions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 監聽搜尋框內容變化
+    widget.findController.addListener(_onFindTextChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.findController.removeListener(_onFindTextChanged);
+    super.dispose();
+  }
+
+  void _onFindTextChanged() {
+    // 當搜尋框內容變化時，檢查是否需要禁用某些選項
+    final findText = widget.findController.text;
+    final hasFullWidth = _containsFullWidth(findText);
+    final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
+    
+    // 如果包含全形字元、標點符號或空格，自動禁用全字拼寫選項
+    if ((hasFullWidth || hasPunctuationOrSpace) && widget.options.wholeWord) {
+      setState(() {
+        widget.options.wholeWord = false;
+      });
+    }
+    
+    // 通知搜尋內容變化，讓主視窗更新高亮顯示
+    widget.onSearchChanged?.call(findText, widget.options);
+    
+    // 強制刷新 UI
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _notifySearchChanged() {
+    // 通知搜尋選項變化
+    widget.onSearchChanged?.call(widget.findController.text, widget.options);
+  }
+
+  // 檢查文字中是否包含全形字元
+  bool _containsFullWidth(String text) {
+    if (text.isEmpty) return false;
+    
+    for (int i = 0; i < text.length; i++) {
+      int code = text.codeUnitAt(i);
+      if ((code >= 0xFF00 && code <= 0xFFEF) ||
+          (code >= 0x4E00 && code <= 0x9FFF) ||
+          (code >= 0x3000 && code <= 0x303F)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 檢查文字中是否包含標點符號或空格
+  bool _containsPunctuationOrSpace(String text) {
+    if (text.isEmpty) return false;
+    
+    if (RegExp(r"\s").hasMatch(text)) {
+      return true;
+    }
+    
+    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    return punctuation.hasMatch(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 4,
+      color: Theme.of(context).colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border(
+            bottom: BorderSide(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            ),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 主搜尋列
+            Row(
+              children: [
+                // 尋找輸入框
+                Container(
+                  child: Text("搜尋："),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: SizedBox(
+                    height: 36,
+                    child: TextField(
+                      controller: widget.findController,
+                      decoration: InputDecoration(
+                        // labelText: "尋找",
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                
+                // 匹配數量顯示
+                if (widget.totalMatches != null && widget.totalMatches! > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                
+                const SizedBox(width: 2),
+                
+                // 導航按鈕組
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward, size: 16),
+                  onPressed: () {
+                    widget.onFindPrevious?.call(
+                      widget.findController.text,
+                      widget.replaceController.text,
+                      widget.options,
+                    );
+                  },
+                  tooltip: "上一個",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_downward, size: 16),
+                  onPressed: () {
+                    widget.onFindNext?.call(
+                      widget.findController.text,
+                      widget.replaceController.text,
+                      widget.options,
+                    );
+                  },
+                  tooltip: "下一個",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+                
+                // 展開/收合取代欄
+                IconButton(
+                  icon: Icon(
+                    _isExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isExpanded = !_isExpanded;
+                    });
+                  },
+                  tooltip: _isExpanded ? "收合" : "展開取代",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+                
+                // 選項按鈕
+                IconButton(
+                  icon: const Icon(Icons.tune, size: 16),
+                  onPressed: () {
+                    setState(() {
+                      _showOptions = !_showOptions;
+                    });
+                  },
+                  tooltip: "搜尋選項",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+              ],
+            ),
+            
+            // 取代列（可展開）
+            if (_isExpanded) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    child: Text("取代："),
+                  ),
+                  // 取代輸入框
+                  Expanded(
+                    flex: 3,
+                    child: SizedBox(
+                      height: 36,
+                      child: TextField(
+                        controller: widget.replaceController,
+                        decoration: InputDecoration(
+                          // labelText: "取代為",
+                          border: const OutlineInputBorder(),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          isDense: true,
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  
+                  // 取代按鈕
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      widget.onReplace?.call(
+                        widget.findController.text,
+                        widget.replaceController.text,
+                        widget.options,
+                      );
+                    },
+                    icon: const Icon(Icons.find_replace, size: 16),
+                    label: const Text("取代", style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                      foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  
+                  // 全部取代按鈕
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      widget.onReplaceAll?.call(
+                        widget.findController.text,
+                        widget.replaceController.text,
+                        widget.options,
+                      );
+                    },
+                    icon: const Icon(Icons.library_add_check, size: 16),
+                    label: const Text("全部", style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                      foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            
+            // 選項區域（可展開）
+            if (_showOptions) ...[
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  final findText = widget.findController.text;
+                  final hasFullWidth = _containsFullWidth(findText);
+                  final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
+                  final useRegexp = widget.options.useRegexp;
+                  
+                  final disableWholeWord = hasFullWidth || hasPunctuationOrSpace || useRegexp;
+                  final disableMatchCase = useRegexp;
+                  final disableMatchWidth = useRegexp;
+                  
+                  return Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      _buildOptionChip(
+                        label: "大小寫需相同",
+                        tooltip: "大小寫需相同",
+                        value: useRegexp ? true : widget.options.matchCase,
+                        enabled: !disableMatchCase,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.matchCase = value;
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                      _buildOptionChip(
+                        label: "全字拼寫相符",
+                        tooltip: "全字拼寫相符",
+                        value: widget.options.wholeWord,
+                        enabled: !disableWholeWord,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.wholeWord = value;
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                      _buildOptionChip(
+                        label: "使用正則表示",
+                        tooltip: "使用正則表示",
+                        value: widget.options.useRegexp,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.useRegexp = value;
+                            if (value) {
+                              widget.options.matchCase = true;
+                              widget.options.wholeWord = false;
+                              widget.options.matchWidth = true;
+                            }
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                      _buildOptionChip(
+                        label: "全半形須相符",
+                        tooltip: "全半形須相符",
+                        value: useRegexp ? true : widget.options.matchWidth,
+                        enabled: !disableMatchWidth,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.matchWidth = value;
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                      _buildOptionChip(
+                        label: "略過標點符號",
+                        tooltip: "略過標點符號",
+                        value: widget.options.ignorePunctuation,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.ignorePunctuation = value;
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                      _buildOptionChip(
+                        label: "略過空白字元",
+                        tooltip: "略過空白字元",
+                        value: widget.options.ignoreWhitespace,
+                        onChanged: (value) {
+                          setState(() {
+                            widget.options.ignoreWhitespace = value;
+                          });
+                          _notifySearchChanged();
+                        },
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildOptionChip({
+    required String label,
+    String? tooltip,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    bool enabled = true,
+  }) {
+    final chip = FilterChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: enabled ? null : Theme.of(context).disabledColor,
+        ),
+      ),
+      selected: value,
+      onSelected: enabled ? onChanged : null,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      labelPadding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+    );
+    
+    if (tooltip != null) {
+      return Tooltip(
+        message: tooltip,
+        child: chip,
+      );
+    }
+    return chip;
+  }
+}
+
+// 保留舊的浮動視窗組件以供桌面版使用（可選）
 class FindReplaceFloatingWindow extends StatefulWidget {
   final TextEditingController findController;
   final TextEditingController replaceController;
@@ -449,9 +950,10 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     // 當搜尋框內容變化時，檢查是否需要禁用某些選項
     final findText = widget.findController.text;
     final hasFullWidth = _containsFullWidth(findText);
+    final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
     
-    // 如果包含全形字元，自動禁用全字拼寫選項
-    if (hasFullWidth && widget.options.wholeWord) {
+    // 如果包含全形字元、標點符號或空格，自動禁用全字拼寫選項
+    if ((hasFullWidth || hasPunctuationOrSpace) && widget.options.wholeWord) {
       setState(() {
         widget.options.wholeWord = false;
       });
@@ -490,6 +992,20 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     return false;
   }
 
+  // 檢查文字中是否包含標點符號或空格
+  bool _containsPunctuationOrSpace(String text) {
+    if (text.isEmpty) return false;
+    
+    // 檢查是否包含空白字元
+    if (RegExp(r"\s").hasMatch(text)) {
+      return true;
+    }
+    
+    // 檢查是否包含標點符號（半形和全形）
+    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    return punctuation.hasMatch(text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -514,7 +1030,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                       SizedBox(
                         width: 80,
                         child: Text(
-                          '尋找內容:',
+                          "尋找內容:",
                           style: TextStyle(
                             fontSize: 13,
                             color: Theme.of(context).colorScheme.onSurface,
@@ -547,7 +1063,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}',
+                            "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -615,7 +1131,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             _isExpanded ? Icons.expand_less : Icons.expand_more,
                             size: 20,
                           ),
-                          tooltip: _isExpanded ? '摺疊' : '展開取代',
+                          tooltip: _isExpanded ? "摺疊" : "展開取代",
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -634,7 +1150,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             Icons.tune,
                             size: 18,
                           ),
-                          tooltip: '搜尋選項',
+                          tooltip: "搜尋選項",
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -661,7 +1177,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         SizedBox(
                           width: 80,
                           child: Text(
-                            '取代為:',
+                            "取代為:",
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(context).colorScheme.onSurface,
@@ -706,7 +1222,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
                             ),
                             child: Tooltip(
-                              message: '取代',
+                              message: "取代",
                               child: const Icon(Icons.find_replace, size: 16),
                             ),
                           ),
@@ -733,7 +1249,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
                             ),
                             child: Tooltip(
-                              message: '全部取代',
+                              message: "全部取代",
                               child: const Icon(Icons.library_add_check, size: 16),
                             ),
                           ),
@@ -752,10 +1268,11 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         // 檢查搜尋框內容
                         final findText = widget.findController.text;
                         final hasFullWidth = _containsFullWidth(findText);
+                        final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
                         final useRegexp = widget.options.useRegexp;
                         
                         // 計算禁用狀態
-                        final disableWholeWord = hasFullWidth || useRegexp;
+                        final disableWholeWord = hasFullWidth || hasPunctuationOrSpace || useRegexp;
                         final disableMatchCase = useRegexp;
                         final disableMatchWidth = useRegexp;
                         
@@ -764,8 +1281,8 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                           runSpacing: 4,
                           children: [
                             _buildOptionChip(
-                              label: '大小寫需相同',
-                              value: widget.options.matchCase,
+                              label: "大小寫需相同",
+                              value: useRegexp ? true : widget.options.matchCase,
                               enabled: !disableMatchCase,
                               onChanged: (value) {
                                 setState(() {
@@ -775,7 +1292,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               },
                             ),
                             _buildOptionChip(
-                              label: '全字拼寫相符',
+                              label: "全字拼寫相符",
                               value: widget.options.wholeWord,
                               enabled: !disableWholeWord,
                               onChanged: (value) {
@@ -791,19 +1308,19 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               onChanged: (value) {
                                 setState(() {
                                   widget.options.useRegexp = value;
-                                  // 當啟用正則表示時，強制禁用相關選項
+                                  // 當啟用正則表示時，強制啟用大小寫和全半形相符選項
                                   if (value) {
-                                    widget.options.matchCase = false;
+                                    widget.options.matchCase = true;
                                     widget.options.wholeWord = false;
-                                    widget.options.matchWidth = false;
+                                    widget.options.matchWidth = true;
                                   }
                                 });
                                 _notifySearchChanged();
                               },
                             ),
                             _buildOptionChip(
-                              label: '全半形須相符',
-                              value: widget.options.matchWidth,
+                              label: "全半形須相符",
+                              value: useRegexp ? true : widget.options.matchWidth,
                               enabled: !disableMatchWidth,
                               onChanged: (value) {
                                 setState(() {
@@ -813,7 +1330,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               },
                             ),
                             _buildOptionChip(
-                              label: '略過標點符號',
+                              label: "略過標點符號",
                               value: widget.options.ignorePunctuation,
                               onChanged: (value) {
                                 setState(() {
@@ -823,7 +1340,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               },
                             ),
                             _buildOptionChip(
-                              label: '略過空白字元',
+                              label: "略過空白字元",
                               value: widget.options.ignoreWhitespace,
                               onChanged: (value) {
                                 setState(() {
@@ -860,7 +1377,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
           color: enabled ? null : Theme.of(context).disabledColor,
         ),
       ),
-      selected: value && enabled,
+      selected: value,
       onSelected: enabled ? onChanged : null,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
       labelPadding: EdgeInsets.zero,

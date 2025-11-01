@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
+import "package:flutter/material.dart";
+import "package:flutter/services.dart";
+import "dart:async";
 
 // MARK: - 拖放數據類型
 
@@ -516,7 +516,7 @@ class OutlineCodec {
       
       return storylines.isEmpty ? null : storylines;
     } catch (e) {
-      print('Error parsing Outline XML: $e');
+      print("Error parsing Outline XML: $e");
       return null;
     }
   }

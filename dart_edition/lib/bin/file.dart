@@ -25,7 +25,7 @@ class FileService {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ["mnproj", "mga", "xml", "txt"], // 支援新舊格式
+        allowedExtensions: ["mnproj", "xml", "txt"],
         withData: true,
       );
 

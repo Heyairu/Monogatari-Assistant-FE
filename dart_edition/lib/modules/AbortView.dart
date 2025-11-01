@@ -19,7 +19,7 @@ class AboutView extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Image.asset(
-                    'assets/icon/Title.png',
+                    "assets/icon/Title.png",
 
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
@@ -49,7 +49,7 @@ class AboutView extends StatelessWidget {
               
               // 版本狀態
               Text(
-                "Beta 1",
+                "Beta 2",
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.onSurface,
@@ -58,7 +58,7 @@ class AboutView extends StatelessWidget {
 
               // 版本號
               Text(
-                "版本 0.1.14",
+                "版本 0.1.91",
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                 ),
