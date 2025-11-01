@@ -1,65 +1,52 @@
-Business Source License 1.1
+European Union Public Licence  
+V. 1.2 – EUPL © the European Union 2007, 2016  
+https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
 
-Licensor: Heyairu（部屋伊琉）
-Licensed Work: [Project Name]
-The Licensed Work is (c) 2025 Heyairu（部屋伊琉）
+------------------------------------------------------------------------
+SOFTWARE LICENCE
 
-Change Date: 2030-11-01 (5 years after initial release)
+This software is licensed under the **European Union Public Licence v.1.2** (EUPL).
 
-Change License: Apache License, Version 2.0
-                https://www.apache.org/licenses/LICENSE-2.0
+You may use, reproduce, and distribute this software, provided that you comply with the terms of the EUPL v.1.2.  
+You may obtain a copy of the Licence at the link above, or from the European Commission’s official website.
 
--------------------------------------------------------------------------------
+Unless required by applicable law or agreed to in writing, this software is distributed on an **"AS IS" BASIS**,  
+**WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND**, either express or implied.  
+See the Licence for the specific language governing permissions and limitations under the EUPL.
 
-1. License Grant.
+------------------------------------------------------------------------
+COPYRIGHT NOTICE
 
-The Licensor hereby grants you the right to copy, modify, create derivative
-works, redistribute, and make non-production use of the Licensed Work,
-subject to the conditions set forth below.
+Copyright © 2025 Heyairu（部屋伊琉）
 
-You may make use of the Licensed Work for non-commercial purposes only,
-which includes personal, academic, or internal evaluation usage.
+Author: Heyairu（部屋伊琉）  
+Project: [Your Project Name]  
+License: European Union Public Licence (EUPL) v.1.2  
+Date: 2025-11-01
 
-Any commercial use of the Licensed Work, including but not limited to
-selling, offering as a service, or incorporating into commercial products,
-requires a separate commercial license from the Licensor.
+------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS / ATTRIBUTIONS
 
--------------------------------------------------------------------------------
+Logo Fonts used:
+- なつめもじ  
+  Free download: https://apricot.ciao.jp/site3.html  
+- CEF Fonts CJK Mono  
+  Free download: https://github.com/Partyb0ssishere/cef-fonts-cjk  
 
-2. Change License.
+These fonts are subject to their own licenses.  
+Please refer to the links above for their individual terms of use.
 
-On the Change Date specified above, the License will automatically change
-to the Change License (Apache License 2.0), and thereafter you may use the
-Licensed Work under the terms of that license.
+------------------------------------------------------------------------
+SHORT FORM NOTICE FOR SOURCE FILES
 
--------------------------------------------------------------------------------
+Each individual source file in this project should include the following header:
 
-3. Notices.
+/*
+ * Copyright © 2025 Heyairu（部屋伊琉）
+ * Licensed under the EUPL v.1.2.
+ * You may obtain a copy of the Licence at:
+ * https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+ */
 
-You must include a copy of this License with any copies of the Licensed Work
-you distribute. You must retain all copyright, trademark, and attribution
-notices that appear in the Licensed Work.
-
--------------------------------------------------------------------------------
-
-4. Disclaimer.
-
-THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTIES OR CONDITIONS OF
-ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY
-IMPLIED WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY,
-OR FITNESS FOR A PARTICULAR PURPOSE. YOU ARE SOLELY RESPONSIBLE FOR
-DETERMINING THE APPROPRIATENESS OF USING OR REDISTRIBUTING THE LICENSED WORK
-AND ASSUME ANY RISKS ASSOCIATED WITH YOUR EXERCISE OF PERMISSIONS UNDER THIS
-LICENSE.
-
--------------------------------------------------------------------------------
-
-Additional Attribution
-
-Logo Font used: なつめもじ、CEF Fonts CJK Mono  
-Free download:  
-https://apricot.ciao.jp/site3.html  
-https://github.com/Partyb0ssishere/cef-fonts-cjk  
-
-These fonts are subject to their own licenses. Please refer to the provided
-links for terms of use.
+------------------------------------------------------------------------
+END OF LICENSE
