@@ -1,6 +1,7 @@
 import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 import "dart:io";
+import "dart:convert";
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
 
@@ -1419,12 +1420,16 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     final result = await FilePicker.platform.saveFile(
       dialogTitle: "匯出檔案",
       fileName: fileName,
+      bytes: utf8.encode(content),
     );
     
     if (result != null) {
       try {
-        final file = File(result);
-        await file.writeAsString(content);
+        // 在桌面平台上仍需要寫入檔案
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          final file = File(result);
+          await file.writeAsString(content);
+        }
         _showSuccessDialog("檔案已匯出至：$result");
       } catch (e) {
         _showErrorDialog("匯出失敗：${e.toString()}");

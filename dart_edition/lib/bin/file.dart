@@ -69,15 +69,19 @@ class FileService {
         fileName: "${projectFile.fileName}$projectExtension",
         type: FileType.custom,
         allowedExtensions: ["mnproj"],
+        bytes: utf8.encode(projectFile.content),
       );
 
-      // 如果使用者取消儲存，FilePicker 會回傳 null，處理此情況以符合 null-safety
+      // 如果使用者取消儲存,FilePicker 會回傳 null,處理此情況以符合 null-safety
       if (outputFile == null) {
-        // 保持原樣並拋出例外或回傳原檔案，這裡選擇拋出以通知呼叫端儲存已取消
+        // 保持原樣並拋出例外或回傳原檔案,這裡選擇拋出以通知呼叫端儲存已取消
         throw FileException("另存檔案已取消");
       }
 
-      await _writeToFile(outputFile, projectFile.content);
+      // 在桌面平台上仍需要寫入檔案
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await _writeToFile(outputFile, projectFile.content);
+      }
       
       return ProjectFile(
         fileName: path.basenameWithoutExtension(outputFile),
@@ -96,23 +100,27 @@ class FileService {
     required String extension,
   }) async {
     try {
-      String? outputFile = await FilePicker.platform.saveFile(
-        dialogTitle: "匯出文字檔案",
-        fileName: "$fileName$extension",
-        type: FileType.custom,
-        allowedExtensions: [extension.substring(1)], // 移除點號
-      );
-      // 處理使用者取消或未選擇路徑的情況
-      if (outputFile == null) return;
-
       String exportContent = content;
       
       // 如果是 Markdown 格式，進行簡單的格式化
       if (extension == markdownExtension) {
         exportContent = _formatAsMarkdown(content);
       }
+
+      String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: "匯出文字檔案",
+        fileName: "$fileName$extension",
+        type: FileType.custom,
+        allowedExtensions: [extension.substring(1)], // 移除點號
+        bytes: utf8.encode(exportContent),
+      );
+      // 處理使用者取消或未選擇路徑的情況
+      if (outputFile == null) return;
       
-      await _writeToFile(outputFile, exportContent);
+      // 在桌面平台上仍需要寫入檔案
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await _writeToFile(outputFile, exportContent);
+      }
         } catch (e) {
       throw FileException("匯出檔案失敗: ${e.toString()}");
     }
