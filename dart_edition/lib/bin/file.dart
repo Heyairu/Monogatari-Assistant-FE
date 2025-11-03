@@ -23,11 +23,22 @@ class FileService {
   /// 開啟專案檔案
   static Future<ProjectFile?> openProject() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ["mnproj", "xml", "txt"],
-        withData: true,
-      );
+      FilePickerResult? result;
+      
+      // Android 平台對自定義副檔名支援不佳，使用 FileType.any
+      if (Platform.isAndroid) {
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.any,
+          withData: true,
+        );
+      } else {
+        // 其他平台使用自定義副檔名過濾
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ["mnproj", "xml", "txt"],
+          withData: true,
+        );
+      }
 
       if (result != null && result.files.single.bytes != null) {
         final file = result.files.single;
@@ -64,13 +75,26 @@ class FileService {
   /// 另存新檔
   static Future<ProjectFile> saveProjectAs(ProjectFile projectFile) async {
     try {
-      String? outputFile = await FilePicker.platform.saveFile(
-        dialogTitle: "儲存專案檔案",
-        fileName: "${projectFile.fileName}$projectExtension",
-        type: FileType.custom,
-        allowedExtensions: ["mnproj"],
-        bytes: utf8.encode(projectFile.content),
-      );
+      String? outputFile;
+      
+      // Android 平台對自定義副檔名支援不佳，使用 FileType.any
+      if (Platform.isAndroid) {
+        outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: "儲存專案檔案",
+          fileName: "${projectFile.fileName}$projectExtension",
+          type: FileType.any,
+          bytes: utf8.encode(projectFile.content),
+        );
+      } else {
+        // 其他平台使用自定義副檔名過濾
+        outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: "儲存專案檔案",
+          fileName: "${projectFile.fileName}$projectExtension",
+          type: FileType.custom,
+          allowedExtensions: ["mnproj"],
+          bytes: utf8.encode(projectFile.content),
+        );
+      }
 
       // 如果使用者取消儲存,FilePicker 會回傳 null,處理此情況以符合 null-safety
       if (outputFile == null) {
@@ -362,15 +386,54 @@ class XMLParser {
   /// 從XML內容中提取特定類型的區塊
   static List<String> extractTypeBlocks(String xmlContent, String type) {
     final blocks = <String>[];
-    // 更新正則表達式以匹配新格式：<Type><Name>typeName</Name>...</Type>
-    final pattern = RegExp(
-      "<Type>\\s*<Name>$type</Name>[\\s\\S]*?</Type>",
-      multiLine: true,
-    );
-    final matches = pattern.allMatches(xmlContent);
-    
-    for (final match in matches) {
-      blocks.add(match.group(0) ?? "");
+    // 使用更精確的匹配方式：先找到開始標籤，然後找到對應的結束標籤
+    int startIndex = 0;
+    while (true) {
+      // 尋找 <Type> 開始
+      final typeStart = xmlContent.indexOf("<Type>", startIndex);
+      if (typeStart == -1) break;
+      
+      // 檢查是否包含我們要找的 Name 標籤
+      final nameStart = xmlContent.indexOf("<Name>$type</Name>", typeStart);
+      if (nameStart == -1 || nameStart > xmlContent.indexOf("</Type>", typeStart)) {
+        // 這個 Type 區塊不包含我們要找的 Name，跳過
+        startIndex = xmlContent.indexOf("</Type>", typeStart) + 7;
+        if (startIndex < 7) break; // 沒有找到 </Type>
+        continue;
+      }
+      
+      // 找到對應的 </Type> 結束標籤
+      int depth = 1;
+      int searchPos = typeStart + 6; // <Type> 之後
+      int typeEnd = -1;
+      
+      while (searchPos < xmlContent.length && depth > 0) {
+        final nextOpen = xmlContent.indexOf("<Type>", searchPos);
+        final nextClose = xmlContent.indexOf("</Type>", searchPos);
+        
+        if (nextClose == -1) break; // 沒有找到結束標籤
+        
+        if (nextOpen != -1 && nextOpen < nextClose) {
+          // 遇到嵌套的 <Type>
+          depth++;
+          searchPos = nextOpen + 6;
+        } else {
+          // 遇到 </Type>
+          depth--;
+          if (depth == 0) {
+            typeEnd = nextClose + 7; // </Type> 的結束位置
+            break;
+          }
+          searchPos = nextClose + 7;
+        }
+      }
+      
+      if (typeEnd != -1) {
+        blocks.add(xmlContent.substring(typeStart, typeEnd));
+        startIndex = typeEnd;
+      } else {
+        break; // 無法找到對應的結束標籤
+      }
     }
     
     return blocks;

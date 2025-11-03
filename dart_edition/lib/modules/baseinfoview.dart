@@ -198,7 +198,20 @@ class BaseInfoCodec {
   static String? _extractTagContent(String xml, String tagName) {
     final regex = RegExp("<$tagName>(.*?)</$tagName>", dotAll: true);
     final match = regex.firstMatch(xml);
-    return match?.group(1)?.trim();
+    final content = match?.group(1)?.trim();
+    if (content == null) return null;
+    
+    // 解碼 XML 實體
+    return _unescapeXml(content);
+  }
+  
+  static String _unescapeXml(String text) {
+    return text
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&quot;", "\"")
+        .replaceAll("&apos;", "'")
+        .replaceAll("&amp;", "&"); // 必須最後處理
   }
 }
 
@@ -294,7 +307,72 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   @override
   void didUpdateWidget(BaseInfoView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.contentText != widget.contentText) {
+    
+    // 檢查 data 是否變化（新建或開啟檔案時）
+    if (oldWidget.data != widget.data) {
+      setState(() {
+        // 更新內部數據
+        _data = BaseInfoData()
+          ..bookName = widget.data.bookName
+          ..author = widget.data.author
+          ..purpose = widget.data.purpose
+          ..toRecap = widget.data.toRecap
+          ..storyType = widget.data.storyType
+          ..intro = widget.data.intro
+          ..tags = List.from(widget.data.tags)
+          ..latestSave = widget.data.latestSave
+          ..nowWords = widget.data.nowWords;
+        
+        _data.recalcNowWords(widget.contentText);
+        
+        // 更新所有 TextEditingController（暫時移除監聽器以避免循環通知）
+        _bookNameController.removeListener(() {});
+        _authorController.removeListener(() {});
+        _purposeController.removeListener(() {});
+        _toRecapController.removeListener(() {});
+        _storyTypeController.removeListener(() {});
+        _introController.removeListener(() {});
+        
+        _bookNameController.text = _data.bookName;
+        _authorController.text = _data.author;
+        _purposeController.text = _data.purpose;
+        _toRecapController.text = _data.toRecap;
+        _storyTypeController.text = _data.storyType;
+        _introController.text = _data.intro;
+        
+        // 重新添加監聽器
+        _bookNameController.addListener(() {
+          _data.bookName = _bookNameController.text;
+          _notifyDataChanged();
+        });
+        
+        _authorController.addListener(() {
+          _data.author = _authorController.text;
+          _notifyDataChanged();
+        });
+        
+        _purposeController.addListener(() {
+          _data.purpose = _purposeController.text;
+          _notifyDataChanged();
+        });
+        
+        _toRecapController.addListener(() {
+          _data.toRecap = _toRecapController.text;
+          _notifyDataChanged();
+        });
+        
+        _storyTypeController.addListener(() {
+          _data.storyType = _storyTypeController.text;
+          _notifyDataChanged();
+        });
+        
+        _introController.addListener(() {
+          _data.intro = _introController.text;
+          _notifyDataChanged();
+        });
+      });
+    } else if (oldWidget.contentText != widget.contentText) {
+      // 只有 contentText 變化時，重新計算字數
       setState(() {
         _data.recalcNowWords(widget.contentText);
       });

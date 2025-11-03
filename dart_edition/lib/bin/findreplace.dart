@@ -158,7 +158,7 @@ bool isWordChar(String char) {
 /// 判斷字元是否為標點符號
 bool isPunctuation(String char) {
   if (char.isEmpty) return false;
-  final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+  final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
   return punctuation.hasMatch(char);
 }
 
@@ -194,12 +194,12 @@ bool textMatches(String text, String pattern, FindReplaceOptions options) {
   String processedPattern = pattern;
   
   if (options.ignoreWhitespace) {
-    processedText = processedText.replaceAll(RegExp(r'\s+'), '');
-    processedPattern = processedPattern.replaceAll(RegExp(r'\s+'), '');
+    processedText = processedText.replaceAll(RegExp(r"""\s+"""), "");
+    processedPattern = processedPattern.replaceAll(RegExp(r"""\s+"""), "");
   }
   
   if (options.ignorePunctuation) {
-    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
     processedText = processedText.replaceAll(punctuation, "");
     processedPattern = processedPattern.replaceAll(punctuation, "");
   }
@@ -559,7 +559,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       return true;
     }
     
-    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
     return punctuation.hasMatch(text);
   }
 
@@ -1002,7 +1002,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     }
     
     // 檢查是否包含標點符號（半形和全形）
-    final punctuation = RegExp(r'''[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]''');
+    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
     return punctuation.hasMatch(text);
   }
 

@@ -230,6 +230,11 @@ class _ContentViewState extends State<ContentView> {
         });
       }
     });
+    
+    // 應用程式啟動時自動創建新專案
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _newProject();
+    });
   }
   
   @override
@@ -1364,7 +1369,10 @@ class _ContentViewState extends State<ContentView> {
         selectedChapID = segmentsData.first.chapters.first.chapterUUID;
         totalWords = 0;
         contentText = "";
+        // 使用 _isSyncing 標記來避免觸發 textController 監聽器
+        _isSyncing = true;
         textController.text = "";
+        _isSyncing = false;
         isLoading = false;
       });
       
@@ -1662,9 +1670,11 @@ class _ContentViewState extends State<ContentView> {
       setState(() {
         currentProject = projectFile;
         
-        // 更新BaseInfo
+        // 更新BaseInfo - 如果沒有載入到，使用新的空數據
         if (loadedBaseInfo != null) {
           baseInfoData = loadedBaseInfo;
+        } else {
+          baseInfoData = BaseInfoModule.BaseInfoData();
         }
         
         // 更新ChapterSelection
@@ -1687,7 +1697,10 @@ class _ContentViewState extends State<ContentView> {
           selectedSegID = segmentsData[0].segmentUUID;
           selectedChapID = segmentsData[0].chapters[0].chapterUUID;
           contentText = segmentsData[0].chapters[0].chapterContent;
+          // 使用 _isSyncing 標記來避免觸發 textController 監聽器
+          _isSyncing = true;
           textController.text = contentText;
+          _isSyncing = false;
           // 重新計算字數
           totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
         }
