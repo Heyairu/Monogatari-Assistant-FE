@@ -8,6 +8,7 @@ import "modules/chapterselectionview.dart" as ChapterModule;
 import "modules/AbortView.dart" as AboutModule;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/worldsettingsview.dart";
+import "modules/characterview.dart";
 
 void main() {
   runApp(const MainApp());
@@ -1157,12 +1158,7 @@ class _ContentViewState extends State<ContentView> {
   }
   
   Widget _buildCharacterSettingsView() {
-    return _buildPlaceholderPage(
-      icon: Icons.person,
-      title: "角色設定",
-      description: "角色設定功能開發中...",
-      color: Colors.purple,
-    );
+    return CharacterView();
   }
   
   Widget _buildGlossaryView() {
