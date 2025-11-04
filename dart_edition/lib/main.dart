@@ -120,18 +120,6 @@ class SimpleLocation {
   }) : locationUUID = locationUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 }
 
-class CharacterProfile {
-  String name;
-  String description;
-  String characterUUID;
-  
-  CharacterProfile({
-    this.name = "新角色",
-    this.description = "",
-    String? characterUUID,
-  }) : characterUUID = characterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-}
-
 // 主要 ContentView
 class ContentView extends StatefulWidget {
   const ContentView({super.key});
@@ -187,7 +175,7 @@ class _ContentViewState extends State<ContentView> {
   ];
   
   List<LocationData> worldSettingsData = [];
-  List<CharacterProfile> characterData = [CharacterProfile()];
+  Map<String, Map<String, dynamic>> characterData = {};
   
   // 選取狀態
   String? selectedSegID;
@@ -1158,7 +1146,14 @@ class _ContentViewState extends State<ContentView> {
   }
   
   Widget _buildCharacterSettingsView() {
-    return CharacterView();
+    return CharacterView(
+      initialData: characterData,
+      onDataChanged: (updatedData) {
+        setState(() {
+          characterData = updatedData;
+        });
+      },
+    );
   }
   
   Widget _buildGlossaryView() {
@@ -1359,7 +1354,7 @@ class _ContentViewState extends State<ContentView> {
           )
         ];
         worldSettingsData = [LocationData(localName: "主要場景")];
-        characterData = [CharacterProfile(name: "主角")];
+        characterData = {};
         
         selectedSegID = segmentsData.first.segmentUUID;
         selectedChapID = segmentsData.first.chapters.first.chapterUUID;
@@ -1602,18 +1597,13 @@ class _ContentViewState extends State<ContentView> {
       buffer.write(worldXml);
     }
     
-    // Characters
-    buffer.writeln();
-    buffer.writeln("<Type>");
-    buffer.writeln("  <Name>Characters</Name>");
-    for (final character in characterData) {
-      buffer.writeln("  <Character>");
-      buffer.writeln("    <Name>${_escapeXml(character.name)}</Name>");
-      buffer.writeln("    <Description>${_escapeXml(character.description)}</Description>");
-      buffer.writeln("    <CharacterUUID>${character.characterUUID}</CharacterUUID>");
-      buffer.writeln("  </Character>");
+    // Characters (使用新的 CharacterCodec)
+    final characterXml = CharacterCodec.saveXML(characterData);
+    if (characterXml != null) {
+      buffer.writeln();
+      buffer.write(characterXml);
     }
-    buffer.writeln("</Type>");
+    
     buffer.writeln("</Project>");
     
     return buffer.toString();
@@ -1662,6 +1652,15 @@ class _ContentViewState extends State<ContentView> {
         }
       }
       
+      // 解析Characters (使用新的 CharacterCodec)
+      Map<String, Map<String, dynamic>>? loadedCharacterData;
+      if (XMLParser.hasTypeBlock(xmlContent, "Characters")) {
+        final blocks = XMLParser.extractTypeBlocks(xmlContent, "Characters");
+        if (blocks.isNotEmpty) {
+          loadedCharacterData = CharacterCodec.loadXML(blocks.first);
+        }
+      }
+      
       // 一次性更新所有數據
       setState(() {
         currentProject = projectFile;
@@ -1688,6 +1687,11 @@ class _ContentViewState extends State<ContentView> {
           worldSettingsData = loadedWorldSettings;
         }
         
+        // 更新Characters
+        if (loadedCharacterData != null && loadedCharacterData.isNotEmpty) {
+          characterData = loadedCharacterData;
+        }
+        
         // 設定初始選擇
         if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
           selectedSegID = segmentsData[0].segmentUUID;
@@ -1705,15 +1709,5 @@ class _ContentViewState extends State<ContentView> {
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");
     }
-  }
-  
-  // XML字符轉義
-  String _escapeXml(String text) {
-    return text
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll("'", "&apos;")
-        .replaceAll("\"", "&quot;");
   }
 }
