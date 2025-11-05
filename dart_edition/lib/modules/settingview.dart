@@ -15,13 +15,13 @@ class SettingView extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  Icons.info_outline,
+                  Icons.settings,
                   size: 32,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  "基本資訊",
+                  "設定",
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -39,6 +39,12 @@ class SettingView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text("主題設定(light/dark/system)"),
+                    Text("顏色設定"),
+                    Text("AutoSave"),
+                    Text("AutoBackup"),
+                    Text("Quit Without File Saving Warning"),
+                    Text("Language"),
                   ],
                 ),
               ),

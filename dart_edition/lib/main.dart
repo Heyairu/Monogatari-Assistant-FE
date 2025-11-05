@@ -9,6 +9,7 @@ import "modules/AbortView.dart" as AboutModule;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
+import "modules/settingview.dart";
 
 void main() {
   runApp(const MainApp());
@@ -680,6 +681,7 @@ class _ContentViewState extends State<ContentView> {
       {"icon": Icons.library_books, "label": "詞語參考"},
       {"icon": Icons.spellcheck, "label": "文本校正"},
       {"icon": Icons.auto_awesome, "label": "Copilot"},
+      {"icon": Icons.settings, "label": "設定"},
       {"icon": Icons.info, "label": "關於"},
     ];
     
@@ -743,6 +745,8 @@ class _ContentViewState extends State<ContentView> {
       case 7:
         return _buildCopilotView();
       case 8:
+        return _buildSettingView();
+      case 9:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -800,6 +804,10 @@ class _ContentViewState extends State<ContentView> {
                 NavigationRailDestination(
                   icon: Icon(Icons.auto_awesome),
                   label: Text("Copilot"),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.settings),
+                  label: Text("設定"),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.info),
@@ -876,6 +884,8 @@ class _ContentViewState extends State<ContentView> {
       case 7:
         return _buildCopilotView();
       case 8:
+        return _buildSettingView();
+      case 9:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -1182,6 +1192,10 @@ class _ContentViewState extends State<ContentView> {
       description: "Copilot 功能開發中...",
       color: Colors.deepPurple,
     );
+  }
+
+  Widget _buildSettingView() {
+    return const SettingView();
   }
   
   Widget _buildAboutView() {
