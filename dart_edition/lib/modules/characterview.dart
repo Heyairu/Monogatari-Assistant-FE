@@ -148,7 +148,7 @@ class CharacterCodec {
 
       // Common Ability Sliders
       final commonAbilityValues = data["commonAbilityValues"] as List<double>? ?? [];
-      final commonAbilityKeys = [
+      final commonAbilityLabels = [
         "cooking", "cleaning", "finance", "fitness",
         "art", "music", "dance", "handicraft",
         "social", "leadership", "analysis", "creativity",
@@ -156,8 +156,8 @@ class CharacterCodec {
       ];
       if (commonAbilityValues.isNotEmpty) {
         buffer.writeln("      <commonAbilitySliders>");
-        for (int i = 0; i < commonAbilityValues.length && i < commonAbilityKeys.length; i++) {
-          buffer.writeln("        ${saveSlider(commonAbilityKeys[i], "poor", "good", commonAbilityValues[i])}");
+        for (int i = 0; i < commonAbilityValues.length && i < commonAbilityLabels.length; i++) {
+          buffer.writeln("        ${saveSlider(commonAbilityLabels[i], "poor", "good", commonAbilityValues[i])}");
         }
         buffer.writeln("      </commonAbilitySliders>");
       }
@@ -346,18 +346,11 @@ class CharacterCodec {
 
     List<double> parseSliders(String xml, String tag) {
       final sliders = <double>[];
-      // 先提取指定 tag 的內容
-      final parentRegex = RegExp("<$tag>(.*?)</$tag>", dotAll: true);
-      final parentMatch = parentRegex.firstMatch(xml);
-      if (parentMatch != null) {
-        final content = parentMatch.group(1) ?? "";
-        // 在這個內容中查找所有 slider
-        final regex = RegExp("<slider[^>]*>(.*?)</slider>", dotAll: true);
-        final matches = regex.allMatches(content);
-        for (final match in matches) {
-          final value = double.tryParse(match.group(1) ?? "0") ?? 0;
-          sliders.add(value);
-        }
+      final regex = RegExp("<slider[^>]*>(.*?)</slider>", dotAll: true);
+      final matches = regex.allMatches(xml);
+      for (final match in matches) {
+        final value = double.tryParse(match.group(1) ?? "0") ?? 0;
+        sliders.add(value);
       }
       return sliders;
     }
