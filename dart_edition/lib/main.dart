@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
+import "bin/theme_manager.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -11,23 +12,82 @@ import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
 import "modules/settingview.dart";
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MainApp());
 }
 
-class MainApp extends StatelessWidget {
+class MainApp extends StatefulWidget {
   const MainApp({super.key});
 
   @override
+  State<MainApp> createState() => _MainAppState();
+}
+
+class _MainAppState extends State<MainApp> {
+  final ThemeManager _themeManager = ThemeManager();
+  bool _isInitializing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+    _themeManager.addListener(() {
+      setState(() {});
+    });
+  }
+
+  Future<void> _initializeApp() async {
+    await _themeManager.initialize();
+    setState(() {
+      _isInitializing = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _themeManager.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // 顯示載入畫面直到主題管理器初始化完成
+    if (_isInitializing) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text("正在載入..."),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp(
       title: "物語Assistant",
-      theme: ThemeData(
-        primarySwatch: Colors.lightBlue,
-        useMaterial3: true,
-      ),
-      home: const ContentView(),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: _convertThemeMode(_themeManager.themeMode),
+      home: ContentView(themeManager: _themeManager),
     );
+  }
+
+  ThemeMode _convertThemeMode(AppThemeMode mode) {
+    switch (mode) {
+      case AppThemeMode.light:
+        return ThemeMode.light;
+      case AppThemeMode.dark:
+        return ThemeMode.dark;
+      case AppThemeMode.system:
+        return ThemeMode.system;
+    }
   }
 }
 
@@ -123,7 +183,9 @@ class SimpleLocation {
 
 // 主要 ContentView
 class ContentView extends StatefulWidget {
-  const ContentView({super.key});
+  final ThemeManager themeManager;
+  
+  const ContentView({super.key, required this.themeManager});
 
   @override
   State<ContentView> createState() => _ContentViewState();
@@ -1195,7 +1257,7 @@ class _ContentViewState extends State<ContentView> {
   }
 
   Widget _buildSettingView() {
-    return const SettingView();
+    return SettingView(themeManager: widget.themeManager);
   }
   
   Widget _buildAboutView() {
