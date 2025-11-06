@@ -58,7 +58,7 @@ class AboutView extends StatelessWidget {
 
               // 版本號
               Text(
-                "版本 0.2.89",
+                "版本 0.5.14",
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                 ),

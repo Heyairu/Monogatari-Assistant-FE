@@ -1,8 +1,10 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
 import "bin/theme_manager.dart";
+import "bin/settings_manager.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -14,6 +16,9 @@ import "modules/settingview.dart";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 初始化 window_manager
+  await windowManager.ensureInitialized();
+  
   runApp(const MainApp());
 }
 
@@ -26,6 +31,7 @@ class MainApp extends StatefulWidget {
 
 class _MainAppState extends State<MainApp> {
   final ThemeManager _themeManager = ThemeManager();
+  final SettingsManager _settingsManager = SettingsManager();
   bool _isInitializing = true;
 
   @override
@@ -38,7 +44,10 @@ class _MainAppState extends State<MainApp> {
   }
 
   Future<void> _initializeApp() async {
-    await _themeManager.initialize();
+    await Future.wait([
+      _themeManager.initialize(),
+      _settingsManager.initialize(),
+    ]);
     setState(() {
       _isInitializing = false;
     });
@@ -47,6 +56,7 @@ class _MainAppState extends State<MainApp> {
   @override
   void dispose() {
     _themeManager.dispose();
+    _settingsManager.dispose();
     super.dispose();
   }
 
@@ -75,7 +85,10 @@ class _MainAppState extends State<MainApp> {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _convertThemeMode(_themeManager.themeMode),
-      home: ContentView(themeManager: _themeManager),
+      home: ContentView(
+        themeManager: _themeManager,
+        settingsManager: _settingsManager,
+      ),
     );
   }
 
@@ -184,14 +197,19 @@ class SimpleLocation {
 // 主要 ContentView
 class ContentView extends StatefulWidget {
   final ThemeManager themeManager;
+  final SettingsManager settingsManager;
   
-  const ContentView({super.key, required this.themeManager});
+  const ContentView({
+    super.key,
+    required this.themeManager,
+    required this.settingsManager,
+  });
 
   @override
   State<ContentView> createState() => _ContentViewState();
 }
 
-class _ContentViewState extends State<ContentView> {
+class _ContentViewState extends State<ContentView> with WindowListener {
   // 狀態變數
   int slidePage = 0;
   int autoSaveTime = 1;
@@ -250,6 +268,8 @@ class _ContentViewState extends State<ContentView> {
   bool showingError = false;
   String errorMessage = "";
   bool isLoading = false;
+  bool hasUnsavedChanges = false;
+  String? _lastSavedContent;
   
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
@@ -257,6 +277,10 @@ class _ContentViewState extends State<ContentView> {
   @override
   void initState() {
     super.initState();
+    
+    // 註冊視窗監聽器並設置視窗選項
+    windowManager.addListener(this);
+    _initWindowManager();
     
     // 初始化選取項目和編輯器內容
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
@@ -275,6 +299,9 @@ class _ContentViewState extends State<ContentView> {
           contentText = textController.text;
           totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
           
+          // 標記有未儲存的變更
+          _markAsModified();
+          
           // 當文字內容變化時，清除所有高亮和搜尋狀態
           _searchMatches = [];
           _currentMatchIndex = -1;
@@ -291,12 +318,73 @@ class _ContentViewState extends State<ContentView> {
   
   @override
   void dispose() {
+    windowManager.removeListener(this);
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
     editorFocusNode.dispose();
     super.dispose();
   }
+  
+  // WindowListener 實作
+  
+  /// 初始化視窗管理器
+  Future<void> _initWindowManager() async {
+    // 設置視窗為可以被攔截關閉
+    await windowManager.setPreventClose(true);
+  }
+  
+  @override
+  void onWindowClose() async {
+    // 處理視窗關閉事件
+    final shouldClose = await _handleExit();
+    if (shouldClose) {
+      await windowManager.destroy();
+    }
+  }
+  
+  @override
+  void onWindowFocus() {
+    // 視窗獲得焦點時可以做一些事情（暫時不需要）
+  }
+  
+  @override
+  void onWindowBlur() {
+    // 視窗失去焦點時可以做一些事情（暫時不需要）
+  }
+  
+  @override
+  void onWindowMaximize() {}
+  
+  @override
+  void onWindowUnmaximize() {}
+  
+  @override
+  void onWindowMinimize() {}
+  
+  @override
+  void onWindowRestore() {}
+  
+  @override
+  void onWindowResize() {}
+  
+  @override
+  void onWindowMove() {}
+  
+  @override
+  void onWindowEnterFullScreen() {}
+  
+  @override
+  void onWindowLeaveFullScreen() {}
+  
+  @override
+  void onWindowEvent(String eventName) {}
+  
+  @override
+  void onWindowDocked() {}
+  
+  @override
+  void onWindowUndocked() {}
   
   // 搜尋與取代功能實作
   
@@ -514,17 +602,28 @@ class _ContentViewState extends State<ContentView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _buildAppBar(),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
-          if (constraints.maxWidth < 800) {
-            return _buildMobileLayout();
-          } else {
-            return _buildDesktopLayout();
-          }
-        },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
+        
+        final shouldPop = await _handleExit();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: _buildAppBar(),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
+            if (constraints.maxWidth < 800) {
+              return _buildMobileLayout();
+            } else {
+              return _buildDesktopLayout();
+            }
+          },
+        ),
       ),
     );
   }
@@ -1257,7 +1356,10 @@ class _ContentViewState extends State<ContentView> {
   }
 
   Widget _buildSettingView() {
-    return SettingView(themeManager: widget.themeManager);
+    return SettingView(
+      themeManager: widget.themeManager,
+      settingsManager: widget.settingsManager,
+    );
   }
   
   Widget _buildAboutView() {
@@ -1397,6 +1499,137 @@ class _ContentViewState extends State<ContentView> {
     }
   }
   
+  // 變更追蹤和退出處理
+  
+  /// 標記內容已修改
+  void _markAsModified() {
+    if (!hasUnsavedChanges) {
+      setState(() {
+        hasUnsavedChanges = true;
+      });
+    }
+  }
+  
+  /// 標記內容已儲存
+  void _markAsSaved() {
+    setState(() {
+      hasUnsavedChanges = false;
+      _lastSavedContent = _generateProjectXML();
+    });
+  }
+  
+  /// 檢查是否有未儲存的變更
+  bool _hasUnsavedChanges() {
+    if (currentProject == null) return false;
+    
+    // 同步編輯器內容
+    _syncEditorToSelectedChapter();
+    
+    // 比較當前內容與上次儲存的內容
+    final currentContent = _generateProjectXML();
+    return hasUnsavedChanges || (_lastSavedContent != null && _lastSavedContent != currentContent);
+  }
+  
+  /// 處理退出請求
+  Future<bool> _handleExit() async {
+    // 檢查是否需要顯示警告
+    if (!widget.settingsManager.showExitWarning) {
+      return true;
+    }
+    
+    // 檢查是否有未儲存的變更
+    if (!_hasUnsavedChanges()) {
+      return true;
+    }
+    
+    // 顯示退出確認對話框
+    return await _showExitConfirmDialog() ?? false;
+  }
+  
+  /// 顯示退出確認對話框
+  Future<bool?> _showExitConfirmDialog() async {
+    bool dontShowAgain = false;
+    
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text("未儲存的變更"),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("您有未儲存的變更，是否要在退出前儲存？"),
+                  const SizedBox(height: 16),
+                  CheckboxListTile(
+                    value: dontShowAgain,
+                    onChanged: (bool? value) {
+                      setDialogState(() {
+                        dontShowAgain = value ?? false;
+                      });
+                    },
+                    title: const Text("以後不再提示"),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(false); // 取消
+                  },
+                  child: const Text("取消"),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    // 儲存設定
+                    if (dontShowAgain) {
+                      await widget.settingsManager.setShowExitWarning(false);
+                    }
+                    Navigator.of(context).pop(true); // 不儲存，直接退出
+                  },
+                  child: Text(
+                    "不儲存",
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    // 儲存設定
+                    if (dontShowAgain) {
+                      await widget.settingsManager.setShowExitWarning(false);
+                    }
+                    // 儲存檔案
+                    await _saveProject();
+                    if (context.mounted) {
+                      Navigator.of(context).pop(true); // 儲存後退出
+                    }
+                  },
+                  child: const Text("儲存"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+  
   // 檔案操作方法
   Future<void> _newProject() async {
     try {
@@ -1442,6 +1675,10 @@ class _ContentViewState extends State<ContentView> {
         _isSyncing = false;
         isLoading = false;
       });
+      
+      // 重設已儲存狀態
+      hasUnsavedChanges = false;
+      _lastSavedContent = null;
       
       _showMessage("新專案建立成功！");
     } catch (e) {
@@ -1494,6 +1731,7 @@ class _ContentViewState extends State<ContentView> {
         isLoading = false;
       });
       
+      _markAsSaved();
       _showMessage("專案儲存成功！");
     } catch (e) {
       setState(() {
@@ -1524,6 +1762,7 @@ class _ContentViewState extends State<ContentView> {
         isLoading = false;
       });
       
+      _markAsSaved();
       _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
     } catch (e) {
       setState(() {
@@ -1781,6 +2020,9 @@ class _ContentViewState extends State<ContentView> {
           totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
         }
       });
+      
+      // 標記為已儲存狀態（剛載入的檔案）
+      _markAsSaved();
       
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");

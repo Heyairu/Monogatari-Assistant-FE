@@ -260,6 +260,36 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "screen_retriever",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/screen_retriever-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
+      "name": "screen_retriever_linux",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/screen_retriever_linux-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
+      "name": "screen_retriever_macos",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/screen_retriever_macos-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
+      "name": "screen_retriever_platform_interface",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/screen_retriever_platform_interface-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
+      "name": "screen_retriever_windows",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/screen_retriever_windows-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
       "name": "shared_preferences",
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.3",
       "packageUri": "lib/",
@@ -384,6 +414,12 @@
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/win32-5.14.0",
       "packageUri": "lib/",
       "languageVersion": "3.8"
+    },
+    {
+      "name": "window_manager",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/window_manager-0.4.3",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
     },
     {
       "name": "xdg_directories",

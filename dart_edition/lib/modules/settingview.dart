@@ -1,10 +1,16 @@
 import "package:flutter/material.dart";
 import "../bin/theme_manager.dart";
+import "../bin/settings_manager.dart";
 
 class SettingView extends StatefulWidget {
   final ThemeManager themeManager;
+  final SettingsManager settingsManager;
   
-  const SettingView({super.key, required this.themeManager});
+  const SettingView({
+    super.key,
+    required this.themeManager,
+    required this.settingsManager,
+  });
 
   @override
   State<SettingView> createState() => _SettingViewState();
@@ -81,7 +87,7 @@ class _SettingViewState extends State<SettingView> {
             
             const SizedBox(height: 24),
             
-            // 其他設定卡片（佔位）
+            // 其他設定卡片
             Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -106,9 +112,18 @@ class _SettingViewState extends State<SettingView> {
                       ],
                     ),
                     const SizedBox(height: 16),
+                    _buildSwitchSetting(
+                      "退出時提示",
+                      Icons.warning,
+                      "關閉應用前提示儲存未儲存的變更",
+                      widget.settingsManager.showExitWarning,
+                      (value) async {
+                        await widget.settingsManager.setShowExitWarning(value);
+                        setState(() {});
+                      },
+                    ),
                     _buildPlaceholderSetting("自動儲存", Icons.save),
                     _buildPlaceholderSetting("自動備份", Icons.backup),
-                    _buildPlaceholderSetting("退出時提示", Icons.warning),
                     _buildPlaceholderSetting("語言設定", Icons.language),
                   ],
                 ),
@@ -259,6 +274,41 @@ class _SettingViewState extends State<SettingView> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 開關設定項目
+  Widget _buildSwitchSetting(
+    String title,
+    IconData icon,
+    String? subtitle,
+    bool value,
+    Future<void> Function(bool) onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            : null,
+        trailing: Switch(
+          value: value,
+          onChanged: (newValue) async {
+            await onChanged(newValue);
+          },
+        ),
       ),
     );
   }
