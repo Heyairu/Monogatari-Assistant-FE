@@ -183,5 +183,5 @@ lib/
     ├── worldsettingsview.dart     # 世界設定模組
     ├── characterview.dart         # 角色設定模組
     ├── settingview.dart           # 設定模組
-    └── AbortView.dart             # 關於模組
+    └── AboutView.dart             # 關於模組
 ```
