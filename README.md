@@ -28,7 +28,7 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 | Items | Minimum Requirements |
 |------|----------|
 | CPU | x64/Arm64, 1GHz up, Intel Celeron equivalenta & greater |
-| RAM | 2GB+ |
+| RAM | 2GB up |
 | Storage | 500MiB Available |
 | System | Win10(1809) / macOS 10.14 / Ubuntu 20.04 |
 
