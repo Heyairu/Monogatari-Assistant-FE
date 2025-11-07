@@ -24,7 +24,7 @@ import "bin/settings_manager.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
-import "modules/AbortView.dart" as AboutModule;
+import "modules/AboutView.dart" as AboutModule;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";

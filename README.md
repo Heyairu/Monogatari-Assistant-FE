@@ -1,6 +1,6 @@
 # Monogatari Assistant FE
 
-## 物語アシスタント、物語Assistant
+![Title](/Title.png "Title")
 
 > 一款專為故事創作者設計的寫作助手應用程式
 
