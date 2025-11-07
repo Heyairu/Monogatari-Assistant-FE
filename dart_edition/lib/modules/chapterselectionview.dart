@@ -1,7 +1,17 @@
-//
-//  ChapterSelectionView.dart
-//  MonogatariAssistant
-//
+/*
+ * ものがたり·アシスタント - Monogatari Assistant
+ * Copyright (c) 2025 Heyairu（部屋伊琉）
+ *
+ * Licensed under the Business Source License 1.1 (Modified).
+ * You may not use this file except in compliance with the License.
+ * Change Date: 2030-11-04 05:14 a.m. (UTC+8)
+ * Change License: Apache License 2.0
+ *
+ * Commercial use allowed under conditions described in Section 1;
+ * Competing products (≥3 overlapping modules or similar UI structure)
+ * and repackaging without permission are prohibited.
+ */
+
 //  Ported from the original SwiftUI ChapterSelection page.
 //  Created by 部屋いる on 2025/10/1.
 //  Refactored on 2025/10/2 based on Swift implementation

@@ -1,3 +1,17 @@
+/*
+ * ものがたり·アシスタント - Monogatari Assistant
+ * Copyright (c) 2025 Heyairu（部屋伊琉）
+ *
+ * Licensed under the Business Source License 1.1 (Modified).
+ * You may not use this file except in compliance with the License.
+ * Change Date: 2030-11-04 05:14 a.m. (UTC+8)
+ * Change License: Apache License 2.0
+ *
+ * Commercial use allowed under conditions described in Section 1;
+ * Competing products (≥3 overlapping modules or similar UI structure)
+ * and repackaging without permission are prohibited.
+ */
+
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter/foundation.dart" show kIsWeb;
@@ -1745,21 +1759,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         baseInfoData = BaseInfoModule.BaseInfoData();
         segmentsData = [
           ChapterModule.SegmentData(
-            segmentName: "第一部",
-            chapters: [ChapterModule.ChapterData(chapterName: "第一章", chapterContent: "")],
+            segmentName: "Seg 1",
+            chapters: [ChapterModule.ChapterData(chapterName: "Chapter 1", chapterContent: "")],
           )
         ];
         outlineData = [
           OutlineModule.StorylineData(
-            storylineName: "主線劇情",
-            storylineType: "起",
-            scenes: [
-              OutlineModule.StoryEventData(
-                storyEvent: "開始事件",
-                scenes: [OutlineModule.SceneData(sceneName: "開場場景")],
-                memo: ""
-              )
-            ],
+            storylineName: "序章",
+            storylineType: "開場",
+            scenes: [],
             memo: ""
           )
         ];

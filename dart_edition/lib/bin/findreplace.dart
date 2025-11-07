@@ -1,3 +1,15 @@
+/*
+ * ものがたり·アシスタント - Monogatari Assistant
+ * Copyright (c) 2025 Heyairu（部屋伊琉）
+ *
+ * Licensed under the Business Source License 1.1 (Modified).
+ * You may not use this file except in compliance with the License.
+ * Change Date: 2030-11-04 05:14 a.m. (UTC+8)
+ * Change License: Apache License 2.0
+ *
+ * Commercial use allowed under conditions described in Section 1;
+ */
+
 import "package:flutter/material.dart";
 
 // 搜尋選項類別

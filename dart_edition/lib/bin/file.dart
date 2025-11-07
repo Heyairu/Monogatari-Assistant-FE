@@ -1,3 +1,16 @@
+/*
+ * ものがたり·アシスタント - Monogatari Assistant
+ * Copyright (c) 2025 Heyairu（部屋伊琉）
+ *
+ * Licensed under the Business Source License 1.1 (Modified).
+ * You may not use this file except in compliance with the License.
+ * Change Date: 2030-11-04 05:14 a.m. (UTC+8)
+ * Change License: Apache License 2.0
+ *
+ * Commercial use allowed under conditions described in Section 1;
+ */
+
+
 import "dart:io";
 import "dart:convert";
 import "package:file_picker/file_picker.dart";
@@ -254,8 +267,8 @@ class FileService {
 
 <Type>
   <Name>ChapterSelection</Name>
-  <Segment Name="第一部" UUID="${_generateUUID()}">
-    <Chapter Name="第一章" UUID="${_generateUUID()}">
+  <Segment Name="Seg 1" UUID="${_generateUUID()}">
+    <Chapter Name="Chapter 1" UUID="${_generateUUID()}">
       <Content></Content>
     </Chapter>
   </Segment>
@@ -264,8 +277,8 @@ class FileService {
 <Type>
   <Name>Outline</Name>
   <Storyline>
-    <StorylineName>主線劇情</StorylineName>
-    <StorylineType>起</StorylineType>
+    <StorylineName>序章</StorylineName>
+    <StorylineType>開場</StorylineType>
     <Memo></Memo>
     <ChapterUUID>${_generateUUID()}</ChapterUUID>
   </Storyline>
