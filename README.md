@@ -28,14 +28,14 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 | Items | Minimum Requirements |
 |------|----------|
 | CPU | x64/Arm64, 1GHz up, Intel Celeron equivalenta & greater |
-| RAM | 2GB up |
+| RAM | 2 GiB up |
 | Storage | 500MiB Available |
 | System | Win10(1809) / macOS 10.14 / Ubuntu 20.04 |
 
 | Items | Recommended |
 |------|----------|
 | CPU | x64/Arm64, i5-4570 equivalent & greater |
-| RAM | 8GB up |
+| RAM | 8 GiB up |
 | Storage | 1GiB Available |
 | System | Win10(22H2)+ / macOS 14+ / Ubuntu 20.04+ |
 
@@ -44,13 +44,13 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 | Items | Minimum Requirements |
 |------|----------|
 | System | Android 5 (API Level 21) |
-| RAM | 2GB up |
+| RAM | 2 GiB up |
 | Storage | 200MiB Available |
 
 | Items | Recommended |
 |------|----------|
 | System | Android 8+ |
-| RAM | 6GB up |
+| RAM | 6 GiB up |
 | Storage | 500MiB Available |
 
 ### iOS
