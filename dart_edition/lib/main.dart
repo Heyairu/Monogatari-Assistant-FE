@@ -1,5 +1,7 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:flutter/foundation.dart" show kIsWeb;
+import "dart:io" show Platform;
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
@@ -16,8 +18,11 @@ import "modules/settingview.dart";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 初始化 window_manager
-  await windowManager.ensureInitialized();
+  
+  // 只在桌面平台初始化 window_manager
+  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+    await windowManager.ensureInitialized();
+  }
   
   runApp(const MainApp());
 }
@@ -274,13 +279,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
   
+  // 平台檢查
+  bool get _isDesktop => !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+  
   @override
   void initState() {
     super.initState();
     
-    // 註冊視窗監聽器並設置視窗選項
-    windowManager.addListener(this);
-    _initWindowManager();
+    // 只在桌面平台註冊視窗監聽器並設置視窗選項
+    if (_isDesktop) {
+      windowManager.addListener(this);
+      _initWindowManager();
+    }
     
     // 初始化選取項目和編輯器內容
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
@@ -318,7 +328,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    if (_isDesktop) {
+      windowManager.removeListener(this);
+    }
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
@@ -330,12 +342,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   /// 初始化視窗管理器
   Future<void> _initWindowManager() async {
+    if (!_isDesktop) return;
     // 設置視窗為可以被攔截關閉
     await windowManager.setPreventClose(true);
   }
   
   @override
   void onWindowClose() async {
+    if (!_isDesktop) return;
     // 處理視窗關閉事件
     final shouldClose = await _handleExit();
     if (shouldClose) {
@@ -810,7 +824,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < 9; i++)
+                for (int i = 0; i < 10; i++)
                   _buildMobileNavigationChip(i),
               ],
             ),
@@ -820,9 +834,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePage.clamp(0, 8),
+            index: slidePage.clamp(0, 9),
             children: [
-              for (int i = 0; i < 9; i++)
+              for (int i = 0; i < 10; i++)
                 _buildSpecificPageContent(i),
             ],
           ),
@@ -1238,6 +1252,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         setState(() {
           baseInfoData = updatedData;
         });
+        _markAsModified();
       },
     );
   }
@@ -1256,6 +1271,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         setState(() {
           segmentsData = updatedSegments;
         });
+        
+        _markAsModified();
         
         // 再讀：這會透過 onContentChanged 自動發生
       },
@@ -1299,6 +1316,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         setState(() {
           outlineData = updatedOutlines;
         });
+        _markAsModified();
       },
     );
   }
@@ -1310,8 +1328,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         setState(() {
           worldSettingsData = newLocations;
         });
-        // 移除自動存檔，讓用戶手動儲存
-        // 這樣避免每次新建、修改都觸發存檔
+        _markAsModified();
       },
     );
   }
@@ -1323,6 +1340,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         setState(() {
           characterData = updatedData;
         });
+        _markAsModified();
       },
     );
   }
@@ -1543,7 +1561,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
     
     // 顯示退出確認對話框
-    return await _showExitConfirmDialog() ?? false;
+    final result = await _showExitConfirmDialog();
+    
+    // null = 取消退出, true = 不儲存直接退出, false = 儲存後退出
+    if (result == null) {
+      return false; // 取消退出
+    }
+    
+    // 如果選擇儲存（result == false），檔案已在對話框中保存
+    // 無論選擇哪個選項，都允許退出
+    return true;
   }
   
   /// 顯示退出確認對話框
@@ -1589,7 +1616,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.of(context).pop(false); // 取消
+                    Navigator.of(context).pop(null); // 取消
                   },
                   child: const Text("取消"),
                 ),
@@ -1617,7 +1644,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     // 儲存檔案
                     await _saveProject();
                     if (context.mounted) {
-                      Navigator.of(context).pop(true); // 儲存後退出
+                      Navigator.of(context).pop(false); // 儲存後退出
                     }
                   },
                   child: const Text("儲存"),
@@ -1630,8 +1657,82 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     );
   }
   
+  /// 顯示未儲存變更對話框（用於新建檔案、開啟檔案等操作）
+  /// 返回值：null = 取消, true = 不儲存並繼續, false = 儲存後繼續
+  Future<bool?> _showUnsavedChangesDialog({
+    required String title,
+    required String message,
+  }) async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 12),
+              Text(title),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(null); // 取消
+              },
+              child: const Text("取消"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true); // 不儲存，繼續操作
+              },
+              child: Text(
+                "不儲存",
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(false); // 需要儲存
+              },
+              child: const Text("儲存"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
   // 檔案操作方法
   Future<void> _newProject() async {
+    // 檢查是否有未儲存的變更
+    if (_hasUnsavedChanges()) {
+      final shouldProceed = await _showUnsavedChangesDialog(
+        title: "建立新專案",
+        message: "您有未儲存的變更，是否要在建立新專案前儲存？",
+      );
+      
+      if (shouldProceed == null) {
+        return; // 用戶取消操作
+      }
+      
+      if (!shouldProceed) {
+        // 用戶選擇儲存
+        await _saveProject();
+        if (_hasUnsavedChanges()) {
+          // 如果儲存失敗或被取消，不繼續
+          return;
+        }
+      }
+      // 如果 shouldProceed == true，表示不儲存，繼續建立新專案
+    }
+    
     try {
       setState(() {
         isLoading = true;
@@ -1690,6 +1791,28 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
   
   Future<void> _openProject() async {
+    // 檢查是否有未儲存的變更
+    if (_hasUnsavedChanges()) {
+      final shouldProceed = await _showUnsavedChangesDialog(
+        title: "開啟專案",
+        message: "您有未儲存的變更，是否要在開啟新專案前儲存？",
+      );
+      
+      if (shouldProceed == null) {
+        return; // 用戶取消操作
+      }
+      
+      if (!shouldProceed) {
+        // 用戶選擇儲存
+        await _saveProject();
+        if (_hasUnsavedChanges()) {
+          // 如果儲存失敗或被取消，不繼續
+          return;
+        }
+      }
+      // 如果 shouldProceed == true，表示不儲存，繼續開啟專案
+    }
+    
     try {
       setState(() {
         isLoading = true;
