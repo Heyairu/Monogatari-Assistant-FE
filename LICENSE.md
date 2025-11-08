@@ -1,11 +1,16 @@
 **Business Source License 1.1 (Modified)**
 
 Licensor: Heyairu（部屋伊琉）
+
 Licensed Work: [Project Name]
+
 The Licensed Work is (c) 2025 Heyairu（部屋伊琉）
 
+
 Change Date: 2030-11-04 05:14 a.m. (UTC+8) (Around five years after initial release)
+
 Change License: Apache License, Version 2.0
+
 [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
 ---
