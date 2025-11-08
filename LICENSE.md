@@ -2,7 +2,7 @@
 
 Licensor: Heyairu（部屋伊琉）
 
-Licensed Work: [Project Name]
+Licensed Work: Monogatari Assistant
 
 The Licensed Work is (c) 2025 Heyairu（部屋伊琉）
 
