@@ -18,33 +18,34 @@ class AboutView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // 應用圖標
-            Container(
-              padding: const EdgeInsets.all(24),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.asset(
-                  "assets/icon/Title.png",
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 應用圖標
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.asset(
+                    "assets/icon/Title.png",
 
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    // 如果圖片載入失敗，顯示預設圖標
-                    return Icon(
-                      Icons.edit_note,
-                      size: 80,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    );
-                  },
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      // 如果圖片載入失敗，顯示預設圖標
+                      return Icon(
+                        Icons.edit_note,
+                        size: 80,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
               
               const SizedBox(height: 24),
               
@@ -131,7 +132,8 @@ class AboutView extends StatelessWidget {
             ],
           ),
         ),
-      );
+      ),
+    );
   }
   
   Widget _buildFeatureItem(BuildContext context, IconData icon, String text) {

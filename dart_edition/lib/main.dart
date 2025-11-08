@@ -14,8 +14,6 @@
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
-import "package:flutter/foundation.dart" show kIsWeb;
-import "dart:io" show Platform;
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
@@ -32,11 +30,8 @@ import "modules/settingview.dart";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 只在桌面平台初始化 window_manager
-  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-    await windowManager.ensureInitialized();
-  }
+  // 初始化 window_manager
+  await windowManager.ensureInitialized();
   
   runApp(const MainApp());
 }
@@ -293,18 +288,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
   
-  // 平台檢查
-  bool get _isDesktop => !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-  
   @override
   void initState() {
     super.initState();
     
-    // 只在桌面平台註冊視窗監聽器並設置視窗選項
-    if (_isDesktop) {
-      windowManager.addListener(this);
-      _initWindowManager();
-    }
+    // 註冊視窗監聽器並設置視窗選項
+    windowManager.addListener(this);
+    _initWindowManager();
     
     // 初始化選取項目和編輯器內容
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
@@ -342,9 +332,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   @override
   void dispose() {
-    if (_isDesktop) {
-      windowManager.removeListener(this);
-    }
+    windowManager.removeListener(this);
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
@@ -356,14 +344,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   /// 初始化視窗管理器
   Future<void> _initWindowManager() async {
-    if (!_isDesktop) return;
     // 設置視窗為可以被攔截關閉
     await windowManager.setPreventClose(true);
   }
   
   @override
   void onWindowClose() async {
-    if (!_isDesktop) return;
     // 處理視窗關閉事件
     final shouldClose = await _handleExit();
     if (shouldClose) {
@@ -838,7 +824,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < 10; i++)
+                for (int i = 0; i < 9; i++)
                   _buildMobileNavigationChip(i),
               ],
             ),
@@ -848,9 +834,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePage.clamp(0, 9),
+            index: slidePage.clamp(0, 8),
             children: [
-              for (int i = 0; i < 10; i++)
+              for (int i = 0; i < 9; i++)
                 _buildSpecificPageContent(i),
             ],
           ),
