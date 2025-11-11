@@ -376,8 +376,8 @@ class WorldSettingsCodec {
     }
 
     if (isWorldBlock) {
-      // 包一層「全部」根
-      return [LocationData(localName: "全部", child: roots)];
+      // 直接返回根節點列表，不自動包裝「全部」
+      return roots;
     }
     return null;
   }

@@ -31,6 +31,7 @@ flutter:
   # 添加資源文件
   assets:
     - assets/icon/Title.png
+    - assets/icon/app_icon.png
 
 # 配置應用圖標
 flutter_launcher_icons:

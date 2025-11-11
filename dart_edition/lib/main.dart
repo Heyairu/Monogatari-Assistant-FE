@@ -644,15 +644,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // AppBar 建構方法
   PreferredSizeWidget _buildAppBar() {
-    String title = "物語Assistant";
-    if (currentProject != null) {
-      title += " - ${currentProject!.nameWithoutExtension}";
-      if (currentProject!.isNewFile) {
-        title += " (未儲存)";
-      }
-    }
+    String title = currentProject != null 
+        ? "${currentProject!.isNewFile ? "*" : ""}${currentProject!.nameWithoutExtension}"
+        : "新專案";
     
     return AppBar(
+      leading: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Image.asset(
+          "assets/icon/app_icon.png",
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(Icons.auto_stories, size: 32);
+          },
+        ),
+      ),
       title: Row(
         children: [
           if (isLoading)
@@ -1071,130 +1076,135 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildEditor() {
     return Container(
       color: Theme.of(context).colorScheme.surface,
-      child: Column(
-        children: [
+      child: CustomScrollView(
+        slivers: [
           // 搜尋列（當開啟時）
           if (showFindReplaceWindow)
-            FindReplaceBar(
-              findController: findController,
-              replaceController: replaceController,
-              options: findReplaceOptions,
-              currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
-              totalMatches: _searchMatches.length,
-              onFindNext: (findText, replaceText, options) {
-                _performFind(findText, options, forward: true);
-              },
-              onFindPrevious: (findText, replaceText, options) {
-                _performFind(findText, options, forward: false);
-              },
-              onReplace: (findText, replaceText, options) {
-                _performReplace(findText, replaceText, options);
-              },
-              onReplaceAll: (findText, replaceText, options) {
-                _performReplaceAll(findText, replaceText, options);
-              },
-              onSearchChanged: (findText, options) {
-                // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
-                if (findText.isNotEmpty) {
-                  final text = textController.text;
-                  if (text.isNotEmpty) {
+            SliverToBoxAdapter(
+              child: FindReplaceBar(
+                findController: findController,
+                replaceController: replaceController,
+                options: findReplaceOptions,
+                currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
+                totalMatches: _searchMatches.length,
+                onFindNext: (findText, replaceText, options) {
+                  _performFind(findText, options, forward: true);
+                },
+                onFindPrevious: (findText, replaceText, options) {
+                  _performFind(findText, options, forward: false);
+                },
+                onReplace: (findText, replaceText, options) {
+                  _performReplace(findText, replaceText, options);
+                },
+                onReplaceAll: (findText, replaceText, options) {
+                  _performReplaceAll(findText, replaceText, options);
+                },
+                onSearchChanged: (findText, options) {
+                  // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
+                  if (findText.isNotEmpty) {
+                    final text = textController.text;
+                    if (text.isNotEmpty) {
+                      setState(() {
+                        _searchMatches = findAllMatches(text, findText, options);
+                        // 如果當前選中的匹配項仍然有效，保持它
+                        if (_currentMatchIndex >= _searchMatches.length) {
+                          _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
+                        }
+                        // 更新高亮顯示
+                        textController.updateHighlights(
+                          matches: _searchMatches,
+                          currentIndex: _currentMatchIndex,
+                        );
+                      });
+                    }
+                  } else {
                     setState(() {
-                      _searchMatches = findAllMatches(text, findText, options);
-                      // 如果當前選中的匹配項仍然有效，保持它
-                      if (_currentMatchIndex >= _searchMatches.length) {
-                        _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
-                      }
-                      // 更新高亮顯示
-                      textController.updateHighlights(
-                        matches: _searchMatches,
-                        currentIndex: _currentMatchIndex,
-                      );
+                      _searchMatches = [];
+                      _currentMatchIndex = -1;
+                      textController.clearHighlights();
                     });
                   }
-                } else {
+                },
+                onClose: () {
                   setState(() {
+                    showFindReplaceWindow = false;
+                    // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
                     _searchMatches = [];
                     _currentMatchIndex = -1;
                     textController.clearHighlights();
+                    // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                   });
-                }
-              },
-              onClose: () {
-                setState(() {
-                  showFindReplaceWindow = false;
-                  // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
-                  _searchMatches = [];
-                  _currentMatchIndex = -1;
-                  textController.clearHighlights();
-                  // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
-                });
-              },
+                },
+              ),
             ),
           
           // 編輯器工具列
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                  ),
                 ),
               ),
-            ),
-            child: Row(
-              children: [
-                const Spacer(),
-                
-                // 編輯工具
-                IconButton(
-                  icon: const Icon(Icons.select_all),
-                  onPressed: () => _performEditorAction("selectAll"),
-                  tooltip: "Select All",
-                  iconSize: 20,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.content_cut),
-                  onPressed: () => _performEditorAction("cut"),
-                  tooltip: "Cut",
-                  iconSize: 20,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.content_copy),
-                  onPressed: () => _performEditorAction("copy"),
-                  tooltip: "Copy",
-                  iconSize: 20,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.content_paste),
-                  onPressed: () => _performEditorAction("paste"),
-                  tooltip: "Paste",
-                  iconSize: 20,
-                ),
-                
-                const SizedBox(width: 8),
-                
-                // 字數統計
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(16),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  
+                  // 編輯工具
+                  IconButton(
+                    icon: const Icon(Icons.select_all),
+                    onPressed: () => _performEditorAction("selectAll"),
+                    tooltip: "Select All",
+                    iconSize: 20,
                   ),
-                  child: Text(
-                    "字數：$totalWords",
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
+                  IconButton(
+                    icon: const Icon(Icons.content_cut),
+                    onPressed: () => _performEditorAction("cut"),
+                    tooltip: "Cut",
+                    iconSize: 20,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.content_copy),
+                    onPressed: () => _performEditorAction("copy"),
+                    tooltip: "Copy",
+                    iconSize: 20,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.content_paste),
+                    onPressed: () => _performEditorAction("paste"),
+                    tooltip: "Paste",
+                    iconSize: 20,
+                  ),
+                  
+                  const SizedBox(width: 8),
+                  
+                  // 字數統計
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      "字數：$totalWords",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           
-          // 文本編輯器
-          Expanded(
+          // 文本編輯器 - 使用 SliverFillRemaining 確保填滿剩餘空間
+          SliverFillRemaining(
+            hasScrollBody: false,
             child: Container(
               margin: const EdgeInsets.all(16),
               child: TextField(
@@ -2116,6 +2126,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         
         // 更新WorldSettings
         if (loadedWorldSettings != null && loadedWorldSettings.isNotEmpty) {
+          // 直接使用讀取的數據，不自動包裝「全部」節點
           worldSettingsData = loadedWorldSettings;
         }
         
