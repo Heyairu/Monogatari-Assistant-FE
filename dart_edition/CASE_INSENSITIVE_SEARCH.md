@@ -108,23 +108,6 @@ if (!options.matchCase) {
 - 只在 `matchCase = false` 時執行轉換
 - 對於 CJK 字元等不需轉換的字元，直接保留原值
 
-## 測試
-
-測試文件位於: `test/case_normalization_test.dart`
-
-涵蓋測試：
-- ✅ 基本拉丁字母
-- ✅ 西歐語言重音符號
-- ✅ 希臘字母（含重音）
-- ✅ 西里爾字母
-- ✅ 全形拉丁字母
-- ✅ 中歐和東歐語言
-- ✅ 土耳其語特殊字元
-- ✅ 混合多語言文字
-- ✅ 中文字元不受影響
-- ✅ 數字和符號
-- ✅ 空字串處理
-
 ## 未來擴展
 
 如需支援更多語言，可以添加以下範圍：
@@ -139,4 +122,3 @@ if (!options.matchCase) {
 
 - `lib/main.dart`: 主要實作位置
 - `lib/bin/findreplace.dart`: 搜尋選項定義
-- `test/case_normalization_test.dart`: 測試文件

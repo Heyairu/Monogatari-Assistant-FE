@@ -14,6 +14,9 @@
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:flutter/foundation.dart";
+import "dart:ui" as ui;
+import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
@@ -31,7 +34,11 @@ import "modules/settingview.dart";
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 window_manager
-  await windowManager.ensureInitialized();
+  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
+      defaultTargetPlatform == TargetPlatform.linux || 
+      defaultTargetPlatform == TargetPlatform.macOS)) {
+    await windowManager.ensureInitialized();
+  }
   
   runApp(const MainApp());
 }
@@ -284,6 +291,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   bool isLoading = false;
   bool hasUnsavedChanges = false;
   String? _lastSavedContent;
+  DateTime? _lastSavedTime; // Track last saved time
   
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
@@ -293,8 +301,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     super.initState();
     
     // 註冊視窗監聽器並設置視窗選項
-    windowManager.addListener(this);
-    _initWindowManager();
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
+        defaultTargetPlatform == TargetPlatform.linux || 
+        defaultTargetPlatform == TargetPlatform.macOS)) {
+      windowManager.addListener(this);
+      _initWindowManager();
+    }
     
     // 初始化選取項目和編輯器內容
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
@@ -332,7 +344,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
+        defaultTargetPlatform == TargetPlatform.linux || 
+        defaultTargetPlatform == TargetPlatform.macOS)) {
+      windowManager.removeListener(this);
+    }
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
@@ -644,10 +660,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // AppBar 建構方法
   PreferredSizeWidget _buildAppBar() {
-    String title = currentProject != null 
-        ? "${currentProject!.isNewFile ? "*" : ""}${currentProject!.nameWithoutExtension}"
-        : "新專案";
-    
     return AppBar(
       leading: Padding(
         padding: const EdgeInsets.all(8.0),
@@ -669,12 +681,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          Expanded(
+          
+          /*
+          const Expanded(
             child: Text(
-              title,
+              "物語Assistant",
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          */
         ],
       ),
       backgroundColor: Theme.of(context).colorScheme.primaryContainer,
@@ -786,30 +801,128 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           _buildEditor(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: isEditorMode ? 1 : 0,
-        onDestinationSelected: (index) {
-          // 在切換前同步編輯器內容
-          _syncEditorToSelectedChapter();
-          
-          setState(() {
-            if (index == 0) {
-              // 切換到功能頁面，保持當前的功能選項
-              if (slidePage > 9) slidePage = 0; // 如果在編輯器，切回第一個功能
-            } else {
-              // 切換到編輯器
-              slidePage = 10; // 使用 10 作為編輯器的標識
-            }
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard),
-            label: "功能",
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildMobileStatusBar(),
+          NavigationBar(
+            selectedIndex: isEditorMode ? 1 : 0,
+            onDestinationSelected: (index) {
+              // 在切換前同步編輯器內容
+              _syncEditorToSelectedChapter();
+              
+              setState(() {
+                if (index == 0) {
+                  // 切換到功能頁面，保持當前的功能選項
+                  if (slidePage > 9) slidePage = 0; // 如果在編輯器，切回第一個功能
+                } else {
+                  // 切換到編輯器
+                  slidePage = 10; // 使用 10 作為編輯器的標識
+                }
+              });
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.dashboard),
+                label: "功能",
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.edit_note),
+                label: "編輯器",
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.edit_note),
-            label: "編輯器",
+        ],
+      ),
+    );
+  }
+  
+  // 手機狀態列 - 顯示專案資訊
+  Widget _buildMobileStatusBar() {
+    String projectName = currentProject?.nameWithoutExtension ?? "未命名專案";
+    if (hasUnsavedChanges) projectName += "*";
+    
+    String currentPosition = "";
+    if (selectedSegID != null && selectedChapID != null) {
+      for (final seg in segmentsData) {
+        if (seg.segmentUUID == selectedSegID) {
+          for (final chap in seg.chapters) {
+            if (chap.chapterUUID == selectedChapID) {
+              currentPosition = "${seg.segmentName} / ${chap.chapterName}";
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+    
+    final displayText = currentPosition.isNotEmpty 
+        ? "$projectName | $currentPosition" 
+        : projectName;
+    
+    String saveTimeStr = _lastSavedTime != null 
+        ? DateFormat("HH:mm").format(_lastSavedTime!) 
+        : "--:--";
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.description, 
+                  size: 14, 
+                  color: Theme.of(context).colorScheme.primary
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: _ScrollingText(
+                    text: displayText,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.access_time, 
+            size: 14, 
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+          ),
+          const SizedBox(width: 4),
+          Text(
+            saveTimeStr,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              "$totalWords 字",
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -935,98 +1048,114 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 桌面佈局（使用 NavigationRail）
   Widget _buildDesktopLayout() {
-    return Row(
+    return Column(
       children: [
-        // NavigationRail - 包裝在可滾动容器中
-        SingleChildScrollView(
-          child: IntrinsicHeight(
-            child: NavigationRail(
-              selectedIndex: _getNavigationIndex(),
-              onDestinationSelected: (index) {
-                // 在切換前同步編輯器內容
-                _syncEditorToSelectedChapter();
-                
-                setState(() {
-                  slidePage = index;
-                });
-              },
-              labelType: NavigationRailLabelType.all,
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              destinations: const [
-                NavigationRailDestination(
-                  icon: Icon(Icons.book),
-                  label: Text("故事設定"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.menu_book),
-                  label: Text("章節選擇"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.list),
-                  label: Text("大綱調整"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.public),
-                  label: Text("世界設定"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.person),
-                  label: Text("角色設定"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.library_books),
-                  label: Text("詞語參考"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.spellcheck),
-                  label: Text("文本校正"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.auto_awesome),
-                  label: Text("Copilot"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.settings),
-                  label: Text("設定"),
-                ),
-                NavigationRailDestination(
-                  icon: Icon(Icons.info),
-                  label: Text("關於"),
-                ),
-              ],
-            ),
-          ),
-        ),
-        
-        // 垂直分隔線
-        const VerticalDivider(thickness: 1, width: 1),
-        
-        // 主要內容區域
         Expanded(
           child: Row(
             children: [
-              // 左側內容區域
-              Expanded(
-                flex: 2,
-                child: Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                  child: _buildPageContent(),
+              // NavigationRail - 包裝在可滾动容器中
+              SingleChildScrollView(
+                child: IntrinsicHeight(
+                  child: NavigationRail(
+                    selectedIndex: _getNavigationIndex(),
+                    onDestinationSelected: (index) {
+                      // 在切換前同步編輯器內容
+                      _syncEditorToSelectedChapter();
+                      
+                      setState(() {
+                        slidePage = index;
+                      });
+                    },
+                    labelType: NavigationRailLabelType.all,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    destinations: const [
+                      NavigationRailDestination(
+                        icon: Icon(Icons.book),
+                        label: Text("故事設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.menu_book),
+                        label: Text("章節選擇"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.list),
+                        label: Text("大綱調整"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.public),
+                        label: Text("世界設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.person),
+                        label: Text("角色設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.library_books),
+                        label: Text("詞語參考"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.spellcheck),
+                        label: Text("文本校正"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.auto_awesome),
+                        label: Text("Copilot"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.settings),
+                        label: Text("設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.info),
+                        label: Text("關於"),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               
               // 垂直分隔線
               const VerticalDivider(thickness: 1, width: 1),
               
-              // 右側編輯器
+              // 主要內容區域
               Expanded(
-                flex: 3,
-                child: _buildEditor(),
+                child: Row(
+                  children: [
+                    // 左側內容區域
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                        child: _buildPageContent(),
+                      ),
+                    ),
+                    
+                    // 垂直分隔線
+                    const VerticalDivider(thickness: 1, width: 1),
+                    
+                    // 右側編輯器
+                    Expanded(
+                      flex: 3,
+                      child: _buildEditor(),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
+        
+        // 桌面狀態列
+        _buildDesktopStatusBar(),
       ],
     );
+  }
+  
+  // 桌面狀態列
+  Widget _buildDesktopStatusBar() {
+    // 復用手機版的狀態列邏輯，但為了程式碼清晰，獨立出一個方法
+    // 在未來可以在這裡添加桌面版特有的資訊（如編碼格式、游標位置等）
+    return _buildMobileStatusBar();
   }
   
   // 獲取 NavigationRail 的選中索引
@@ -1178,24 +1307,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     onPressed: () => _performEditorAction("paste"),
                     tooltip: "Paste",
                     iconSize: 20,
-                  ),
-                  
-                  const SizedBox(width: 8),
-                  
-                  // 字數統計
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      "字數：$totalWords",
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ),
                 ],
               ),
@@ -1543,6 +1654,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     setState(() {
       hasUnsavedChanges = false;
       _lastSavedContent = _generateProjectXML();
+      _lastSavedTime = DateTime.now();
     });
   }
   
@@ -1784,6 +1896,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       // 重設已儲存狀態
       hasUnsavedChanges = false;
       _lastSavedContent = null;
+      _lastSavedTime = null;
       
       _showMessage("新專案建立成功！");
     } catch (e) {
@@ -2151,9 +2264,150 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       
       // 標記為已儲存狀態（剛載入的檔案）
       _markAsSaved();
+      setState(() {
+        _lastSavedTime = null;
+      });
       
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");
     }
+  }
+}
+
+class _ScrollingText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+
+  const _ScrollingText({
+    required this.text,
+    this.style,
+  });
+
+  @override
+  State<_ScrollingText> createState() => _ScrollingTextState();
+}
+
+class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProviderStateMixin {
+  late ScrollController _scrollController;
+  late AnimationController _animationController;
+  bool _shouldScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10), // Adjust speed here
+    );
+    
+    // Check if scrolling is needed after layout
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScroll();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_ScrollingText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text || oldWidget.style != widget.style) {
+      _animationController.reset();
+      _shouldScroll = false;
+      // Re-check scrolling
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkScroll();
+      });
+    }
+  }
+
+  void _checkScroll() {
+    if (!mounted) return;
+    
+    if (_scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      if (maxScroll > 0 && !_shouldScroll) {
+        setState(() {
+          _shouldScroll = true;
+        });
+        _startScrolling();
+      } else if (maxScroll <= 0 && _shouldScroll) {
+        _animationController.stop();
+        setState(() {
+          _shouldScroll = false;
+        });
+      }
+    }
+  }
+
+  void _startScrolling() {
+    if (!mounted || !_shouldScroll) return;
+    
+    // Simple scrolling animation
+    // Scroll to end
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: Duration(milliseconds: (widget.text.length * 200).clamp(2000, 30000)),
+      curve: Curves.linear,
+    ).then((_) async {
+      if (!mounted) return;
+      // Wait a bit
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      // Scroll back
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 1000),
+        curve: Curves.easeOut,
+      ).then((_) async {
+        if (!mounted) return;
+        // Wait a bit
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        // Loop
+        _startScrolling();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate text width to see if it overflows
+        final textSpan = TextSpan(text: widget.text, style: widget.style);
+        final textPainter = TextPainter(
+          text: textSpan,
+          maxLines: 1,
+          textDirection: ui.TextDirection.ltr,
+        )..layout();
+
+        // If it fits, just return Text
+        if (textPainter.size.width <= constraints.maxWidth) {
+           return Text(
+            widget.text,
+            style: widget.style,
+            overflow: TextOverflow.visible,
+          );
+        }
+
+        // Otherwise use ListView for scrolling
+        return SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(), // Disable user scrolling
+          child: Text(
+            widget.text,
+            style: widget.style,
+          ),
+        );
+      },
+    );
   }
 }
