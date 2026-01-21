@@ -670,121 +670,140 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           },
         ),
       ),
-      title: Row(
-        children: [
-          if (isLoading)
-            Container(
-              margin: const EdgeInsets.only(right: 12),
-              child: const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+      titleSpacing: 0,
+      title: Align(
+        alignment: Alignment.centerRight,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isLoading)
+                Container(
+                  margin: const EdgeInsets.only(right: 12),
+                  child: const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+            
+              // 檔案選單
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.folder),
+                tooltip: "檔案",
+                onSelected: _handleFileAction,
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: "new",
+                    child: ListTile(
+                      leading: Icon(Icons.note_add),
+                      title: Text("新建檔案"),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: "open",
+                    child: ListTile(
+                      leading: Icon(Icons.folder_open),
+                      title: Text("開啟檔案"),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: "save",
+                    child: ListTile(
+                      leading: Icon(Icons.save),
+                      title: Text("儲存檔案"),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: "saveAs",
+                    child: ListTile(
+                      leading: Icon(Icons.save_as),
+                      title: Text("另存新檔"),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          
-          /*
-          const Expanded(
-            child: Text(
-              "物語Assistant",
-              overflow: TextOverflow.ellipsis,
-            ),
+              
+              // 編輯工具
+              IconButton(
+                icon: const Icon(Icons.select_all),
+                onPressed: () => _performEditorAction("selectAll"),
+                tooltip: "Select All",
+              ),
+              IconButton(
+                icon: const Icon(Icons.content_cut),
+                onPressed: () => _performEditorAction("cut"),
+                tooltip: "Cut",
+              ),
+              IconButton(
+                icon: const Icon(Icons.content_copy),
+                onPressed: () => _performEditorAction("copy"),
+                tooltip: "Copy",
+              ),
+              IconButton(
+                icon: const Icon(Icons.content_paste),
+                onPressed: () => _performEditorAction("paste"),
+                tooltip: "Paste",
+              ),
+              
+              IconButton(
+                icon: const Icon(Icons.undo),
+                onPressed: () => _performEditorAction("undo"),
+                tooltip: "Undo",
+              ),
+              IconButton(
+                icon: const Icon(Icons.redo),
+                onPressed: () => _performEditorAction("redo"),
+                tooltip: "Redo",
+              ),
+              Container(
+                decoration: showFindReplaceWindow
+                    ? BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      )
+                    : null,
+                child: IconButton(
+                  icon: Icon(
+                    showFindReplaceWindow ? Icons.search_off : Icons.search,
+                  ),
+                  color: showFindReplaceWindow
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : null,
+                  onPressed: () {
+                    // 切換到編輯器頁面並顯示/隱藏浮動視窗
+                    setState(() {
+                      // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
+                      if (slidePage < 10) {
+                        slidePage = 10;
+                        showFindReplaceWindow = true;
+                      } else {
+                        // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
+                        if (!showFindReplaceWindow) {
+                          // 打開搜尋窗口時，重置搜尋狀態但保留編輯器的光標位置
+                          _currentMatchIndex = -1;
+                        }
+                        showFindReplaceWindow = !showFindReplaceWindow;
+                      }
+                    });
+                  },
+                  tooltip: showFindReplaceWindow ? "關閉搜尋" : "搜尋",
+                ),
+              ),
+              
+              const SizedBox(width: 8),
+            ],
           ),
-          */
-        ],
+        ),
       ),
       backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
       elevation: 0,
-      actions: [
-        // 檔案選單
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.folder),
-          tooltip: "檔案",
-          onSelected: _handleFileAction,
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: "new",
-              child: ListTile(
-                leading: Icon(Icons.note_add),
-                title: Text("新建檔案"),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: "open",
-              child: ListTile(
-                leading: Icon(Icons.folder_open),
-                title: Text("開啟檔案"),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: "save",
-              child: ListTile(
-                leading: Icon(Icons.save),
-                title: Text("儲存檔案"),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: "saveAs",
-              child: ListTile(
-                leading: Icon(Icons.save_as),
-                title: Text("另存新檔"),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-        ),
-        
-        // 編輯工具
-        IconButton(
-          icon: const Icon(Icons.undo),
-          onPressed: () => _performEditorAction("undo"),
-          tooltip: "Undo",
-        ),
-        IconButton(
-          icon: const Icon(Icons.redo),
-          onPressed: () => _performEditorAction("redo"),
-          tooltip: "Redo",
-        ),
-        Container(
-          decoration: showFindReplaceWindow
-              ? BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                )
-              : null,
-          child: IconButton(
-            icon: Icon(
-              showFindReplaceWindow ? Icons.search_off : Icons.search,
-            ),
-            color: showFindReplaceWindow
-                ? Theme.of(context).colorScheme.onPrimaryContainer
-                : null,
-            onPressed: () {
-              // 切換到編輯器頁面並顯示/隱藏浮動視窗
-              setState(() {
-                // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
-                if (slidePage < 10) {
-                  slidePage = 10;
-                  showFindReplaceWindow = true;
-                } else {
-                  // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
-                  if (!showFindReplaceWindow) {
-                    // 打開搜尋窗口時，重置搜尋狀態但保留編輯器的光標位置
-                    _currentMatchIndex = -1;
-                  }
-                  showFindReplaceWindow = !showFindReplaceWindow;
-                }
-              });
-            },
-            tooltip: showFindReplaceWindow ? "關閉搜尋" : "搜尋",
-          ),
-        ),
-        
-        const SizedBox(width: 8),
-      ],
     );
   }
 
@@ -1267,52 +1286,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               ),
             ),
           
-          // 編輯器工具列
-          SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Spacer(),
-                  
-                  // 編輯工具
-                  IconButton(
-                    icon: const Icon(Icons.select_all),
-                    onPressed: () => _performEditorAction("selectAll"),
-                    tooltip: "Select All",
-                    iconSize: 20,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.content_cut),
-                    onPressed: () => _performEditorAction("cut"),
-                    tooltip: "Cut",
-                    iconSize: 20,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.content_copy),
-                    onPressed: () => _performEditorAction("copy"),
-                    tooltip: "Copy",
-                    iconSize: 20,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.content_paste),
-                    onPressed: () => _performEditorAction("paste"),
-                    tooltip: "Paste",
-                    iconSize: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
+
           // 文本編輯器 - 使用 SliverFillRemaining 確保填滿剩餘空間
           SliverFillRemaining(
             hasScrollBody: false,
