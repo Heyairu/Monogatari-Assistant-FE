@@ -431,9 +431,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
     
-    // 移除自動添加「全部」的邏輯
-    // 因為 main.dart 已經在初始化和讀檔時處理了
-    
     _loadTemplatesFromDisk();
   }
 
@@ -452,20 +449,27 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     widget.onChanged(widget.locations);
   }
 
+  // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 標題列
+            // Title
             Row(
               children: [
+                Icon(
+                  Icons.public,
+                  size: 32,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
                 Text(
                   "世界設定",
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -535,8 +539,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            
+            const SizedBox(height: 32),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -109,7 +109,7 @@ class SegmentData {
   }
 }
 
-// MARK: - Codec for <Type><Name>ChapterSelection</Name> ... </Type>
+// MARK: - XML Codec
 
 class ChapterSelectionCodec {
   /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段
@@ -736,7 +736,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
 
   bool _hasPerformedInitialSetup = false;
-  
+
+  // MARK: - UI 介面構建
+
   @override
   Widget build(BuildContext context) {
     // 初始化檢查（類似 SwiftUI 的 onAppear），但只執行一次
@@ -1290,7 +1292,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.edit, size: 20),
+            icon: const Icon(Icons.edit),
             onPressed: () {
               setState(() {
                 _editingSegmentID = segment.segmentUUID;
@@ -1299,7 +1301,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             tooltip: "重新命名",
           ),
           IconButton(
-            icon: const Icon(Icons.delete, size: 20),
+            icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: _segments.length > 1 ? () => _deleteSegment(segment.segmentUUID) : null,
             tooltip: "刪除此 Seg",
@@ -1483,7 +1485,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.edit, size: 20),
+            icon: const Icon(Icons.edit),
             onPressed: () {
               setState(() {
                 _editingChapterID = chapter.chapterUUID;
@@ -1492,7 +1494,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             tooltip: "重新命名",
           ),
           IconButton(
-            icon: const Icon(Icons.delete, size: 20),
+            icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: _totalChaptersCount > 1 ? () => _deleteChapter(segIdx, chapter.chapterUUID) : null,
             tooltip: "刪除此章節",

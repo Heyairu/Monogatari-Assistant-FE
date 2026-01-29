@@ -24,25 +24,51 @@ enum AppThemeMode {
 /// 主題管理器 - 管理應用的主題狀態
 class ThemeManager extends ChangeNotifier {
   static const String _themePreferenceKey = "app_theme_mode";
+  static const String _colorPreferenceKey = "app_theme_color";
   
   AppThemeMode _themeMode = AppThemeMode.system;
+  Color _themeColor = Colors.lightBlue; // Default color
   bool _isInitialized = false;
   
   AppThemeMode get themeMode => _themeMode;
+  Color get themeColor => _themeColor;
   bool get isInitialized => _isInitialized;
+
+  // Supported colors
+  static const Map<String, Color> supportedColors = {
+    "Auto": Colors.lightBlue,
+    "Gray": Colors.grey,
+    "Red": Colors.red,
+    "Orange": Colors.orange,
+    "Yellow": Colors.amber,
+    "Green": Colors.green,
+    "Cyan": Colors.cyan,
+    "Blue": Colors.blue,
+    "Purple": Colors.purple,
+    "Pink": Colors.pink,
+  };
   
   /// 初始化主題管理器 - 從儲存中載入主題設定
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedThemeIndex = prefs.getInt(_themePreferenceKey);
       
+      // Load Theme Mode
+      final savedThemeIndex = prefs.getInt(_themePreferenceKey);
       if (savedThemeIndex != null && savedThemeIndex >= 0 && savedThemeIndex < AppThemeMode.values.length) {
         _themeMode = AppThemeMode.values[savedThemeIndex];
       }
+
+      // Load Theme Color
+      final savedColorValue = prefs.getInt(_colorPreferenceKey);
+      if (savedColorValue != null) {
+        _themeColor = Color(savedColorValue);
+      }
+
     } catch (e) {
       // 如果載入失敗，使用預設值
       _themeMode = AppThemeMode.system;
+      _themeColor = Colors.lightBlue;
     } finally {
       _isInitialized = true;
       notifyListeners();
@@ -78,6 +104,21 @@ class ThemeManager extends ChangeNotifier {
       }
     }
   }
+
+  /// 設置主題顏色並儲存
+  Future<void> setThemeColor(Color color) async {
+    if (_themeColor != color) {
+      _themeColor = color;
+      notifyListeners();
+      
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_colorPreferenceKey, color.value);
+      } catch (e) {
+        debugPrint("Failed to save theme color: $e");
+      }
+    }
+  }
   
   /// 切換主題
   Future<void> toggleTheme() async {
@@ -97,47 +138,139 @@ class ThemeManager extends ChangeNotifier {
 
 /// 主題配色方案
 class AppTheme {
-  /// 淺色主題
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.lightBlue,
+  /// 生成 TextTheme
+  static TextTheme _buildTextTheme(double baseSize) {
+    return TextTheme(
+      // L1 +12px
+      displayLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
+      displayMedium: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
+      displaySmall: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
+      headlineLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
+      
+      // L2 +8px
+      headlineMedium: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
+      headlineSmall: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
+      titleLarge: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
+      
+      // L3 +4px
+      titleMedium: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w500),
+      titleSmall: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w500),
+      
+      // Body (base)
+      bodyLarge: TextStyle(fontSize: baseSize),
+      bodyMedium: TextStyle(fontSize: baseSize),
+      
+      // Subtitle/Status -4px
+      bodySmall: TextStyle(fontSize: baseSize - 4),
+      labelLarge: TextStyle(fontSize: baseSize - 4),
+      labelMedium: TextStyle(fontSize: baseSize - 4),
+      labelSmall: TextStyle(fontSize: baseSize - 4),
+    );
+  }
+
+  /// 獲取淺色主題
+  static ThemeData getLightTheme(double baseFontSize, Color seedColor) {
+    ColorScheme colorScheme;
+    
+    // 特殊處理灰色：手動構建灰階 ColorScheme
+    if (seedColor.value == Colors.grey.value) {
+      colorScheme = const ColorScheme.light(
+        primary: Color(0xFF616161),
+        onPrimary: Colors.white,
+        primaryContainer: Color(0xFFE0E0E0),
+        onPrimaryContainer: Color(0xFF212121),
+        secondary: Color(0xFF757575),
+        onSecondary: Colors.white,
+        secondaryContainer: Color(0xFFEEEEEE),
+        onSecondaryContainer: Color(0xFF212121),
+        tertiary: Color(0xFF9E9E9E),
+        onTertiary: Colors.black,
+        tertiaryContainer: Color(0xFFF5F5F5),
+        onTertiaryContainer: Color(0xFF212121),
+        surface: Color(0xFFFAFAFA),
+        onSurface: Color(0xFF212121),
+        surfaceContainerHighest: Color(0xFFE0E0E0),
+      );
+    } else {
+      colorScheme = ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: Brightness.light,
+      );
+    }
+    
+    return ThemeData(
+      useMaterial3: true,
       brightness: Brightness.light,
-    ),
-    cardTheme: const CardThemeData(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+      colorScheme: colorScheme,
+      textTheme: _buildTextTheme(baseFontSize),
+      iconTheme: IconThemeData(
+        size: baseFontSize + 10,
       ),
-    ),
-    inputDecorationTheme: const InputDecorationTheme(
-      filled: true,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+      cardTheme: const CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
       ),
-    ),
-  );
+      inputDecorationTheme: const InputDecorationTheme(
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+      ),
+    );
+  }
   
-  /// 深色主題
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.lightBlue,
+  /// 獲取深色主題
+  static ThemeData getDarkTheme(double baseFontSize, Color seedColor) {
+    ColorScheme colorScheme;
+    
+    // 特殊處理灰色：手動構建灰階 ColorScheme
+    if (seedColor.value == Colors.grey.value) {
+      colorScheme = const ColorScheme.dark(
+        primary: Color(0xFFE0E0E0),
+        onPrimary: Color(0xFF212121),
+        primaryContainer: Color(0xFF424242),
+        onPrimaryContainer: Color(0xFFE0E0E0),
+        secondary: Color(0xFFBDBDBD),
+        onSecondary: Color(0xFF212121),
+        secondaryContainer: Color(0xFF616161),
+        onSecondaryContainer: Color(0xFFEEEEEE),
+        tertiary: Color(0xFF9E9E9E),
+        onTertiary: Colors.black,
+        tertiaryContainer: Color(0xFF757575),
+        onTertiaryContainer: Color(0xFFEEEEEE),
+        surface: Color(0xFF121212),
+        onSurface: Color(0xFFE0E0E0),
+        surfaceContainerHighest: Color(0xFF424242),
+      );
+    } else {
+      colorScheme = ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: Brightness.dark,
+      );
+    }
+    
+    return ThemeData(
+      useMaterial3: true,
       brightness: Brightness.dark,
-    ),
-    cardTheme: const CardThemeData(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+      colorScheme: colorScheme,
+      textTheme: _buildTextTheme(baseFontSize),
+      iconTheme: IconThemeData(
+        size: baseFontSize + 10,
       ),
-    ),
-    inputDecorationTheme: const InputDecorationTheme(
-      filled: true,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+      cardTheme: const CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
       ),
-    ),
-  );
+      inputDecorationTheme: const InputDecorationTheme(
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+      ),
+    );
+  }
 }

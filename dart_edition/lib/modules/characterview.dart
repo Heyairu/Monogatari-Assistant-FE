@@ -544,6 +544,8 @@ class CharacterView extends StatefulWidget {
   State<CharacterView> createState() => _CharacterViewState();
 }
 
+// MARK: - 角色資料控制項
+
 class _CharacterViewState extends State<CharacterView> with SingleTickerProviderStateMixin {
   // Tab Controller
   late TabController _tabController;
@@ -857,26 +859,39 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     super.dispose();
   }
 
+  // MARK: - UI 介面
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
         children: [
-          // Title
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              "角色編輯",
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ),
           // Main Content
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(24.0),
+              
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Title
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_rounded,
+                        size: 32,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "角色編輯",
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
                   _buildCharacterListSection(),
                   const SizedBox(height: 16),
                   _buildCharacterEditSection(),
@@ -2004,6 +2019,19 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       _nameController.text = characterName;
       return;
     }
+
+    // Helper to ensure list length to prevent RangeError
+    List<double> ensureList(String key, int length) {
+      final list = data[key] as List<dynamic>?;
+      if (list == null || list.isEmpty) {
+        return List.filled(length, 50.0);
+      }
+      final typedList = List<double>.from(list);
+      if (typedList.length < length) {
+        typedList.addAll(List.filled(length - typedList.length, 50.0));
+      }
+      return typedList;
+    }
     
     // Basic Info
     _nameController.text = data["name"] ?? characterName;
@@ -2052,7 +2080,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     hateToDoList = List<String>.from(data["hateToDoList"] ?? []);
     proficientToDoList = List<String>.from(data["proficientToDoList"] ?? []);
     unProficientToDoList = List<String>.from(data["unProficientToDoList"] ?? []);
-    commonAbilityValues = List<double>.from(data["commonAbilityValues"] ?? List.filled(16, 50.0));
+    commonAbilityValues = ensureList("commonAbilityValues", 16);
     // Social
     _mbtiController.text = data["mbti"] ?? "";
     _impressionController.text = data["impression"] ?? "";
@@ -2070,13 +2098,13 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       handleHatePeople.updateAll((key, value) => data["handleHatePeople"][key] ?? false);
     }
     _otherHatePeopleController.text = data["otherHatePeople"] ?? "";
-    socialItemValues = List<double>.from(data["socialItemValues"] ?? List.filled(10, 50.0));
+    socialItemValues = ensureList("socialItemValues", 10);
     selectedRelationship = data["relationship"];
     isFindNewLove = data["isFindNewLove"] ?? false;
     isHarem = data["isHarem"] ?? false;
     _otherRelationshipController.text = data["otherRelationship"] ?? "";
-    approachValues = List<double>.from(data["approachValues"] ?? List.filled(12, 50.0));
-    traitsValues = List<double>.from(data["traitsValues"] ?? List.filled(15, 50.0));
+    approachValues = ensureList("approachValues", 12);
+    traitsValues = ensureList("traitsValues", 15);
     // Other
     _originalNameController.text = data["originalName"] ?? "";
     likeItemList = List<String>.from(data["likeItemList"] ?? []);
@@ -2196,9 +2224,19 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       );
       return;
     }
+
+    // 確保現有更動被儲存
+    if (selectedCharacter != null) {
+      _saveCurrentCharacterData();
+    }
     
     setState(() {
       characters.add(name);
+      
+      // 初始化新角色資料並通知更新
+      characterData[name] = {"name": name};
+      widget.onDataChanged?.call(characterData);
+
       _newCharacterController.clear();
       // 自動選取新增的角色
       _selectCharacter(characters.length - 1);
@@ -2208,10 +2246,18 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   void _deleteCharacter(int index) {
     final characterName = characters[index];
     
+    // 確保現有更動被儲存
+    if (selectedCharacter != null) {
+      _saveCurrentCharacterData();
+    }
+
     setState(() {
       characters.removeAt(index);
       characterData.remove(characterName);
       
+      // 通知更新
+      widget.onDataChanged?.call(characterData);
+
       // 如果刪除的是當前選中的角色
       if (selectedCharacterIndex == index) {
         selectedCharacterIndex = null;

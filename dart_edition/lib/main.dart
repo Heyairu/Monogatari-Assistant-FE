@@ -62,6 +62,9 @@ class _MainAppState extends State<MainApp> {
     _themeManager.addListener(() {
       setState(() {});
     });
+    _settingsManager.addListener(() {
+      setState(() {});
+    });
   }
 
   Future<void> _initializeApp() async {
@@ -103,8 +106,8 @@ class _MainAppState extends State<MainApp> {
 
     return MaterialApp(
       title: "物語Assistant",
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: AppTheme.getLightTheme(_settingsManager.fontSize, _themeManager.themeColor),
+      darkTheme: AppTheme.getDarkTheme(_settingsManager.fontSize, _themeManager.themeColor),
       themeMode: _convertThemeMode(_themeManager.themeMode),
       home: ContentView(
         themeManager: _themeManager,
@@ -290,7 +293,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   String errorMessage = "";
   bool isLoading = false;
   bool hasUnsavedChanges = false;
-  String? _lastSavedContent;
   DateTime? _lastSavedTime; // Track last saved time
   
   // 同步狀態標記 - 防止在同步期間觸發循環更新
@@ -630,6 +632,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     });
   }
 
+  // MARK: 主體建構方法
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -660,13 +663,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // AppBar 建構方法
   PreferredSizeWidget _buildAppBar() {
+    final double iconSize = widget.settingsManager.fontSize + 10;
+
     return AppBar(
       leading: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Image.asset(
           "assets/icon/app_icon.png",
           errorBuilder: (context, error, stackTrace) {
-            return const Icon(Icons.auto_stories, size: 32);
+            return Icon(Icons.auto_stories, size: iconSize + 8);
           },
         ),
       ),
@@ -691,6 +696,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               // 檔案選單
               PopupMenuButton<String>(
                 icon: const Icon(Icons.folder),
+                iconSize: iconSize,
                 tooltip: "檔案",
                 onSelected: _handleFileAction,
                 itemBuilder: (context) => [
@@ -731,32 +737,38 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               
               // 編輯工具
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.select_all),
                 onPressed: () => _performEditorAction("selectAll"),
                 tooltip: "Select All",
               ),
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.content_cut),
                 onPressed: () => _performEditorAction("cut"),
                 tooltip: "Cut",
               ),
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.content_copy),
                 onPressed: () => _performEditorAction("copy"),
                 tooltip: "Copy",
               ),
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.content_paste),
                 onPressed: () => _performEditorAction("paste"),
                 tooltip: "Paste",
               ),
               
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.undo),
                 onPressed: () => _performEditorAction("undo"),
                 tooltip: "Undo",
               ),
               IconButton(
+                iconSize: iconSize,
                 icon: const Icon(Icons.redo),
                 onPressed: () => _performEditorAction("redo"),
                 tooltip: "Redo",
@@ -769,6 +781,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       )
                     : null,
                 child: IconButton(
+                  iconSize: iconSize,
                   icon: Icon(
                     showFindReplaceWindow ? Icons.search_off : Icons.search,
                   ),
@@ -902,7 +915,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               children: [
                 Icon(
                   Icons.description, 
-                  size: 14, 
+                  size: widget.settingsManager.fontSize, 
                   color: Theme.of(context).colorScheme.primary
                 ),
                 const SizedBox(width: 4),
@@ -920,7 +933,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           const SizedBox(width: 8),
           Icon(
             Icons.access_time, 
-            size: 14, 
+            size: widget.settingsManager.fontSize, 
             color: Theme.of(context).colorScheme.onSurfaceVariant
           ),
           const SizedBox(width: 4),
@@ -1016,7 +1029,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         },
         avatar: Icon(
           function["icon"],
-          size: 18,
+          size: widget.settingsManager.fontSize + 4,
           color: isSelected 
             ? Theme.of(context).colorScheme.onSecondaryContainer
             : Theme.of(context).colorScheme.onSurface,
@@ -1327,7 +1340,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 ),
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   height: 1.6,
-                  fontSize: 16,
                 ),
               ),
             ),
@@ -1612,446 +1624,191 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
   }
   
+  // MARK: - 檔案操作
+
   // 變更追蹤和退出處理
   
   /// 標記內容已修改
   void _markAsModified() {
-    if (!hasUnsavedChanges) {
-      setState(() {
-        hasUnsavedChanges = true;
-      });
-    }
+    setState(() => hasUnsavedChanges = ProjectManager.markAsModified());
   }
   
   /// 標記內容已儲存
   void _markAsSaved() {
     setState(() {
-      hasUnsavedChanges = false;
-      _lastSavedContent = _generateProjectXML();
+      hasUnsavedChanges = ProjectManager.markAsSaved();
       _lastSavedTime = DateTime.now();
     });
   }
   
   /// 檢查是否有未儲存的變更
   bool _hasUnsavedChanges() {
-    if (currentProject == null) return false;
-    
-    // 同步編輯器內容
     _syncEditorToSelectedChapter();
-    
-    // 比較當前內容與上次儲存的內容
-    final currentContent = _generateProjectXML();
-    return hasUnsavedChanges || (_lastSavedContent != null && _lastSavedContent != currentContent);
+    return ProjectManager.hasUnsavedChanges(hasUnsavedChanges, currentProject);
   }
   
   /// 處理退出請求
   Future<bool> _handleExit() async {
-    // 檢查是否需要顯示警告
-    if (!widget.settingsManager.showExitWarning) {
-      return true;
-    }
-    
-    // 檢查是否有未儲存的變更
-    if (!_hasUnsavedChanges()) {
-      return true;
-    }
-    
-    // 顯示退出確認對話框
-    final result = await _showExitConfirmDialog();
-    
-    // null = 取消退出, true = 不儲存直接退出, false = 儲存後退出
-    if (result == null) {
-      return false; // 取消退出
-    }
-    
-    // 如果選擇儲存（result == false），檔案已在對話框中保存
-    // 無論選擇哪個選項，都允許退出
-    return true;
-  }
-  
-  /// 顯示退出確認對話框
-  Future<bool?> _showExitConfirmDialog() async {
-    bool dontShowAgain = false;
-    
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(width: 12),
-                  const Text("未儲存的變更"),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("您有未儲存的變更，是否要在退出前儲存？"),
-                  const SizedBox(height: 16),
-                  CheckboxListTile(
-                    value: dontShowAgain,
-                    onChanged: (bool? value) {
-                      setDialogState(() {
-                        dontShowAgain = value ?? false;
-                      });
-                    },
-                    title: const Text("以後不再提示"),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(null); // 取消
-                  },
-                  child: const Text("取消"),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    // 儲存設定
-                    if (dontShowAgain) {
-                      await widget.settingsManager.setShowExitWarning(false);
-                    }
-                    Navigator.of(context).pop(true); // 不儲存，直接退出
-                  },
-                  child: Text(
-                    "不儲存",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    // 儲存設定
-                    if (dontShowAgain) {
-                      await widget.settingsManager.setShowExitWarning(false);
-                    }
-                    // 儲存檔案
-                    await _saveProject();
-                    if (context.mounted) {
-                      Navigator.of(context).pop(false); // 儲存後退出
-                    }
-                  },
-                  child: const Text("儲存"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-  
-  /// 顯示未儲存變更對話框（用於新建檔案、開啟檔案等操作）
-  /// 返回值：null = 取消, true = 不儲存並繼續, false = 儲存後繼續
-  Future<bool?> _showUnsavedChangesDialog({
-    required String title,
-    required String message,
-  }) async {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(width: 12),
-              Text(title),
-            ],
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(null); // 取消
-              },
-              child: const Text("取消"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(true); // 不儲存，繼續操作
-              },
-              child: Text(
-                "不儲存",
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop(false); // 需要儲存
-              },
-              child: const Text("儲存"),
-            ),
-          ],
-        );
-      },
+    return ProjectManager.handleExit(
+      context,
+      showExitWarning: widget.settingsManager.showExitWarning,
+      hasUnsavedChanges: _hasUnsavedChanges(),
+      onDontShowAgainChanged: (val) async => await widget.settingsManager.setShowExitWarning(!val),
+      onSave: () async {
+        await _saveProject();
+        // Check if save successful (dirty flag cleared)
+        if (_hasUnsavedChanges()) throw Exception("Save cancelled or failed");
+      }
     );
   }
   
   // 檔案操作方法
   Future<void> _newProject() async {
-    // 檢查是否有未儲存的變更
-    if (_hasUnsavedChanges()) {
-      final shouldProceed = await _showUnsavedChangesDialog(
-        title: "建立新專案",
-        message: "您有未儲存的變更，是否要在建立新專案前儲存？",
-      );
-      
-      if (shouldProceed == null) {
-        return; // 用戶取消操作
-      }
-      
-      if (!shouldProceed) {
-        // 用戶選擇儲存
-        await _saveProject();
-        if (_hasUnsavedChanges()) {
-          // 如果儲存失敗或被取消，不繼續
-          return;
-        }
-      }
-      // 如果 shouldProceed == true，表示不儲存，繼續建立新專案
-    }
-    
-    try {
-      setState(() {
-        isLoading = true;
-      });
-      
-      final newProject = await FileService.createNewProject();
-      
-      setState(() {
-        currentProject = newProject;
-        baseInfoData = BaseInfoModule.BaseInfoData();
-        segmentsData = [
-          ChapterModule.SegmentData(
-            segmentName: "Seg 1",
-            chapters: [ChapterModule.ChapterData(chapterName: "Chapter 1", chapterContent: "")],
-          )
-        ];
-        outlineData = [
-          OutlineModule.StorylineData(
-            storylineName: "序章",
-            storylineType: "開場",
-            scenes: [],
-            memo: ""
-          )
-        ];
-        worldSettingsData = [LocationData(localName: "主要場景")];
-        characterData = {};
-        
-        selectedSegID = segmentsData.first.segmentUUID;
-        selectedChapID = segmentsData.first.chapters.first.chapterUUID;
-        totalWords = 0;
-        contentText = "";
-        // 使用 _isSyncing 標記來避免觸發 textController 監聽器
-        _isSyncing = true;
-        textController.text = "";
-        _isSyncing = false;
-        isLoading = false;
-      });
-      
-      // 重設已儲存狀態
-      hasUnsavedChanges = false;
-      _lastSavedContent = null;
-      _lastSavedTime = null;
-      
-      _showMessage("新專案建立成功！");
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      _showError("建立新專案失敗：${e.toString()}");
-    }
+    await ProjectManager.newProject(
+      context,
+      hasUnsavedChanges: _hasUnsavedChanges(),
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+      onProjectLoaded: (newProject, newData) {
+        setState(() {
+          currentProject = newProject;
+          _applyProjectData(newData);
+        });
+        _markAsSaved();
+        setState(() => _lastSavedTime = null);
+      },
+      onSave: _saveProject,
+    );
   }
   
   Future<void> _openProject() async {
-    // 檢查是否有未儲存的變更
-    if (_hasUnsavedChanges()) {
-      final shouldProceed = await _showUnsavedChangesDialog(
-        title: "開啟專案",
-        message: "您有未儲存的變更，是否要在開啟新專案前儲存？",
-      );
-      
-      if (shouldProceed == null) {
-        return; // 用戶取消操作
-      }
-      
-      if (!shouldProceed) {
-        // 用戶選擇儲存
-        await _saveProject();
-        if (_hasUnsavedChanges()) {
-          // 如果儲存失敗或被取消，不繼續
-          return;
-        }
-      }
-      // 如果 shouldProceed == true，表示不儲存，繼續開啟專案
-    }
-    
-    try {
-      setState(() {
-        isLoading = true;
-      });
-      
-      final projectFile = await FileService.openProject();
-      
-      if (projectFile != null) {
-        await _loadProjectFromXML(projectFile);
-        _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
-      }
-    } catch (e) {
-      _showError("開啟專案失敗：${e.toString()}");
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
+    await ProjectManager.openProject(
+      context,
+      hasUnsavedChanges: _hasUnsavedChanges(),
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+      onProjectLoaded: (projectFile, data) {
+        setState(() {
+          currentProject = projectFile;
+          _applyProjectData(data);
+        });
+        _markAsSaved();
+        setState(() => _lastSavedTime = null);
+      },
+      onSave: _saveProject,
+    );
   }
   
   Future<void> _saveProject() async {
-    try {
-      setState(() {
-        isLoading = true;
-      });
-      
-      _syncEditorToSelectedChapter();
-      
-      currentProject ??= await FileService.createNewProject();
-      
-      // 生成最新的專案XML內容
-      final xmlContent = _generateProjectXML();
-      currentProject!.content = xmlContent;
-      
-      final savedProject = await FileService.saveProject(currentProject!);
-      
-      setState(() {
-        currentProject = savedProject;
-        isLoading = false;
-      });
-      
-      _markAsSaved();
-      _showMessage("專案儲存成功！");
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      _showError("儲存專案失敗：${e.toString()}");
-    }
+    _syncEditorToSelectedChapter();
+    final currentData = _collectProjectData();
+    
+    await ProjectManager.saveProject(
+      context,
+      currentProject: currentProject,
+      currentData: currentData,
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+      onProjectSaved: (savedProject) {
+        setState(() => currentProject = savedProject);
+        _markAsSaved();
+      },
+    );
   }
   
   Future<void> _saveProjectAs() async {
-    try {
-      setState(() {
-        isLoading = true;
-      });
-      
-      _syncEditorToSelectedChapter();
-      
-      currentProject ??= await FileService.createNewProject();
-      
-      // 生成最新的專案XML內容
-      final xmlContent = _generateProjectXML();
-      currentProject!.content = xmlContent;
-      
-      final savedProject = await FileService.saveProjectAs(currentProject!);
-      
-      setState(() {
-        currentProject = savedProject;
-        isLoading = false;
-      });
-      
-      _markAsSaved();
-      _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      _showError("另存專案失敗：${e.toString()}");
-    }
+    _syncEditorToSelectedChapter();
+    final currentData = _collectProjectData();
+    
+    await ProjectManager.saveProjectAs(
+      context,
+      currentProject: currentProject,
+      currentData: currentData,
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+      onProjectSaved: (savedProject) {
+        setState(() => currentProject = savedProject);
+        _markAsSaved();
+      },
+    );
   }
   
   Future<void> _exportAs(String extension) async {
-    try {
-      setState(() {
-        isLoading = true;
-      });
-      
-      _syncEditorToSelectedChapter();
-      
-      // 收集所有章節內容
-      String allContent = "";
-      for (final segment in segmentsData) {
-        allContent += "# ${segment.segmentName}\n\n";
-        for (final chapter in segment.chapters) {
-          allContent += "## ${chapter.chapterName}\n\n";
-          allContent += "${chapter.chapterContent}\n\n";
-        }
-      }
-      
-      final fileName = currentProject?.nameWithoutExtension ?? "MonogatariExport";
-      
-      await FileService.exportText(
-        content: allContent,
-        fileName: fileName,
-        extension: extension == "txt" ? ".txt" : ".md",
-      );
-      
-      setState(() {
-        isLoading = false;
-      });
-      
-      _showMessage("匯出 $extension 檔案成功！");
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      _showError("匯出檔案失敗：${e.toString()}");
-    }
+    _syncEditorToSelectedChapter();
+    final currentData = _collectProjectData();
+    final defaultName = currentProject?.nameWithoutExtension ?? "MonogatariExport";
+    
+    await ProjectManager.exportAs(
+      context,
+      extension: extension,
+      currentData: currentData,
+      defaultFileName: defaultName,
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+    );
   }
   
   // 同步編輯器內容到選中的章節（先存的部分）
   void _syncEditorToSelectedChapter() {
-    if (_isSyncing) return; // 防止遞歸調用
-    
-    if (selectedSegID != null && selectedChapID != null) {
-      final segIndex = segmentsData.indexWhere((seg) => seg.segmentUUID == selectedSegID);
-      if (segIndex != -1) {
-        final chapIndex = segmentsData[segIndex].chapters.indexWhere((chap) => chap.chapterUUID == selectedChapID);
-        if (chapIndex != -1) {
-          // 先存邏輯：無條件保存當前編輯器內容到選中的章節
-          _isSyncing = true; // 設置同步標記
-          
-          // 取得當前編輯器的最新內容（從 textController 直接讀取）
-          final currentEditorContent = textController.text;
-          
-          // 更新章節內容
-          segmentsData[segIndex].chapters[chapIndex].chapterContent = currentEditorContent;
-          
-          // 同步 contentText 變數
-          contentText = currentEditorContent;
-          
-          // 觸發 segmentsData 更新通知（總是觸發以確保資料同步）
-          setState(() {}); // 觸發重建以更新所有依賴 segmentsData 的組件
-          
-          _isSyncing = false; // 清除同步標記
-        }
+    if (_isSyncing) return;
+    _isSyncing = true;
+    ProjectManager.syncEditorToSelectedChapter(
+      segmentsData: segmentsData,
+      selectedSegID: selectedSegID,
+      selectedChapID: selectedChapID,
+      textController: textController,
+      updateContentCallback: (newContent) {
+        contentText = newContent;
+        // 觸發 segmentsData 更新通知
+        setState(() {}); 
       }
+    );
+    _isSyncing = false;
+  }
+
+  // 輔助方法：收集當前專案數據
+  ProjectData _collectProjectData() {
+    return ProjectData(
+      baseInfoData: baseInfoData,
+      segmentsData: segmentsData,
+      outlineData: outlineData,
+      worldSettingsData: worldSettingsData,
+      characterData: characterData,
+      totalWords: totalWords,
+      contentText: contentText,
+    );
+  }
+  
+  // 輔助方法：應用專案數據到狀態
+  void _applyProjectData(ProjectData data) {
+    baseInfoData = data.baseInfoData;
+    segmentsData = data.segmentsData;
+    outlineData = data.outlineData;
+    worldSettingsData = data.worldSettingsData;
+    characterData = data.characterData;
+    
+    // 設定初始選擇
+    if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
+      selectedSegID = segmentsData[0].segmentUUID;
+      selectedChapID = segmentsData[0].chapters[0].chapterUUID;
+      contentText = segmentsData[0].chapters[0].chapterContent;
+      _isSyncing = true;
+      textController.text = contentText;
+      _isSyncing = false;
+      totalWords = data.totalWords;
+    } else {
+      selectedSegID = null;
+      selectedChapID = null;
+      contentText = "";
+      _isSyncing = true;
+      textController.text = "";
+      _isSyncing = false;
+      totalWords = 0;
     }
   }
   
@@ -2088,163 +1845,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-  
-  // 專案XML生成
-  String _generateProjectXML() {
-    final buffer = StringBuffer();
-    
-    buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-    buffer.writeln("<Project>");
-    
-    // BaseInfo (使用新的格式)
-    final baseInfoXml = BaseInfoModule.BaseInfoCodec.saveXML(
-      data: baseInfoData,
-      totalWords: totalWords,
-      contentText: contentText,
-    );
-    if (baseInfoXml != null) {
-      buffer.writeln(baseInfoXml);
-    }
-    
-    // ChapterSelection (使用新的格式)
-    final chapterXml = ChapterModule.ChapterSelectionCodec.saveXML(segmentsData);
-    if (chapterXml != null) {
-      buffer.writeln(chapterXml);
-    }
-    
-    // Outline (使用新的格式)
-    final outlineXml = OutlineModule.OutlineCodec.saveXML(outlineData);
-    if (outlineXml != null) {
-      buffer.writeln(outlineXml);
-    }
-    
-    // WorldSettings
-    final worldXml = WorldSettingsCodec.saveXML(worldSettingsData);
-    if (worldXml != null) {
-      buffer.writeln();
-      buffer.write(worldXml);
-    }
-    
-    // Characters (使用新的 CharacterCodec)
-    final characterXml = CharacterCodec.saveXML(characterData);
-    if (characterXml != null) {
-      buffer.writeln();
-      buffer.write(characterXml);
-    }
-    
-    buffer.writeln("</Project>");
-    
-    return buffer.toString();
-  }
-  
-  // 從XML載入專案
-  Future<void> _loadProjectFromXML(ProjectFile projectFile) async {
-    try {
-      final xmlContent = projectFile.content;
-      
-      // 準備載入的數據
-      BaseInfoModule.BaseInfoData? loadedBaseInfo;
-      List<ChapterModule.SegmentData>? loadedSegments;
-      List<OutlineModule.StorylineData>? loadedOutline;
-      
-      // 解析BaseInfo (使用新的 BaseInfoCodec)
-      if (XMLParser.hasTypeBlock(xmlContent, "BaseInfo")) {
-        final blocks = XMLParser.extractTypeBlocks(xmlContent, "BaseInfo");
-        if (blocks.isNotEmpty) {
-          loadedBaseInfo = BaseInfoModule.BaseInfoCodec.loadXML(blocks.first);
-        }
-      }
-      
-      // 解析ChapterSelection (使用新的 ChapterSelectionCodec)
-      if (XMLParser.hasTypeBlock(xmlContent, "ChapterSelection")) {
-        final blocks = XMLParser.extractTypeBlocks(xmlContent, "ChapterSelection");
-        if (blocks.isNotEmpty) {
-          loadedSegments = ChapterModule.ChapterSelectionCodec.loadXML(blocks.first);
-        }
-      }
-      
-      // 解析Outline (使用新的 OutlineCodec)
-      if (XMLParser.hasTypeBlock(xmlContent, "Outline")) {
-        final blocks = XMLParser.extractTypeBlocks(xmlContent, "Outline");
-        if (blocks.isNotEmpty) {
-          loadedOutline = OutlineModule.OutlineCodec.loadXML(blocks.first);
-        }
-      }
-      
-      // 解析WorldSettings
-      List<LocationData>? loadedWorldSettings;
-      if (XMLParser.hasTypeBlock(xmlContent, "WorldSettings")) {
-        final blocks = XMLParser.extractTypeBlocks(xmlContent, "WorldSettings");
-        if (blocks.isNotEmpty) {
-          loadedWorldSettings = WorldSettingsCodec.loadXML(blocks.first);
-        }
-      }
-      
-      // 解析Characters (使用新的 CharacterCodec)
-      Map<String, Map<String, dynamic>>? loadedCharacterData;
-      if (XMLParser.hasTypeBlock(xmlContent, "Characters")) {
-        final blocks = XMLParser.extractTypeBlocks(xmlContent, "Characters");
-        if (blocks.isNotEmpty) {
-          loadedCharacterData = CharacterCodec.loadXML(blocks.first);
-        }
-      }
-      
-      // 一次性更新所有數據
-      setState(() {
-        currentProject = projectFile;
-        
-        // 更新BaseInfo - 如果沒有載入到，使用新的空數據
-        if (loadedBaseInfo != null) {
-          baseInfoData = loadedBaseInfo;
-        } else {
-          baseInfoData = BaseInfoModule.BaseInfoData();
-        }
-        
-        // 更新ChapterSelection
-        if (loadedSegments != null && loadedSegments.isNotEmpty) {
-          segmentsData = loadedSegments;
-        }
-        
-        // 更新Outline
-        if (loadedOutline != null && loadedOutline.isNotEmpty) {
-          outlineData = loadedOutline;
-        }
-        
-        // 更新WorldSettings
-        if (loadedWorldSettings != null && loadedWorldSettings.isNotEmpty) {
-          // 直接使用讀取的數據，不自動包裝「全部」節點
-          worldSettingsData = loadedWorldSettings;
-        }
-        
-        // 更新Characters
-        if (loadedCharacterData != null && loadedCharacterData.isNotEmpty) {
-          characterData = loadedCharacterData;
-        }
-        
-        // 設定初始選擇
-        if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
-          selectedSegID = segmentsData[0].segmentUUID;
-          selectedChapID = segmentsData[0].chapters[0].chapterUUID;
-          contentText = segmentsData[0].chapters[0].chapterContent;
-          // 使用 _isSyncing 標記來避免觸發 textController 監聽器
-          _isSyncing = true;
-          textController.text = contentText;
-          _isSyncing = false;
-          // 重新計算字數
-          totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
-        }
-      });
-      
-      // 標記為已儲存狀態（剛載入的檔案）
-      _markAsSaved();
-      setState(() {
-        _lastSavedTime = null;
-      });
-      
-    } catch (e) {
-      throw FileException("解析專案檔案失敗：${e.toString()}");
-    }
   }
 }
 
@@ -2349,6 +1949,8 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
     _scrollController.dispose();
     super.dispose();
   }
+
+  // MARK: - Build
 
   @override
   Widget build(BuildContext context) {

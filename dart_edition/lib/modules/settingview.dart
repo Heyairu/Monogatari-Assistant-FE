@@ -31,6 +31,7 @@ class SettingView extends StatefulWidget {
 }
 
 class _SettingViewState extends State<SettingView> {
+  // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -44,7 +45,7 @@ class _SettingViewState extends State<SettingView> {
               children: [
                 Icon(
                   Icons.settings,
-                  size: 32,
+                  size: widget.settingsManager.fontSize + 16,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 12),
@@ -87,6 +88,16 @@ class _SettingViewState extends State<SettingView> {
 
                     // 主題模式選擇
                     _buildThemeModeSetting(),
+                    
+                    const SizedBox(height: 24),
+
+                    // 字體大小設定
+                    _buildFontSizeSetting(),
+
+                    const SizedBox(height: 24),
+                    
+                    // 主題顏色設定
+                    _buildColorSetting(),
                     
                     const SizedBox(height: 16),
                     const Divider(),
@@ -136,10 +147,10 @@ class _SettingViewState extends State<SettingView> {
                         setState(() {});
                       },
                     ),
+                    const SizedBox(height: 8),
                     _buildPlaceholderSetting("自動儲存", Icons.save),
                     _buildPlaceholderSetting("自動備份", Icons.backup),
                     _buildPlaceholderSetting("語言設定", Icons.language),
-                    _buildPlaceholderSetting("字體大小調整", Icons.text_fields),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
                   ],
                 ),
@@ -151,7 +162,135 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  /// 主題模式設定
+  // MARK: - 字體大小設定
+  Widget _buildFontSizeSetting() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              Icon(
+                Icons.text_fields, 
+                size: widget.settingsManager.fontSize + 6, 
+                color: Theme.of(context).colorScheme.primary
+              ),
+              const SizedBox(width: 12),
+              Text(
+                "字體大小調整",
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const Spacer(),
+              Text(
+                "${widget.settingsManager.fontSize.toInt()} px",
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Slider(
+          value: widget.settingsManager.fontSize,
+          min: 12.0,
+          max: 20.0,
+          divisions: 8, // (20-12) = 8 steps, 1px per step
+          label: "${widget.settingsManager.fontSize.toInt()} px",
+          onChanged: (value) async {
+            await widget.settingsManager.setFontSize(value);
+            setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  // MARK: - 主題顏色設定
+  Widget _buildColorSetting() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Text(
+            "主題顏色",
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 5,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.0,
+          ),
+          itemCount: ThemeManager.supportedColors.length,
+          itemBuilder: (context, index) {
+            final entry = ThemeManager.supportedColors.entries.elementAt(index);
+            final isSelected = widget.themeManager.themeColor.value == entry.value.value;
+            
+            return Center(
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    widget.themeManager.setThemeColor(entry.value);
+                  });
+                },
+                borderRadius: BorderRadius.circular(50),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: entry.value,
+                    shape: BoxShape.circle,
+                    border: isSelected
+                        ? Border.all(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            width: 2.5,
+                          )
+                        : Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            width: 1,
+                          ),
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: entry.value.withOpacity(0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                    ],
+                  ),
+                  child: isSelected
+                      ? Icon(
+                          Icons.check,
+                          color: entry.value.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                          size: 20,
+                        )
+                      : entry.key == "Auto" 
+                          ? Icon(
+                              Icons.auto_awesome, 
+                              color: entry.value.computeLuminance() > 0.5 ? Colors.black45 : Colors.white54,
+                              size: 16
+                            ) 
+                          : null,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // MARK: - 主題模式設定
   Widget _buildThemeModeSetting() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,7 +331,7 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  /// 主題預覽
+  // MARK: - 主題預覽
   Widget _buildThemePreview() {
     final isDark = widget.themeManager.isDarkMode;
     final colorScheme = Theme.of(context).colorScheme;
@@ -200,45 +339,7 @@ class _SettingViewState extends State<SettingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "當前主題預覽",
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-        
-        // 色彩預覽
-        Row(
-          children: [
-            Expanded(
-              child: _buildColorSwatch(
-                "主色",
-                colorScheme.primary,
-                colorScheme.onPrimary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildColorSwatch(
-                "次要色",
-                colorScheme.secondary,
-                colorScheme.onSecondary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildColorSwatch(
-                "背景",
-                colorScheme.surface,
-                colorScheme.onSurface,
-              ),
-            ),
-          ],
-        ),
-        
-        const SizedBox(height: 16),
-        
+
         // 當前模式指示
         Container(
           padding: const EdgeInsets.all(12),
@@ -251,12 +352,12 @@ class _SettingViewState extends State<SettingView> {
             children: [
               Icon(
                 isDark ? Icons.dark_mode : Icons.light_mode,
-                size: 20,
+                size: widget.settingsManager.fontSize + 6,
                 color: colorScheme.onPrimaryContainer,
               ),
               const SizedBox(width: 8),
               Text(
-                "目前使用：${isDark ? '深色' : '淺色'}模式",
+                "目前使用：${isDark ? "深色" : "淺色"}模式",
                 style: TextStyle(
                   color: colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.w500,
@@ -269,32 +370,7 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  /// 顏色色塊
-  Widget _buildColorSwatch(String label, Color color, Color onColor) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.palette, color: onColor),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: onColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 開關設定項目
+  // MARK: - 開關設定項目
   Widget _buildSwitchSetting(
     String title,
     IconData icon,
@@ -306,7 +382,7 @@ class _SettingViewState extends State<SettingView> {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: ListTile(
         contentPadding: EdgeInsets.zero,
-        leading: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
         title: Text(
           title,
           style: Theme.of(context).textTheme.bodyLarge,
@@ -329,13 +405,13 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  /// 佔位設定項目
+  // MARK: - 佔位元件
   Widget _buildPlaceholderSetting(String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 12),
           Text(
             title,

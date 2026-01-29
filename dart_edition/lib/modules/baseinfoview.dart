@@ -540,7 +540,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       children: [
         Row(
           children: [
-            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            Icon(icon, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               label,
@@ -572,7 +572,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       children: [
         Row(
           children: [
-            Icon(Icons.local_offer, size: 20, color: Theme.of(context).colorScheme.primary),
+            Icon(Icons.local_offer, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               "標籤",
@@ -594,7 +594,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
               final tag = entry.value;
               return Chip(
                 label: Text(tag),
-                deleteIcon: const Icon(Icons.close, size: 18),
+                deleteIcon: const Icon(Icons.close),
                 onDeleted: () => _removeTag(index),
                 backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
               );
@@ -638,7 +638,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       children: [
         Row(
           children: [
-            Icon(Icons.description, size: 20, color: Theme.of(context).colorScheme.primary),
+            Icon(Icons.description, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               "簡介",
@@ -726,7 +726,6 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       children: [
         Icon(
           icon,
-          size: 18,
           color: Theme.of(context).colorScheme.onTertiaryContainer.withOpacity(0.7),
         ),
         const SizedBox(width: 8),
