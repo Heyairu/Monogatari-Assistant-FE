@@ -25,9 +25,129 @@
 import "package:flutter/material.dart";
 import "package:xml/xml.dart" as xml;
 
+/// 定義特質/能力/滑桿的結構，解決硬編碼問題
+class TraitDefinition {
+  final String xmlTitle; // XML 儲存用的 Title 或 Key
+  final String uiTitle;  // UI 顯示用的標題
+  final String xmlLeft;  // XML 左側標籤
+  final String xmlRight; // XML 右側標籤
+  final String uiLeft;   // UI 左側標籤
+  final String uiRight;  // UI 右側標籤
+
+  const TraitDefinition({
+    required this.xmlTitle,
+    required this.uiTitle,
+    required this.xmlLeft,
+    required this.xmlRight,
+    required this.uiLeft,
+    required this.uiRight,
+  });
+}
+
+class TraitDefinitions {
+  static const commonAbilities = [
+    TraitDefinition(xmlTitle: "cooking", uiTitle: "料理", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "cleaning", uiTitle: "清潔", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "finance", uiTitle: "理財", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "fitness", uiTitle: "體能", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "art", uiTitle: "藝術", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "music", uiTitle: "音樂", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "dance", uiTitle: "舞蹈", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "handicraft", uiTitle: "手工", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "social", uiTitle: "社交", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "leadership", uiTitle: "領導", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "analysis", uiTitle: "分析", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "creativity", uiTitle: "創意", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "memory", uiTitle: "記憶", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "observation", uiTitle: "觀察", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "adaptability", uiTitle: "應變", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(xmlTitle: "learning", uiTitle: "學習", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+  ];
+
+  static const socialItems = [
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "introverted", xmlRight: "extroverted", uiLeft: "內向", uiRight: "外向"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "emotional", xmlRight: "rational", uiLeft: "感性", uiRight: "理性"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "passive", xmlRight: "active", uiLeft: "被動", uiRight: "主動"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "conservative", xmlRight: "open", uiLeft: "保守", uiRight: "開放"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "cautious", xmlRight: "adventurous", uiLeft: "謹慎", uiRight: "冒險"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "dependent", xmlRight: "independent", uiLeft: "依賴", uiRight: "獨立"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "compliant", xmlRight: "stubborn", uiLeft: "柔順", uiRight: "固執"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "pessimistic", xmlRight: "optimistic", uiLeft: "悲觀", uiRight: "樂觀"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "serious", xmlRight: "humorous", uiLeft: "嚴肅", uiRight: "幽默"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "shy", xmlRight: "outgoing", uiLeft: "害羞", uiRight: "大方"),
+  ];
+
+  static const approaches = [
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "low-key", xmlRight: "high-profile", uiLeft: "低調", uiRight: "高調"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "passive", xmlRight: "proactive", uiLeft: "消極", uiRight: "積極"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "cunning", xmlRight: "honest", uiLeft: "狡猾", uiRight: "老實"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "immature", xmlRight: "mature", uiLeft: "幼稚", uiRight: "成熟"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "calm", xmlRight: "impulsive", uiLeft: "冷靜", uiRight: "衝動"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "taciturn", xmlRight: "talkative", uiLeft: "寡言", uiRight: "多話"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "obstinate", xmlRight: "obedient", uiLeft: "執拗", uiRight: "順從"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "unrestrained", xmlRight: "disciplined", uiLeft: "奔放", uiRight: "自律"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "serious", xmlRight: "frivolous", uiLeft: "嚴肅", uiRight: "輕浮"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "reserved", xmlRight: "frank", uiLeft: "彆扭", uiRight: "坦率"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "indifferent", xmlRight: "curious", uiLeft: "淡漠", uiRight: "好奇"),
+    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "dull", xmlRight: "perceptive", uiLeft: "遲鈍", uiRight: "敏銳"),
+  ];
+
+  static const traits = [
+    TraitDefinition(xmlTitle: "attitude", uiTitle: "態度", xmlLeft: "pessimistic", xmlRight: "optimistic", uiLeft: "悲觀", uiRight: "樂觀"),
+    TraitDefinition(xmlTitle: "expression", uiTitle: "表情", xmlLeft: "expressionless", xmlRight: "vivid", uiLeft: "面癱", uiRight: "生動"),
+    TraitDefinition(xmlTitle: "aptitude", uiTitle: "資質", xmlLeft: "dull", xmlRight: "genius", uiLeft: "笨蛋", uiRight: "天才"),
+    TraitDefinition(xmlTitle: "mindset", uiTitle: "思想", xmlLeft: "simple", xmlRight: "complex", uiLeft: "單純", uiRight: "複雜"),
+    TraitDefinition(xmlTitle: "shamelessness", uiTitle: "臉皮", xmlLeft: "thin-skinned", xmlRight: "thick-skinned", uiLeft: "極薄", uiRight: "極厚"),
+    TraitDefinition(xmlTitle: "temper", uiTitle: "脾氣", xmlLeft: "gentle", xmlRight: "hot-tempered", uiLeft: "溫和", uiRight: "火爆"),
+    TraitDefinition(xmlTitle: "manners", uiTitle: "舉止", xmlLeft: "rude", xmlRight: "refined", uiLeft: "粗魯", uiRight: "斯文"),
+    TraitDefinition(xmlTitle: "willpower", uiTitle: "意志", xmlLeft: "fragile", xmlRight: "strong", uiLeft: "易碎", uiRight: "堅強"),
+    TraitDefinition(xmlTitle: "desire", uiTitle: "慾望", xmlLeft: "ascetic", xmlRight: "intense", uiLeft: "無慾", uiRight: "強烈"),
+    TraitDefinition(xmlTitle: "courage", uiTitle: "膽量", xmlLeft: "cowardly", xmlRight: "brave", uiLeft: "膽小", uiRight: "勇敢"),
+    TraitDefinition(xmlTitle: "eloquence", uiTitle: "談吐", xmlLeft: "inarticulate", xmlRight: "witty", uiLeft: "木訥", uiRight: "風趣"),
+    TraitDefinition(xmlTitle: "vigilance", uiTitle: "戒心", xmlLeft: "gullible", xmlRight: "suspicious", uiLeft: "輕信", uiRight: "多疑"),
+    TraitDefinition(xmlTitle: "self-esteem", uiTitle: "自尊", xmlLeft: "low", xmlRight: "high", uiLeft: "低下", uiRight: "高亢"),
+    TraitDefinition(xmlTitle: "confidence", uiTitle: "自信", xmlLeft: "low", xmlRight: "high", uiLeft: "低下", uiRight: "高亢"),
+    TraitDefinition(xmlTitle: "archetype", uiTitle: "陰陽", xmlLeft: "antagonist", xmlRight: "protagonist", uiLeft: "陰角", uiRight: "陽角"),
+  ];
+}
+
 // MARK: - CharacterCodec for XML Save/Load
 
 class CharacterCodec {
+  static const basicKeys = [
+    "name", "nickname", "age", "gender", "occupation", 
+    "birthday", "native", "live", "address"
+  ];
+  
+  static const appearanceKeys = [
+    "height", "weight", "blood", "hair", "eye", "skin", 
+    "faceFeatures", "eyeFeatures", "earFeatures", "noseFeatures", 
+    "mouthFeatures", "eyebrowFeatures", "body", "dress"
+  ];
+  
+  static const personalityKeys = [
+    "mbti", "personality", "language", "interest", "habit", 
+    "alignment", "belief", "limit", "future", "cherish", 
+    "disgust", "fear", "curious", "expect", "intention", "otherValues"
+  ];
+
+  static const socialKeys = [
+     "impression", "likable", "family", "otherShowLove", 
+     "otherGoodwill", "otherHatePeople", "otherRelationship"
+  ];
+
+  static const otherKeys = [
+    "originalName", "otherText"
+  ];
+
+  static const allControllerKeys = [
+    ...basicKeys,
+    ...appearanceKeys,
+    ...personalityKeys,
+    ...socialKeys,
+    ...otherKeys,
+  ];
+
   /// 將角色資料序列化成 XML 格式
   static String? saveXML(Map<String, Map<String, dynamic>> characterData) {
     if (characterData.isEmpty) {
@@ -45,61 +165,25 @@ class CharacterCodec {
         builder.element("Character", attributes: {"Name": characterName}, nest: () {
           // Basic Info
           builder.element("BasicInfo", nest: () {
-            builder.element("name", nest: data["name"] ?? "");
-            builder.element("nickname", nest: data["nickname"] ?? "");
-            builder.element("age", nest: data["age"] ?? "");
-            builder.element("gender", nest: data["gender"] ?? "");
-            builder.element("occupation", nest: data["occupation"] ?? "");
-            builder.element("birthday", nest: data["birthday"] ?? "");
-            builder.element("native", nest: data["native"] ?? "");
-            builder.element("live", nest: data["live"] ?? "");
-            builder.element("address", nest: data["address"] ?? "");
+            _saveStrings(builder, data, basicKeys);
           });
 
           // Appearance
           builder.element("Appearance", nest: () {
-            builder.element("height", nest: data["height"] ?? "");
-            builder.element("weight", nest: data["weight"] ?? "");
-            builder.element("blood", nest: data["blood"] ?? "");
-            builder.element("hair", nest: data["hair"] ?? "");
-            builder.element("eye", nest: data["eye"] ?? "");
-            builder.element("skin", nest: data["skin"] ?? "");
-            builder.element("faceFeatures", nest: data["faceFeatures"] ?? "");
-            builder.element("eyeFeatures", nest: data["eyeFeatures"] ?? "");
-            builder.element("earFeatures", nest: data["earFeatures"] ?? "");
-            builder.element("noseFeatures", nest: data["noseFeatures"] ?? "");
-            builder.element("mouthFeatures", nest: data["mouthFeatures"] ?? "");
-            builder.element("eyebrowFeatures", nest: data["eyebrowFeatures"] ?? "");
-            builder.element("body", nest: data["body"] ?? "");
-            builder.element("dress", nest: data["dress"] ?? "");
+            _saveStrings(builder, data, appearanceKeys);
           });
 
           // Personality
           builder.element("Personality", nest: () {
-            builder.element("mbti", nest: data["mbti"] ?? "");
-            builder.element("personality", nest: data["personality"] ?? "");
-            builder.element("language", nest: data["language"] ?? "");
-            builder.element("interest", nest: data["interest"] ?? "");
-            builder.element("habit", nest: data["habit"] ?? "");
-            builder.element("alignment", nest: data["alignment"] ?? "");
-            builder.element("belief", nest: data["belief"] ?? "");
-            builder.element("limit", nest: data["limit"] ?? "");
-            builder.element("future", nest: data["future"] ?? "");
-            builder.element("cherish", nest: data["cherish"] ?? "");
-            builder.element("disgust", nest: data["disgust"] ?? "");
-            builder.element("fear", nest: data["fear"] ?? "");
-            builder.element("curious", nest: data["curious"] ?? "");
-            builder.element("expect", nest: data["expect"] ?? "");
-            builder.element("intention", nest: data["intention"] ?? "");
-            builder.element("otherValues", nest: data["otherValues"] ?? "");
+            _saveStrings(builder, data, personalityKeys);
 
             final hinderEvents = data["hinderEvents"] as List<Map<String, String>>? ?? [];
             if (hinderEvents.isNotEmpty) {
               builder.element("hinderEvents", nest: () {
                 for (final event in hinderEvents) {
                   builder.element("event", nest: () {
-                    builder.element("name", nest: event["event"] ?? "");
-                    builder.element("solve", nest: event["solve"] ?? "");
+                    _writeTextElement(builder, "name", event["event"] ?? "");
+                    _writeTextElement(builder, "solve", event["solve"] ?? "");
                   });
                 }
               });
@@ -114,16 +198,12 @@ class CharacterCodec {
             _saveList(builder, "unProficientToDoList", data["unProficientToDoList"]);
 
             final commonAbilityValues = data["commonAbilityValues"] as List<double>? ?? [];
-            final commonAbilityLabels = [
-              "cooking", "cleaning", "finance", "fitness",
-              "art", "music", "dance", "handicraft",
-              "social", "leadership", "analysis", "creativity",
-              "memory", "observation", "adaptability", "learning",
-            ];
+            
             if (commonAbilityValues.isNotEmpty) {
               builder.element("commonAbilitySliders", nest: () {
-                for (int i = 0; i < commonAbilityValues.length && i < commonAbilityLabels.length; i++) {
-                  _saveSlider(builder, commonAbilityLabels[i], "poor", "good", commonAbilityValues[i]);
+                for (int i = 0; i < commonAbilityValues.length && i < TraitDefinitions.commonAbilities.length; i++) {
+                  final def = TraitDefinitions.commonAbilities[i];
+                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, commonAbilityValues[i]);
                 }
               });
             }
@@ -131,93 +211,56 @@ class CharacterCodec {
 
           // Social
           builder.element("Social", nest: () {
-            builder.element("impression", nest: data["impression"] ?? "");
-            builder.element("likable", nest: data["likable"] ?? "");
-            builder.element("family", nest: data["family"] ?? "");
+            _writeTextElement(builder, "impression", data["impression"] ?? "");
+            _writeTextElement(builder, "likable", data["likable"] ?? "");
+            _writeTextElement(builder, "family", data["family"] ?? "");
 
             _saveCheckboxGroup(builder, "howToShowLove", data["howToShowLove"]);
-            builder.element("otherShowLove", nest: data["otherShowLove"] ?? "");
+            _writeTextElement(builder, "otherShowLove", data["otherShowLove"] ?? "");
 
             _saveCheckboxGroup(builder, "howToShowGoodwill", data["howToShowGoodwill"]);
-            builder.element("otherGoodwill", nest: data["otherGoodwill"] ?? "");
+            _writeTextElement(builder, "otherGoodwill", data["otherGoodwill"] ?? "");
 
             _saveCheckboxGroup(builder, "handleHatePeople", data["handleHatePeople"]);
-            builder.element("otherHatePeople", nest: data["otherHatePeople"] ?? "");
+            _writeTextElement(builder, "otherHatePeople", data["otherHatePeople"] ?? "");
 
             // Social Item Sliders
             final socialItemValues = data["socialItemValues"] as List<double>? ?? [];
-            final socialItemLabels = [
-              ["introverted", "extroverted"],
-              ["emotional", "rational"],
-              ["passive", "active"],
-              ["conservative", "open"],
-              ["cautious", "adventurous"],
-              ["dependent", "independent"],
-              ["compliant", "stubborn"],
-              ["pessimistic", "optimistic"],
-              ["serious", "humorous"],
-              ["shy", "outgoing"],
-            ];
+            
             if (socialItemValues.isNotEmpty) {
               builder.element("socialItemSliders", nest: () {
-                for (int i = 0; i < socialItemValues.length && i < socialItemLabels.length; i++) {
-                  _saveSlider(builder, "", socialItemLabels[i][0], socialItemLabels[i][1], socialItemValues[i]);
+                for (int i = 0; i < socialItemValues.length && i < TraitDefinitions.socialItems.length; i++) {
+                  final def = TraitDefinitions.socialItems[i];
+                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, socialItemValues[i]);
                 }
               });
             }
 
-            builder.element("relationship", nest: data["relationship"] ?? "");
+            _writeTextElement(builder, "relationship", data["relationship"] ?? "");
             builder.element("isFindNewLove", nest: (data["isFindNewLove"] ?? false).toString());
             builder.element("isHarem", nest: (data["isHarem"] ?? false).toString());
-            builder.element("otherRelationship", nest: data["otherRelationship"] ?? "");
+            _writeTextElement(builder, "otherRelationship", data["otherRelationship"] ?? "");
 
             // Approach Style Sliders
             final approachValues = data["approachValues"] as List<double>? ?? [];
-            final approachLabels = [
-              ["low-key", "high-profile"],
-              ["passive", "proactive"],
-              ["cunning", "honest"],
-              ["immature", "mature"],
-              ["calm", "impulsive"],
-              ["taciturn", "talkative"],
-              ["obstinate", "obedient"],
-              ["unrestrained", "disciplined"],
-              ["serious", "frivolous"],
-              ["reserved", "frank"],
-              ["indifferent", "curious"],
-              ["dull", "perceptive"],
-            ];
+            
             if (approachValues.isNotEmpty) {
               builder.element("approachSliders", nest: () {
-                for (int i = 0; i < approachValues.length && i < approachLabels.length; i++) {
-                  _saveSlider(builder, "", approachLabels[i][0], approachLabels[i][1], approachValues[i]);
+                for (int i = 0; i < approachValues.length && i < TraitDefinitions.approaches.length; i++) {
+                  final def = TraitDefinitions.approaches[i];
+                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, approachValues[i]);
                 }
               });
             }
 
             // Traits Sliders
             final traitsValues = data["traitsValues"] as List<double>? ?? [];
-            final traitsLabels = [
-              {"label": "attitude", "left": "pessimistic", "right": "optimistic"},
-              {"label": "expression", "left": "expressionless", "right": "vivid"},
-              {"label": "aptitude", "left": "dull", "right": "genius"},
-              {"label": "mindset", "left": "simple", "right": "complex"},
-              {"label": "shamelessness", "left": "thin-skinned", "right": "thick-skinned"},
-              {"label": "temper", "left": "gentle", "right": "hot-tempered"},
-              {"label": "manners", "left": "rude", "right": "refined"},
-              {"label": "willpower", "left": "fragile", "right": "strong"},
-              {"label": "desire", "left": "ascetic", "right": "intense"},
-              {"label": "courage", "left": "cowardly", "right": "brave"},
-              {"label": "eloquence", "left": "inarticulate", "right": "witty"},
-              {"label": "vigilance", "left": "gullible", "right": "suspicious"},
-              {"label": "self-esteem", "left": "low", "right": "high"},
-              {"label": "confidence", "left": "low", "right": "high"},
-              {"label": "archetype", "left": "antagonist", "right": "protagonist"},
-            ];
+            
             if (traitsValues.isNotEmpty) {
               builder.element("traitsSliders", nest: () {
-                for (int i = 0; i < traitsValues.length && i < traitsLabels.length; i++) {
-                  _saveSlider(builder, traitsLabels[i]["label"]!, traitsLabels[i]["left"]!, traitsLabels[i]["right"]!, traitsValues[i]);
+                for (int i = 0; i < traitsValues.length && i < TraitDefinitions.traits.length; i++) {
+                  final def = TraitDefinitions.traits[i];
+                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, traitsValues[i]);
                 }
               });
             }
@@ -225,11 +268,11 @@ class CharacterCodec {
 
           // Other
           builder.element("Other", nest: () {
-            builder.element("originalName", nest: data["originalName"] ?? "");
+            _writeTextElement(builder, "originalName", data["originalName"] ?? "");
             _saveList(builder, "likeItemList", data["likeItemList"]);
             _saveList(builder, "hateItemList", data["hateItemList"]);
             _saveList(builder, "familiarItemList", data["familiarItemList"]);
-            builder.element("otherText", nest: data["otherText"] ?? "");
+            _writeTextElement(builder, "otherText", data["otherText"] ?? "");
           });
         });
       }
@@ -243,9 +286,21 @@ class CharacterCodec {
     if (list.isNotEmpty) {
       builder.element(tagName, nest: () {
         for (final item in list) {
-          builder.element("item", nest: item);
+          _writeTextElement(builder, "item", item);
         }
       });
+    }
+  }
+
+  static void _saveStrings(xml.XmlBuilder builder, Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      _writeTextElement(builder, key, data[key] ?? "");
+    }
+  }
+
+  static void _loadStrings(Map<String, dynamic> data, xml.XmlElement node, List<String> keys) {
+    for (final key in keys) {
+      data[key] = _getText(node, key);
     }
   }
 
@@ -289,55 +344,19 @@ class CharacterCodec {
         // Basic Info
         final basicInfo = charNode.findAllElements("BasicInfo").firstOrNull;
         if (basicInfo != null) {
-          data["name"] = _getText(basicInfo, "name");
-          data["nickname"] = _getText(basicInfo, "nickname");
-          data["age"] = _getText(basicInfo, "age");
-          data["gender"] = _getText(basicInfo, "gender");
-          data["occupation"] = _getText(basicInfo, "occupation");
-          data["birthday"] = _getText(basicInfo, "birthday");
-          data["native"] = _getText(basicInfo, "native");
-          data["live"] = _getText(basicInfo, "live");
-          data["address"] = _getText(basicInfo, "address");
+          _loadStrings(data, basicInfo, basicKeys);
         }
 
         // Appearance
         final appearance = charNode.findAllElements("Appearance").firstOrNull;
         if (appearance != null) {
-          data["height"] = _getText(appearance, "height");
-          data["weight"] = _getText(appearance, "weight");
-          data["blood"] = _getText(appearance, "blood");
-          data["hair"] = _getText(appearance, "hair");
-          data["eye"] = _getText(appearance, "eye");
-          data["skin"] = _getText(appearance, "skin");
-          data["faceFeatures"] = _getText(appearance, "faceFeatures");
-          data["eyeFeatures"] = _getText(appearance, "eyeFeatures");
-          data["earFeatures"] = _getText(appearance, "earFeatures");
-          data["noseFeatures"] = _getText(appearance, "noseFeatures");
-          data["mouthFeatures"] = _getText(appearance, "mouthFeatures");
-          data["eyebrowFeatures"] = _getText(appearance, "eyebrowFeatures");
-          data["body"] = _getText(appearance, "body");
-          data["dress"] = _getText(appearance, "dress");
+          _loadStrings(data, appearance, appearanceKeys);
         }
 
         // Personality
         final personality = charNode.findAllElements("Personality").firstOrNull;
         if (personality != null) {
-          data["mbti"] = _getText(personality, "mbti");
-          data["personality"] = _getText(personality, "personality");
-          data["language"] = _getText(personality, "language");
-          data["interest"] = _getText(personality, "interest");
-          data["habit"] = _getText(personality, "habit");
-          data["alignment"] = _getText(personality, "alignment");
-          data["belief"] = _getText(personality, "belief");
-          data["limit"] = _getText(personality, "limit");
-          data["future"] = _getText(personality, "future");
-          data["cherish"] = _getText(personality, "cherish");
-          data["disgust"] = _getText(personality, "disgust");
-          data["fear"] = _getText(personality, "fear");
-          data["curious"] = _getText(personality, "curious");
-          data["expect"] = _getText(personality, "expect");
-          data["intention"] = _getText(personality, "intention");
-          data["otherValues"] = _getText(personality, "otherValues");
+          _loadStrings(data, personality, personalityKeys);
           data["hinderEvents"] = _parseHinderEvents(personality);
         }
 
@@ -393,7 +412,43 @@ class CharacterCodec {
   }
 
   static String _getText(xml.XmlElement node, String tagName) {
-    return node.findAllElements(tagName).firstOrNull?.innerText ?? "";
+    final element = node.findAllElements(tagName).firstOrNull;
+    return _readElementText(element);
+  }
+
+  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
+    builder.element(name, nest: () {
+      if (value.isEmpty) {
+        builder.text("");
+      } else {
+        builder.cdata(value);
+      }
+    });
+  }
+
+  static String _readElementText(xml.XmlElement? element) {
+    if (element == null) return "";
+    if (element.children.isEmpty) {
+      return element.innerText;
+    }
+    final cdataBuffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlCDATA) {
+        cdataBuffer.write(node.text);
+      }
+    }
+    final cdataText = cdataBuffer.toString();
+    if (cdataText.isNotEmpty) {
+      return cdataText;
+    }
+    final buffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlText || node is xml.XmlCDATA) {
+        buffer.write(node.text);
+      }
+    }
+    final text = buffer.toString();
+    return text.isNotEmpty ? text : element.innerText;
   }
 
   static List<String> _parseList(xml.XmlElement node, String tagName) {
@@ -480,49 +535,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
 
-  // Basic Info - 基本資料
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _nicknameController = TextEditingController();
-  final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _genderController = TextEditingController();
-  final TextEditingController _occupationController = TextEditingController();
-  final TextEditingController _birthdayController = TextEditingController();
-  final TextEditingController _nativeController = TextEditingController();
-  final TextEditingController _liveController = TextEditingController();
-  final TextEditingController _addressController = TextEditingController();
-
-  // Appearance - 外觀
-  final TextEditingController _heightController = TextEditingController();
-  final TextEditingController _weightController = TextEditingController();
-  final TextEditingController _bloodController = TextEditingController();
-  final TextEditingController _hairController = TextEditingController();
-  final TextEditingController _eyeController = TextEditingController();
-  final TextEditingController _skinController = TextEditingController();
-  final TextEditingController _faceFeaturesController = TextEditingController();
-  final TextEditingController _eyeFeaturesController = TextEditingController();
-  final TextEditingController _earFeaturesController = TextEditingController();
-  final TextEditingController _noseFeaturesController = TextEditingController();
-  final TextEditingController _mouthFeaturesController = TextEditingController();
-  final TextEditingController _eyebrowFeaturesController = TextEditingController();
-
-  final TextEditingController _bodyController = TextEditingController();
-  final TextEditingController _dressController = TextEditingController();
-
-  // Personality - 個性
-  final TextEditingController _personalityController = TextEditingController();
-  final TextEditingController _languageController = TextEditingController();
-  final TextEditingController _interestController = TextEditingController();
-  final TextEditingController _habitController = TextEditingController();
-  final TextEditingController _beliefController = TextEditingController();
-  final TextEditingController _limitController = TextEditingController();
-  final TextEditingController _futureController = TextEditingController();
-  final TextEditingController _cherishController = TextEditingController();
-  final TextEditingController _disgustController = TextEditingController();
-  final TextEditingController _fearController = TextEditingController();
-  final TextEditingController _curiousController = TextEditingController();
-  final TextEditingController _expectController = TextEditingController();
-  final TextEditingController _intentionController = TextEditingController();
-  final TextEditingController _otherValuesController = TextEditingController();
+  // Unified Text Controllers
+  final Map<String, TextEditingController> _controllers = {};
 
   // Alignment - 陣營 (九宮格)
   String? selectedAlignment;
@@ -543,27 +557,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   final TextEditingController _proficientToDoController = TextEditingController();
   final TextEditingController _unProficientToDoController = TextEditingController();
 
-  // Common Ability Sliders (16 items) - 生活常用技能
-  List<double> commonAbilityValues = List.filled(16, 50.0);
-  final List<String> commonAbilityLabels = [
-    "料理", "清潔", "理財", "體能", 
-    "藝術", "音樂", "舞蹈", "手工",
-    "社交", "領導", "分析", "創意", 
-    "記憶", "觀察", "應變", "學習",
-  ];
-  
-  // English keys for saving (matching the display labels above)
-  final List<String> commonAbilityKeys = [
-    "cooking", "cleaning", "finance", "fitness",
-    "art", "music", "dance", "handicraft",
-    "social", "leadership", "analysis", "creativity",
-    "memory", "observation", "adaptability", "learning",
-  ];
+  // Common Ability Sliders - 生活常用技能
+  List<double> commonAbilityValues = List.filled(TraitDefinitions.commonAbilities.length, 50.0);
 
   // Social - 社交
-  final TextEditingController _impressionController = TextEditingController();
-  final TextEditingController _likableController = TextEditingController();
-  final TextEditingController _familyController = TextEditingController();
   
   // How to show love - 如何表達「喜歡」
   final Map<String, bool> howToShowLove = {
@@ -580,7 +577,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "get_attention": "做些小動作引起注意",
     "watch_silently": "默默關注對方",
   };
-  final TextEditingController _otherShowLoveController = TextEditingController();
   
   // How to show goodwill - 如何表達好意
   final Map<String, bool> howToShowGoodwill = {
@@ -599,7 +595,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "invite": "邀請對方",
     "share_things": "分享自己的事",
   };
-  final TextEditingController _otherGoodwillController = TextEditingController();
   
   // Handle hate people - 如何應對討厭的人
   final Map<String, bool> handleHatePeople = {
@@ -618,82 +613,63 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "confront": "正面衝突",
     "ask_for_help": "找人幫忙",
   };
-  final TextEditingController _otherHatePeopleController = TextEditingController();
   
-  // Social Item Sliders (10 items) - 社交相關項目
-  List<double> socialItemValues = List.filled(10, 50.0);
-  final List<List<String>> socialItemLabels = [
-    ["內向", "外向"],
-    ["感性", "理性"],
-    ["被動", "主動"],
-    ["保守", "開放"],
-    ["謹慎", "冒險"],
-    ["依賴", "獨立"],
-    ["柔順", "固執"],
-    ["悲觀", "樂觀"],
-    ["嚴肅", "幽默"],
-    ["害羞", "大方"],
-  ];
+  // Social Item Sliders - 社交相關項目
+  List<double> socialItemValues = List.filled(TraitDefinitions.socialItems.length, 50.0);
 
   // MBTI
-  final TextEditingController _mbtiController = TextEditingController();
 
   // Relationship - 戀愛關係
   String? selectedRelationship;
   bool isFindNewLove = false;
   bool isHarem = false;
-  final TextEditingController _otherRelationshipController = TextEditingController();
 
-  // Approach Style - 行事作風 (12 items)
-  List<double> approachValues = List.filled(12, 50.0);
-  final List<List<String>> approachLabels = [
-    ["低調", "高調"],
-    ["消極", "積極"],
-    ["狡猾", "老實"],
-    ["幼稚", "成熟"],
-    ["冷靜", "衝動"],
-    ["寡言", "多話"],
-    ["執拗", "順從"],
-    ["奔放", "自律"],
-    ["嚴肅", "輕浮"],
-    ["彆扭", "坦率"],
-    ["淡漠", "好奇"],
-    ["遲鈍", "敏銳"],
-  ];
+  // Approach Style - 行事作風
+  List<double> approachValues = List.filled(TraitDefinitions.approaches.length, 50.0);
 
-  // Traits - 性格特質 (15 items)
-  List<double> traitsValues = List.filled(15, 50.0);
-  final List<Map<String, String>> traitsLabels = [
-    {"label": "態度", "left": "悲觀", "right": "樂觀"},
-    {"label": "表情", "left": "面癱", "right": "生動"},
-    {"label": "資質", "left": "笨蛋", "right": "天才"},
-    {"label": "思想", "left": "單純", "right": "複雜"},
-    {"label": "臉皮", "left": "極薄", "right": "極厚"},
-    {"label": "脾氣", "left": "溫和", "right": "火爆"},
-    {"label": "舉止", "left": "粗魯", "right": "斯文"},
-    {"label": "意志", "left": "易碎", "right": "堅強"},
-    {"label": "慾望", "left": "無慾", "right": "強烈"},
-    {"label": "膽量", "left": "膽小", "right": "勇敢"},
-    {"label": "談吐", "left": "木訥", "right": "風趣"},
-    {"label": "戒心", "left": "輕信", "right": "多疑"},
-    {"label": "自尊", "left": "低下", "right": "高亢"},
-    {"label": "自信", "left": "低下", "right": "高亢"},
-    {"label": "陰陽", "left": "陰角", "right": "陽角"},
-  ];
+  // Traits - 性格特質
+  List<double> traitsValues = List.filled(TraitDefinitions.traits.length, 50.0);
 
   // Other - 其他
-  final TextEditingController _originalNameController = TextEditingController();
   List<String> likeItemList = [];
   List<String> hateItemList = [];
   List<String> familiarItemList = [];
   final TextEditingController _likeItemController = TextEditingController();
   final TextEditingController _hateItemController = TextEditingController();
   final TextEditingController _familiarItemController = TextEditingController();
-  final TextEditingController _otherTextController = TextEditingController();
+
+  bool _isLoading = false;
+
+  void _setupListeners() {
+    // 建立所有控制項
+    for (var key in CharacterCodec.allControllerKeys) {
+      _controllers[key] = TextEditingController();
+    }
+
+    // Name needs specific sync
+    final nameController = _controllers["name"];
+    if (nameController != null) {
+      nameController.addListener(() {
+        if (_isLoading) return;
+        _syncCharacterName(nameController.text);
+        _saveCurrentCharacterData();
+      });
+    }
+
+    // Batch setup listeners
+    for (var entry in _controllers.entries) {
+      if (entry.key == "name") continue; // Handled specially
+      
+      entry.value.addListener(() {
+        if (!_isLoading) _saveCurrentCharacterData();
+      });
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _setupListeners();
     _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
@@ -719,62 +695,22 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   void dispose() {
     _tabController.dispose();
     _newCharacterController.dispose();
-    _nameController.dispose();
-    _nicknameController.dispose();
-    _ageController.dispose();
-    _genderController.dispose();
-    _occupationController.dispose();
-    _birthdayController.dispose();
-    _nativeController.dispose();
-    _liveController.dispose();
-    _addressController.dispose();
-    _heightController.dispose();
-    _weightController.dispose();
-    _bloodController.dispose();
-    _hairController.dispose();
-    _eyeController.dispose();
-    _skinController.dispose();
-    _faceFeaturesController.dispose();
-    _eyeFeaturesController.dispose();
-    _earFeaturesController.dispose();
-    _noseFeaturesController.dispose();
-    _mouthFeaturesController.dispose();
-    _eyebrowFeaturesController.dispose();
-    _bodyController.dispose();
-    _dressController.dispose();
-    _personalityController.dispose();
-    _languageController.dispose();
-    _interestController.dispose();
-    _habitController.dispose();
-    _beliefController.dispose();
-    _limitController.dispose();
-    _futureController.dispose();
-    _cherishController.dispose();
-    _disgustController.dispose();
-    _fearController.dispose();
-    _curiousController.dispose();
-    _expectController.dispose();
-    _intentionController.dispose();
-    _otherValuesController.dispose();
+    
+    // Dispose unified controllers
+    for (var controller in _controllers.values) {
+      controller.dispose();
+    }
+    _controllers.clear();
+
     _hinderEventController.dispose();
     _solveController.dispose();
     _loveToDoController.dispose();
     _hateToDoController.dispose();
     _proficientToDoController.dispose();
     _unProficientToDoController.dispose();
-    _impressionController.dispose();
-    _likableController.dispose();
-    _familyController.dispose();
-    _otherShowLoveController.dispose();
-    _otherGoodwillController.dispose();
-    _otherHatePeopleController.dispose();
-    _mbtiController.dispose();
-    _otherRelationshipController.dispose();
-    _originalNameController.dispose();
     _likeItemController.dispose();
     _hateItemController.dispose();
     _familiarItemController.dispose();
-    _otherTextController.dispose();
     super.dispose();
   }
 
@@ -950,32 +886,32 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildNameField("姓名：", _nameController),
-        _buildTextField("暱稱：", _nicknameController),
-        _buildTextField("年齡：", _ageController),
-        _buildTextField("性別：", _genderController),
-        _buildTextField("職業：", _occupationController),
-        _buildTextField("生日：", _birthdayController),
-        _buildTextField("出生地：", _nativeController),
-        _buildTextField("居住地：", _liveController),
-        _buildTextField("住址：", _addressController),
+        _buildNameField("姓名：", _controllers["name"]!),
+        _buildTextField("暱稱：", _controllers["nickname"]!),
+        _buildTextField("年齡：", _controllers["age"]!),
+        _buildTextField("性別：", _controllers["gender"]!),
+        _buildTextField("職業：", _controllers["occupation"]!),
+        _buildTextField("生日：", _controllers["birthday"]!),
+        _buildTextField("出生地：", _controllers["native"]!),
+        _buildTextField("居住地：", _controllers["live"]!),
+        _buildTextField("住址：", _controllers["address"]!),
         const Divider(height: 32),
         Text("外觀", style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        _buildTextField("身高：", _heightController),
-        _buildTextField("體重：", _weightController),
-        _buildTextField("血型：", _bloodController),
-        _buildTextField("髮色：", _hairController),
-        _buildTextField("瞳色：", _eyeController),
-        _buildTextField("膚色：", _skinController),
-        _buildTextField("臉型：", _faceFeaturesController),
-        _buildTextField("眼型：", _eyeFeaturesController),
-        _buildTextField("耳型：", _earFeaturesController),
-        _buildTextField("鼻型：", _noseFeaturesController),
-        _buildTextField("嘴型：", _mouthFeaturesController),
-        _buildTextField("眉型：", _eyebrowFeaturesController),
-        _buildTextField("體格：", _bodyController),
-        _buildTextField("服裝：", _dressController),
+        _buildTextField("身高：", _controllers["height"]!),
+        _buildTextField("體重：", _controllers["weight"]!),
+        _buildTextField("血型：", _controllers["blood"]!),
+        _buildTextField("髮色：", _controllers["hair"]!),
+        _buildTextField("瞳色：", _controllers["eye"]!),
+        _buildTextField("膚色：", _controllers["skin"]!),
+        _buildTextField("臉型：", _controllers["faceFeatures"]!),
+        _buildTextField("眼型：", _controllers["eyeFeatures"]!),
+        _buildTextField("耳型：", _controllers["earFeatures"]!),
+        _buildTextField("鼻型：", _controllers["noseFeatures"]!),
+        _buildTextField("嘴型：", _controllers["mouthFeatures"]!),
+        _buildTextField("眉型：", _controllers["eyebrowFeatures"]!),
+        _buildTextField("體格：", _controllers["body"]!),
+        _buildTextField("服裝：", _controllers["dress"]!),
         
         Card(
           child: Padding(
@@ -986,7 +922,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 Text("故事相關", style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 16),
                 TextField(
-                  controller: _intentionController,
+                  controller: _controllers["intention"]!,
                   decoration: const InputDecoration(
                     labelText: "故事中的動機、目標？",
                     border: OutlineInputBorder(),
@@ -1043,19 +979,19 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTextField("MBTI：", _mbtiController),
-        _buildMultilineField("個性：", _personalityController),
-        _buildTextField("口頭禪、慣用語：", _languageController),
-        _buildTextField("興趣：", _interestController),
-        _buildTextField("習慣、癖好：", _habitController),
-        _buildTextField("信仰：", _beliefController),
-        _buildTextField("底線", _limitController),
-        _buildTextField("將來想變得如何？", _futureController),
-        _buildTextField("最珍視的事物？", _cherishController),
-        _buildTextField("最厭惡的事物？", _disgustController),
-        _buildTextField("最害怕的事物？", _fearController),
-        _buildTextField("最好奇的事物？", _curiousController),
-        _buildTextField("最期待的事物？", _expectController),
+        _buildTextField("MBTI：", _controllers["mbti"]!),
+        _buildMultilineField("個性：", _controllers["personality"]!),
+        _buildTextField("口頭禪、慣用語：", _controllers["language"]!),
+        _buildTextField("興趣：", _controllers["interest"]!),
+        _buildTextField("習慣、癖好：", _controllers["habit"]!),
+        _buildTextField("信仰：", _controllers["belief"]!),
+        _buildTextField("底線", _controllers["limit"]!),
+        _buildTextField("將來想變得如何？", _controllers["future"]!),
+        _buildTextField("最珍視的事物？", _controllers["cherish"]!),
+        _buildTextField("最厭惡的事物？", _controllers["disgust"]!),
+        _buildTextField("最害怕的事物？", _controllers["fear"]!),
+        _buildTextField("最好奇的事物？", _controllers["curious"]!),
+        _buildTextField("最期待的事物？", _controllers["expect"]!),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -1096,7 +1032,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           ),
         ),
         const Divider(height: 32),
-        _buildMultilineField("其他補充：", _otherValuesController),
+        _buildMultilineField("其他補充：", _controllers["otherValues"]!),
       ],
     );
   }
@@ -1134,11 +1070,11 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildMultilineField("來自他人的印象", _impressionController),
+        _buildMultilineField("來自他人的印象", _controllers["impression"]!),
         const SizedBox(height: 8),
-        _buildTextField("最受他人欣賞/喜愛的特點", _likableController),
+        _buildTextField("最受他人欣賞/喜愛的特點", _controllers["likable"]!),
         const SizedBox(height: 8),
-        _buildMultilineField("簡述原生家庭", _familyController),
+        _buildMultilineField("簡述原生家庭", _controllers["family"]!),
         const Divider(height: 32),
         Card(
           child: Padding(
@@ -1151,7 +1087,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 _buildCheckboxGroup(howToShowLove, howToShowLoveLabels),
                 const SizedBox(height: 8),
                 TextField(
-                  controller: _otherShowLoveController,
+                  controller: _controllers["otherShowLove"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
@@ -1174,7 +1110,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 _buildCheckboxGroup(howToShowGoodwill, howToShowGoodwillLabels),
                 const SizedBox(height: 8),
                 TextField(
-                  controller: _otherGoodwillController,
+                  controller: _controllers["otherGoodwill"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
@@ -1197,7 +1133,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
                 TextField(
-                  controller: _otherHatePeopleController,
+                  controller: _controllers["otherHatePeople"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
@@ -1245,7 +1181,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextField(
-          controller: _originalNameController,
+          controller: _controllers["originalName"]!,
           decoration: const InputDecoration(
             labelText: "原文姓名",
             hintText: "例如：桜田如羽",
@@ -1259,7 +1195,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         const SizedBox(height: 16),
         _buildListSection("習慣的人事物", familiarItemList, _familiarItemController, _addFamiliarItem, _deleteFamiliarItem),
         const SizedBox(height: 16),
-        _buildMultilineField("其他補充", _otherTextController),
+        _buildMultilineField("其他補充", _controllers["otherText"]!),
       ],
     );
   }
@@ -1273,7 +1209,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           labelText: label,
           border: const OutlineInputBorder(),
         ),
-        onChanged: (_) => _saveCurrentCharacterData(),
       ),
     );
   }
@@ -1288,10 +1223,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           labelText: label,
           border: const OutlineInputBorder(),
         ),
-        onChanged: (value) {
-          _syncCharacterName(value);
-          _saveCurrentCharacterData();
-        },
       ),
     );
   }
@@ -1306,7 +1237,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           labelText: label,
           border: const OutlineInputBorder(),
         ),
-        onChanged: (_) => _saveCurrentCharacterData(),
       ),
     );
   }
@@ -1543,7 +1473,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
   Widget _buildCommonAbilitySliders() {
     return Column(
-      children: List.generate(16, (index) {
+      children: List.generate(TraitDefinitions.commonAbilities.length, (index) {
+        final def = TraitDefinitions.commonAbilities[index];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Row(
@@ -1551,14 +1482,14 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 80,
                 child: Text(
-                  commonAbilityLabels[index],
+                  def.uiTitle,
                   style: const TextStyle(fontSize: 13),
                 ),
               ),
               SizedBox(
                 width: 70,
                 child: Text(
-                  "不擅長",
+                  def.uiLeft,
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1588,7 +1519,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 70,
                 child: Text(
-                  "擅長",
+                  def.uiRight,
                   textAlign: TextAlign.left,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1627,7 +1558,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         )),
         const SizedBox(height: 8),
         TextField(
-          controller: _otherRelationshipController,
+          controller: _controllers["otherRelationship"]!,
           decoration: const InputDecoration(
             labelText: "其他：",
             hintText: "其他……",
@@ -1666,7 +1597,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
   Widget _buildSocialItemSliders() {
     return Column(
-      children: List.generate(10, (index) {
+      children: List.generate(TraitDefinitions.socialItems.length, (index) {
+        final def = TraitDefinitions.socialItems[index];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Row(
@@ -1674,7 +1606,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 70,
                 child: Text(
-                  socialItemLabels[index][0],
+                  def.uiLeft,
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1704,7 +1636,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 70,
                 child: Text(
-                  socialItemLabels[index][1],
+                  def.uiRight,
                   textAlign: TextAlign.left,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1718,7 +1650,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
   Widget _buildApproachSliders() {
     return Column(
-      children: List.generate(12, (index) {
+      children: List.generate(TraitDefinitions.approaches.length, (index) {
+        final def = TraitDefinitions.approaches[index];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Row(
@@ -1726,7 +1659,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 60,
                 child: Text(
-                  approachLabels[index][0],
+                  def.uiLeft,
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1756,7 +1689,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 60,
                 child: Text(
-                  approachLabels[index][1],
+                  def.uiRight,
                   textAlign: TextAlign.left,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -1770,7 +1703,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
   Widget _buildTraitsSliders() {
     return Column(
-      children: List.generate(15, (index) {
+      children: List.generate(TraitDefinitions.traits.length, (index) {
+        final def = TraitDefinitions.traits[index];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Row(
@@ -1778,7 +1712,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 50,
                 child: Text(
-                  traitsLabels[index]["label"]!,
+                  def.uiTitle,
                   textAlign: TextAlign.left,
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
@@ -1786,7 +1720,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 50,
                 child: Text(
-                  traitsLabels[index]["left"]!,
+                  def.uiLeft,
                   textAlign: TextAlign.right,
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 ),
@@ -1816,7 +1750,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               SizedBox(
                 width: 50,
                 child: Text(
-                  traitsLabels[index]["right"]!,
+                  def.uiRight,
                   textAlign: TextAlign.left,
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 ),
@@ -1848,80 +1782,35 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   void _saveCurrentCharacterData() {
     if (selectedCharacter == null) return;
     
-    characterData[selectedCharacter!] = {
-      // Basic Info
-      "name": _nameController.text,
-      "nickname": _nicknameController.text,
-      "age": _ageController.text,
-      "gender": _genderController.text,
-      "occupation": _occupationController.text,
-      "birthday": _birthdayController.text,
-      "native": _nativeController.text,
-      "live": _liveController.text,
-      "address": _addressController.text,
-      // Appearance
-      "height": _heightController.text,
-      "weight": _weightController.text,
-      "blood": _bloodController.text,
-      "hair": _hairController.text,
-      "eye": _eyeController.text,
-      "skin": _skinController.text,
-      "faceFeatures": _faceFeaturesController.text,
-      "eyeFeatures": _eyeFeaturesController.text,
-      "earFeatures": _earFeaturesController.text,
-      "noseFeatures": _noseFeaturesController.text,
-      "mouthFeatures": _mouthFeaturesController.text,
-      "eyebrowFeatures": _eyebrowFeaturesController.text,
-      "body": _bodyController.text,
-      "dress": _dressController.text,
-      // Personality
-      "mbti": _mbtiController.text,
-      "personality": _personalityController.text,
-      "language": _languageController.text,
-      "interest": _interestController.text,
-      "habit": _habitController.text,
-      "alignment": selectedAlignment,
-      "belief": _beliefController.text,
-      "limit": _limitController.text,
-      "future": _futureController.text,
-      "cherish": _cherishController.text,
-      "disgust": _disgustController.text,
-      "fear": _fearController.text,
-      "curious": _curiousController.text,
-      "expect": _expectController.text,
-      "intention": _intentionController.text,
-      "otherValues": _otherValuesController.text,
-      "hinderEvents": List<Map<String, String>>.from(hinderEvents),
-      // Ability
-      "loveToDoList": List<String>.from(loveToDoList),
-      "hateToDoList": List<String>.from(hateToDoList),
-      "proficientToDoList": List<String>.from(proficientToDoList),
-      "unProficientToDoList": List<String>.from(unProficientToDoList),
-      "commonAbilityValues": List<double>.from(commonAbilityValues),
-      // Social
-      "impression": _impressionController.text,
-      "likable": _likableController.text,
-      "family": _familyController.text,
-      "howToShowLove": Map<String, bool>.from(howToShowLove),
-      "otherShowLove": _otherShowLoveController.text,
-      "howToShowGoodwill": Map<String, bool>.from(howToShowGoodwill),
-      "otherGoodwill": _otherGoodwillController.text,
-      "handleHatePeople": Map<String, bool>.from(handleHatePeople),
-      "otherHatePeople": _otherHatePeopleController.text,
-      "socialItemValues": List<double>.from(socialItemValues),
-      "relationship": selectedRelationship,
-      "isFindNewLove": isFindNewLove,
-      "isHarem": isHarem,
-      "otherRelationship": _otherRelationshipController.text,
-      "approachValues": List<double>.from(approachValues),
-      "traitsValues": List<double>.from(traitsValues),
-      // Other
-      "originalName": _originalNameController.text,
-      "likeItemList": List<String>.from(likeItemList),
-      "hateItemList": List<String>.from(hateItemList),
-      "familiarItemList": List<String>.from(familiarItemList),
-      "otherText": _otherTextController.text,
-    };
+    final data = <String, dynamic>{};
+
+    // Save all text controllers
+    for (final key in CharacterCodec.allControllerKeys) {
+        data[key] = _controllers[key]?.text ?? "";
+    }
+
+    // Add complex data
+    data["alignment"] = selectedAlignment;
+    data["hinderEvents"] = List<Map<String, String>>.from(hinderEvents);
+    data["loveToDoList"] = List<String>.from(loveToDoList);
+    data["hateToDoList"] = List<String>.from(hateToDoList);
+    data["proficientToDoList"] = List<String>.from(proficientToDoList);
+    data["unProficientToDoList"] = List<String>.from(unProficientToDoList);
+    data["commonAbilityValues"] = List<double>.from(commonAbilityValues);
+    data["howToShowLove"] = Map<String, bool>.from(howToShowLove);
+    data["howToShowGoodwill"] = Map<String, bool>.from(howToShowGoodwill);
+    data["handleHatePeople"] = Map<String, bool>.from(handleHatePeople);
+    data["socialItemValues"] = List<double>.from(socialItemValues);
+    data["relationship"] = selectedRelationship;
+    data["isFindNewLove"] = isFindNewLove;
+    data["isHarem"] = isHarem;
+    data["approachValues"] = List<double>.from(approachValues);
+    data["traitsValues"] = List<double>.from(traitsValues);
+    data["likeItemList"] = List<String>.from(likeItemList);
+    data["hateItemList"] = List<String>.from(hateItemList);
+    data["familiarItemList"] = List<String>.from(familiarItemList);
+    
+    characterData[selectedCharacter!] = data;
     
     // 通知外部資料已改變
     widget.onDataChanged?.call(characterData);
@@ -1929,14 +1818,26 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   
   // 載入角色資料
   void _loadCharacterData(String characterName) {
+    _isLoading = true;
     final data = characterData[characterName];
     
     if (data == null) {
-      // 清空所有欄位
       _clearAllFields();
-      // 如果是新角色,將列表中的名稱填入姓名欄位
-      _nameController.text = characterName;
+      if (_controllers.containsKey("name")) {
+        _controllers["name"]!.text = characterName;
+      }
+      _isLoading = false;
       return;
+    }
+
+    // Load all text controllers
+    for (final key in CharacterCodec.allControllerKeys) {
+        _controllers[key]?.text = data[key] ?? "";
+    }
+    
+    // Fallback for name if empty
+    if ((_controllers["name"]?.text ?? "").isEmpty) {
+        _controllers["name"]?.text = characterName;
     }
 
     // Helper to ensure list length to prevent RangeError
@@ -1951,155 +1852,80 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       }
       return typedList;
     }
-    
-    // Basic Info
-    _nameController.text = data["name"] ?? characterName;
-    _nicknameController.text = data["nickname"] ?? "";
-    _ageController.text = data["age"] ?? "";
-    _genderController.text = data["gender"] ?? "";
-    _occupationController.text = data["occupation"] ?? "";
-    _birthdayController.text = data["birthday"] ?? "";
-    _nativeController.text = data["native"] ?? "";
-    _liveController.text = data["live"] ?? "";
-    _addressController.text = data["address"] ?? "";
-    // Appearance
-    _heightController.text = data["height"] ?? "";
-    _weightController.text = data["weight"] ?? "";
-    _bloodController.text = data["blood"] ?? "";
-    _hairController.text = data["hair"] ?? "";
-    _eyeController.text = data["eye"] ?? "";
-    _skinController.text = data["skin"] ?? "";
-    _faceFeaturesController.text = data["faceFeatures"] ?? "";
-    _eyeFeaturesController.text = data["eyeFeatures"] ?? "";
-    _earFeaturesController.text = data["earFeatures"] ?? "";
-    _noseFeaturesController.text = data["noseFeatures"] ?? "";
-    _mouthFeaturesController.text = data["mouthFeatures"] ?? "";
-    _eyebrowFeaturesController.text = data["eyebrowFeatures"] ?? "";
-    _bodyController.text = data["body"] ?? "";
-    _dressController.text = data["dress"] ?? "";
-    // Personality
-    _personalityController.text = data["personality"] ?? "";
-    _languageController.text = data["language"] ?? "";
-    _interestController.text = data["interest"] ?? "";
-    _habitController.text = data["habit"] ?? "";
-    selectedAlignment = data["alignment"];
-    _beliefController.text = data["belief"] ?? "";
-    _limitController.text = data["limit"] ?? "";
-    _futureController.text = data["future"] ?? "";
-    _cherishController.text = data["cherish"] ?? "";
-    _disgustController.text = data["disgust"] ?? "";
-    _fearController.text = data["fear"] ?? "";
-    _curiousController.text = data["curious"] ?? "";
-    _expectController.text = data["expect"] ?? "";
-    _intentionController.text = data["intention"] ?? "";
-    _otherValuesController.text = data["otherValues"] ?? "";
+
+    selectedAlignment = data["alignment"]?.toString().replaceAll("\r\n", "\n");
     hinderEvents = List<Map<String, String>>.from(data["hinderEvents"] ?? []);
-    // Ability
+    
     loveToDoList = List<String>.from(data["loveToDoList"] ?? []);
     hateToDoList = List<String>.from(data["hateToDoList"] ?? []);
     proficientToDoList = List<String>.from(data["proficientToDoList"] ?? []);
     unProficientToDoList = List<String>.from(data["unProficientToDoList"] ?? []);
-    commonAbilityValues = ensureList("commonAbilityValues", 16);
-    // Social
-    _mbtiController.text = data["mbti"] ?? "";
-    _impressionController.text = data["impression"] ?? "";
-    _likableController.text = data["likable"] ?? "";
-    _familyController.text = data["family"] ?? "";
+    commonAbilityValues = ensureList("commonAbilityValues", TraitDefinitions.commonAbilities.length);
+    
     if (data["howToShowLove"] != null) {
       howToShowLove.updateAll((key, value) => data["howToShowLove"][key] ?? false);
     }
-    _otherShowLoveController.text = data["otherShowLove"] ?? "";
     if (data["howToShowGoodwill"] != null) {
       howToShowGoodwill.updateAll((key, value) => data["howToShowGoodwill"][key] ?? false);
     }
-    _otherGoodwillController.text = data["otherGoodwill"] ?? "";
     if (data["handleHatePeople"] != null) {
       handleHatePeople.updateAll((key, value) => data["handleHatePeople"][key] ?? false);
     }
-    _otherHatePeopleController.text = data["otherHatePeople"] ?? "";
-    socialItemValues = ensureList("socialItemValues", 10);
+    
+    socialItemValues = ensureList("socialItemValues", TraitDefinitions.socialItems.length);
     selectedRelationship = data["relationship"];
     isFindNewLove = data["isFindNewLove"] ?? false;
     isHarem = data["isHarem"] ?? false;
-    _otherRelationshipController.text = data["otherRelationship"] ?? "";
-    approachValues = ensureList("approachValues", 12);
-    traitsValues = ensureList("traitsValues", 15);
-    // Other
-    _originalNameController.text = data["originalName"] ?? "";
+    approachValues = ensureList("approachValues", TraitDefinitions.approaches.length);
+    traitsValues = ensureList("traitsValues", TraitDefinitions.traits.length);
+    
     likeItemList = List<String>.from(data["likeItemList"] ?? []);
     hateItemList = List<String>.from(data["hateItemList"] ?? []);
     familiarItemList = List<String>.from(data["familiarItemList"] ?? []);
-    _otherTextController.text = data["otherText"] ?? "";
+    
+    _isLoading = false;
   }
   
   // 清空所有欄位
   void _clearAllFields() {
-    _nameController.clear();
-    _nicknameController.clear();
-    _ageController.clear();
-    _genderController.clear();
-    _occupationController.clear();
-    _birthdayController.clear();
-    _nativeController.clear();
-    _liveController.clear();
-    _addressController.clear();
-    _heightController.clear();
-    _weightController.clear();
-    _bloodController.clear();
-    _hairController.clear();
-    _eyeController.clear();
-    _skinController.clear();
-    _faceFeaturesController.clear();
-    _eyeFeaturesController.clear();
-    _earFeaturesController.clear();
-    _noseFeaturesController.clear();
-    _mouthFeaturesController.clear();
-    _eyebrowFeaturesController.clear();
-    _bodyController.clear();
-    _dressController.clear();
-    _personalityController.clear();
-    _languageController.clear();
-    _interestController.clear();
-    _habitController.clear();
+    for (var controller in _controllers.values) {
+        controller.clear();
+    }
+
     selectedAlignment = null;
-    _beliefController.clear();
-    _limitController.clear();
-    _futureController.clear();
-    _cherishController.clear();
-    _disgustController.clear();
-    _fearController.clear();
-    _curiousController.clear();
-    _expectController.clear();
-    _intentionController.clear();
-    _otherValuesController.clear();
     hinderEvents.clear();
     loveToDoList.clear();
     hateToDoList.clear();
     proficientToDoList.clear();
     unProficientToDoList.clear();
-    commonAbilityValues = List.filled(16, 50.0);
-    _mbtiController.clear();
-    _impressionController.clear();
-    _likableController.clear();
-    _familyController.clear();
+    commonAbilityValues = List.filled(TraitDefinitions.commonAbilities.length, 50.0);
+    
     howToShowLove.updateAll((key, value) => false);
-    _otherShowLoveController.clear();
     howToShowGoodwill.updateAll((key, value) => false);
-    _otherGoodwillController.clear();
     handleHatePeople.updateAll((key, value) => false);
-    _otherHatePeopleController.clear();
-    socialItemValues = List.filled(10, 50.0);
+    
+    socialItemValues = List.filled(TraitDefinitions.socialItems.length, 50.0);
     selectedRelationship = null;
     isFindNewLove = false;
     isHarem = false;
-    _otherRelationshipController.clear();
-    approachValues = List.filled(12, 50.0);
-    traitsValues = List.filled(15, 50.0);
-    _originalNameController.clear();
+    
+    approachValues = List.filled(TraitDefinitions.approaches.length, 50.0);
+    traitsValues = List.filled(TraitDefinitions.traits.length, 50.0);
+    
     likeItemList.clear();
     hateItemList.clear();
     familiarItemList.clear();
-    _otherTextController.clear();
+    
+    // Clear helpers
+    _hinderEventController.clear();
+    _solveController.clear();
+    _loveToDoController.clear();
+    _hateToDoController.clear();
+    _proficientToDoController.clear();
+    _unProficientToDoController.clear();
+    _likeItemController.clear();
+    _hateItemController.clear();
+    _familiarItemController.clear();
   }
   
   // 同步角色名稱到列表

@@ -159,6 +159,41 @@ class DragPayload {
 
 // MARK: - XML Codec for Outline
 class OutlineCodec {
+  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
+    builder.element(name, nest: () {
+      if (value.isEmpty) {
+        builder.text("");
+      } else {
+        builder.cdata(value);
+      }
+    });
+  }
+
+  static String _readElementText(xml.XmlElement? element) {
+    if (element == null) return "";
+    if (element.children.isEmpty) {
+      return element.innerText;
+    }
+    final cdataBuffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlCDATA) {
+        cdataBuffer.write(node.text);
+      }
+    }
+    final cdataText = cdataBuffer.toString();
+    if (cdataText.isNotEmpty) {
+      return cdataText;
+    }
+    final buffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlText || node is xml.XmlCDATA) {
+        buffer.write(node.text);
+      }
+    }
+    final text = buffer.toString();
+    return text.isNotEmpty ? text : element.innerText;
+  }
+
   static String? saveXML(List<StorylineData> storylines) {
     if (storylines.isEmpty) return null;
     
@@ -173,22 +208,22 @@ class OutlineCodec {
           "UUID": sl.chapterUUID,
         }, nest: () {
           if (sl.memo.isNotEmpty) {
-            builder.element("Memo", nest: sl.memo);
+            _writeTextElement(builder, "Memo", sl.memo);
           }
           if (sl.conflictPoint.isNotEmpty) {
-            builder.element("ConflictPoint", nest: sl.conflictPoint);
+            _writeTextElement(builder, "ConflictPoint", sl.conflictPoint);
           }
           if (sl.people.isNotEmpty) {
             builder.element("People", nest: () {
               for (final p in sl.people) {
-                builder.element("Person", nest: p);
+                _writeTextElement(builder, "Person", p);
               }
             });
           }
           if (sl.item.isNotEmpty) {
             builder.element("Items", nest: () {
               for (final it in sl.item) {
-                builder.element("Item", nest: it);
+                _writeTextElement(builder, "Item", it);
               }
             });
           }
@@ -199,22 +234,22 @@ class OutlineCodec {
               "UUID": ev.storyEventUUID,
             }, nest: () {
               if (ev.memo.isNotEmpty) {
-                builder.element("Memo", nest: ev.memo);
+                _writeTextElement(builder, "Memo", ev.memo);
               }
               if (ev.conflictPoint.isNotEmpty) {
-                builder.element("ConflictPoint", nest: ev.conflictPoint);
+                _writeTextElement(builder, "ConflictPoint", ev.conflictPoint);
               }
               if (ev.people.isNotEmpty) {
                 builder.element("People", nest: () {
                   for (final p in ev.people) {
-                    builder.element("Person", nest: p);
+                    _writeTextElement(builder, "Person", p);
                   }
                 });
               }
               if (ev.item.isNotEmpty) {
                 builder.element("Items", nest: () {
                   for (final it in ev.item) {
-                    builder.element("Item", nest: it);
+                    _writeTextElement(builder, "Item", it);
                   }
                 });
               }
@@ -225,40 +260,40 @@ class OutlineCodec {
                   "UUID": sc.sceneUUID,
                 }, nest: () {
                   if (sc.time.isNotEmpty) {
-                    builder.element("Time", nest: sc.time);
+                    _writeTextElement(builder, "Time", sc.time);
                   }
                   if (sc.location.isNotEmpty) {
-                    builder.element("Location", nest: sc.location);
+                    _writeTextElement(builder, "Location", sc.location);
                   }
                   if (sc.focusPoint.isNotEmpty) {
-                    builder.element("FocusPoint", nest: sc.focusPoint);
+                    _writeTextElement(builder, "FocusPoint", sc.focusPoint);
                   }
                   if (sc.conflictPoint.isNotEmpty) {
-                    builder.element("ConflictPoint", nest: sc.conflictPoint);
+                    _writeTextElement(builder, "ConflictPoint", sc.conflictPoint);
                   }
                   if (sc.people.isNotEmpty) {
                     builder.element("People", nest: () {
                       for (final p in sc.people) {
-                        builder.element("Person", nest: p);
+                        _writeTextElement(builder, "Person", p);
                       }
                     });
                   }
                   if (sc.item.isNotEmpty) {
                     builder.element("Items", nest: () {
                       for (final it in sc.item) {
-                        builder.element("Item", nest: it);
+                        _writeTextElement(builder, "Item", it);
                       }
                     });
                   }
                   if (sc.doingThings.isNotEmpty) {
                     builder.element("Doings", nest: () {
                       for (final d in sc.doingThings) {
-                        builder.element("Doing", nest: d);
+                        _writeTextElement(builder, "Doing", d);
                       }
                     });
                   }
                   if (sc.memo.isNotEmpty) {
-                    builder.element("Memo", nest: sc.memo);
+                    _writeTextElement(builder, "Memo", sc.memo);
                   }
                 });
               }
@@ -300,16 +335,16 @@ class OutlineCodec {
         );
         
         // Parse Memo
-        storyline.memo = storylineNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
+        storyline.memo = _readElementText(storylineNode.findAllElements("Memo").firstOrNull);
         
         // Parse ConflictPoint
-        storyline.conflictPoint = storylineNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
+        storyline.conflictPoint = _readElementText(storylineNode.findAllElements("ConflictPoint").firstOrNull);
         
         // Parse People
         final peopleNode = storylineNode.findAllElements("People").firstOrNull;
         if (peopleNode != null) {
           for (final personNode in peopleNode.findAllElements("Person")) {
-            final person = personNode.innerText.trim();
+            final person = _readElementText(personNode).trim();
             if (person.isNotEmpty) storyline.people.add(person);
           }
         }
@@ -318,7 +353,7 @@ class OutlineCodec {
         final itemsNode = storylineNode.findAllElements("Items").firstOrNull;
         if (itemsNode != null) {
           for (final itemNode in itemsNode.findAllElements("Item")) {
-            final item = itemNode.innerText.trim();
+            final item = _readElementText(itemNode).trim();
             if (item.isNotEmpty) storyline.item.add(item);
           }
         }
@@ -348,13 +383,13 @@ class OutlineCodec {
             conflictPoint: "",
           );
           
-          event.memo = eventNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
-          event.conflictPoint = eventNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
+          event.memo = _readElementText(eventNode.findAllElements("Memo").firstOrNull);
+          event.conflictPoint = _readElementText(eventNode.findAllElements("ConflictPoint").firstOrNull);
           
           final eventPeopleNode = eventNode.findAllElements("People").firstOrNull;
           if (eventPeopleNode != null) {
             for (final p in eventPeopleNode.findAllElements("Person")) {
-              final person = p.innerText.trim();
+              final person = _readElementText(p).trim();
               if (person.isNotEmpty) event.people.add(person);
             }
           }
@@ -362,7 +397,7 @@ class OutlineCodec {
           final eventItemsNode = eventNode.findAllElements("Items").firstOrNull;
           if (eventItemsNode != null) {
             for (final it in eventItemsNode.findAllElements("Item")) {
-              final item = it.innerText.trim();
+              final item = _readElementText(it).trim();
               if (item.isNotEmpty) event.item.add(item);
             }
           }
@@ -385,16 +420,16 @@ class OutlineCodec {
               memo: "",
             );
             
-            scene.time = sceneNode.findAllElements("Time").firstOrNull?.innerText ?? "";
-            scene.location = sceneNode.findAllElements("Location").firstOrNull?.innerText ?? "";
-            scene.focusPoint = sceneNode.findAllElements("FocusPoint").firstOrNull?.innerText ?? "";
-            scene.conflictPoint = sceneNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
-            scene.memo = sceneNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
+            scene.time = _readElementText(sceneNode.findAllElements("Time").firstOrNull);
+            scene.location = _readElementText(sceneNode.findAllElements("Location").firstOrNull);
+            scene.focusPoint = _readElementText(sceneNode.findAllElements("FocusPoint").firstOrNull);
+            scene.conflictPoint = _readElementText(sceneNode.findAllElements("ConflictPoint").firstOrNull);
+            scene.memo = _readElementText(sceneNode.findAllElements("Memo").firstOrNull);
             
             final scenePeopleNode = sceneNode.findAllElements("People").firstOrNull;
             if (scenePeopleNode != null) {
               for (final p in scenePeopleNode.findAllElements("Person")) {
-                final person = p.innerText.trim();
+                final person = _readElementText(p).trim();
                 if (person.isNotEmpty) scene.people.add(person);
               }
             }
@@ -402,7 +437,7 @@ class OutlineCodec {
             final sceneItemsNode = sceneNode.findAllElements("Items").firstOrNull;
             if (sceneItemsNode != null) {
               for (final it in sceneItemsNode.findAllElements("Item")) {
-                final item = it.innerText.trim();
+                final item = _readElementText(it).trim();
                 if (item.isNotEmpty) scene.item.add(item);
               }
             }
@@ -410,7 +445,7 @@ class OutlineCodec {
             final doingsNode = sceneNode.findAllElements("Doings").firstOrNull;
             if (doingsNode != null) {
               for (final d in doingsNode.findAllElements("Doing")) {
-                final doing = d.innerText.trim();
+                final doing = _readElementText(d).trim();
                 if (doing.isNotEmpty) scene.doingThings.add(doing);
               }
             }
@@ -534,8 +569,176 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   void initState() {
     super.initState();
     _initializeSelection();
+    
+    // Add listeners
+    storylineNameController.addListener(_onStorylineNameChanged);
+    storylineTypeController.addListener(_onStorylineTypeChanged);
+    storylineConflictController.addListener(_onStorylineConflictChanged);
+    storylineMemoController.addListener(_onStorylineMemoChanged);
+    
+    eventNameController.addListener(_onEventNameChanged);
+    eventConflictController.addListener(_onEventConflictChanged);
+    eventMemoController.addListener(_onEventMemoChanged);
+    
+    sceneNameController.addListener(_onSceneNameChanged);
+    sceneTimeController.addListener(_onSceneTimeChanged);
+    sceneLocationController.addListener(_onSceneLocationChanged);
+    sceneFocusController.addListener(_onSceneFocusChanged);
+    sceneConflictController.addListener(_onSceneConflictChanged);
+    sceneMemoController.addListener(_onSceneMemoChanged);
   }
   
+  void _onStorylineNameChanged() {
+    final si = selectedStorylineIndex;
+    if (si != null && si >= 0 && si < storylines.length) {
+      final storyline = storylines[si];
+      if (storyline.storylineName != storylineNameController.text) {
+        storyline.storylineName = storylineNameController.text;
+        _notifyChange();
+        setState(() {}); // Trigger rebuild to update list item title
+      }
+    }
+  }
+
+  void _onStorylineTypeChanged() {
+    final si = selectedStorylineIndex;
+    if (si != null) {
+      if (storylines[si].storylineType != storylineTypeController.text) {
+        storylines[si].storylineType = storylineTypeController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onStorylineConflictChanged() {
+    final si = selectedStorylineIndex;
+    if (si != null) {
+      if (storylines[si].conflictPoint != storylineConflictController.text) {
+        storylines[si].conflictPoint = storylineConflictController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onStorylineMemoChanged() {
+    final si = selectedStorylineIndex;
+    if (si != null) {
+      if (storylines[si].memo != storylineMemoController.text) {
+        storylines[si].memo = storylineMemoController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onEventNameChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    if (si != null && ei != null) {
+      final event = storylines[si].scenes[ei];
+      if (event.storyEvent != eventNameController.text) {
+        event.storyEvent = eventNameController.text;
+        _notifyChange();
+        setState(() {});
+      }
+    }
+  }
+
+  void _onEventConflictChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    if (si != null && ei != null) {
+      if (storylines[si].scenes[ei].conflictPoint != eventConflictController.text) {
+        storylines[si].scenes[ei].conflictPoint = eventConflictController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onEventMemoChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    if (si != null && ei != null) {
+      if (storylines[si].scenes[ei].memo != eventMemoController.text) {
+        storylines[si].scenes[ei].memo = eventMemoController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onSceneNameChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      final scene = storylines[si].scenes[ei].scenes[ci];
+      if (scene.sceneName != sceneNameController.text) {
+        scene.sceneName = sceneNameController.text;
+        _notifyChange();
+        setState(() {});
+      }
+    }
+  }
+
+  void _onSceneTimeChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      if (storylines[si].scenes[ei].scenes[ci].time != sceneTimeController.text) {
+        storylines[si].scenes[ei].scenes[ci].time = sceneTimeController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onSceneLocationChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      if (storylines[si].scenes[ei].scenes[ci].location != sceneLocationController.text) {
+        storylines[si].scenes[ei].scenes[ci].location = sceneLocationController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onSceneFocusChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      if (storylines[si].scenes[ei].scenes[ci].focusPoint != sceneFocusController.text) {
+        storylines[si].scenes[ei].scenes[ci].focusPoint = sceneFocusController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onSceneConflictChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      if (storylines[si].scenes[ei].scenes[ci].conflictPoint != sceneConflictController.text) {
+        storylines[si].scenes[ei].scenes[ci].conflictPoint = sceneConflictController.text;
+        _notifyChange();
+      }
+    }
+  }
+
+  void _onSceneMemoChanged() {
+    final si = selectedStorylineIndex;
+    final ei = selectedEventIndex;
+    final ci = selectedSceneIndex;
+    if (si != null && ei != null && ci != null) {
+      if (storylines[si].scenes[ei].scenes[ci].memo != sceneMemoController.text) {
+        storylines[si].scenes[ei].scenes[ci].memo = sceneMemoController.text;
+        _notifyChange();
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(OutlineAdjustView oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -547,6 +750,20 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
 
   @override
   void dispose() {
+    storylineNameController.removeListener(_onStorylineNameChanged);
+    storylineTypeController.removeListener(_onStorylineTypeChanged);
+    storylineConflictController.removeListener(_onStorylineConflictChanged);
+    storylineMemoController.removeListener(_onStorylineMemoChanged);
+    eventNameController.removeListener(_onEventNameChanged);
+    eventConflictController.removeListener(_onEventConflictChanged);
+    eventMemoController.removeListener(_onEventMemoChanged);
+    sceneNameController.removeListener(_onSceneNameChanged);
+    sceneTimeController.removeListener(_onSceneTimeChanged);
+    sceneLocationController.removeListener(_onSceneLocationChanged);
+    sceneFocusController.removeListener(_onSceneFocusChanged);
+    sceneConflictController.removeListener(_onSceneConflictChanged);
+    sceneMemoController.removeListener(_onSceneMemoChanged);
+
     newStorylineController.dispose();
     newEventController.dispose();
     newSceneController.dispose();
@@ -1209,12 +1426,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      storyline.storylineName = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1235,12 +1446,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      storyline.storylineType = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1261,12 +1466,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      storyline.conflictPoint = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1333,12 +1532,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     hintText: "輸入備註...",
                   ),
                   maxLines: 4,
-                  onChanged: (value) {
-                    setState(() {
-                      storyline.memo = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1699,12 +1892,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      event.storyEvent = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1725,12 +1912,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      event.conflictPoint = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -1797,12 +1978,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     hintText: "輸入備註...",
                   ),
                   maxLines: 4,
-                  onChanged: (value) {
-                    setState(() {
-                      event.memo = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -2172,12 +2347,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      scene.sceneName = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),
@@ -2201,12 +2370,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            scene.time = value;
-                          });
-                          _notifyChange();
-                        },
                       );
                     },
                   ),
@@ -2227,12 +2390,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            scene.location = value;
-                          });
-                          _notifyChange();
-                        },
                       );
                     },
                   ),
@@ -2259,12 +2416,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            scene.focusPoint = value;
-                          });
-                          _notifyChange();
-                        },
                       );
                     },
                   ),
@@ -2285,12 +2436,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            scene.conflictPoint = value;
-                          });
-                          _notifyChange();
-                        },
                       );
                     },
                   ),
@@ -2380,12 +2525,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     hintText: "輸入備註...",
                   ),
                   maxLines: 4,
-                  onChanged: (value) {
-                    setState(() {
-                      scene.memo = value;
-                    });
-                    _notifyChange();
-                  },
                 );
               },
             ),

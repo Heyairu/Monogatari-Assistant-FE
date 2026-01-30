@@ -14,7 +14,7 @@
 
 import "package:flutter/material.dart";
 import "package:intl/intl.dart";
-import 'package:xml/xml.dart' as xml;
+import "package:xml/xml.dart" as xml;
 
 // MARK: - Model
 
@@ -86,6 +86,41 @@ class BaseInfoData {
 // MARK: - XML Codec (compatible with the Qt format)
 
 class BaseInfoCodec {
+  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
+    builder.element(name, nest: () {
+      if (value.isEmpty) {
+        builder.text("");
+      } else {
+        builder.cdata(value);
+      }
+    });
+  }
+
+  static String _readElementText(xml.XmlElement? element) {
+    if (element == null) return "";
+    if (element.children.isEmpty) {
+      return element.innerText;
+    }
+    final cdataBuffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlCDATA) {
+        cdataBuffer.write(node.text);
+      }
+    }
+    final cdataText = cdataBuffer.toString();
+    if (cdataText.isNotEmpty) {
+      return cdataText;
+    }
+    final buffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlText || node is xml.XmlCDATA) {
+        buffer.write(node.text);
+      }
+    }
+    final text = buffer.toString();
+    return text.isNotEmpty ? text : element.innerText;
+  }
+
   /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段
   static String? saveXML({
     required BaseInfoData data,
@@ -116,34 +151,34 @@ class BaseInfoCodec {
     final isoSave = snapshot.latestSave?.toIso8601String() ?? "";
 
     final builder = xml.XmlBuilder();
-    builder.element('Type', nest: () {
-      builder.element('Name', nest: 'BaseInfo');
-      builder.element('General', nest: () {
-        builder.element('BookName', nest: snapshot.bookName);
-        builder.element('Author', nest: snapshot.author);
-        builder.element('Purpose', nest: snapshot.purpose);
-        builder.element('ToRecap', nest: snapshot.toRecap);
-        builder.element('StoryType', nest: snapshot.storyType);
-        builder.element('Intro', nest: snapshot.intro);
+    builder.element("Type", nest: () {
+      builder.element("Name", nest: "BaseInfo");
+      builder.element("General", nest: () {
+        _writeTextElement(builder, "BookName", snapshot.bookName);
+        _writeTextElement(builder, "Author", snapshot.author);
+        _writeTextElement(builder, "Purpose", snapshot.purpose);
+        _writeTextElement(builder, "ToRecap", snapshot.toRecap);
+        _writeTextElement(builder, "StoryType", snapshot.storyType);
+        _writeTextElement(builder, "Intro", snapshot.intro);
         if (isoSave.isNotEmpty) {
-          builder.element('LatestSave', nest: isoSave);
+          builder.element("LatestSave", nest: isoSave);
         }
       });
-      builder.element('Tags', nest: () {
+      builder.element("Tags", nest: () {
         for (String tag in snapshot.tags) {
           final trimmed = tag.trim();
           if (trimmed.isNotEmpty) {
-            builder.element('Tag', nest: trimmed);
+            _writeTextElement(builder, "Tag", trimmed);
           }
         }
       });
-      builder.element('Stats', nest: () {
+      builder.element("Stats", nest: () {
         // Stats can be added here if needed in the future
       });
     });
 
     // Indent formatting, consistent with previous behavior
-    return builder.buildDocument().toXmlString(pretty: true, indent: '  ');
+    return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
 
   /// 自 <Type> 區塊解析（需 <Name>BaseInfo</Name>）
@@ -152,26 +187,26 @@ class BaseInfoCodec {
       final document = xml.XmlDocument.parse(content);
       
       // Find the <Type> root element
-      final typeElement = document.findAllElements('Type').firstOrNull;
+      final typeElement = document.findAllElements("Type").firstOrNull;
       if (typeElement == null) return null;
 
       // Check for <Name>BaseInfo</Name>
-      final nameElement = typeElement.findAllElements('Name').firstOrNull;
-      if (nameElement?.innerText != 'BaseInfo') return null;
+      final nameElement = typeElement.findAllElements("Name").firstOrNull;
+      if (nameElement?.innerText != "BaseInfo") return null;
 
       final data = BaseInfoData();
 
       // <General> parsing
-      final general = typeElement.findAllElements('General').firstOrNull;
+      final general = typeElement.findAllElements("General").firstOrNull;
       if (general != null) {
-        data.bookName = general.findAllElements('BookName').firstOrNull?.innerText ?? "";
-        data.author = general.findAllElements('Author').firstOrNull?.innerText ?? "";
-        data.purpose = general.findAllElements('Purpose').firstOrNull?.innerText ?? "";
-        data.toRecap = general.findAllElements('ToRecap').firstOrNull?.innerText ?? "";
-        data.storyType = general.findAllElements('StoryType').firstOrNull?.innerText ?? "";
-        data.intro = general.findAllElements('Intro').firstOrNull?.innerText ?? "";
+        data.bookName = _readElementText(general.findAllElements("BookName").firstOrNull);
+        data.author = _readElementText(general.findAllElements("Author").firstOrNull);
+        data.purpose = _readElementText(general.findAllElements("Purpose").firstOrNull);
+        data.toRecap = _readElementText(general.findAllElements("ToRecap").firstOrNull);
+        data.storyType = _readElementText(general.findAllElements("StoryType").firstOrNull);
+        data.intro = _readElementText(general.findAllElements("Intro").firstOrNull);
 
-        final latestSaveStr = general.findAllElements('LatestSave').firstOrNull?.innerText;
+        final latestSaveStr = general.findAllElements("LatestSave").firstOrNull?.innerText;
         if (latestSaveStr != null && latestSaveStr.isNotEmpty) {
           try {
             data.latestSave = DateTime.parse(latestSaveStr);
@@ -182,10 +217,10 @@ class BaseInfoCodec {
       }
 
       // <Tags> parsing
-      final tagsElement = typeElement.findAllElements('Tags').firstOrNull;
+      final tagsElement = typeElement.findAllElements("Tags").firstOrNull;
       if (tagsElement != null) {
-        for (final tagNode in tagsElement.findAllElements('Tag')) {
-          final tagText = tagNode.innerText.trim();
+        for (final tagNode in tagsElement.findAllElements("Tag")) {
+          final tagText = _readElementText(tagNode).trim();
           if (tagText.isNotEmpty) {
             data.tags.add(tagText);
           }
@@ -193,9 +228,9 @@ class BaseInfoCodec {
       }
 
       // <Stats> parsing (e.g. NowWords) - if it exists in the XML
-      final statsElement = typeElement.findAllElements('Stats').firstOrNull;
+      final statsElement = typeElement.findAllElements("Stats").firstOrNull;
       if (statsElement != null) {
-        final nowWordsStr = statsElement.findAllElements('NowWords').firstOrNull?.innerText;
+        final nowWordsStr = statsElement.findAllElements("NowWords").firstOrNull?.innerText;
         if (nowWordsStr != null) {
           data.nowWords = int.tryParse(nowWordsStr) ?? 0;
         }
@@ -203,7 +238,7 @@ class BaseInfoCodec {
 
       return data;
     } catch (e) {
-      print('Error parsing BaseInfo XML: $e');
+      print("Error parsing BaseInfo XML: $e");
       return null;
     }
   }
@@ -688,7 +723,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
                 : "YYYY.MM.DD hh.mm.ss",
               Icons.access_time,
             ),
-
+            
             const Divider(height: 24),
             
             // 總字數

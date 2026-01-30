@@ -113,6 +113,41 @@ class SegmentData {
 // MARK: - XML Codec
 
 class ChapterSelectionCodec {
+  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
+    builder.element(name, nest: () {
+      if (value.isEmpty) {
+        builder.text("");
+      } else {
+        builder.cdata(value);
+      }
+    });
+  }
+
+  static String _readElementText(xml.XmlElement? element) {
+    if (element == null) return "";
+    if (element.children.isEmpty) {
+      return element.innerText;
+    }
+    final cdataBuffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlCDATA) {
+        cdataBuffer.write(node.text);
+      }
+    }
+    final cdataText = cdataBuffer.toString();
+    if (cdataText.isNotEmpty) {
+      return cdataText;
+    }
+    final buffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlText || node is xml.XmlCDATA) {
+        buffer.write(node.text);
+      }
+    }
+    final text = buffer.toString();
+    return text.isNotEmpty ? text : element.innerText;
+  }
+
   /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段
   static String? saveXML(List<SegmentData> segments) {
     if (segments.isEmpty || !segments.any((seg) => seg.chapters.isNotEmpty)) {
@@ -136,9 +171,7 @@ class ChapterSelectionCodec {
               "Name": ch.chapterName,
               "UUID": ch.chapterUUID,
             }, nest: () {
-              builder.element("Content", nest: () {
-                builder.text(ch.chapterContent);
-              });
+              _writeTextElement(builder, "Content", ch.chapterContent);
             });
           }
         });
@@ -176,7 +209,7 @@ class ChapterSelectionCodec {
           final chapterUUID = chElement.getAttribute("UUID") ?? "";
           
           final contentElement = chElement.findAllElements("Content").firstOrNull;
-          final chapterContent = contentElement?.innerText ?? "";
+          final chapterContent = _readElementText(contentElement);
           
           chapters.add(ChapterData(
             chapterName: chapterName,

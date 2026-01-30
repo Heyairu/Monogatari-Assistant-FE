@@ -206,6 +206,41 @@ class TemplatePreset {
 
 // MARK: - XML Codec（WorldSettings）
 class WorldSettingsCodec {
+  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
+    builder.element(name, nest: () {
+      if (value.isEmpty) {
+        builder.text("");
+      } else {
+        builder.cdata(value);
+      }
+    });
+  }
+
+  static String _readElementText(xml.XmlElement? element) {
+    if (element == null) return "";
+    if (element.children.isEmpty) {
+      return element.innerText;
+    }
+    final cdataBuffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlCDATA) {
+        cdataBuffer.write(node.text);
+      }
+    }
+    final cdataText = cdataBuffer.toString();
+    if (cdataText.isNotEmpty) {
+      return cdataText;
+    }
+    final buffer = StringBuffer();
+    for (final node in element.children) {
+      if (node is xml.XmlText || node is xml.XmlCDATA) {
+        buffer.write(node.text);
+      }
+    }
+    final text = buffer.toString();
+    return text.isNotEmpty ? text : element.innerText;
+  }
+
   static String? saveXML(List<LocationData> locations) {
     if (locations.isEmpty) return null;
 
@@ -222,17 +257,23 @@ class WorldSettingsCodec {
 
   static void _buildLocation(xml.XmlBuilder builder, LocationData loc) {
     builder.element("Location", nest: () {
-      builder.element("LocalName", nest: loc.localName);
+      _writeTextElement(builder, "LocalName", loc.localName);
       if (loc.localType.isNotEmpty) {
-        builder.element("LocalType", nest: loc.localType);
+        _writeTextElement(builder, "LocalType", loc.localType);
       }
       if (loc.customVal.isNotEmpty) {
         for (final kv in loc.customVal) {
-          builder.element("Key", attributes: {"Name": kv.key}, nest: kv.val);
+          builder.element("Key", attributes: {"Name": kv.key}, nest: () {
+            if (kv.val.isEmpty) {
+              builder.text("");
+            } else {
+              builder.cdata(kv.val);
+            }
+          });
         }
       }
       if (loc.note.isNotEmpty) {
-        builder.element("Memo", nest: loc.note);
+        _writeTextElement(builder, "Memo", loc.note);
       }
       if (loc.child.isNotEmpty) {
         for (final child in loc.child) {
@@ -270,15 +311,15 @@ class WorldSettingsCodec {
 
   static LocationData _parseLocation(xml.XmlElement node) {
     final loc = LocationData();
-    loc.localName = node.findAllElements("LocalName").firstOrNull?.innerText ?? "";
-    loc.localType = node.findAllElements("LocalType").firstOrNull?.innerText ?? "";
-    loc.note = node.findAllElements("Memo").firstOrNull?.innerText ?? "";
+    loc.localName = _readElementText(node.findAllElements("LocalName").firstOrNull);
+    loc.localType = _readElementText(node.findAllElements("LocalType").firstOrNull);
+    loc.note = _readElementText(node.findAllElements("Memo").firstOrNull);
 
     // Parse custom values (Key)
     // Keys are direct children of Location
     for (final keyNode in node.findElements("Key")) {
         final key = keyNode.getAttribute("Name") ?? "";
-        final val = keyNode.innerText;
+      final val = _readElementText(keyNode);
         loc.customVal.add(LocationCustomize(key: key, val: val));
     }
 
@@ -319,6 +360,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   String selectedPresetName = "空白";
   String renamePresetText = "";
   
+  // 扁平化緩存列表
+  List<_FlatNode> _flatList = [];
+
   // 拖動狀態與游標資訊
   bool _isDragging = false;
   String? _draggingLocationId;
@@ -334,15 +378,42 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   @override
   void initState() {
     super.initState();
+    _rebuildFlatList();
     newNameController.text = newName;
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
     
     _loadTemplatesFromDisk();
+
+    locationNameController.addListener(_onNameChanged);
+    locationTypeController.addListener(_onTypeChanged);
+    locationNoteController.addListener(_onNoteChanged);
+  }
+
+  @override
+  void didUpdateWidget(WorldSettingsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.locations != oldWidget.locations) {
+      _rebuildFlatList();
+    }
+  }
+
+  void _rebuildFlatList() {
+    _flatList.clear();
+    void flatten(List<LocationData> nodes, int depth) {
+      for (var node in nodes) {
+        _flatList.add(_FlatNode(node, depth));
+        flatten(node.child, depth + 1);
+      }
+    }
+    flatten(widget.locations, 0);
   }
 
   @override
   void dispose() {
+    locationNameController.removeListener(_onNameChanged);
+    locationTypeController.removeListener(_onTypeChanged);
+    locationNoteController.removeListener(_onNoteChanged);
     newNameController.dispose();
     tempKeyController.dispose();
     tempValController.dispose();
@@ -350,6 +421,34 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     locationTypeController.dispose();
     locationNoteController.dispose();
     super.dispose();
+  }
+
+  void _onNameChanged() {
+    if (selectedNodeId == null) return;
+    final location = _getLocation(selectedNodeId!, widget.locations);
+    if (location != null && location.localName != locationNameController.text) {
+      location.localName = locationNameController.text;
+      _notifyChange();
+      setState(() {});
+    }
+  }
+
+  void _onTypeChanged() {
+    if (selectedNodeId == null) return;
+    final location = _getLocation(selectedNodeId!, widget.locations);
+    if (location != null && location.localType != locationTypeController.text) {
+      location.localType = locationTypeController.text;
+      _notifyChange();
+    }
+  }
+
+  void _onNoteChanged() {
+    if (selectedNodeId == null) return;
+    final location = _getLocation(selectedNodeId!, widget.locations);
+    if (location != null && location.note != locationNoteController.text) {
+      location.note = locationNoteController.text;
+      _notifyChange();
+    }
   }
 
   void _notifyChange() {
@@ -497,20 +596,11 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                                     );
                                   }
 
-                                  final flatList = <_FlatNode>[];
-                                  void flatten(List<LocationData> nodes, int depth) {
-                                    for (var node in nodes) {
-                                      flatList.add(_FlatNode(node, depth));
-                                      flatten(node.child, depth + 1);
-                                    }
-                                  }
-                                  flatten(widget.locations, 0);
-
                                   return ListView.builder(
                                     padding: const EdgeInsets.all(8),
-                                    itemCount: flatList.length,
+                                    itemCount: _flatList.length,
                                     itemBuilder: (context, index) {
-                                      final item = flatList[index];
+                                      final item = _flatList[index];
                                       return _buildLocationRow(item.node, item.depth);
                                     },
                                   );
@@ -904,11 +994,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            onChanged: (value) {
-              location.localName = value;
-              _notifyChange();
-              setState(() {});
-            },
           ),
           const SizedBox(height: 12),
 
@@ -920,10 +1005,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            onChanged: (value) {
-              location.localType = value;
-              _notifyChange();
-            },
           ),
           const SizedBox(height: 16),
 
@@ -1016,10 +1097,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
               isDense: true,
             ),
             maxLines: 4,
-            onChanged: (value) {
-              location.note = value;
-              _notifyChange();
-            },
           ),
         ],
       ),
@@ -1336,6 +1413,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   void _addChild(String parentId, String name) {
     _addChildRecursive(parentId, name, widget.locations);
     setState(() {
+      _rebuildFlatList();
       newName = "";
       newNameController.clear();
     });
@@ -1482,6 +1560,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         widget.locations.add(sourceNode!);
       }
       
+      _rebuildFlatList();
       _notifyChange();
     });
   }
@@ -1492,6 +1571,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         if (selectedNodeId == id) {
           selectedNodeId = null;
         }
+        _rebuildFlatList();
       });
       _notifyChange();
     }
@@ -1593,6 +1673,22 @@ class _CustomValueRowState extends State<_CustomValueRow> {
     super.initState();
     keyController = TextEditingController(text: widget.item.key);
     valController = TextEditingController(text: widget.item.val);
+    keyController.addListener(_onKeyChanged);
+    valController.addListener(_onValChanged);
+  }
+
+  void _onKeyChanged() {
+    if (widget.item.key != keyController.text) {
+      widget.item.key = keyController.text;
+      widget.onChange();
+    }
+  }
+
+  void _onValChanged() {
+    if (widget.item.val != valController.text) {
+      widget.item.val = valController.text;
+      widget.onChange();
+    }
   }
 
   @override
@@ -1608,6 +1704,8 @@ class _CustomValueRowState extends State<_CustomValueRow> {
 
   @override
   void dispose() {
+    keyController.removeListener(_onKeyChanged);
+    valController.removeListener(_onValChanged);
     keyController.dispose();
     valController.dispose();
     super.dispose();
@@ -1627,10 +1725,6 @@ class _CustomValueRowState extends State<_CustomValueRow> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              onChanged: (value) {
-                widget.item.key = value;
-                widget.onChange();
-              },
             ),
           ),
           const Padding(
@@ -1645,10 +1739,6 @@ class _CustomValueRowState extends State<_CustomValueRow> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              onChanged: (value) {
-                widget.item.val = value;
-                widget.onChange();
-              },
             ),
           ),
           IconButton(
