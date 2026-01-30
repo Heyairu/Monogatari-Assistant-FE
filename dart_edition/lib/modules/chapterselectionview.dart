@@ -25,6 +25,7 @@
 
 import "package:flutter/material.dart";
 import "dart:async";
+import "package:xml/xml.dart" as xml;
 
 // MARK: - 拖放數據類型
 
@@ -118,84 +119,84 @@ class ChapterSelectionCodec {
       return null;
     }
 
-    String escapeXml(String text) {
-      return text
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll("\"", "&quot;")
-          .replaceAll("'", "&apos;");
-    }
-
-    final buffer = StringBuffer();
-    buffer.writeln("<Type>");
-    buffer.writeln("  <Name>ChapterSelection</Name>");
-    
-    for (final seg in segments) {
-      buffer.writeln("  <Segment Name=\"${escapeXml(seg.segmentName)}\" UUID=\"${seg.segmentUUID}\">");
-      for (final ch in seg.chapters) {
-        buffer.writeln("    <Chapter Name=\"${escapeXml(ch.chapterName)}\" UUID=\"${ch.chapterUUID}\">");
-        buffer.writeln("      <Content>${escapeXml(ch.chapterContent)}</Content>");
-        buffer.writeln("    </Chapter>");
+    // 使用 xml package 構建 XML，自動處理 escaping
+    final builder = xml.XmlBuilder();
+    builder.element("Type", nest: () {
+      builder.element("Name", nest: () {
+        builder.text("ChapterSelection");
+      });
+      
+      for (final seg in segments) {
+        builder.element("Segment", attributes: {
+          "Name": seg.segmentName,
+          "UUID": seg.segmentUUID,
+        }, nest: () {
+          for (final ch in seg.chapters) {
+            builder.element("Chapter", attributes: {
+              "Name": ch.chapterName,
+              "UUID": ch.chapterUUID,
+            }, nest: () {
+              builder.element("Content", nest: () {
+                builder.text(ch.chapterContent);
+              });
+            });
+          }
+        });
       }
-      buffer.writeln("  </Segment>");
-    }
-    
-    buffer.writeln("</Type>");
-    return buffer.toString();
+    });
+
+    return builder.buildDocument().toXmlString(pretty: true);
   }
 
   /// 自 <Type> 區塊解析（需 <Name>ChapterSelection</Name>）
-  static List<SegmentData>? loadXML(String xml) {
-    // 簡化的 XML 解析實作
-    // 在實際應用中，建議使用專門的 XML 解析庫
-    
-    if (!xml.contains("<Name>ChapterSelection</Name>")) {
-      return null;
-    }
-
-    final segments = <SegmentData>[];
-    
-    // 提取所有 Segment 區塊
-    final segmentRegex = RegExp("<Segment[^>]*Name=\"([^\"]*)\"[^>]*UUID=\"([^\"]*)\"[^>]*>(.*?)</Segment>", dotAll: true);
-    final segmentMatches = segmentRegex.allMatches(xml);
-    
-    for (final segMatch in segmentMatches) {
-      final segmentName = segMatch.group(1) ?? "";
-      final segmentUUID = segMatch.group(2) ?? "";
-      final segmentContent = segMatch.group(3) ?? "";
+  static List<SegmentData>? loadXML(String xmlContent) {
+    try {
+      final document = xml.XmlDocument.parse(xmlContent);
+      final typeElement = document.findAllElements("Type").firstOrNull;
       
-      final chapters = <ChapterData>[];
+      if (typeElement == null) return null;
       
-      // 提取該 Segment 中的所有 Chapter
-      final chapterRegex = RegExp("<Chapter[^>]*Name=\"([^\"]*)\"[^>]*UUID=\"([^\"]*)\"[^>]*>(.*?)</Chapter>", dotAll: true);
-      final chapterMatches = chapterRegex.allMatches(segmentContent);
+      final nameElement = typeElement.findAllElements("Name").firstOrNull;
+      if (nameElement == null || nameElement.innerText != "ChapterSelection") {
+        return null;
+      }
       
-      for (final chMatch in chapterMatches) {
-        final chapterName = chMatch.group(1) ?? "";
-        final chapterUUID = chMatch.group(2) ?? "";
-        final chapterBlock = chMatch.group(3) ?? "";
+      final segments = <SegmentData>[];
+      final segmentElements = typeElement.findAllElements("Segment");
+      
+      for (final segElement in segmentElements) {
+        final segmentName = segElement.getAttribute("Name") ?? "";
+        final segmentUUID = segElement.getAttribute("UUID") ?? "";
         
-        // 提取 Content
-        final contentRegex = RegExp("<Content>(.*?)</Content>", dotAll: true);
-        final contentMatch = contentRegex.firstMatch(chapterBlock);
-        final chapterContent = contentMatch?.group(1) ?? "";
+        final chapters = <ChapterData>[];
+        final chapterElements = segElement.findAllElements("Chapter");
         
-        chapters.add(ChapterData(
-          chapterName: chapterName,
-          chapterContent: chapterContent,
-          chapterUUID: chapterUUID,
+        for (final chElement in chapterElements) {
+          final chapterName = chElement.getAttribute("Name") ?? "";
+          final chapterUUID = chElement.getAttribute("UUID") ?? "";
+          
+          final contentElement = chElement.findAllElements("Content").firstOrNull;
+          final chapterContent = contentElement?.innerText ?? "";
+          
+          chapters.add(ChapterData(
+            chapterName: chapterName,
+            chapterContent: chapterContent,
+            chapterUUID: chapterUUID,
+          ));
+        }
+        
+        segments.add(SegmentData(
+          segmentName: segmentName,
+          chapters: chapters,
+          segmentUUID: segmentUUID,
         ));
       }
       
-      segments.add(SegmentData(
-        segmentName: segmentName,
-        chapters: chapters,
-        segmentUUID: segmentUUID,
-      ));
+      return segments.isNotEmpty ? segments : null;
+    } catch (e) {
+      debugPrint("ChapterSelection XML Parse Error: $e");
+      return null;
     }
-    
-    return segments.isNotEmpty ? segments : null;
   }
 }
 
@@ -1192,7 +1193,30 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _buildSegmentListTile(segment, index, isSelected, isEditing),
+        child: _SegmentListItem(
+          segment: segment,
+          index: index,
+          isSelected: isSelected,
+          isEditing: isEditing,
+          onEditStart: () {
+            setState(() {
+              _editingSegmentID = segment.segmentUUID;
+            });
+          },
+          onEditSubmit: (value) {
+            setState(() {
+              _segments[index].segmentName = value.trim().isEmpty 
+                  ? "(未命名 Seg)" 
+                  : value.trim();
+              _editingSegmentID = null;
+            });
+            _notifySegmentsChanged();
+          },
+          onDelete: () {
+            if (_segments.length > 1) _deleteSegment(segment.segmentUUID);
+          },
+          onSelect: () => _selectSegment(segment.segmentUUID),
+        ),
       ),
       child: DragTarget<DragData>(
         onWillAcceptWithDetails: (details) {
@@ -1238,26 +1262,17 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ),
               borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
             ),
-            child: _buildSegmentListTile(segment, index, isSelected, isEditing),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildSegmentListTile(SegmentData segment, int index, bool isSelected, bool isEditing) {
-    return ListTile(
-      title: isEditing
-          ? TextField(
-              controller: TextEditingController(text: segment.segmentName)
-                ..selection = TextSelection.fromPosition(
-                  TextPosition(offset: segment.segmentName.length),
-                ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: (value) {
+            child: _SegmentListItem(
+              segment: segment,
+              index: index,
+              isSelected: isSelected,
+              isEditing: isEditing,
+              onEditStart: () {
+                setState(() {
+                  _editingSegmentID = segment.segmentUUID;
+                });
+              },
+              onEditSubmit: (value) {
                 setState(() {
                   _segments[index].segmentName = value.trim().isEmpty 
                       ? "(未命名 Seg)" 
@@ -1266,51 +1281,17 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                 });
                 _notifySegmentsChanged();
               },
-              onEditingComplete: () {
-                setState(() {
-                  _editingSegmentID = null;
-                });
+              onDelete: () {
+                if (_segments.length > 1) _deleteSegment(segment.segmentUUID);
               },
-            )
-          : GestureDetector(
-              onDoubleTap: () {
-                setState(() {
-                  _editingSegmentID = segment.segmentUUID;
-                });
-              },
-              child: Text(
-                segment.segmentName.isEmpty ? "(未命名 Seg)" : segment.segmentName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
+              onSelect: () => _selectSegment(segment.segmentUUID),
             ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () {
-              setState(() {
-                _editingSegmentID = segment.segmentUUID;
-              });
-            },
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            color: Theme.of(context).colorScheme.error,
-            onPressed: _segments.length > 1 ? () => _deleteSegment(segment.segmentUUID) : null,
-            tooltip: "刪除此 Seg",
-          ),
-        ],
+          );
+        },
       ),
-      onTap: () => _selectSegment(segment.segmentUUID),
     );
   }
+
 
   Widget _buildChapterItem(ChapterData chapter, int segIdx, int chapterIdx) {
     final isSelected = widget.selectedChapterID == chapter.chapterUUID;
@@ -1392,7 +1373,31 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _buildChapterListTile(chapter, segIdx, chapterIdx, isSelected, isEditing),
+        child: _ChapterListItem(
+          chapter: chapter,
+          segIdx: segIdx,
+          chapterIdx: chapterIdx,
+          isSelected: isSelected,
+          isEditing: isEditing,
+          onEditStart: () {
+            setState(() {
+              _editingChapterID = chapter.chapterUUID;
+            });
+          },
+          onEditSubmit: (value) {
+            setState(() {
+              _segments[segIdx].chapters[chapterIdx].chapterName = value.trim().isEmpty 
+                  ? "(未命名 Chapter)" 
+                  : value.trim();
+              _editingChapterID = null;
+            });
+            _notifySegmentsChanged();
+          },
+          onDelete: () {
+            if (_totalChaptersCount > 1) _deleteChapter(segIdx, chapter.chapterUUID);
+          },
+          onSelect: () => _selectChapter(segIdx, chapter.chapterUUID),
+        ),
       ),
       child: DragTarget<DragData>(
         onWillAcceptWithDetails: (details) {
@@ -1427,26 +1432,18 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ),
               borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
             ),
-            child: _buildChapterListTile(chapter, segIdx, chapterIdx, isSelected, isEditing),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildChapterListTile(ChapterData chapter, int segIdx, int chapterIdx, bool isSelected, bool isEditing) {
-    return ListTile(
-      title: isEditing
-          ? TextField(
-              controller: TextEditingController(text: chapter.chapterName)
-                ..selection = TextSelection.fromPosition(
-                  TextPosition(offset: chapter.chapterName.length),
-                ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: (value) {
+            child: _ChapterListItem(
+              chapter: chapter,
+              segIdx: segIdx,
+              chapterIdx: chapterIdx,
+              isSelected: isSelected,
+              isEditing: isEditing,
+              onEditStart: () {
+                setState(() {
+                  _editingChapterID = chapter.chapterUUID;
+                });
+              },
+              onEditSubmit: (value) {
                 setState(() {
                   _segments[segIdx].chapters[chapterIdx].chapterName = value.trim().isEmpty 
                       ? "(未命名 Chapter)" 
@@ -1455,21 +1452,185 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                 });
                 _notifySegmentsChanged();
               },
-              onEditingComplete: () {
-                setState(() {
-                  _editingChapterID = null;
-                });
+              onDelete: () {
+                if (_totalChaptersCount > 1) _deleteChapter(segIdx, chapter.chapterUUID);
               },
+              onSelect: () => _selectChapter(segIdx, chapter.chapterUUID),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SegmentListItem extends StatefulWidget {
+  final SegmentData segment;
+  final int index;
+  final bool isSelected;
+  final bool isEditing;
+  final VoidCallback onEditStart;
+  final ValueChanged<String> onEditSubmit;
+  final VoidCallback onDelete;
+  final VoidCallback onSelect;
+
+  const _SegmentListItem({
+    required this.segment,
+    required this.index,
+    required this.isSelected,
+    required this.isEditing,
+    required this.onEditStart,
+    required this.onEditSubmit,
+    required this.onDelete,
+    required this.onSelect,
+  });
+
+  @override
+  State<_SegmentListItem> createState() => _SegmentListItemState();
+}
+
+class _SegmentListItemState extends State<_SegmentListItem> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.segment.segmentName);
+  }
+
+  @override
+  void didUpdateWidget(_SegmentListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.isEditing && oldWidget.isEditing) {
+      // End editing, reset if needed or keep current text
+    }
+    if (widget.isEditing && !oldWidget.isEditing) {
+       _controller.text = widget.segment.segmentName;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: widget.isEditing
+          ? TextField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: widget.onEditSubmit,
+              onEditingComplete: () => widget.onEditSubmit(_controller.text),
             )
           : GestureDetector(
-              onDoubleTap: () {
-                setState(() {
-                  _editingChapterID = chapter.chapterUUID;
-                });
-              },
+              onDoubleTap: widget.onEditStart,
               child: Text(
-                chapter.chapterName.isEmpty ? "(未命名 Chapter)" : chapter.chapterName,
-                style: isSelected
+                widget.segment.segmentName.isEmpty ? "(未命名 Seg)" : widget.segment.segmentName,
+                style: widget.isSelected
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+              ),
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: widget.onEditStart,
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete),
+            color: Theme.of(context).colorScheme.error,
+            onPressed: widget.onDelete,
+            tooltip: "刪除此 Seg",
+          ),
+        ],
+      ),
+      onTap: widget.onSelect,
+    );
+  }
+}
+
+class _ChapterListItem extends StatefulWidget {
+  final ChapterData chapter;
+  final int segIdx;
+  final int chapterIdx;
+  final bool isSelected;
+  final bool isEditing;
+  final VoidCallback onEditStart;
+  final ValueChanged<String> onEditSubmit;
+  final VoidCallback onDelete;
+  final VoidCallback onSelect;
+
+  const _ChapterListItem({
+    required this.chapter,
+    required this.segIdx,
+    required this.chapterIdx,
+    required this.isSelected,
+    required this.isEditing,
+    required this.onEditStart,
+    required this.onEditSubmit,
+    required this.onDelete,
+    required this.onSelect,
+  });
+
+  @override
+  State<_ChapterListItem> createState() => _ChapterListItemState();
+}
+
+class _ChapterListItemState extends State<_ChapterListItem> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.chapter.chapterName);
+  }
+
+  @override
+  void didUpdateWidget(_ChapterListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+     if (widget.isEditing && !oldWidget.isEditing) {
+       _controller.text = widget.chapter.chapterName;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: widget.isEditing
+          ? TextField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: widget.onEditSubmit,
+              onEditingComplete: () => widget.onEditSubmit(_controller.text),
+            )
+          : GestureDetector(
+              onDoubleTap: widget.onEditStart,
+              child: Text(
+                widget.chapter.chapterName.isEmpty ? "(未命名 Chapter)" : widget.chapter.chapterName,
+                style: widget.isSelected
                     ? TextStyle(
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.primary,
@@ -1478,7 +1639,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ),
             ),
       subtitle: Text(
-        "${chapter.chapterWordsCount} 字",
+        "${widget.chapter.chapterWordsCount} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       trailing: Row(
@@ -1486,22 +1647,18 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         children: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () {
-              setState(() {
-                _editingChapterID = chapter.chapterUUID;
-              });
-            },
+            onPressed: widget.onEditStart,
             tooltip: "重新命名",
           ),
           IconButton(
             icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
-            onPressed: _totalChaptersCount > 1 ? () => _deleteChapter(segIdx, chapter.chapterUUID) : null,
+            onPressed: widget.onDelete,
             tooltip: "刪除此章節",
           ),
         ],
       ),
-      onTap: () => _selectChapter(segIdx, chapter.chapterUUID),
+      onTap: widget.onSelect,
     );
   }
 }

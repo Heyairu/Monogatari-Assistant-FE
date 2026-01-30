@@ -486,7 +486,7 @@ class FindReplaceBar extends StatefulWidget {
   final VoidCallback? onClose;
 
   const FindReplaceBar({
-    Key? key,
+    super.key,
     required this.findController,
     required this.replaceController,
     required this.options,
@@ -498,7 +498,7 @@ class FindReplaceBar extends StatefulWidget {
     this.currentMatchIndex,
     this.totalMatches,
     this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   State<FindReplaceBar> createState() => _FindReplaceBarState();
@@ -923,7 +923,7 @@ class FindReplaceFloatingWindow extends StatefulWidget {
   final VoidCallback? onClose;
 
   const FindReplaceFloatingWindow({
-    Key? key,
+    super.key,
     required this.findController,
     required this.replaceController,
     required this.options,
@@ -935,7 +935,7 @@ class FindReplaceFloatingWindow extends StatefulWidget {
     this.currentMatchIndex,
     this.totalMatches,
     this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   State<FindReplaceFloatingWindow> createState() => _FindReplaceFloatingWindowState();

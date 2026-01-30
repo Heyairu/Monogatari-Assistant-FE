@@ -14,6 +14,7 @@
 
 import "package:flutter/material.dart";
 import "package:intl/intl.dart";
+import 'package:xml/xml.dart' as xml;
 
 // MARK: - Model
 
@@ -81,6 +82,7 @@ class BaseInfoData {
   }
 }
 
+
 // MARK: - XML Codec (compatible with the Qt format)
 
 class BaseInfoCodec {
@@ -111,112 +113,99 @@ class BaseInfoCodec {
       data.nowWords = snapshot.nowWords;
     }
 
-    String escapeXml(String text) {
-      return text
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll("\"", "&quot;")
-          .replaceAll("'", "&apos;");
-    }
-
     final isoSave = snapshot.latestSave?.toIso8601String() ?? "";
 
-    final buffer = StringBuffer();
-    buffer.writeln("<Type>");
-    buffer.writeln("  <Name>BaseInfo</Name>");
-    buffer.writeln("  <General>");
-    buffer.writeln("    <BookName>${escapeXml(snapshot.bookName)}</BookName>");
-    buffer.writeln("    <Author>${escapeXml(snapshot.author)}</Author>");
-    buffer.writeln("    <Purpose>${escapeXml(snapshot.purpose)}</Purpose>");
-    buffer.writeln("    <ToRecap>${escapeXml(snapshot.toRecap)}</ToRecap>");
-    buffer.writeln("    <StoryType>${escapeXml(snapshot.storyType)}</StoryType>");
-    buffer.writeln("    <Intro>${escapeXml(snapshot.intro)}</Intro>");
-    if (isoSave.isNotEmpty) {
-      buffer.writeln("    <LatestSave>$isoSave</LatestSave>");
-    }
-    buffer.writeln("  </General>");
-    buffer.writeln("  <Tags>");
-    for (String tag in snapshot.tags) {
-      final trimmed = tag.trim();
-      if (trimmed.isNotEmpty) {
-        buffer.writeln("    <Tag>${escapeXml(trimmed)}</Tag>");
-      }
-    }
-    buffer.writeln("  </Tags>");
-    buffer.writeln("  <Stats>");
-    buffer.writeln("    <TotalWords>$totalWords</TotalWords>");
-    buffer.writeln("    <NowWords>${snapshot.nowWords}</NowWords>");
-    buffer.writeln("  </Stats>");
-    buffer.writeln("</Type>");
+    final builder = xml.XmlBuilder();
+    builder.element('Type', nest: () {
+      builder.element('Name', nest: 'BaseInfo');
+      builder.element('General', nest: () {
+        builder.element('BookName', nest: snapshot.bookName);
+        builder.element('Author', nest: snapshot.author);
+        builder.element('Purpose', nest: snapshot.purpose);
+        builder.element('ToRecap', nest: snapshot.toRecap);
+        builder.element('StoryType', nest: snapshot.storyType);
+        builder.element('Intro', nest: snapshot.intro);
+        if (isoSave.isNotEmpty) {
+          builder.element('LatestSave', nest: isoSave);
+        }
+      });
+      builder.element('Tags', nest: () {
+        for (String tag in snapshot.tags) {
+          final trimmed = tag.trim();
+          if (trimmed.isNotEmpty) {
+            builder.element('Tag', nest: trimmed);
+          }
+        }
+      });
+      builder.element('Stats', nest: () {
+        // Stats can be added here if needed in the future
+      });
+    });
 
-    return buffer.toString();
+    // Indent formatting, consistent with previous behavior
+    return builder.buildDocument().toXmlString(pretty: true, indent: '  ');
   }
 
   /// 自 <Type> 區塊解析（需 <Name>BaseInfo</Name>）
-  static BaseInfoData? loadXML(String xml) {
-    // 簡化的 XML 解析實作
-    // 在實際應用中，建議使用專門的 XML 解析庫
-    
-    if (!xml.contains("<Name>BaseInfo</Name>")) {
+  static BaseInfoData? loadXML(String content) {
+    try {
+      final document = xml.XmlDocument.parse(content);
+      
+      // Find the <Type> root element
+      final typeElement = document.findAllElements('Type').firstOrNull;
+      if (typeElement == null) return null;
+
+      // Check for <Name>BaseInfo</Name>
+      final nameElement = typeElement.findAllElements('Name').firstOrNull;
+      if (nameElement?.innerText != 'BaseInfo') return null;
+
+      final data = BaseInfoData();
+
+      // <General> parsing
+      final general = typeElement.findAllElements('General').firstOrNull;
+      if (general != null) {
+        data.bookName = general.findAllElements('BookName').firstOrNull?.innerText ?? "";
+        data.author = general.findAllElements('Author').firstOrNull?.innerText ?? "";
+        data.purpose = general.findAllElements('Purpose').firstOrNull?.innerText ?? "";
+        data.toRecap = general.findAllElements('ToRecap').firstOrNull?.innerText ?? "";
+        data.storyType = general.findAllElements('StoryType').firstOrNull?.innerText ?? "";
+        data.intro = general.findAllElements('Intro').firstOrNull?.innerText ?? "";
+
+        final latestSaveStr = general.findAllElements('LatestSave').firstOrNull?.innerText;
+        if (latestSaveStr != null && latestSaveStr.isNotEmpty) {
+          try {
+            data.latestSave = DateTime.parse(latestSaveStr);
+          } catch (e) {
+            // Keep null if parsing fails
+          }
+        }
+      }
+
+      // <Tags> parsing
+      final tagsElement = typeElement.findAllElements('Tags').firstOrNull;
+      if (tagsElement != null) {
+        for (final tagNode in tagsElement.findAllElements('Tag')) {
+          final tagText = tagNode.innerText.trim();
+          if (tagText.isNotEmpty) {
+            data.tags.add(tagText);
+          }
+        }
+      }
+
+      // <Stats> parsing (e.g. NowWords) - if it exists in the XML
+      final statsElement = typeElement.findAllElements('Stats').firstOrNull;
+      if (statsElement != null) {
+        final nowWordsStr = statsElement.findAllElements('NowWords').firstOrNull?.innerText;
+        if (nowWordsStr != null) {
+          data.nowWords = int.tryParse(nowWordsStr) ?? 0;
+        }
+      }
+
+      return data;
+    } catch (e) {
+      print('Error parsing BaseInfo XML: $e');
       return null;
     }
-
-    final data = BaseInfoData();
-
-    // 解析各個欄位
-    data.bookName = _extractTagContent(xml, "BookName") ?? "";
-    data.author = _extractTagContent(xml, "Author") ?? "";
-    data.purpose = _extractTagContent(xml, "Purpose") ?? "";
-    data.toRecap = _extractTagContent(xml, "ToRecap") ?? "";
-    data.storyType = _extractTagContent(xml, "StoryType") ?? "";
-    data.intro = _extractTagContent(xml, "Intro") ?? "";
-
-    // 解析最後儲存時間
-    final latestSaveStr = _extractTagContent(xml, "LatestSave");
-    if (latestSaveStr != null && latestSaveStr.isNotEmpty) {
-      try {
-        data.latestSave = DateTime.parse(latestSaveStr);
-      } catch (e) {
-        // 如果解析失敗，保持 null
-      }
-    }
-
-    // 解析標籤
-    final tagMatches = RegExp(r"<Tag>(.*?)</Tag>").allMatches(xml);
-    for (final match in tagMatches) {
-      final tag = match.group(1)?.trim();
-      if (tag != null && tag.isNotEmpty) {
-        data.tags.add(tag);
-      }
-    }
-
-    // 解析字數
-    final nowWordsStr = _extractTagContent(xml, "NowWords");
-    if (nowWordsStr != null) {
-      data.nowWords = int.tryParse(nowWordsStr) ?? 0;
-    }
-
-    return data;
-  }
-
-  static String? _extractTagContent(String xml, String tagName) {
-    final regex = RegExp("<$tagName>(.*?)</$tagName>", dotAll: true);
-    final match = regex.firstMatch(xml);
-    final content = match?.group(1)?.trim();
-    if (content == null) return null;
-    
-    // 解碼 XML 實體
-    return _unescapeXml(content);
-  }
-  
-  static String _unescapeXml(String text) {
-    return text
-        .replaceAll("&lt;", "<")
-        .replaceAll("&gt;", ">")
-        .replaceAll("&quot;", "\"")
-        .replaceAll("&apos;", "'")
-        .replaceAll("&amp;", "&"); // 必須最後處理
   }
 }
 
@@ -699,6 +688,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
                 : "YYYY.MM.DD hh.mm.ss",
               Icons.access_time,
             ),
+
             const Divider(height: 24),
             
             // 總字數

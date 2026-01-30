@@ -13,8 +13,8 @@
  */
 
 import "package:flutter/material.dart";
-import "package:flutter/services.dart";
 import "dart:async";
+import "package:xml/xml.dart" as xml;
 
 // MARK: - 拖放數據類型
 
@@ -159,162 +159,134 @@ class DragPayload {
 
 // MARK: - XML Codec for Outline
 class OutlineCodec {
-  static String _escapeXml(String text) {
-    return text
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll("\"", "&quot;")
-        .replaceAll("'", "&apos;");
-  }
-
-  static String _unescapeXml(String text) {
-    return text
-        .replaceAll("&lt;", "<")
-        .replaceAll("&gt;", ">")
-        .replaceAll("&quot;", "\"")
-        .replaceAll("&apos;", "'")
-        .replaceAll("&amp;", "&");
-  }
-
   static String? saveXML(List<StorylineData> storylines) {
     if (storylines.isEmpty) return null;
     
-    final buffer = StringBuffer();
-    buffer.writeln("<Type>");
-    buffer.writeln("  <Name>Outline</Name>");
-    
-    for (final sl in storylines) {
-      buffer.writeln("  <Storyline Name=\"${_escapeXml(sl.storylineName)}\" Type=\"${_escapeXml(sl.storylineType)}\" UUID=\"${sl.chapterUUID}\">");
+    final builder = xml.XmlBuilder();
+    builder.element("Type", nest: () {
+      builder.element("Name", nest: "Outline");
       
-      if (sl.memo.isNotEmpty) {
-        buffer.writeln("    <Memo>${_escapeXml(sl.memo)}</Memo>");
+      for (final sl in storylines) {
+        builder.element("Storyline", attributes: {
+          "Name": sl.storylineName,
+          "Type": sl.storylineType,
+          "UUID": sl.chapterUUID,
+        }, nest: () {
+          if (sl.memo.isNotEmpty) {
+            builder.element("Memo", nest: sl.memo);
+          }
+          if (sl.conflictPoint.isNotEmpty) {
+            builder.element("ConflictPoint", nest: sl.conflictPoint);
+          }
+          if (sl.people.isNotEmpty) {
+            builder.element("People", nest: () {
+              for (final p in sl.people) {
+                builder.element("Person", nest: p);
+              }
+            });
+          }
+          if (sl.item.isNotEmpty) {
+            builder.element("Items", nest: () {
+              for (final it in sl.item) {
+                builder.element("Item", nest: it);
+              }
+            });
+          }
+          
+          for (final ev in sl.scenes) {
+            builder.element("Event", attributes: {
+              "Name": ev.storyEvent,
+              "UUID": ev.storyEventUUID,
+            }, nest: () {
+              if (ev.memo.isNotEmpty) {
+                builder.element("Memo", nest: ev.memo);
+              }
+              if (ev.conflictPoint.isNotEmpty) {
+                builder.element("ConflictPoint", nest: ev.conflictPoint);
+              }
+              if (ev.people.isNotEmpty) {
+                builder.element("People", nest: () {
+                  for (final p in ev.people) {
+                    builder.element("Person", nest: p);
+                  }
+                });
+              }
+              if (ev.item.isNotEmpty) {
+                builder.element("Items", nest: () {
+                  for (final it in ev.item) {
+                    builder.element("Item", nest: it);
+                  }
+                });
+              }
+              
+              for (final sc in ev.scenes) {
+                builder.element("Scene", attributes: {
+                  "Name": sc.sceneName,
+                  "UUID": sc.sceneUUID,
+                }, nest: () {
+                  if (sc.time.isNotEmpty) {
+                    builder.element("Time", nest: sc.time);
+                  }
+                  if (sc.location.isNotEmpty) {
+                    builder.element("Location", nest: sc.location);
+                  }
+                  if (sc.focusPoint.isNotEmpty) {
+                    builder.element("FocusPoint", nest: sc.focusPoint);
+                  }
+                  if (sc.conflictPoint.isNotEmpty) {
+                    builder.element("ConflictPoint", nest: sc.conflictPoint);
+                  }
+                  if (sc.people.isNotEmpty) {
+                    builder.element("People", nest: () {
+                      for (final p in sc.people) {
+                        builder.element("Person", nest: p);
+                      }
+                    });
+                  }
+                  if (sc.item.isNotEmpty) {
+                    builder.element("Items", nest: () {
+                      for (final it in sc.item) {
+                        builder.element("Item", nest: it);
+                      }
+                    });
+                  }
+                  if (sc.doingThings.isNotEmpty) {
+                    builder.element("Doings", nest: () {
+                      for (final d in sc.doingThings) {
+                        builder.element("Doing", nest: d);
+                      }
+                    });
+                  }
+                  if (sc.memo.isNotEmpty) {
+                    builder.element("Memo", nest: sc.memo);
+                  }
+                });
+              }
+            });
+          }
+        });
       }
-      
-      if (sl.conflictPoint.isNotEmpty) {
-        buffer.writeln("    <ConflictPoint>${_escapeXml(sl.conflictPoint)}</ConflictPoint>");
-      }
-      
-      if (sl.people.isNotEmpty) {
-        buffer.writeln("    <People>");
-        for (final p in sl.people) {
-          buffer.writeln("      <Person>${_escapeXml(p)}</Person>");
-        }
-        buffer.writeln("    </People>");
-      }
-      
-      if (sl.item.isNotEmpty) {
-        buffer.writeln("    <Items>");
-        for (final it in sl.item) {
-          buffer.writeln("      <Item>${_escapeXml(it)}</Item>");
-        }
-        buffer.writeln("    </Items>");
-      }
-      
-      for (final ev in sl.scenes) {
-        buffer.writeln("    <Event Name=\"${_escapeXml(ev.storyEvent)}\" UUID=\"${ev.storyEventUUID}\">");
-        
-        if (ev.memo.isNotEmpty) {
-          buffer.writeln("      <Memo>${_escapeXml(ev.memo)}</Memo>");
-        }
-        
-        if (ev.conflictPoint.isNotEmpty) {
-          buffer.writeln("      <ConflictPoint>${_escapeXml(ev.conflictPoint)}</ConflictPoint>");
-        }
-        
-        if (ev.people.isNotEmpty) {
-          buffer.writeln("      <People>");
-          for (final p in ev.people) {
-            buffer.writeln("        <Person>${_escapeXml(p)}</Person>");
-          }
-          buffer.writeln("      </People>");
-        }
-        
-        if (ev.item.isNotEmpty) {
-          buffer.writeln("      <Items>");
-          for (final it in ev.item) {
-            buffer.writeln("        <Item>${_escapeXml(it)}</Item>");
-          }
-          buffer.writeln("      </Items>");
-        }
-        
-        for (final sc in ev.scenes) {
-          buffer.writeln("      <Scene Name=\"${_escapeXml(sc.sceneName)}\" UUID=\"${sc.sceneUUID}\">");
-          
-          if (sc.time.isNotEmpty) {
-            buffer.writeln("        <Time>${_escapeXml(sc.time)}</Time>");
-          }
-          
-          if (sc.location.isNotEmpty) {
-            buffer.writeln("        <Location>${_escapeXml(sc.location)}</Location>");
-          }
-          
-          if (sc.focusPoint.isNotEmpty) {
-            buffer.writeln("        <FocusPoint>${_escapeXml(sc.focusPoint)}</FocusPoint>");
-          }
-          
-          if (sc.conflictPoint.isNotEmpty) {
-            buffer.writeln("        <ConflictPoint>${_escapeXml(sc.conflictPoint)}</ConflictPoint>");
-          }
-          
-          if (sc.people.isNotEmpty) {
-            buffer.writeln("        <People>");
-            for (final p in sc.people) {
-              buffer.writeln("          <Person>${_escapeXml(p)}</Person>");
-            }
-            buffer.writeln("        </People>");
-          }
-          
-          if (sc.item.isNotEmpty) {
-            buffer.writeln("        <Items>");
-            for (final it in sc.item) {
-              buffer.writeln("          <Item>${_escapeXml(it)}</Item>");
-            }
-            buffer.writeln("        </Items>");
-          }
-          
-          if (sc.doingThings.isNotEmpty) {
-            buffer.writeln("        <Doings>");
-            for (final d in sc.doingThings) {
-              buffer.writeln("          <Doing>${_escapeXml(d)}</Doing>");
-            }
-            buffer.writeln("        </Doings>");
-          }
-          
-          if (sc.memo.isNotEmpty) {
-            buffer.writeln("        <Memo>${_escapeXml(sc.memo)}</Memo>");
-          }
-          
-          buffer.writeln("      </Scene>");
-        }
-        
-        buffer.writeln("    </Event>");
-      }
-      
-      buffer.writeln("  </Storyline>");
-    }
-    
-    buffer.writeln("</Type>");
-    return buffer.toString();
+    });
+
+    return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
 
-  static List<StorylineData>? loadXML(String xml) {
-    final storylines = <StorylineData>[];
-    
+  static List<StorylineData>? loadXML(String content) {
     try {
-      // 使用正規表示式解析 Storyline 元素
-      final storylineRegex = RegExp(
-        r'<Storyline[^>]*Name="([^"]*)"[^>]*Type="([^"]*)"[^>]*UUID="([^"]*)"[^>]*>(.*?)</Storyline>',
-        dotAll: true
-      );
+      final document = xml.XmlDocument.parse(content);
       
-      final storylineMatches = storylineRegex.allMatches(xml);
+      final typeElement = document.findAllElements("Type").firstOrNull;
+      if (typeElement == null) return null;
+
+      final nameElement = typeElement.findAllElements("Name").firstOrNull;
+      if (nameElement?.innerText != "Outline") return null;
       
-      for (final storylineMatch in storylineMatches) {
-        final storylineName = _unescapeXml(storylineMatch.group(1) ?? "");
-        final storylineType = _unescapeXml(storylineMatch.group(2) ?? "");
-        final storylineUUID = storylineMatch.group(3) ?? DateTime.now().millisecondsSinceEpoch.toString();
-        final storylineContent = storylineMatch.group(4) ?? "";
+      final storylines = <StorylineData>[];
+      
+      for (final storylineNode in typeElement.findAllElements("Storyline")) {
+        final storylineName = storylineNode.getAttribute("Name") ?? "";
+        final storylineType = storylineNode.getAttribute("Type") ?? "";
+        final storylineUUID = storylineNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
         
         final storyline = StorylineData(
           storylineName: storylineName,
@@ -327,55 +299,44 @@ class OutlineCodec {
           conflictPoint: "",
         );
         
-        // 解析 Memo
-        final memoMatch = RegExp(r'<Memo>(.*?)</Memo>', dotAll: true).firstMatch(storylineContent);
-        if (memoMatch != null) {
-          storyline.memo = _unescapeXml(memoMatch.group(1) ?? "");
-        }
+        // Parse Memo
+        storyline.memo = storylineNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
         
-        // 解析 ConflictPoint
-        final conflictPointMatch = RegExp(r'<ConflictPoint>(.*?)</ConflictPoint>', dotAll: true).firstMatch(storylineContent);
-        if (conflictPointMatch != null) {
-          storyline.conflictPoint = _unescapeXml(conflictPointMatch.group(1) ?? "");
-        }
+        // Parse ConflictPoint
+        storyline.conflictPoint = storylineNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
         
-        // 解析 People
-        final peopleMatch = RegExp(r'<People>(.*?)</People>', dotAll: true).firstMatch(storylineContent);
-        if (peopleMatch != null) {
-          final peopleContent = peopleMatch.group(1) ?? "";
-          final personMatches = RegExp(r'<Person>(.*?)</Person>', dotAll: true).allMatches(peopleContent);
-          for (final personMatch in personMatches) {
-            final person = _unescapeXml(personMatch.group(1) ?? "");
-            if (person.isNotEmpty) {
-              storyline.people.add(person);
-            }
+        // Parse People
+        final peopleNode = storylineNode.findAllElements("People").firstOrNull;
+        if (peopleNode != null) {
+          for (final personNode in peopleNode.findAllElements("Person")) {
+            final person = personNode.innerText.trim();
+            if (person.isNotEmpty) storyline.people.add(person);
           }
         }
         
-        // 解析 Items
-        final itemsMatch = RegExp(r'<Items>(.*?)</Items>', dotAll: true).firstMatch(storylineContent);
-        if (itemsMatch != null) {
-          final itemsContent = itemsMatch.group(1) ?? "";
-          final itemMatches = RegExp(r'<Item>(.*?)</Item>', dotAll: true).allMatches(itemsContent);
-          for (final itemMatch in itemMatches) {
-            final item = _unescapeXml(itemMatch.group(1) ?? "");
-            if (item.isNotEmpty) {
-              storyline.item.add(item);
-            }
+        // Parse Items
+        final itemsNode = storylineNode.findAllElements("Items").firstOrNull;
+        if (itemsNode != null) {
+          for (final itemNode in itemsNode.findAllElements("Item")) {
+            final item = itemNode.innerText.trim();
+            if (item.isNotEmpty) storyline.item.add(item);
           }
         }
         
-        // 解析 Events
-        final eventRegex = RegExp(
-          r'<Event[^>]*Name="([^"]*)"[^>]*UUID="([^"]*)"[^>]*>(.*?)</Event>',
-          dotAll: true
-        );
-        final eventMatches = eventRegex.allMatches(storylineContent);
+        // Parse Events (direct children with name "Event")
+        // We use .children instead of .findAllElements to detect direct structure if hierarchy matters
+        // But here simpler find works as Event is inside Storyline
         
-        for (final eventMatch in eventMatches) {
-          final eventName = _unescapeXml(eventMatch.group(1) ?? "");
-          final eventUUID = eventMatch.group(2) ?? DateTime.now().millisecondsSinceEpoch.toString();
-          final eventContent = eventMatch.group(3) ?? "";
+        // Be careful not to find nested Events if they existed (not in this schema)
+        // findAllElements finds descendants. We should use .findElements for direct children if appropriate.
+        // In the builder structure: Type -> Storyline -> Event -> Scene
+        // So safe to use findAllElements inside storylineNode but "Event" is also a common word.
+        // It is safer to use direct child iteration or ensure scope.
+        // storylineNode.findElements("Event") is safer.
+        
+        for (final eventNode in storylineNode.findElements("Event")) {
+          final eventName = eventNode.getAttribute("Name") ?? "";
+          final eventUUID = eventNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
           
           final event = StoryEventData(
             storyEvent: eventName,
@@ -387,55 +348,29 @@ class OutlineCodec {
             conflictPoint: "",
           );
           
-          // 解析 Event Memo
-          final eventMemoMatch = RegExp(r'<Memo>(.*?)</Memo>', dotAll: true).firstMatch(eventContent);
-          if (eventMemoMatch != null) {
-            event.memo = _unescapeXml(eventMemoMatch.group(1) ?? "");
-          }
+          event.memo = eventNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
+          event.conflictPoint = eventNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
           
-          // 解析 Event ConflictPoint
-          final eventConflictPointMatch = RegExp(r'<ConflictPoint>(.*?)</ConflictPoint>', dotAll: true).firstMatch(eventContent);
-          if (eventConflictPointMatch != null) {
-            event.conflictPoint = _unescapeXml(eventConflictPointMatch.group(1) ?? "");
-          }
-          
-          // 解析 Event People
-          final eventPeopleMatch = RegExp(r'<People>(.*?)</People>', dotAll: true).firstMatch(eventContent);
-          if (eventPeopleMatch != null) {
-            final eventPeopleContent = eventPeopleMatch.group(1) ?? "";
-            final eventPersonMatches = RegExp(r'<Person>(.*?)</Person>', dotAll: true).allMatches(eventPeopleContent);
-            for (final eventPersonMatch in eventPersonMatches) {
-              final person = _unescapeXml(eventPersonMatch.group(1) ?? "");
-              if (person.isNotEmpty) {
-                event.people.add(person);
-              }
+          final eventPeopleNode = eventNode.findAllElements("People").firstOrNull;
+          if (eventPeopleNode != null) {
+            for (final p in eventPeopleNode.findAllElements("Person")) {
+              final person = p.innerText.trim();
+              if (person.isNotEmpty) event.people.add(person);
             }
           }
           
-          // 解析 Event Items
-          final eventItemsMatch = RegExp(r'<Items>(.*?)</Items>', dotAll: true).firstMatch(eventContent);
-          if (eventItemsMatch != null) {
-            final eventItemsContent = eventItemsMatch.group(1) ?? "";
-            final eventItemMatches = RegExp(r'<Item>(.*?)</Item>', dotAll: true).allMatches(eventItemsContent);
-            for (final eventItemMatch in eventItemMatches) {
-              final item = _unescapeXml(eventItemMatch.group(1) ?? "");
-              if (item.isNotEmpty) {
-                event.item.add(item);
-              }
+          final eventItemsNode = eventNode.findAllElements("Items").firstOrNull;
+          if (eventItemsNode != null) {
+            for (final it in eventItemsNode.findAllElements("Item")) {
+              final item = it.innerText.trim();
+              if (item.isNotEmpty) event.item.add(item);
             }
           }
           
-          // 解析 Scenes
-          final sceneRegex = RegExp(
-            r'<Scene[^>]*Name="([^"]*)"[^>]*UUID="([^"]*)"[^>]*>(.*?)</Scene>',
-            dotAll: true
-          );
-          final sceneMatches = sceneRegex.allMatches(eventContent);
-          
-          for (final sceneMatch in sceneMatches) {
-            final sceneName = _unescapeXml(sceneMatch.group(1) ?? "");
-            final sceneUUID = sceneMatch.group(2) ?? DateTime.now().millisecondsSinceEpoch.toString();
-            final sceneContent = sceneMatch.group(3) ?? "";
+          // Parse Scenes
+          for (final sceneNode in eventNode.findElements("Scene")) {
+            final sceneName = sceneNode.getAttribute("Name") ?? "";
+            final sceneUUID = sceneNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
             
             final scene = SceneData(
               sceneName: sceneName,
@@ -450,73 +385,34 @@ class OutlineCodec {
               memo: "",
             );
             
-            // 解析 Scene Time
-            final timeMatch = RegExp(r'<Time>(.*?)</Time>', dotAll: true).firstMatch(sceneContent);
-            if (timeMatch != null) {
-              scene.time = _unescapeXml(timeMatch.group(1) ?? "");
-            }
+            scene.time = sceneNode.findAllElements("Time").firstOrNull?.innerText ?? "";
+            scene.location = sceneNode.findAllElements("Location").firstOrNull?.innerText ?? "";
+            scene.focusPoint = sceneNode.findAllElements("FocusPoint").firstOrNull?.innerText ?? "";
+            scene.conflictPoint = sceneNode.findAllElements("ConflictPoint").firstOrNull?.innerText ?? "";
+            scene.memo = sceneNode.findAllElements("Memo").firstOrNull?.innerText ?? "";
             
-            // 解析 Scene Location
-            final locationMatch = RegExp(r'<Location>(.*?)</Location>', dotAll: true).firstMatch(sceneContent);
-            if (locationMatch != null) {
-              scene.location = _unescapeXml(locationMatch.group(1) ?? "");
-            }
-            
-            // 解析 Scene FocusPoint
-            final focusPointMatch = RegExp(r'<FocusPoint>(.*?)</FocusPoint>', dotAll: true).firstMatch(sceneContent);
-            if (focusPointMatch != null) {
-              scene.focusPoint = _unescapeXml(focusPointMatch.group(1) ?? "");
-            }
-            
-            // 解析 Scene ConflictPoint
-            final sceneConflictPointMatch = RegExp(r'<ConflictPoint>(.*?)</ConflictPoint>', dotAll: true).firstMatch(sceneContent);
-            if (sceneConflictPointMatch != null) {
-              scene.conflictPoint = _unescapeXml(sceneConflictPointMatch.group(1) ?? "");
-            }
-            
-            // 解析 Scene People
-            final scenePeopleMatch = RegExp(r'<People>(.*?)</People>', dotAll: true).firstMatch(sceneContent);
-            if (scenePeopleMatch != null) {
-              final scenePeopleContent = scenePeopleMatch.group(1) ?? "";
-              final scenePersonMatches = RegExp(r'<Person>(.*?)</Person>', dotAll: true).allMatches(scenePeopleContent);
-              for (final scenePersonMatch in scenePersonMatches) {
-                final person = _unescapeXml(scenePersonMatch.group(1) ?? "");
-                if (person.isNotEmpty) {
-                  scene.people.add(person);
-                }
+            final scenePeopleNode = sceneNode.findAllElements("People").firstOrNull;
+            if (scenePeopleNode != null) {
+              for (final p in scenePeopleNode.findAllElements("Person")) {
+                final person = p.innerText.trim();
+                if (person.isNotEmpty) scene.people.add(person);
               }
             }
             
-            // 解析 Scene Items
-            final sceneItemsMatch = RegExp(r'<Items>(.*?)</Items>', dotAll: true).firstMatch(sceneContent);
-            if (sceneItemsMatch != null) {
-              final sceneItemsContent = sceneItemsMatch.group(1) ?? "";
-              final sceneItemMatches = RegExp(r'<Item>(.*?)</Item>', dotAll: true).allMatches(sceneItemsContent);
-              for (final sceneItemMatch in sceneItemMatches) {
-                final item = _unescapeXml(sceneItemMatch.group(1) ?? "");
-                if (item.isNotEmpty) {
-                  scene.item.add(item);
-                }
+            final sceneItemsNode = sceneNode.findAllElements("Items").firstOrNull;
+            if (sceneItemsNode != null) {
+              for (final it in sceneItemsNode.findAllElements("Item")) {
+                final item = it.innerText.trim();
+                if (item.isNotEmpty) scene.item.add(item);
               }
             }
             
-            // 解析 Scene Doings
-            final doingsMatch = RegExp(r'<Doings>(.*?)</Doings>', dotAll: true).firstMatch(sceneContent);
-            if (doingsMatch != null) {
-              final doingsContent = doingsMatch.group(1) ?? "";
-              final doingMatches = RegExp(r'<Doing>(.*?)</Doing>', dotAll: true).allMatches(doingsContent);
-              for (final doingMatch in doingMatches) {
-                final doing = _unescapeXml(doingMatch.group(1) ?? "");
-                if (doing.isNotEmpty) {
-                  scene.doingThings.add(doing);
-                }
+            final doingsNode = sceneNode.findAllElements("Doings").firstOrNull;
+            if (doingsNode != null) {
+              for (final d in doingsNode.findAllElements("Doing")) {
+                final doing = d.innerText.trim();
+                if (doing.isNotEmpty) scene.doingThings.add(doing);
               }
-            }
-            
-            // 解析 Scene Memo
-            final sceneMemoMatch = RegExp(r'<Memo>(.*?)</Memo>', dotAll: true).firstMatch(sceneContent);
-            if (sceneMemoMatch != null) {
-              scene.memo = _unescapeXml(sceneMemoMatch.group(1) ?? "");
             }
             
             event.scenes.add(scene);
@@ -1176,7 +1072,33 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _buildStorylineListTile(storyline, index, isSelected, isEditing),
+        child: _StorylineListItem(
+          storyline: storyline,
+          isSelected: isSelected,
+          isEditing: isEditing,
+          onEditStart: () {
+            setState(() {
+              editingStorylineID = storyline.chapterUUID;
+            });
+          },
+          onEditSubmit: (value) {
+            setState(() {
+              storyline.storylineName = value.trim().isEmpty 
+                  ? "(未命名故事線)" 
+                  : value.trim();
+              editingStorylineID = null;
+            });
+            _notifyChange();
+          },
+          onDelete: () => _deleteStoryline(storyline.chapterUUID),
+          canDelete: storylines.length > 1,
+          onSelect: () {
+            setState(() {
+              selectedStorylineID = storyline.chapterUUID;
+              _updateSelectionAfterStorylineChange();
+            });
+          },
+        ),
       ),
       child: DragTarget<OutlineDragData>(
         onWillAcceptWithDetails: (details) {
@@ -1219,97 +1141,36 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               ),
               borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
             ),
-            child: _buildStorylineListTile(storyline, index, isSelected, isEditing),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildStorylineListTile(StorylineData storyline, int index, bool isSelected, bool isEditing) {
-    return ListTile(
-      leading: Icon(
-        Icons.library_books,
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: isEditing
-          ? TextField(
-              autofocus: true,
-              controller: TextEditingController(text: storylines[index].storylineName)
-                ..selection = TextSelection.fromPosition(
-                  TextPosition(offset: storylines[index].storylineName.length),
-                ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: (value) {
+            child: _StorylineListItem(
+              storyline: storyline,
+              isSelected: isSelected,
+              isEditing: isEditing,
+              onEditStart: () {
                 setState(() {
-                  storylines[index].storylineName = value.trim().isEmpty 
+                  editingStorylineID = storyline.chapterUUID;
+                });
+              },
+              onEditSubmit: (value) {
+                setState(() {
+                  storyline.storylineName = value.trim().isEmpty 
                       ? "(未命名故事線)" 
                       : value.trim();
                   editingStorylineID = null;
                 });
                 _notifyChange();
               },
-              onEditingComplete: () {
+              onDelete: () => _deleteStoryline(storyline.chapterUUID),
+              canDelete: storylines.length > 1,
+              onSelect: () {
                 setState(() {
-                  editingStorylineID = null;
+                  selectedStorylineID = storyline.chapterUUID;
+                  _updateSelectionAfterStorylineChange();
                 });
               },
-            )
-          : GestureDetector(
-              onDoubleTap: () {
-                setState(() {
-                  editingStorylineID = storyline.chapterUUID;
-                });
-              },
-              child: Text(
-                storyline.storylineName.isEmpty ? "(未命名故事線)" : storyline.storylineName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
             ),
-      subtitle: Text(
-        storyline.storylineType.isEmpty ? "未設定類型" : storyline.storylineType,
-        style: Theme.of(context).textTheme.bodySmall,
+          );
+        },
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () {
-              setState(() {
-                editingStorylineID = storyline.chapterUUID;
-              });
-            },
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: storylines.length > 1 ? () => _deleteStoryline(storyline.chapterUUID) : null,
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: storylines.length > 1 ? Theme.of(context).colorScheme.error : null,
-            ),
-            tooltip: "刪除故事線",
-          ),
-        ],
-      ),
-      onTap: () {
-        setState(() {
-          selectedStorylineID = storyline.chapterUUID;
-          _updateSelectionAfterStorylineChange();
-        });
-      },
     );
   }
 
@@ -1707,7 +1568,32 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _buildEventListTile(event, index, isSelected, isEditing),
+        child: _EventListItem(
+          event: event,
+          isSelected: isSelected,
+          isEditing: isEditing,
+          onEditStart: () {
+            setState(() {
+              editingEventID = event.storyEventUUID;
+            });
+          },
+          onEditSubmit: (value) {
+            setState(() {
+              event.storyEvent = value.trim().isEmpty 
+                  ? "(未命名事件)" 
+                  : value.trim();
+              editingEventID = null;
+            });
+            _notifyChange();
+          },
+          onDelete: () => _deleteEvent(event.storyEventUUID, selectedStorylineIndex!),
+          onSelect: () {
+            setState(() {
+              selectedEventID = event.storyEventUUID;
+              _updateSelectionAfterEventChange();
+            });
+          },
+        ),
       ),
       child: DragTarget<OutlineDragData>(
         onWillAcceptWithDetails: (details) {
@@ -1744,34 +1630,16 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               ),
               borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
             ),
-            child: _buildEventListTile(event, index, isSelected, isEditing),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildEventListTile(StoryEventData event, int index, bool isSelected, bool isEditing) {
-    return ListTile(
-      leading: Icon(
-        Icons.event_note,
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: isEditing
-          ? TextField(
-              autofocus: true,
-              controller: TextEditingController(text: event.storyEvent)
-                ..selection = TextSelection.fromPosition(
-                  TextPosition(offset: event.storyEvent.length),
-                ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: (value) {
+            child: _EventListItem(
+              event: event,
+              isSelected: isSelected,
+              isEditing: isEditing,
+              onEditStart: () {
+                setState(() {
+                  editingEventID = event.storyEventUUID;
+                });
+              },
+              onEditSubmit: (value) {
                 setState(() {
                   event.storyEvent = value.trim().isEmpty 
                       ? "(未命名事件)" 
@@ -1780,61 +1648,17 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 });
                 _notifyChange();
               },
-              onEditingComplete: () {
+              onDelete: () => _deleteEvent(event.storyEventUUID, selectedStorylineIndex!),
+              onSelect: () {
                 setState(() {
-                  editingEventID = null;
+                  selectedEventID = event.storyEventUUID;
+                  _updateSelectionAfterEventChange();
                 });
               },
-            )
-          : GestureDetector(
-              onDoubleTap: () {
-                setState(() {
-                  editingEventID = event.storyEventUUID;
-                });
-              },
-              child: Text(
-                event.storyEvent.isEmpty ? "(未命名事件)" : event.storyEvent,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
             ),
-      subtitle: Text(
-        "${event.scenes.length} 個場景",
-        style: Theme.of(context).textTheme.bodySmall,
+          );
+        },
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () {
-              setState(() {
-                editingEventID = event.storyEventUUID;
-              });
-            },
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: () => _deleteEvent(event.storyEventUUID, selectedStorylineIndex!),
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除事件",
-          ),
-        ],
-      ),
-      onTap: () {
-        setState(() {
-          selectedEventID = event.storyEventUUID;
-          _updateSelectionAfterEventChange();
-        });
-      },
     );
   }
 
@@ -2219,7 +2043,32 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _buildSceneListTile(scene, index, isSelected, isEditing),
+        child: _SceneListItem(
+          scene: scene,
+          isSelected: isSelected,
+          isEditing: isEditing,
+          onEditStart: () {
+            setState(() {
+              editingSceneID = scene.sceneUUID;
+            });
+          },
+          onEditSubmit: (value) {
+            setState(() {
+              scene.sceneName = value.trim().isEmpty 
+                  ? "(未命名場景)" 
+                  : value.trim();
+              editingSceneID = null;
+            });
+            _notifyChange();
+          },
+          onDelete: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
+          onSelect: () {
+            setState(() {
+              selectedSceneID = scene.sceneUUID;
+              _syncAllControllers();
+            });
+          },
+        ),
       ),
       child: DragTarget<OutlineDragData>(
         onWillAcceptWithDetails: (details) {
@@ -2252,34 +2101,16 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               ),
               borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
             ),
-            child: _buildSceneListTile(scene, index, isSelected, isEditing),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildSceneListTile(SceneData scene, int index, bool isSelected, bool isEditing) {
-    return ListTile(
-      leading: Icon(
-        Icons.theater_comedy,
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: isEditing
-          ? TextField(
-              autofocus: true,
-              controller: TextEditingController(text: scene.sceneName)
-                ..selection = TextSelection.fromPosition(
-                  TextPosition(offset: scene.sceneName.length),
-                ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: (value) {
+            child: _SceneListItem(
+              scene: scene,
+              isSelected: isSelected,
+              isEditing: isEditing,
+              onEditStart: () {
+                setState(() {
+                  editingSceneID = scene.sceneUUID;
+                });
+              },
+              onEditSubmit: (value) {
                 setState(() {
                   scene.sceneName = value.trim().isEmpty 
                       ? "(未命名場景)" 
@@ -2288,73 +2119,17 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 });
                 _notifyChange();
               },
-              onEditingComplete: () {
+              onDelete: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
+              onSelect: () {
                 setState(() {
-                  editingSceneID = null;
+                  selectedSceneID = scene.sceneUUID;
+                  _syncAllControllers();
                 });
               },
-            )
-          : GestureDetector(
-              onDoubleTap: () {
-                setState(() {
-                  editingSceneID = scene.sceneUUID;
-                });
-              },
-              child: Text(
-                scene.sceneName.isEmpty ? "(未命名場景)" : scene.sceneName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
             ),
-      subtitle: Row(
-        children: [
-          if (scene.time.isNotEmpty) ...[
-            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(scene.time, style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (scene.time.isNotEmpty && scene.location.isNotEmpty) 
-            Text(" • ", style: Theme.of(context).textTheme.bodySmall),
-          if (scene.location.isNotEmpty) ...[
-            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(scene.location, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ],
+          );
+        },
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () {
-              setState(() {
-                editingSceneID = scene.sceneUUID;
-              });
-            },
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除場景",
-          ),
-        ],
-      ),
-      onTap: () {
-        setState(() {
-          selectedSceneID = scene.sceneUUID;
-          _syncAllControllers();
-        });
-      },
     );
   }
 
@@ -2946,5 +2721,340 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       selectedSceneID = null;
     }
     _syncAllControllers();
+  }
+}
+
+class _StorylineListItem extends StatefulWidget {
+  final StorylineData storyline;
+  final bool isSelected;
+  final bool isEditing;
+  final VoidCallback onSelect;
+  final VoidCallback onEditStart;
+  final ValueChanged<String> onEditSubmit;
+  final VoidCallback onDelete;
+  final bool canDelete;
+
+  const _StorylineListItem({
+    required this.storyline,
+    required this.isSelected,
+    required this.isEditing,
+    required this.onSelect,
+    required this.onEditStart,
+    required this.onEditSubmit,
+    required this.onDelete,
+    this.canDelete = true,
+  });
+
+  @override
+  State<_StorylineListItem> createState() => _StorylineListItemState();
+}
+
+class _StorylineListItemState extends State<_StorylineListItem> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.storyline.storylineName);
+  }
+
+  @override
+  void didUpdateWidget(_StorylineListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isEditing && !oldWidget.isEditing) {
+       _controller.text = widget.storyline.storylineName;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        Icons.library_books,
+        color: widget.isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: widget.isEditing
+          ? TextField(
+              autofocus: true,
+              controller: _controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: widget.onEditSubmit,
+              onEditingComplete: () => widget.onEditSubmit(_controller.text),
+            )
+          : GestureDetector(
+              onDoubleTap: widget.onEditStart,
+              child: Text(
+                widget.storyline.storylineName.isEmpty ? "(未命名故事線)" : widget.storyline.storylineName,
+                style: widget.isSelected
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+              ),
+            ),
+      subtitle: Text(
+        widget.storyline.storylineType.isEmpty ? "未設定類型" : widget.storyline.storylineType,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: widget.onEditStart,
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: widget.canDelete ? widget.onDelete : null,
+            icon: Icon(
+              Icons.delete,
+              size: 20,
+              color: widget.canDelete ? Theme.of(context).colorScheme.error : null,
+            ),
+            tooltip: "刪除故事線",
+          ),
+        ],
+      ),
+      onTap: widget.onSelect,
+    );
+  }
+}
+
+class _EventListItem extends StatefulWidget {
+  final StoryEventData event;
+  final bool isSelected;
+  final bool isEditing;
+  final VoidCallback onSelect;
+  final VoidCallback onEditStart;
+  final ValueChanged<String> onEditSubmit;
+  final VoidCallback onDelete;
+
+  const _EventListItem({
+    required this.event,
+    required this.isSelected,
+    required this.isEditing,
+    required this.onSelect,
+    required this.onEditStart,
+    required this.onEditSubmit,
+    required this.onDelete,
+  });
+
+  @override
+  State<_EventListItem> createState() => _EventListItemState();
+}
+
+class _EventListItemState extends State<_EventListItem> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.event.storyEvent);
+  }
+
+  @override
+  void didUpdateWidget(_EventListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isEditing && !oldWidget.isEditing) {
+      _controller.text = widget.event.storyEvent;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        Icons.event_note,
+        color: widget.isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: widget.isEditing
+          ? TextField(
+              autofocus: true,
+              controller: _controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: widget.onEditSubmit,
+              onEditingComplete: () => widget.onEditSubmit(_controller.text),
+            )
+          : GestureDetector(
+              onDoubleTap: widget.onEditStart,
+              child: Text(
+                widget.event.storyEvent.isEmpty ? "(未命名事件)" : widget.event.storyEvent,
+                style: widget.isSelected
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+              ),
+            ),
+      subtitle: Text(
+        "${widget.event.scenes.length} 個場景",
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: widget.onEditStart,
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: widget.onDelete,
+            icon: Icon(
+              Icons.delete,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: "刪除事件",
+          ),
+        ],
+      ),
+      onTap: widget.onSelect,
+    );
+  }
+}
+
+class _SceneListItem extends StatefulWidget {
+  final SceneData scene;
+  final bool isSelected;
+  final bool isEditing;
+  final VoidCallback onSelect;
+  final VoidCallback onEditStart;
+  final ValueChanged<String> onEditSubmit;
+  final VoidCallback onDelete;
+
+  const _SceneListItem({
+    required this.scene,
+    required this.isSelected,
+    required this.isEditing,
+    required this.onSelect,
+    required this.onEditStart,
+    required this.onEditSubmit,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SceneListItem> createState() => _SceneListItemState();
+}
+
+class _SceneListItemState extends State<_SceneListItem> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.scene.sceneName);
+  }
+
+  @override
+  void didUpdateWidget(_SceneListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isEditing && !oldWidget.isEditing) {
+      _controller.text = widget.scene.sceneName;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        Icons.theater_comedy,
+        color: widget.isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: widget.isEditing
+          ? TextField(
+              autofocus: true,
+              controller: _controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: widget.onEditSubmit,
+              onEditingComplete: () => widget.onEditSubmit(_controller.text),
+            )
+          : GestureDetector(
+              onDoubleTap: widget.onEditStart,
+              child: Text(
+                widget.scene.sceneName.isEmpty ? "(未命名場景)" : widget.scene.sceneName,
+                style: widget.isSelected
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+              ),
+            ),
+      subtitle: Row(
+        children: [
+          if (widget.scene.time.isNotEmpty) ...[
+            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(widget.scene.time, style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (widget.scene.time.isNotEmpty && widget.scene.location.isNotEmpty) 
+            Text(" • ", style: Theme.of(context).textTheme.bodySmall),
+          if (widget.scene.location.isNotEmpty) ...[
+            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(widget.scene.location, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: widget.onEditStart,
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: widget.onDelete,
+            icon: Icon(
+              Icons.delete,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: "刪除場景",
+          ),
+        ],
+      ),
+      onTap: widget.onSelect,
+    );
   }
 }

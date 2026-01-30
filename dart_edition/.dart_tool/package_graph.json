@@ -16,7 +16,8 @@
         "path_provider_windows",
         "shared_preferences",
         "uuid",
-        "window_manager"
+        "window_manager",
+        "xml"
       ],
       "devDependencies": [
         "flutter_launcher_icons",
@@ -60,6 +61,15 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "xml",
+      "version": "6.6.1",
+      "dependencies": [
+        "collection",
+        "meta",
+        "petitparser"
       ]
     },
     {
@@ -300,6 +310,14 @@
       ]
     },
     {
+      "name": "petitparser",
+      "version": "7.0.1",
+      "dependencies": [
+        "collection",
+        "meta"
+      ]
+    },
+    {
       "name": "screen_retriever",
       "version": "0.2.0",
       "dependencies": [
@@ -498,15 +516,6 @@
       ]
     },
     {
-      "name": "xml",
-      "version": "6.6.1",
-      "dependencies": [
-        "collection",
-        "meta",
-        "petitparser"
-      ]
-    },
-    {
       "name": "archive",
       "version": "4.0.7",
       "dependencies": [
@@ -608,14 +617,6 @@
       "name": "platform",
       "version": "3.1.6",
       "dependencies": []
-    },
-    {
-      "name": "petitparser",
-      "version": "7.0.1",
-      "dependencies": [
-        "collection",
-        "meta"
-      ]
     },
     {
       "name": "posix",

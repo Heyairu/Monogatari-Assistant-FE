@@ -23,6 +23,7 @@
 */
 
 import "package:flutter/material.dart";
+import "package:xml/xml.dart" as xml;
 
 // MARK: - CharacterCodec for XML Save/Load
 
@@ -33,500 +34,418 @@ class CharacterCodec {
       return null;
     }
 
-    String escapeXml(String text) {
-      return text
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll("\"", "&quot;")
-          .replaceAll("'", "&apos;");
+    final builder = xml.XmlBuilder();
+    builder.element("Type", nest: () {
+      builder.element("Name", nest: "Characters");
+
+      for (final entry in characterData.entries) {
+        final characterName = entry.key;
+        final data = entry.value;
+
+        builder.element("Character", attributes: {"Name": characterName}, nest: () {
+          // Basic Info
+          builder.element("BasicInfo", nest: () {
+            builder.element("name", nest: data["name"] ?? "");
+            builder.element("nickname", nest: data["nickname"] ?? "");
+            builder.element("age", nest: data["age"] ?? "");
+            builder.element("gender", nest: data["gender"] ?? "");
+            builder.element("occupation", nest: data["occupation"] ?? "");
+            builder.element("birthday", nest: data["birthday"] ?? "");
+            builder.element("native", nest: data["native"] ?? "");
+            builder.element("live", nest: data["live"] ?? "");
+            builder.element("address", nest: data["address"] ?? "");
+          });
+
+          // Appearance
+          builder.element("Appearance", nest: () {
+            builder.element("height", nest: data["height"] ?? "");
+            builder.element("weight", nest: data["weight"] ?? "");
+            builder.element("blood", nest: data["blood"] ?? "");
+            builder.element("hair", nest: data["hair"] ?? "");
+            builder.element("eye", nest: data["eye"] ?? "");
+            builder.element("skin", nest: data["skin"] ?? "");
+            builder.element("faceFeatures", nest: data["faceFeatures"] ?? "");
+            builder.element("eyeFeatures", nest: data["eyeFeatures"] ?? "");
+            builder.element("earFeatures", nest: data["earFeatures"] ?? "");
+            builder.element("noseFeatures", nest: data["noseFeatures"] ?? "");
+            builder.element("mouthFeatures", nest: data["mouthFeatures"] ?? "");
+            builder.element("eyebrowFeatures", nest: data["eyebrowFeatures"] ?? "");
+            builder.element("body", nest: data["body"] ?? "");
+            builder.element("dress", nest: data["dress"] ?? "");
+          });
+
+          // Personality
+          builder.element("Personality", nest: () {
+            builder.element("mbti", nest: data["mbti"] ?? "");
+            builder.element("personality", nest: data["personality"] ?? "");
+            builder.element("language", nest: data["language"] ?? "");
+            builder.element("interest", nest: data["interest"] ?? "");
+            builder.element("habit", nest: data["habit"] ?? "");
+            builder.element("alignment", nest: data["alignment"] ?? "");
+            builder.element("belief", nest: data["belief"] ?? "");
+            builder.element("limit", nest: data["limit"] ?? "");
+            builder.element("future", nest: data["future"] ?? "");
+            builder.element("cherish", nest: data["cherish"] ?? "");
+            builder.element("disgust", nest: data["disgust"] ?? "");
+            builder.element("fear", nest: data["fear"] ?? "");
+            builder.element("curious", nest: data["curious"] ?? "");
+            builder.element("expect", nest: data["expect"] ?? "");
+            builder.element("intention", nest: data["intention"] ?? "");
+            builder.element("otherValues", nest: data["otherValues"] ?? "");
+
+            final hinderEvents = data["hinderEvents"] as List<Map<String, String>>? ?? [];
+            if (hinderEvents.isNotEmpty) {
+              builder.element("hinderEvents", nest: () {
+                for (final event in hinderEvents) {
+                  builder.element("event", nest: () {
+                    builder.element("name", nest: event["event"] ?? "");
+                    builder.element("solve", nest: event["solve"] ?? "");
+                  });
+                }
+              });
+            }
+          });
+
+          // Ability
+          builder.element("Ability", nest: () {
+            _saveList(builder, "loveToDoList", data["loveToDoList"]);
+            _saveList(builder, "hateToDoList", data["hateToDoList"]);
+            _saveList(builder, "proficientToDoList", data["proficientToDoList"]);
+            _saveList(builder, "unProficientToDoList", data["unProficientToDoList"]);
+
+            final commonAbilityValues = data["commonAbilityValues"] as List<double>? ?? [];
+            final commonAbilityLabels = [
+              "cooking", "cleaning", "finance", "fitness",
+              "art", "music", "dance", "handicraft",
+              "social", "leadership", "analysis", "creativity",
+              "memory", "observation", "adaptability", "learning",
+            ];
+            if (commonAbilityValues.isNotEmpty) {
+              builder.element("commonAbilitySliders", nest: () {
+                for (int i = 0; i < commonAbilityValues.length && i < commonAbilityLabels.length; i++) {
+                  _saveSlider(builder, commonAbilityLabels[i], "poor", "good", commonAbilityValues[i]);
+                }
+              });
+            }
+          });
+
+          // Social
+          builder.element("Social", nest: () {
+            builder.element("impression", nest: data["impression"] ?? "");
+            builder.element("likable", nest: data["likable"] ?? "");
+            builder.element("family", nest: data["family"] ?? "");
+
+            _saveCheckboxGroup(builder, "howToShowLove", data["howToShowLove"]);
+            builder.element("otherShowLove", nest: data["otherShowLove"] ?? "");
+
+            _saveCheckboxGroup(builder, "howToShowGoodwill", data["howToShowGoodwill"]);
+            builder.element("otherGoodwill", nest: data["otherGoodwill"] ?? "");
+
+            _saveCheckboxGroup(builder, "handleHatePeople", data["handleHatePeople"]);
+            builder.element("otherHatePeople", nest: data["otherHatePeople"] ?? "");
+
+            // Social Item Sliders
+            final socialItemValues = data["socialItemValues"] as List<double>? ?? [];
+            final socialItemLabels = [
+              ["introverted", "extroverted"],
+              ["emotional", "rational"],
+              ["passive", "active"],
+              ["conservative", "open"],
+              ["cautious", "adventurous"],
+              ["dependent", "independent"],
+              ["compliant", "stubborn"],
+              ["pessimistic", "optimistic"],
+              ["serious", "humorous"],
+              ["shy", "outgoing"],
+            ];
+            if (socialItemValues.isNotEmpty) {
+              builder.element("socialItemSliders", nest: () {
+                for (int i = 0; i < socialItemValues.length && i < socialItemLabels.length; i++) {
+                  _saveSlider(builder, "", socialItemLabels[i][0], socialItemLabels[i][1], socialItemValues[i]);
+                }
+              });
+            }
+
+            builder.element("relationship", nest: data["relationship"] ?? "");
+            builder.element("isFindNewLove", nest: (data["isFindNewLove"] ?? false).toString());
+            builder.element("isHarem", nest: (data["isHarem"] ?? false).toString());
+            builder.element("otherRelationship", nest: data["otherRelationship"] ?? "");
+
+            // Approach Style Sliders
+            final approachValues = data["approachValues"] as List<double>? ?? [];
+            final approachLabels = [
+              ["low-key", "high-profile"],
+              ["passive", "proactive"],
+              ["cunning", "honest"],
+              ["immature", "mature"],
+              ["calm", "impulsive"],
+              ["taciturn", "talkative"],
+              ["obstinate", "obedient"],
+              ["unrestrained", "disciplined"],
+              ["serious", "frivolous"],
+              ["reserved", "frank"],
+              ["indifferent", "curious"],
+              ["dull", "perceptive"],
+            ];
+            if (approachValues.isNotEmpty) {
+              builder.element("approachSliders", nest: () {
+                for (int i = 0; i < approachValues.length && i < approachLabels.length; i++) {
+                  _saveSlider(builder, "", approachLabels[i][0], approachLabels[i][1], approachValues[i]);
+                }
+              });
+            }
+
+            // Traits Sliders
+            final traitsValues = data["traitsValues"] as List<double>? ?? [];
+            final traitsLabels = [
+              {"label": "attitude", "left": "pessimistic", "right": "optimistic"},
+              {"label": "expression", "left": "expressionless", "right": "vivid"},
+              {"label": "aptitude", "left": "dull", "right": "genius"},
+              {"label": "mindset", "left": "simple", "right": "complex"},
+              {"label": "shamelessness", "left": "thin-skinned", "right": "thick-skinned"},
+              {"label": "temper", "left": "gentle", "right": "hot-tempered"},
+              {"label": "manners", "left": "rude", "right": "refined"},
+              {"label": "willpower", "left": "fragile", "right": "strong"},
+              {"label": "desire", "left": "ascetic", "right": "intense"},
+              {"label": "courage", "left": "cowardly", "right": "brave"},
+              {"label": "eloquence", "left": "inarticulate", "right": "witty"},
+              {"label": "vigilance", "left": "gullible", "right": "suspicious"},
+              {"label": "self-esteem", "left": "low", "right": "high"},
+              {"label": "confidence", "left": "low", "right": "high"},
+              {"label": "archetype", "left": "antagonist", "right": "protagonist"},
+            ];
+            if (traitsValues.isNotEmpty) {
+              builder.element("traitsSliders", nest: () {
+                for (int i = 0; i < traitsValues.length && i < traitsLabels.length; i++) {
+                  _saveSlider(builder, traitsLabels[i]["label"]!, traitsLabels[i]["left"]!, traitsLabels[i]["right"]!, traitsValues[i]);
+                }
+              });
+            }
+          });
+
+          // Other
+          builder.element("Other", nest: () {
+            builder.element("originalName", nest: data["originalName"] ?? "");
+            _saveList(builder, "likeItemList", data["likeItemList"]);
+            _saveList(builder, "hateItemList", data["hateItemList"]);
+            _saveList(builder, "familiarItemList", data["familiarItemList"]);
+            builder.element("otherText", nest: data["otherText"] ?? "");
+          });
+        });
+      }
+    });
+
+    return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
+  }
+
+  static void _saveList(xml.XmlBuilder builder, String tagName, dynamic listData) {
+    final list = listData as List<String>? ?? [];
+    if (list.isNotEmpty) {
+      builder.element(tagName, nest: () {
+        for (final item in list) {
+          builder.element("item", nest: item);
+        }
+      });
     }
+  }
 
-    String saveSlider(String title, String leftTag, String rightTag, double value) {
-      return "<slider Title=\"${escapeXml(title)}\" leftTag=\"${escapeXml(leftTag)}\" rightTag=\"${escapeXml(rightTag)}\">${value.toStringAsFixed(1)}</slider>";
+  static void _saveCheckboxGroup(xml.XmlBuilder builder, String tagName, dynamic mapData) {
+    final map = mapData as Map<String, bool>? ?? {};
+    if (map.isNotEmpty) {
+      builder.element(tagName, nest: () {
+        for (final entry in map.entries) {
+          builder.element("item", attributes: {"key": entry.key}, nest: entry.value.toString());
+        }
+      });
     }
+  }
 
-    final buffer = StringBuffer();
-    buffer.writeln("<Type>");
-    buffer.writeln("  <Name>Characters</Name>");
-
-    for (final entry in characterData.entries) {
-      final characterName = entry.key;
-      final data = entry.value;
-
-      buffer.writeln("  <Character Name=\"${escapeXml(characterName)}\">");
-
-      // Basic Info
-      buffer.writeln("    <BasicInfo>");
-      buffer.writeln("      <name>${escapeXml(data["name"] ?? "")}</name>");
-      buffer.writeln("      <nickname>${escapeXml(data["nickname"] ?? "")}</nickname>");
-      buffer.writeln("      <age>${escapeXml(data["age"] ?? "")}</age>");
-      buffer.writeln("      <gender>${escapeXml(data["gender"] ?? "")}</gender>");
-      buffer.writeln("      <occupation>${escapeXml(data["occupation"] ?? "")}</occupation>");
-      buffer.writeln("      <birthday>${escapeXml(data["birthday"] ?? "")}</birthday>");
-      buffer.writeln("      <native>${escapeXml(data["native"] ?? "")}</native>");
-      buffer.writeln("      <live>${escapeXml(data["live"] ?? "")}</live>");
-      buffer.writeln("      <address>${escapeXml(data["address"] ?? "")}</address>");
-      buffer.writeln("    </BasicInfo>");
-
-      // Appearance
-      buffer.writeln("    <Appearance>");
-      buffer.writeln("      <height>${escapeXml(data["height"] ?? "")}</height>");
-      buffer.writeln("      <weight>${escapeXml(data["weight"] ?? "")}</weight>");
-      buffer.writeln("      <blood>${escapeXml(data["blood"] ?? "")}</blood>");
-      buffer.writeln("      <hair>${escapeXml(data["hair"] ?? "")}</hair>");
-      buffer.writeln("      <eye>${escapeXml(data["eye"] ?? "")}</eye>");
-      buffer.writeln("      <skin>${escapeXml(data["skin"] ?? "")}</skin>");
-      buffer.writeln("      <faceFeatures>${escapeXml(data["faceFeatures"] ?? "")}</faceFeatures>");
-      buffer.writeln("      <eyeFeatures>${escapeXml(data["eyeFeatures"] ?? "")}</eyeFeatures>");
-      buffer.writeln("      <earFeatures>${escapeXml(data["earFeatures"] ?? "")}</earFeatures>");
-      buffer.writeln("      <noseFeatures>${escapeXml(data["noseFeatures"] ?? "")}</noseFeatures>");
-      buffer.writeln("      <mouthFeatures>${escapeXml(data["mouthFeatures"] ?? "")}</mouthFeatures>");
-      buffer.writeln("      <eyebrowFeatures>${escapeXml(data["eyebrowFeatures"] ?? "")}</eyebrowFeatures>");
-      buffer.writeln("      <body>${escapeXml(data["body"] ?? "")}</body>");
-      buffer.writeln("      <dress>${escapeXml(data["dress"] ?? "")}</dress>");
-      buffer.writeln("    </Appearance>");
-
-      // Personality
-      buffer.writeln("    <Personality>");
-      buffer.writeln("      <mbti>${escapeXml(data["mbti"] ?? "")}</mbti>");
-      buffer.writeln("      <personality>${escapeXml(data["personality"] ?? "")}</personality>");
-      buffer.writeln("      <language>${escapeXml(data["language"] ?? "")}</language>");
-      buffer.writeln("      <interest>${escapeXml(data["interest"] ?? "")}</interest>");
-      buffer.writeln("      <habit>${escapeXml(data["habit"] ?? "")}</habit>");
-      buffer.writeln("      <alignment>${escapeXml(data["alignment"] ?? "")}</alignment>");
-      buffer.writeln("      <belief>${escapeXml(data["belief"] ?? "")}</belief>");
-      buffer.writeln("      <limit>${escapeXml(data["limit"] ?? "")}</limit>");
-      buffer.writeln("      <future>${escapeXml(data["future"] ?? "")}</future>");
-      buffer.writeln("      <cherish>${escapeXml(data["cherish"] ?? "")}</cherish>");
-      buffer.writeln("      <disgust>${escapeXml(data["disgust"] ?? "")}</disgust>");
-      buffer.writeln("      <fear>${escapeXml(data["fear"] ?? "")}</fear>");
-      buffer.writeln("      <curious>${escapeXml(data["curious"] ?? "")}</curious>");
-      buffer.writeln("      <expect>${escapeXml(data["expect"] ?? "")}</expect>");
-      buffer.writeln("      <intention>${escapeXml(data["intention"] ?? "")}</intention>");
-      buffer.writeln("      <otherValues>${escapeXml(data["otherValues"] ?? "")}</otherValues>");
-      
-      // Hinder Events
-      final hinderEvents = data["hinderEvents"] as List<Map<String, String>>? ?? [];
-      if (hinderEvents.isNotEmpty) {
-        buffer.writeln("      <hinderEvents>");
-        for (final event in hinderEvents) {
-          buffer.writeln("        <event>");
-          buffer.writeln("          <name>${escapeXml(event["event"] ?? "")}</name>");
-          buffer.writeln("          <solve>${escapeXml(event["solve"] ?? "")}</solve>");
-          buffer.writeln("        </event>");
-        }
-        buffer.writeln("      </hinderEvents>");
-      }
-      buffer.writeln("    </Personality>");
-
-      // Ability
-      buffer.writeln("    <Ability>");
-      
-      // Ability Lists
-      final loveToDoList = data["loveToDoList"] as List<String>? ?? [];
-      if (loveToDoList.isNotEmpty) {
-        buffer.writeln("      <loveToDoList>");
-        for (final item in loveToDoList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </loveToDoList>");
-      }
-
-      final hateToDoList = data["hateToDoList"] as List<String>? ?? [];
-      if (hateToDoList.isNotEmpty) {
-        buffer.writeln("      <hateToDoList>");
-        for (final item in hateToDoList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </hateToDoList>");
-      }
-
-      final proficientToDoList = data["proficientToDoList"] as List<String>? ?? [];
-      if (proficientToDoList.isNotEmpty) {
-        buffer.writeln("      <proficientToDoList>");
-        for (final item in proficientToDoList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </proficientToDoList>");
-      }
-
-      final unProficientToDoList = data["unProficientToDoList"] as List<String>? ?? [];
-      if (unProficientToDoList.isNotEmpty) {
-        buffer.writeln("      <unProficientToDoList>");
-        for (final item in unProficientToDoList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </unProficientToDoList>");
-      }
-
-      // Common Ability Sliders
-      final commonAbilityValues = data["commonAbilityValues"] as List<double>? ?? [];
-      final commonAbilityLabels = [
-        "cooking", "cleaning", "finance", "fitness",
-        "art", "music", "dance", "handicraft",
-        "social", "leadership", "analysis", "creativity",
-        "memory", "observation", "adaptability", "learning",
-      ];
-      if (commonAbilityValues.isNotEmpty) {
-        buffer.writeln("      <commonAbilitySliders>");
-        for (int i = 0; i < commonAbilityValues.length && i < commonAbilityLabels.length; i++) {
-          buffer.writeln("        ${saveSlider(commonAbilityLabels[i], "poor", "good", commonAbilityValues[i])}");
-        }
-        buffer.writeln("      </commonAbilitySliders>");
-      }
-      buffer.writeln("    </Ability>");
-
-      // Social
-      buffer.writeln("    <Social>");
-      buffer.writeln("      <impression>${escapeXml(data["impression"] ?? "")}</impression>");
-      buffer.writeln("      <likable>${escapeXml(data["likable"] ?? "")}</likable>");
-      buffer.writeln("      <family>${escapeXml(data["family"] ?? "")}</family>");
-
-      // How to show love
-      final howToShowLove = data["howToShowLove"] as Map<String, bool>? ?? {};
-      if (howToShowLove.isNotEmpty) {
-        buffer.writeln("      <howToShowLove>");
-        for (final entry in howToShowLove.entries) {
-          buffer.writeln("        <item key=\"${escapeXml(entry.key)}\">${entry.value}</item>");
-        }
-        buffer.writeln("      </howToShowLove>");
-      }
-      buffer.writeln("      <otherShowLove>${escapeXml(data["otherShowLove"] ?? "")}</otherShowLove>");
-
-      // How to show goodwill
-      final howToShowGoodwill = data["howToShowGoodwill"] as Map<String, bool>? ?? {};
-      if (howToShowGoodwill.isNotEmpty) {
-        buffer.writeln("      <howToShowGoodwill>");
-        for (final entry in howToShowGoodwill.entries) {
-          buffer.writeln("        <item key=\"${escapeXml(entry.key)}\">${entry.value}</item>");
-        }
-        buffer.writeln("      </howToShowGoodwill>");
-      }
-      buffer.writeln("      <otherGoodwill>${escapeXml(data["otherGoodwill"] ?? "")}</otherGoodwill>");
-
-      // Handle hate people
-      final handleHatePeople = data["handleHatePeople"] as Map<String, bool>? ?? {};
-      if (handleHatePeople.isNotEmpty) {
-        buffer.writeln("      <handleHatePeople>");
-        for (final entry in handleHatePeople.entries) {
-          buffer.writeln("        <item key=\"${escapeXml(entry.key)}\">${entry.value}</item>");
-        }
-        buffer.writeln("      </handleHatePeople>");
-      }
-      buffer.writeln("      <otherHatePeople>${escapeXml(data["otherHatePeople"] ?? "")}</otherHatePeople>");
-
-      // Social Item Sliders
-      final socialItemValues = data["socialItemValues"] as List<double>? ?? [];
-      final socialItemLabels = [
-        ["introverted", "extroverted"],
-        ["emotional", "rational"],
-        ["passive", "active"],
-        ["conservative", "open"],
-        ["cautious", "adventurous"],
-        ["dependent", "independent"],
-        ["compliant", "stubborn"],
-        ["pessimistic", "optimistic"],
-        ["serious", "humorous"],
-        ["shy", "outgoing"],
-      ];
-      if (socialItemValues.isNotEmpty) {
-        buffer.writeln("      <socialItemSliders>");
-        for (int i = 0; i < socialItemValues.length && i < socialItemLabels.length; i++) {
-          buffer.writeln("        ${saveSlider("", socialItemLabels[i][0], socialItemLabels[i][1], socialItemValues[i])}");
-        }
-        buffer.writeln("      </socialItemSliders>");
-      }
-
-      // Relationship
-      buffer.writeln("      <relationship>${escapeXml(data["relationship"] ?? "")}</relationship>");
-      buffer.writeln("      <isFindNewLove>${data["isFindNewLove"] ?? false}</isFindNewLove>");
-      buffer.writeln("      <isHarem>${data["isHarem"] ?? false}</isHarem>");
-      buffer.writeln("      <otherRelationship>${escapeXml(data["otherRelationship"] ?? "")}</otherRelationship>");
-
-      // Approach Style Sliders
-      final approachValues = data["approachValues"] as List<double>? ?? [];
-      final approachLabels = [
-        ["low-key", "high-profile"],
-        ["passive", "proactive"],
-        ["cunning", "honest"],
-        ["immature", "mature"],
-        ["calm", "impulsive"],
-        ["taciturn", "talkative"],
-        ["obstinate", "obedient"],
-        ["unrestrained", "disciplined"],
-        ["serious", "frivolous"],
-        ["reserved", "frank"],
-        ["indifferent", "curious"],
-        ["dull", "perceptive"],
-      ];
-      if (approachValues.isNotEmpty) {
-        buffer.writeln("      <approachSliders>");
-        for (int i = 0; i < approachValues.length && i < approachLabels.length; i++) {
-          buffer.writeln("        ${saveSlider("", approachLabels[i][0], approachLabels[i][1], approachValues[i])}");
-        }
-        buffer.writeln("      </approachSliders>");
-      }
-
-      // Traits Sliders
-      final traitsValues = data["traitsValues"] as List<double>? ?? [];
-      final traitsLabels = [
-        {"label": "attitude", "left": "pessimistic", "right": "optimistic"},
-        {"label": "expression", "left": "expressionless", "right": "vivid"},
-        {"label": "aptitude", "left": "dull", "right": "genius"},
-        {"label": "mindset", "left": "simple", "right": "complex"},
-        {"label": "shamelessness", "left": "thin-skinned", "right": "thick-skinned"},
-        {"label": "temper", "left": "gentle", "right": "hot-tempered"},
-        {"label": "manners", "left": "rude", "right": "refined"},
-        {"label": "willpower", "left": "fragile", "right": "strong"},
-        {"label": "desire", "left": "ascetic", "right": "intense"},
-        {"label": "courage", "left": "cowardly", "right": "brave"},
-        {"label": "eloquence", "left": "inarticulate", "right": "witty"},
-        {"label": "vigilance", "left": "gullible", "right": "suspicious"},
-        {"label": "self-esteem", "left": "low", "right": "high"},
-        {"label": "confidence", "left": "low", "right": "high"},
-        {"label": "archetype", "left": "antagonist", "right": "protagonist"},
-      ];
-      if (traitsValues.isNotEmpty) {
-        buffer.writeln("      <traitsSliders>");
-        for (int i = 0; i < traitsValues.length && i < traitsLabels.length; i++) {
-          buffer.writeln("        ${saveSlider(traitsLabels[i]["label"]!, traitsLabels[i]["left"]!, traitsLabels[i]["right"]!, traitsValues[i])}");
-        }
-        buffer.writeln("      </traitsSliders>");
-      }
-      buffer.writeln("    </Social>");
-
-      // Other
-      buffer.writeln("    <Other>");
-      buffer.writeln("      <originalName>${escapeXml(data["originalName"] ?? "")}</originalName>");
-
-      final likeItemList = data["likeItemList"] as List<String>? ?? [];
-      if (likeItemList.isNotEmpty) {
-        buffer.writeln("      <likeItemList>");
-        for (final item in likeItemList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </likeItemList>");
-      }
-
-      final hateItemList = data["hateItemList"] as List<String>? ?? [];
-      if (hateItemList.isNotEmpty) {
-        buffer.writeln("      <hateItemList>");
-        for (final item in hateItemList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </hateItemList>");
-      }
-
-      final familiarItemList = data["familiarItemList"] as List<String>? ?? [];
-      if (familiarItemList.isNotEmpty) {
-        buffer.writeln("      <familiarItemList>");
-        for (final item in familiarItemList) {
-          buffer.writeln("        <item>${escapeXml(item)}</item>");
-        }
-        buffer.writeln("      </familiarItemList>");
-      }
-
-      buffer.writeln("      <otherText>${escapeXml(data["otherText"] ?? "")}</otherText>");
-      buffer.writeln("    </Other>");
-
-      buffer.writeln("  </Character>");
-    }
-
-    buffer.writeln("</Type>");
-    return buffer.toString();
+  static void _saveSlider(xml.XmlBuilder builder, String title, String leftTag, String rightTag, double value) {
+    builder.element("slider", attributes: {
+      "Title": title,
+      "leftTag": leftTag,
+      "rightTag": rightTag,
+    }, nest: value.toStringAsFixed(1));
   }
 
   /// 從 XML 載入角色資料
-  static Map<String, Map<String, dynamic>>? loadXML(String xml) {
-    if (!xml.contains("<Name>Characters</Name>")) {
+  static Map<String, Map<String, dynamic>>? loadXML(String content) {
+    try {
+      final document = xml.XmlDocument.parse(content);
+      
+      final typeElement = document.findAllElements("Type").firstOrNull;
+      if (typeElement == null) return null;
+
+      final nameElement = typeElement.findAllElements("Name").firstOrNull;
+      if (nameElement?.innerText != "Characters") return null;
+
+      final characterData = <String, Map<String, dynamic>>{};
+
+      for (final charNode in typeElement.findAllElements("Character")) {
+        final characterName = charNode.getAttribute("Name") ?? "";
+        
+        final data = <String, dynamic>{};
+        
+        // Basic Info
+        final basicInfo = charNode.findAllElements("BasicInfo").firstOrNull;
+        if (basicInfo != null) {
+          data["name"] = _getText(basicInfo, "name");
+          data["nickname"] = _getText(basicInfo, "nickname");
+          data["age"] = _getText(basicInfo, "age");
+          data["gender"] = _getText(basicInfo, "gender");
+          data["occupation"] = _getText(basicInfo, "occupation");
+          data["birthday"] = _getText(basicInfo, "birthday");
+          data["native"] = _getText(basicInfo, "native");
+          data["live"] = _getText(basicInfo, "live");
+          data["address"] = _getText(basicInfo, "address");
+        }
+
+        // Appearance
+        final appearance = charNode.findAllElements("Appearance").firstOrNull;
+        if (appearance != null) {
+          data["height"] = _getText(appearance, "height");
+          data["weight"] = _getText(appearance, "weight");
+          data["blood"] = _getText(appearance, "blood");
+          data["hair"] = _getText(appearance, "hair");
+          data["eye"] = _getText(appearance, "eye");
+          data["skin"] = _getText(appearance, "skin");
+          data["faceFeatures"] = _getText(appearance, "faceFeatures");
+          data["eyeFeatures"] = _getText(appearance, "eyeFeatures");
+          data["earFeatures"] = _getText(appearance, "earFeatures");
+          data["noseFeatures"] = _getText(appearance, "noseFeatures");
+          data["mouthFeatures"] = _getText(appearance, "mouthFeatures");
+          data["eyebrowFeatures"] = _getText(appearance, "eyebrowFeatures");
+          data["body"] = _getText(appearance, "body");
+          data["dress"] = _getText(appearance, "dress");
+        }
+
+        // Personality
+        final personality = charNode.findAllElements("Personality").firstOrNull;
+        if (personality != null) {
+          data["mbti"] = _getText(personality, "mbti");
+          data["personality"] = _getText(personality, "personality");
+          data["language"] = _getText(personality, "language");
+          data["interest"] = _getText(personality, "interest");
+          data["habit"] = _getText(personality, "habit");
+          data["alignment"] = _getText(personality, "alignment");
+          data["belief"] = _getText(personality, "belief");
+          data["limit"] = _getText(personality, "limit");
+          data["future"] = _getText(personality, "future");
+          data["cherish"] = _getText(personality, "cherish");
+          data["disgust"] = _getText(personality, "disgust");
+          data["fear"] = _getText(personality, "fear");
+          data["curious"] = _getText(personality, "curious");
+          data["expect"] = _getText(personality, "expect");
+          data["intention"] = _getText(personality, "intention");
+          data["otherValues"] = _getText(personality, "otherValues");
+          data["hinderEvents"] = _parseHinderEvents(personality);
+        }
+
+        // Ability
+        final ability = charNode.findAllElements("Ability").firstOrNull;
+        if (ability != null) {
+          data["loveToDoList"] = _parseList(ability, "loveToDoList");
+          data["hateToDoList"] = _parseList(ability, "hateToDoList");
+          data["proficientToDoList"] = _parseList(ability, "proficientToDoList");
+          data["unProficientToDoList"] = _parseList(ability, "unProficientToDoList");
+          data["commonAbilityValues"] = _parseSliders(ability, "commonAbilitySliders");
+        }
+
+        // Social
+        final social = charNode.findAllElements("Social").firstOrNull;
+        if (social != null) {
+          data["impression"] = _getText(social, "impression");
+          data["likable"] = _getText(social, "likable");
+          data["family"] = _getText(social, "family");
+          data["howToShowLove"] = _parseCheckboxGroup(social, "howToShowLove");
+          data["otherShowLove"] = _getText(social, "otherShowLove");
+          data["howToShowGoodwill"] = _parseCheckboxGroup(social, "howToShowGoodwill");
+          data["otherGoodwill"] = _getText(social, "otherGoodwill");
+          data["handleHatePeople"] = _parseCheckboxGroup(social, "handleHatePeople");
+          data["otherHatePeople"] = _getText(social, "otherHatePeople");
+          data["socialItemValues"] = _parseSliders(social, "socialItemSliders");
+          data["relationship"] = _getText(social, "relationship");
+          data["isFindNewLove"] = _getText(social, "isFindNewLove") == "true";
+          data["isHarem"] = _getText(social, "isHarem") == "true";
+          data["otherRelationship"] = _getText(social, "otherRelationship");
+          data["approachValues"] = _parseSliders(social, "approachSliders");
+          data["traitsValues"] = _parseSliders(social, "traitsSliders");
+        }
+
+        // Other
+        final other = charNode.findAllElements("Other").firstOrNull;
+        if (other != null) {
+          data["originalName"] = _getText(other, "originalName");
+          data["likeItemList"] = _parseList(other, "likeItemList");
+          data["hateItemList"] = _parseList(other, "hateItemList");
+          data["familiarItemList"] = _parseList(other, "familiarItemList");
+          data["otherText"] = _getText(other, "otherText");
+        }
+
+        characterData[characterName] = data;
+      }
+      
+      return characterData.isNotEmpty ? characterData : null;
+    } catch (e) {
+      print("Error parsing Character XML: $e");
       return null;
     }
+  }
 
-    String unescapeXml(String text) {
-      return text
-          .replaceAll("&lt;", "<")
-          .replaceAll("&gt;", ">")
-          .replaceAll("&quot;", "\"")
-          .replaceAll("&apos;", "'")
-          .replaceAll("&amp;", "&");
-    }
+  static String _getText(xml.XmlElement node, String tagName) {
+    return node.findAllElements(tagName).firstOrNull?.innerText ?? "";
+  }
 
-    String extractTagContent(String xml, String tag) {
-      final regex = RegExp("<$tag>(.*?)</$tag>", dotAll: true);
-      final match = regex.firstMatch(xml);
-      return match != null ? unescapeXml(match.group(1) ?? "") : "";
-    }
-
-    List<double> parseSliders(String xml, String tag) {
-      final sliders = <double>[];
-      final regex = RegExp("<slider[^>]*>(.*?)</slider>", dotAll: true);
-      final matches = regex.allMatches(xml);
-      for (final match in matches) {
-        final value = double.tryParse(match.group(1) ?? "0") ?? 0;
-        sliders.add(value);
+  static List<String> _parseList(xml.XmlElement node, String tagName) {
+    final list = <String>[];
+    final parent = node.findAllElements(tagName).firstOrNull;
+    if (parent != null) {
+      for (final item in parent.findAllElements("item")) {
+        list.add(item.innerText);
       }
-      return sliders;
     }
+    return list;
+  }
 
-    List<String> parseList(String xml, String parentTag) {
-      final items = <String>[];
-      final parentRegex = RegExp("<$parentTag>(.*?)</$parentTag>", dotAll: true);
-      final parentMatch = parentRegex.firstMatch(xml);
-      if (parentMatch != null) {
-        final content = parentMatch.group(1) ?? "";
-        final itemRegex = RegExp("<item>(.*?)</item>", dotAll: true);
-        final matches = itemRegex.allMatches(content);
-        for (final match in matches) {
-          items.add(unescapeXml(match.group(1) ?? ""));
+  static Map<String, bool> _parseCheckboxGroup(xml.XmlElement node, String tagName) {
+    final map = <String, bool>{};
+    final parent = node.findAllElements(tagName).firstOrNull;
+    if (parent != null) {
+      for (final item in parent.findAllElements("item")) {
+        final key = item.getAttribute("key") ?? "";
+        final val = item.innerText == "true";
+        if (key.isNotEmpty) {
+          map[key] = val;
         }
       }
-      return items;
     }
+    return map;
+  }
 
-    Map<String, bool> parseCheckboxGroup(String xml, String parentTag) {
-      final map = <String, bool>{};
-      final parentRegex = RegExp("<$parentTag>(.*?)</$parentTag>", dotAll: true);
-      final parentMatch = parentRegex.firstMatch(xml);
-      if (parentMatch != null) {
-        final content = parentMatch.group(1) ?? "";
-        final itemRegex = RegExp('<item key="([^"]*)">(.*?)</item>', dotAll: true);
-        final matches = itemRegex.allMatches(content);
-        for (final match in matches) {
-          final key = unescapeXml(match.group(1) ?? "");
-          final value = match.group(2) == "true";
-          map[key] = value;
-        }
+  static List<Map<String, String>> _parseHinderEvents(xml.XmlElement node) {
+    final list = <Map<String, String>>[];
+    final parent = node.findAllElements("hinderEvents").firstOrNull;
+    if (parent != null) {
+      for (final eventNode in parent.findAllElements("event")) {
+        list.add({
+          "event": _getText(eventNode, "name"),
+          "solve": _getText(eventNode, "solve"),
+        });
       }
-      return map;
     }
+    return list;
+  }
 
-    List<Map<String, String>> parseHinderEvents(String xml) {
-      final events = <Map<String, String>>[];
-      final parentRegex = RegExp("<hinderEvents>(.*?)</hinderEvents>", dotAll: true);
-      final parentMatch = parentRegex.firstMatch(xml);
-      if (parentMatch != null) {
-        final content = parentMatch.group(1) ?? "";
-        final eventRegex = RegExp("<event>(.*?)</event>", dotAll: true);
-        final matches = eventRegex.allMatches(content);
-        for (final match in matches) {
-          final eventContent = match.group(1) ?? "";
-          events.add({
-            "event": extractTagContent(eventContent, "name"),
-            "solve": extractTagContent(eventContent, "solve"),
-          });
-        }
+  static List<double> _parseSliders(xml.XmlElement node, String tagName) {
+    final list = <double>[];
+    final parent = node.findAllElements(tagName).firstOrNull;
+    if (parent != null) {
+      for (final slider in parent.findAllElements("slider")) {
+        final val = double.tryParse(slider.innerText) ?? 0;
+        list.add(val);
       }
-      return events;
     }
-
-    final characterData = <String, Map<String, dynamic>>{};
-    
-    // 提取所有角色
-    final characterRegex = RegExp('<Character Name="([^"]*)">(.*?)</Character>', dotAll: true);
-    final characterMatches = characterRegex.allMatches(xml);
-
-    for (final charMatch in characterMatches) {
-      final characterName = unescapeXml(charMatch.group(1) ?? "");
-      final characterContent = charMatch.group(2) ?? "";
-
-      // 提取各個區塊
-      final basicInfoRegex = RegExp("<BasicInfo>(.*?)</BasicInfo>", dotAll: true);
-      final appearanceRegex = RegExp("<Appearance>(.*?)</Appearance>", dotAll: true);
-      final personalityRegex = RegExp("<Personality>(.*?)</Personality>", dotAll: true);
-      final abilityRegex = RegExp("<Ability>(.*?)</Ability>", dotAll: true);
-      final socialRegex = RegExp("<Social>(.*?)</Social>", dotAll: true);
-      final otherRegex = RegExp("<Other>(.*?)</Other>", dotAll: true);
-
-      final basicInfo = basicInfoRegex.firstMatch(characterContent)?.group(1) ?? "";
-      final appearance = appearanceRegex.firstMatch(characterContent)?.group(1) ?? "";
-      final personality = personalityRegex.firstMatch(characterContent)?.group(1) ?? "";
-      final ability = abilityRegex.firstMatch(characterContent)?.group(1) ?? "";
-      final social = socialRegex.firstMatch(characterContent)?.group(1) ?? "";
-      final other = otherRegex.firstMatch(characterContent)?.group(1) ?? "";
-
-      characterData[characterName] = {
-        // Basic Info
-        "name": extractTagContent(basicInfo, "name"),
-        "nickname": extractTagContent(basicInfo, "nickname"),
-        "age": extractTagContent(basicInfo, "age"),
-        "gender": extractTagContent(basicInfo, "gender"),
-        "occupation": extractTagContent(basicInfo, "occupation"),
-        "birthday": extractTagContent(basicInfo, "birthday"),
-        "native": extractTagContent(basicInfo, "native"),
-        "live": extractTagContent(basicInfo, "live"),
-        "address": extractTagContent(basicInfo, "address"),
-        
-        // Appearance
-        "height": extractTagContent(appearance, "height"),
-        "weight": extractTagContent(appearance, "weight"),
-        "blood": extractTagContent(appearance, "blood"),
-        "hair": extractTagContent(appearance, "hair"),
-        "eye": extractTagContent(appearance, "eye"),
-        "skin": extractTagContent(appearance, "skin"),
-        "faceFeatures": extractTagContent(appearance, "faceFeatures"),
-        "eyeFeatures": extractTagContent(appearance, "eyeFeatures"),
-        "earFeatures": extractTagContent(appearance, "earFeatures"),
-        "noseFeatures": extractTagContent(appearance, "noseFeatures"),
-        "mouthFeatures": extractTagContent(appearance, "mouthFeatures"),
-        "eyebrowFeatures": extractTagContent(appearance, "eyebrowFeatures"),
-        "body": extractTagContent(appearance, "body"),
-        "dress": extractTagContent(appearance, "dress"),
-        
-        // Personality
-        "mbti": extractTagContent(personality, "mbti"),
-        "personality": extractTagContent(personality, "personality"),
-        "language": extractTagContent(personality, "language"),
-        "interest": extractTagContent(personality, "interest"),
-        "habit": extractTagContent(personality, "habit"),
-        "alignment": extractTagContent(personality, "alignment"),
-        "belief": extractTagContent(personality, "belief"),
-        "limit": extractTagContent(personality, "limit"),
-        "future": extractTagContent(personality, "future"),
-        "cherish": extractTagContent(personality, "cherish"),
-        "disgust": extractTagContent(personality, "disgust"),
-        "fear": extractTagContent(personality, "fear"),
-        "curious": extractTagContent(personality, "curious"),
-        "expect": extractTagContent(personality, "expect"),
-        "intention": extractTagContent(personality, "intention"),
-        "otherValues": extractTagContent(personality, "otherValues"),
-        "hinderEvents": parseHinderEvents(personality),
-        
-        // Ability
-        "loveToDoList": parseList(ability, "loveToDoList"),
-        "hateToDoList": parseList(ability, "hateToDoList"),
-        "proficientToDoList": parseList(ability, "proficientToDoList"),
-        "unProficientToDoList": parseList(ability, "unProficientToDoList"),
-        "commonAbilityValues": parseSliders(ability, "commonAbilitySliders"),
-        
-        // Social
-        "impression": extractTagContent(social, "impression"),
-        "likable": extractTagContent(social, "likable"),
-        "family": extractTagContent(social, "family"),
-        "howToShowLove": parseCheckboxGroup(social, "howToShowLove"),
-        "otherShowLove": extractTagContent(social, "otherShowLove"),
-        "howToShowGoodwill": parseCheckboxGroup(social, "howToShowGoodwill"),
-        "otherGoodwill": extractTagContent(social, "otherGoodwill"),
-        "handleHatePeople": parseCheckboxGroup(social, "handleHatePeople"),
-        "otherHatePeople": extractTagContent(social, "otherHatePeople"),
-        "socialItemValues": parseSliders(social, "socialItemSliders"),
-        "relationship": extractTagContent(social, "relationship"),
-        "isFindNewLove": extractTagContent(social, "isFindNewLove") == "true",
-        "isHarem": extractTagContent(social, "isHarem") == "true",
-        "otherRelationship": extractTagContent(social, "otherRelationship"),
-        "approachValues": parseSliders(social, "approachSliders"),
-        "traitsValues": parseSliders(social, "traitsSliders"),
-        
-        // Other
-        "originalName": extractTagContent(other, "originalName"),
-        "likeItemList": parseList(other, "likeItemList"),
-        "hateItemList": parseList(other, "hateItemList"),
-        "familiarItemList": parseList(other, "familiarItemList"),
-        "otherText": extractTagContent(other, "otherText"),
-      };
-    }
-
-    return characterData.isNotEmpty ? characterData : null;
+    return list;
   }
 }
 
@@ -1647,7 +1566,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.always,
+                    showValueIndicator: ShowValueIndicator.onDrag,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                   ),
@@ -1763,7 +1682,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.always,
+                    showValueIndicator: ShowValueIndicator.onDrag,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                   ),
@@ -1815,7 +1734,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.always,
+                    showValueIndicator: ShowValueIndicator.onDrag,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                   ),
@@ -1875,7 +1794,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.always,
+                    showValueIndicator: ShowValueIndicator.onDrag,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                   ),

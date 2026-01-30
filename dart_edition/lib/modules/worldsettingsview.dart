@@ -18,6 +18,7 @@ import "dart:io";
 import "dart:convert";
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
+import "package:xml/xml.dart" as xml;
 
 // MARK: - 拖放數據類型
 
@@ -121,23 +122,19 @@ class LocationData {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is LocationData &&
-        other.id == id &&
-        other.localName == localName &&
+    return other is LocationData && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
+
+  // 用於除錯或需要內容比對時
+  bool isContentEqual(LocationData other) {
+    return other.localName == localName &&
         other.localType == localType &&
         _listEquals(other.customVal, customVal) &&
         other.note == note &&
         _listEquals(other.child, child);
-  }
-
-  @override
-  int get hashCode {
-    return id.hashCode ^
-        localName.hashCode ^
-        localType.hashCode ^
-        customVal.hashCode ^
-        note.hashCode ^
-        child.hashCode;
   }
 
   bool _listEquals<T>(List<T> a, List<T> b) {
@@ -209,177 +206,89 @@ class TemplatePreset {
 
 // MARK: - XML Codec（WorldSettings）
 class WorldSettingsCodec {
-  static String _escape(String s) {
-    return s
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll("'", "&apos;")
-        .replaceAll("\"", "&quot;");
-  }
-
-  static String _unescape(String s) {
-    return s
-        .replaceAll("&apos;", "'")
-        .replaceAll("&quot;", "\"")
-        .replaceAll("&gt;", ">")
-        .replaceAll("&lt;", "<")
-        .replaceAll("&amp;", "&");
-  }
-
   static String? saveXML(List<LocationData> locations) {
-    // 取得需要輸出的前（忽略「全部」）
-    final roots = <LocationData>[];
-    for (final loc in locations) {
-      if (loc.localName == "全部") {
-        roots.addAll(loc.child);
-      } else {
-        roots.add(loc);
-      }
-    }
-    
-    if (roots.isEmpty) return null;
+    if (locations.isEmpty) return null;
 
-    var xml = "";
-    xml += "<Type>\n";
-    xml += "  <Name>WorldSettings</Name>\n";
-    for (final root in roots) {
-      xml += _xmlLocation(root, "  ");
-    }
-    xml += "</Type>\n";
-    return xml;
+    final builder = xml.XmlBuilder();
+    builder.element("Type", nest: () {
+      builder.element("Name", nest: "WorldSettings");
+      for (final loc in locations) {
+        _buildLocation(builder, loc);
+      }
+    });
+
+    return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
 
-  static String _xmlLocation(LocationData loc, String indent) {
-    var xml = "";
-    xml += "$indent<Location>\n";
-    xml += "$indent  <LocalName>${_escape(loc.localName)}</LocalName>\n";
-    if (loc.localType.isNotEmpty) {
-      xml += "$indent  <LocalType>${_escape(loc.localType)}</LocalType>\n";
-    }
-    if (loc.customVal.isNotEmpty) {
-      for (final kv in loc.customVal) {
-        final k = _escape(kv.key);
-        final v = _escape(kv.val);
-        xml += "$indent  <Key Name=\"$k\">$v</Key>\n";
+  static void _buildLocation(xml.XmlBuilder builder, LocationData loc) {
+    builder.element("Location", nest: () {
+      builder.element("LocalName", nest: loc.localName);
+      if (loc.localType.isNotEmpty) {
+        builder.element("LocalType", nest: loc.localType);
       }
-    }
-    if (loc.note.isNotEmpty) {
-      xml += "$indent  <Memo>${_escape(loc.note)}</Memo>\n";
-    }
-    if (loc.child.isNotEmpty) {
-      for (final child in loc.child) {
-        xml += _xmlLocation(child, "$indent  ");
+      if (loc.customVal.isNotEmpty) {
+        for (final kv in loc.customVal) {
+          builder.element("Key", attributes: {"Name": kv.key}, nest: kv.val);
+        }
       }
-    }
-    xml += "$indent</Location>\n";
-    return xml;
+      if (loc.note.isNotEmpty) {
+        builder.element("Memo", nest: loc.note);
+      }
+      if (loc.child.isNotEmpty) {
+        for (final child in loc.child) {
+          _buildLocation(builder, child);
+        }
+      }
+    });
   }
 
-  static List<LocationData>? loadXML(String xml) {
-    final roots = <LocationData>[];
-    final stack = <LocationData>[];
-    var currentKeyName = "";
-    var text = "";
-    var path = <String>[];
-    var isWorldBlock = false;
+  static List<LocationData>? loadXML(String content) {
+    try {
+      final document = xml.XmlDocument.parse(content);
+      
+      final typeElement = document.findAllElements("Type").firstOrNull;
+      if (typeElement == null) return null;
 
-    // 簡單的XML解析
-    final tagPattern = RegExp(r"<(/?)([^>]+)>");
-    final matches = tagPattern.allMatches(xml);
-    var lastEnd = 0;
+      final nameElement = typeElement.findAllElements("Name").firstOrNull;
+      if (nameElement?.innerText != "WorldSettings") return null;
 
-    for (final match in matches) {
-      // 處理標籤間的文字內容
-      if (match.start > lastEnd) {
-        text += xml.substring(lastEnd, match.start);
+      final roots = <LocationData>[];
+      
+      // Type"s direct children that are 'Location" are roots
+      // Using findElements to get only direct children, avoiding infinite recursion issues 
+      // if we were to use findAllElements on the root
+      for (final locationNode in typeElement.findElements("Location")) {
+        roots.add(_parseLocation(locationNode));
       }
-
-      final isClosing = match.group(1) == "/";
-      final tagContent = match.group(2)!;
-      final tagName = tagContent.split(" ")[0];
-
-      if (!isClosing) {
-        // 開始標籤
-        path.add(tagName);
-        text = "";
-
-        if (tagName == "Location") {
-          stack.add(LocationData());
-        } else if (tagName == "Key") {
-          // 解析屬性
-          final nameMatch = RegExp(r'Name="([^"]*)"').firstMatch(tagContent);
-          currentKeyName = nameMatch?.group(1) ?? "";
-        }
-      } else {
-        // 結束標籤
-        final trimmed = _unescape(text.trim());
-        final joinedPath = path.join("/");
-
-        switch (tagName) {
-          case "Name":
-            if (joinedPath == "Type/Name") {
-              isWorldBlock = (trimmed == "WorldSettings");
-            }
-            break;
-
-          case "LocalName":
-            if (stack.isNotEmpty) {
-              stack.last.localName = trimmed;
-            }
-            break;
-
-          case "LocalType":
-            if (stack.isNotEmpty) {
-              stack.last.localType = trimmed;
-            }
-            break;
-
-          case "Key":
-            if (stack.isNotEmpty) {
-              stack.last.customVal.add(LocationCustomize(
-                key: currentKeyName,
-                val: trimmed,
-              ));
-            }
-            currentKeyName = "";
-            break;
-
-          case "Memo":
-            if (stack.isNotEmpty) {
-              stack.last.note = trimmed;
-            }
-            break;
-
-          case "Location":
-            if (stack.isNotEmpty) {
-              final finished = stack.removeLast();
-              if (stack.isEmpty) {
-                roots.add(finished);
-              } else {
-                stack.last.child.add(finished);
-              }
-            }
-            break;
-        }
-
-        path.removeLast();
-        text = "";
-      }
-
-      lastEnd = match.end;
-    }
-
-    // 處理剩餘文字
-    if (lastEnd < xml.length) {
-      text += xml.substring(lastEnd);
-    }
-
-    if (isWorldBlock) {
-      // 直接返回根節點列表，不自動包裝「全部」
+      
       return roots;
+    } catch (e) {
+      print("Error parsing WorldSettings XML: $e");
+      return null;
     }
-    return null;
+  }
+
+  static LocationData _parseLocation(xml.XmlElement node) {
+    final loc = LocationData();
+    loc.localName = node.findAllElements("LocalName").firstOrNull?.innerText ?? "";
+    loc.localType = node.findAllElements("LocalType").firstOrNull?.innerText ?? "";
+    loc.note = node.findAllElements("Memo").firstOrNull?.innerText ?? "";
+
+    // Parse custom values (Key)
+    // Keys are direct children of Location
+    for (final keyNode in node.findElements("Key")) {
+        final key = keyNode.getAttribute("Name") ?? "";
+        final val = keyNode.innerText;
+        loc.customVal.add(LocationCustomize(key: key, val: val));
+    }
+
+    // Parse children locations
+    // We must use findElements to only get direct children, otherwise we might grab grandchildren
+    for (final childNode in node.findElements("Location")) {
+      loc.child.add(_parseLocation(childNode));
+    }
+
+    return loc;
   }
 }
 
@@ -413,8 +322,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   // 拖動狀態與游標資訊
   bool _isDragging = false;
   String? _draggingLocationId;
-  double? _currentCursorY;
-  final Map<String, GlobalKey> _itemKeys = {};
   
   // 控制器
   final TextEditingController newNameController = TextEditingController();
@@ -576,8 +483,10 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                                 borderRadius: BorderRadius.circular(8),
                                 color: Theme.of(context).colorScheme.surfaceContainerLowest,
                               ),
-                              child: widget.locations.isEmpty
-                                  ? Center(
+                              child: Builder(
+                                builder: (context) {
+                                  if (widget.locations.isEmpty) {
+                                    return Center(
                                       child: Text(
                                         "尚無地點，請新增第一個地點",
                                         style: TextStyle(
@@ -585,13 +494,28 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                                           fontSize: 14,
                                         ),
                                       ),
-                                    )
-                                  : ListView(
-                                      padding: EdgeInsets.all(8),
-                                      children: widget.locations
-                                          .map((location) => _buildLocationTreeItem(location, 0))
-                                          .toList(),
-                                    ),
+                                    );
+                                  }
+
+                                  final flatList = <_FlatNode>[];
+                                  void flatten(List<LocationData> nodes, int depth) {
+                                    for (var node in nodes) {
+                                      flatList.add(_FlatNode(node, depth));
+                                      flatten(node.child, depth + 1);
+                                    }
+                                  }
+                                  flatten(widget.locations, 0);
+
+                                  return ListView.builder(
+                                    padding: const EdgeInsets.all(8),
+                                    itemCount: flatList.length,
+                                    itemBuilder: (context, index) {
+                                      final item = flatList[index];
+                                      return _buildLocationRow(item.node, item.depth);
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),
@@ -678,13 +602,13 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     );
   }
 
-  Widget _buildLocationTreeItem(LocationData location, int depth) {
+  Widget _buildLocationRow(LocationData location, int depth) {
     final isSelected = selectedNodeId == location.id;
     final isEditing = editingNodeId == location.id;
     
-    // 所有節點都可以拖動和編輯
     Widget cardWidget = Card(
       elevation: 0,
+      margin: EdgeInsets.all(0),
       color: isSelected 
           ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
           : Theme.of(context).colorScheme.surfaceContainerLowest,
@@ -739,7 +663,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         onTap: () {
           setState(() {
             selectedNodeId = location.id;
-            lastSelectedNodeId = location.id; // 記錄上次選取
+            lastSelectedNodeId = location.id;
             _syncDetailControllers();
           });
         },
@@ -773,7 +697,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       ),
     );
     
-    // 所有節點都可拖動
     Widget draggableWidget = LongPressDraggable<LocationDragData>(
       data: LocationDragData(
         locationId: location.id,
@@ -783,26 +706,18 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         setState(() {
           _isDragging = true;
           _draggingLocationId = location.id;
-          _currentCursorY = null;
-        });
-      },
-      onDragUpdate: (details) {
-        setState(() {
-          _currentCursorY = details.globalPosition.dy;
         });
       },
       onDragEnd: (_) {
           setState(() {
             _isDragging = false;
             _draggingLocationId = null;
-            _currentCursorY = null;
           });
         },
         onDraggableCanceled: (_, __) {
           setState(() {
             _isDragging = false;
             _draggingLocationId = null;
-            _currentCursorY = null;
           });
         },
         feedback: Material(
@@ -848,192 +763,80 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         child: cardWidget,
       );
     
-    final itemKey = _itemKeys.putIfAbsent(location.id, () => GlobalKey());
-
-    // 包裝拖放目標
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    Widget contentWithDropZones = Stack(
       children: [
-        Container(
-          key: itemKey,
-          margin: EdgeInsets.only(left: depth * 16.0, bottom: 4.0),
-          child: DragTarget<LocationDragData>(
-            onWillAcceptWithDetails: (details) {
-              final dragData = details.data;
-              // 不能拖到自己，不能拖到自己的後代
-              if (dragData.locationId == location.id) return false;
-              if (_isDescendant(dragData.locationId, location.id)) return false;
-              return true;
-            },
-            onAcceptWithDetails: (details) {
-              final dragData = details.data;
-              final hoverZone = _getHoverZoneFor(location.id);
-              String position;
-              String message;
-              if (hoverZone == "before") {
-                position = "before";
-                message = "「${dragData.locationName}」已移動到「${location.localName}」之前";
-              } else if (hoverZone == "after") {
-                position = "after";
-                message = "「${dragData.locationName}」已移動到「${location.localName}」之後";
-              } else {
-                position = "child";
-                message = "「${dragData.locationName}」已成為「${location.localName}」的子地點";
-              }
-              _moveLocationTo(dragData.locationId, location.id, position);
-              setState(() {
-                _currentCursorY = null;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(message),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
-            onLeave: (_) {
-              setState(() {
-                _currentCursorY = null;
-              });
-            },
-            builder: (context, candidateData, rejectedData) {
-              final hoverZone = _getHoverZoneFor(location.id);
-              final isDraggingValid = _isDragging &&
-                  _draggingLocationId != null &&
-                  _draggingLocationId != location.id &&
-                  !_isDescendant(_draggingLocationId!, location.id);
-              final isHighlighted = hoverZone != null && isDraggingValid;
-
-              // 根據當前 hoverZone 顯示分區
-              Widget highlightOverlay = const SizedBox.shrink();
-              if (isHighlighted) {
-                highlightOverlay = LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isBeforeActive = hoverZone == "before";
-                    final isChildActive = hoverZone == "child";
-                    final isAfterActive = hoverZone == "after";
-
-                    final beforeColor = isBeforeActive
-                        ? Theme.of(context).colorScheme.tertiary.withOpacity(0.4)
-                        : Theme.of(context).colorScheme.tertiary.withOpacity(0.12);
-                    final childColor = isChildActive
-                        ? Theme.of(context).colorScheme.primary.withOpacity(0.4)
-                        : Theme.of(context).colorScheme.primary.withOpacity(0.12);
-                    final afterColor = isAfterActive
-                        ? Theme.of(context).colorScheme.secondary.withOpacity(0.4)
-                        : Theme.of(context).colorScheme.secondary.withOpacity(0.12);
-
-                    return Column(
-                      children: [
-                        // 上方區域 (30%) - 插入前
-                        Container(
-                          height: constraints.maxHeight * 0.3,
-                          decoration: BoxDecoration(
-                            color: beforeColor,
-                            border: Border(
-                              top: BorderSide(
-                                color: Theme.of(context).colorScheme.tertiary,
-                                width: isBeforeActive ? 3 : 1,
-                              ),
-                              bottom: BorderSide(
-                                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                          child: Center(
-                            child: isBeforeActive
-                                ? Icon(
-                                    Icons.arrow_upward,
-                                    color: Theme.of(context).colorScheme.tertiary,
-                                    size: 20,
-                                  )
-                                : null,
-                          ),
-                        ),
-                        // 中間區域 (40%) - 成為子節點
-                        Container(
-                          height: constraints.maxHeight * 0.4,
-                          decoration: BoxDecoration(
-                            color: childColor,
-                            border: Border.symmetric(
-                              horizontal: BorderSide(
-                                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                          child: Center(
-                            child: isChildActive
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.subdirectory_arrow_right,
-                                        color: Theme.of(context).colorScheme.primary,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "成為子節點",
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.primary,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : null,
-                          ),
-                        ),
-                        // 下方區域 (30%) - 插入後
-                        Container(
-                          height: constraints.maxHeight * 0.3,
-                          decoration: BoxDecoration(
-                            color: afterColor,
-                            border: Border(
-                              top: BorderSide(
-                                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                                width: 1,
-                              ),
-                              bottom: BorderSide(
-                                color: Theme.of(context).colorScheme.secondary,
-                                width: isAfterActive ? 3 : 1,
-                              ),
-                            ),
-                          ),
-                          child: Center(
-                            child: isAfterActive
-                                ? Icon(
-                                    Icons.arrow_downward,
-                                    color: Theme.of(context).colorScheme.secondary,
-                                    size: 20,
-                                  )
-                                : null,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              }
-
-              return Stack(
-                children: [
-                  draggableWidget,
-                  if (isHighlighted)
-                    Positioned.fill(child: highlightOverlay),
-                ],
-              );
-            },
+        draggableWidget,
+        if (_isDragging && _draggingLocationId != location.id && !_isDescendant(_draggingLocationId!, location.id))
+          Positioned.fill(
+            child: Column(
+              children: [
+                _buildDropZone(location, "before", 0.3),
+                _buildDropZone(location, "child", 0.4),
+                _buildDropZone(location, "after", 0.3),
+              ],
+            ),
           ),
-        ),
-        
-        // 子節點
-        ...location.child.map((child) => _buildLocationTreeItem(child, depth + 1)),
       ],
     );
+
+    return Container(
+      margin: EdgeInsets.only(left: depth * 16.0, bottom: 4.0),
+      child: contentWithDropZones,
+    );
+  }
+
+  Widget _buildDropZone(LocationData target, String position, double flex) {
+     return Expanded(
+       flex: (flex * 100).toInt(),
+       child: DragTarget<LocationDragData>(
+         onWillAcceptWithDetails: (details) {
+            if (details.data.locationId == target.id) return false;
+            return true;
+         },
+         onAcceptWithDetails: (details) {
+             final dragData = details.data;
+             String message;
+             if (position == "before") {
+               message = "「${dragData.locationName}」已移動到「${target.localName}」之前";
+             } else if (position == "after") {
+                message = "「${dragData.locationName}」已移動到「${target.localName}」之後";
+             } else {
+                message = "「${dragData.locationName}」已成為「${target.localName}」的子地點";
+             }
+             _moveLocationTo(dragData.locationId, target.id, position);
+             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 1)));
+         },
+         builder: (context, candidates, rejected) {
+           if (candidates.isEmpty) return Container(color: Colors.transparent);
+           
+           Color color;
+           IconData icon;
+           if (position == "before") {
+             color = Theme.of(context).colorScheme.tertiary;
+             icon = Icons.arrow_upward;
+           } else if (position == "after") {
+             color = Theme.of(context).colorScheme.secondary;
+             icon = Icons.arrow_downward;
+           } else {
+             color = Theme.of(context).colorScheme.primary;
+             icon = Icons.subdirectory_arrow_right;
+           }
+           
+           return Container(
+             decoration: BoxDecoration(
+               color: color.withOpacity(0.2),
+               border: position == "child" 
+                   ? Border.all(color: color, width: 2)
+                   : Border(
+                       top: position == "before" ? BorderSide(color: color, width: 3) : BorderSide.none,
+                       bottom: position == "after" ? BorderSide(color: color, width: 3) : BorderSide.none,
+                     )
+             ),
+             child: Center(child: Icon(icon, color: color)),
+           );
+         },
+       ),
+     );
   }
 
   Widget _buildDetailPanel() {
@@ -1130,55 +933,18 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           ...location.customVal.asMap().entries.map((entry) {
             final index = entry.key;
             final item = entry.value;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: TextEditingController(text: item.key),
-                      decoration: const InputDecoration(
-                        labelText: "設定",
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onChanged: (value) {
-                        item.key = value;
-                        _notifyChange();
-                      },
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text("="),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: TextEditingController(text: item.val),
-                      decoration: const InputDecoration(
-                        labelText: "鍵值",
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onChanged: (value) {
-                        item.val = value;
-                        _notifyChange();
-                      },
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        location.customVal.removeAt(index);
-                      });
-                      _notifyChange();
-                    },
-                    icon: const Icon(Icons.remove_circle, color: Colors.red),
-                  ),
-                ],
-              ),
+            return _CustomValueRow(
+              key: ValueKey(item.id),
+              item: item,
+              onChange: _notifyChange,
+              onRemove: () {
+                setState(() {
+                  location.customVal.removeAt(index);
+                });
+                _notifyChange();
+              },
             );
-          }).toList(),
+          }),
 
           // 新增自訂值
           Row(
@@ -1603,39 +1369,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   // MARK: - 拖動相關方法
-  
-  String? _getHoverZoneFor(String locationId) {
-    if (!_isDragging || _currentCursorY == null) return null;
-    final key = _itemKeys[locationId];
-    final context = key?.currentContext;
-    if (context == null) return null;
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox) return null;
-    if (!renderObject.hasSize) return null;
-
-    final box = renderObject;
-    final topLeft = box.localToGlobal(Offset.zero);
-    final top = topLeft.dy;
-    final height = box.size.height;
-    final bottom = top + height;
-    final cursorY = _currentCursorY!;
-
-    if (cursorY < top || cursorY > bottom) return null;
-
-    double relativeY = (cursorY - top) / height;
-    if (relativeY < 0) {
-      relativeY = 0;
-    } else if (relativeY > 1) {
-      relativeY = 1;
-    }
-    if (relativeY < 0.3) {
-      return "before";
-    }
-    if (relativeY > 0.7) {
-      return "after";
-    }
-    return "child";
-  }
 
   // 檢查 targetId 是否為 sourceId 的後代
   bool _isDescendant(String sourceId, String targetId) {
@@ -1822,6 +1555,105 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text("確定"),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlatNode {
+  final LocationData node;
+  final int depth;
+  _FlatNode(this.node, this.depth);
+}
+
+class _CustomValueRow extends StatefulWidget {
+  final LocationCustomize item;
+  final VoidCallback onRemove;
+  final VoidCallback onChange;
+
+  const _CustomValueRow({
+    super.key,
+    required this.item,
+    required this.onRemove,
+    required this.onChange,
+  });
+
+  @override
+  State<_CustomValueRow> createState() => _CustomValueRowState();
+}
+
+class _CustomValueRowState extends State<_CustomValueRow> {
+  late TextEditingController keyController;
+  late TextEditingController valController;
+
+  @override
+  void initState() {
+    super.initState();
+    keyController = TextEditingController(text: widget.item.key);
+    valController = TextEditingController(text: widget.item.val);
+  }
+
+  @override
+  void didUpdateWidget(_CustomValueRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.item.key != keyController.text) {
+      keyController.text = widget.item.key;
+    }
+    if (widget.item.val != valController.text) {
+      valController.text = widget.item.val;
+    }
+  }
+
+  @override
+  void dispose() {
+    keyController.dispose();
+    valController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: keyController,
+              decoration: const InputDecoration(
+                labelText: "設定",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (value) {
+                widget.item.key = value;
+                widget.onChange();
+              },
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text("="),
+          ),
+          Expanded(
+            child: TextField(
+              controller: valController,
+              decoration: const InputDecoration(
+                labelText: "鍵值",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (value) {
+                widget.item.val = value;
+                widget.onChange();
+              },
+            ),
+          ),
+          IconButton(
+            onPressed: widget.onRemove,
+            icon: const Icon(Icons.remove_circle, color: Colors.red),
           ),
         ],
       ),

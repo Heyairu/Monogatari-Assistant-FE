@@ -16,6 +16,7 @@ import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 import "package:path_provider/path_provider.dart";
 import "package:path/path.dart" as path;
+import "package:xml/xml.dart" as xml;
 
 import "../modules/baseinfoview.dart" as BaseInfoModule;
 import "../modules/chapterselectionview.dart" as ChapterModule;
@@ -313,8 +314,9 @@ class ProjectManager {
     // null = 取消, true = 不儲存, false = 已儲存
     if (result == null) {
       return false; // 取消退出
+    } else {
+      return true; // 允許退出
     }
-    return true; // 允許退出
   }
 
   // Operation Actions (New, Open, Save, Export)
@@ -465,17 +467,20 @@ class ProjectManager {
     try {
       setLoading(true);
       
-      String allContent = "";
+      final buffer = StringBuffer();
       for (final segment in currentData.segmentsData) {
-        allContent += "# ${segment.segmentName}\n\n";
+        buffer.writeln("# ${segment.segmentName}");
+        buffer.writeln();
         for (final chapter in segment.chapters) {
-          allContent += "## ${chapter.chapterName}\n\n";
-          allContent += "${chapter.chapterContent}\n\n";
+          buffer.writeln("## ${chapter.chapterName}");
+          buffer.writeln();
+          buffer.writeln(chapter.chapterContent);
+          buffer.writeln();
         }
       }
       
       await FileService.exportText(
-        content: allContent,
+        content: buffer.toString(),
         fileName: defaultFileName,
         extension: extension == "txt" ? ".txt" : ".md",
       );
@@ -622,54 +627,63 @@ class _ProjectParser {
     List<LocationData>? loadedWorldSettings;
     Map<String, Map<String, dynamic>>? loadedCharacterData;
     
-    // 解析BaseInfo
-    if (XMLParser.hasTypeBlock(xmlContent, "BaseInfo")) {
-      final blocks = XMLParser.extractTypeBlocks(xmlContent, "BaseInfo");
-      if (blocks.isNotEmpty) {
-        loadedBaseInfo = BaseInfoModule.BaseInfoCodec.loadXML(blocks.first);
-      }
-    }
-    
-    // 解析ChapterSelection
-    if (XMLParser.hasTypeBlock(xmlContent, "ChapterSelection")) {
-      final blocks = XMLParser.extractTypeBlocks(xmlContent, "ChapterSelection");
-      if (blocks.isNotEmpty) {
-        loadedSegments = ChapterModule.ChapterSelectionCodec.loadXML(blocks.first);
-      }
-    }
-    
-    // 解析Outline
-    if (XMLParser.hasTypeBlock(xmlContent, "Outline")) {
-      final blocks = XMLParser.extractTypeBlocks(xmlContent, "Outline");
-      if (blocks.isNotEmpty) {
-        loadedOutline = OutlineModule.OutlineCodec.loadXML(blocks.first);
-      }
-    }
-    
-    // 解析WorldSettings
-    if (XMLParser.hasTypeBlock(xmlContent, "WorldSettings")) {
-      final blocks = XMLParser.extractTypeBlocks(xmlContent, "WorldSettings");
-      if (blocks.isNotEmpty) {
-        loadedWorldSettings = WorldSettingsCodec.loadXML(blocks.first);
-      }
-    }
-    
-    // 解析Characters
-    if (XMLParser.hasTypeBlock(xmlContent, "Characters")) {
-      final blocks = XMLParser.extractTypeBlocks(xmlContent, "Characters");
-      if (blocks.isNotEmpty) {
-        loadedCharacterData = CharacterCodec.loadXML(blocks.first);
-      }
-    }
-    
     // 計算 contentText 和 totalWords
     String contentText = "";
     int totalWords = 0;
+    
+    try {
+      final document = xml.XmlDocument.parse(xmlContent);
+      
+      // 尋找所有的 Type 區塊
+      final typeElements = document.findAllElements("Type");
+      
+      for (final element in typeElements) {
+        // 檢查 Name 標籤確認區塊類型
+        final nameElement = element.findElements("Name").firstOrNull;
+        if (nameElement == null) continue;
+        
+        final typeName = nameElement.innerText;
+        // 重新序列化為XML字串以供各模組的解析器使用
+        final blockXml = element.toXmlString();
+        
+        try {
+          switch (typeName) {
+            case "BaseInfo":
+              // 避免重複載入，只取第一個遇到的有效區塊
+              loadedBaseInfo ??= BaseInfoModule.BaseInfoCodec.loadXML(blockXml);
+              break;
+              
+            case "ChapterSelection":
+              loadedSegments ??= ChapterModule.ChapterSelectionCodec.loadXML(blockXml);
+              break;
+              
+            case "Outline":
+              loadedOutline ??= OutlineModule.OutlineCodec.loadXML(blockXml);
+              break;
+              
+            case "WorldSettings":
+              loadedWorldSettings ??= WorldSettingsCodec.loadXML(blockXml);
+              break;
+              
+            case "Characters":
+              loadedCharacterData ??= CharacterCodec.loadXML(blockXml);
+              break;
+          }
+        } catch (e) {
+          debugPrint("解析 $typeName 區塊時發生錯誤: $e");
+          // 繼續解析其他區塊
+        }
+      }
+    } catch (e) {
+      debugPrint("XML 解析失敗: $e");
+      // 如果 XML 格式完全錯誤，將回傳預設的空專案
+    }
     
     // 如果有載入章節數據，使用第一個章節的內容
     final targetSegments = loadedSegments ?? defaultData.segmentsData;
     if (targetSegments.isNotEmpty && targetSegments[0].chapters.isNotEmpty) {
       contentText = targetSegments[0].chapters[0].chapterContent;
+      // 簡單的字數統計
       totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
     }
     
@@ -682,84 +696,6 @@ class _ProjectParser {
       totalWords: totalWords,
       contentText: contentText,
     );
-  }
-}
-
-/// XML解析工具類 (保留原始名稱以與其他模組相容，或僅在此使用)
-class XMLParser {
-  /// 從XML內容中提取特定類型的區塊
-  static List<String> extractTypeBlocks(String xmlContent, String type) {
-    final blocks = <String>[];
-    // 使用更精確的匹配方式：先找到開始標籤，然後找到對應的結束標籤
-    int startIndex = 0;
-    while (true) {
-      // 尋找 <Type> 開始
-      final typeStart = xmlContent.indexOf("<Type>", startIndex);
-      if (typeStart == -1) break;
-      
-      // 檢查是否包含我們要找的 Name 標籤
-      final nameStart = xmlContent.indexOf("<Name>$type</Name>", typeStart);
-      if (nameStart == -1 || nameStart > xmlContent.indexOf("</Type>", typeStart)) {
-        // 這個 Type 區塊不包含我們要找的 Name，跳過
-        startIndex = xmlContent.indexOf("</Type>", typeStart) + 7;
-        if (startIndex < 7) break; // 沒有找到 </Type>
-        continue;
-      }
-      
-      // 找到對應的 </Type> 結束標籤
-      int depth = 1;
-      int searchPos = typeStart + 6; // <Type> 之後
-      int typeEnd = -1;
-      
-      while (searchPos < xmlContent.length && depth > 0) {
-        final nextOpen = xmlContent.indexOf("<Type>", searchPos);
-        final nextClose = xmlContent.indexOf("</Type>", searchPos);
-        
-        if (nextClose == -1) break; // 沒有找到結束標籤
-        
-        if (nextOpen != -1 && nextOpen < nextClose) {
-          // 遇到嵌套的 <Type>
-          depth++;
-          searchPos = nextOpen + 6;
-        } else {
-          // 遇到 </Type>
-          depth--;
-          if (depth == 0) {
-            typeEnd = nextClose + 7; // </Type> 的結束位置
-            break;
-          }
-          searchPos = nextClose + 7;
-        }
-      }
-      
-      if (typeEnd != -1) {
-        blocks.add(xmlContent.substring(typeStart, typeEnd));
-        startIndex = typeEnd;
-      } else {
-        break; // 無法找到對應的結束標籤
-      }
-    }
-    
-    return blocks;
-  }
-  
-  /// 提取XML標籤內的內容
-  static String? extractTagContent(String xml, String tagName) {
-    final pattern = RegExp("<$tagName>(.*?)</$tagName>", dotAll: true);
-    final match = pattern.firstMatch(xml);
-    return match?.group(1)?.trim();
-  }
-  
-  /// 提取XML標籤的屬性值
-  static String? extractAttribute(String xml, String tagName, String attrName) {
-    final pattern = RegExp('<$tagName[^>]*\\s$attrName="([^"]*)"', dotAll: true);
-    final match = pattern.firstMatch(xml);
-    return match?.group(1);
-  }
-  
-  /// 檢查XML是否包含指定的類型區塊
-  static bool hasTypeBlock(String xmlContent, String type) {
-    return xmlContent.contains("<Name>$type</Name>");
   }
 }
 
