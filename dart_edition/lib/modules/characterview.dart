@@ -23,6 +23,7 @@
 */
 
 import "package:flutter/material.dart";
+import "dart:async";
 import "package:xml/xml.dart" as xml;
 
 /// 定義特質/能力/滑桿的結構，解決硬編碼問題
@@ -418,18 +419,14 @@ class CharacterCodec {
 
   static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
     builder.element(name, nest: () {
-      if (value.isEmpty) {
-        builder.text("");
-      } else {
-        builder.cdata(value);
-      }
+      builder.text(_encodeNewlines(value));
     });
   }
 
   static String _readElementText(xml.XmlElement? element) {
     if (element == null) return "";
     if (element.children.isEmpty) {
-      return element.innerText;
+      return _decodeNewlines(element.innerText);
     }
     final cdataBuffer = StringBuffer();
     for (final node in element.children) {
@@ -439,7 +436,7 @@ class CharacterCodec {
     }
     final cdataText = cdataBuffer.toString();
     if (cdataText.isNotEmpty) {
-      return cdataText;
+      return _decodeNewlines(cdataText);
     }
     final buffer = StringBuffer();
     for (final node in element.children) {
@@ -448,7 +445,37 @@ class CharacterCodec {
       }
     }
     final text = buffer.toString();
-    return text.isNotEmpty ? text : element.innerText;
+    return _decodeNewlines(text.isNotEmpty ? text : element.innerText);
+  }
+
+  static String _encodeNewlines(String value) {
+    if (value.isEmpty) return value;
+    final normalized = value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+    final buffer = StringBuffer();
+    for (final codeUnit in normalized.codeUnits) {
+      switch (codeUnit) {
+        case 10: // \n
+          buffer.write("&#10;");
+          break;
+        case 35: // #
+          buffer.write("&#35;");
+          break;
+        case 59: // ;
+          buffer.write("&#59;");
+          break;
+        default:
+          buffer.writeCharCode(codeUnit);
+      }
+    }
+    return buffer.toString();
+  }
+
+  static String _decodeNewlines(String value) {
+    return value
+        .replaceAll("&#13;", "")
+        .replaceAll("&#10;", "\n")
+        .replaceAll("&#35;", "#")
+        .replaceAll("&#59;", ";");
   }
 
   static List<String> _parseList(xml.XmlElement node, String tagName) {
@@ -639,6 +666,14 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   final TextEditingController _familiarItemController = TextEditingController();
 
   bool _isLoading = false;
+  Timer? _debounceTimer;
+
+  void _markAsModified() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1000), () {
+      if (mounted) _saveCurrentCharacterData();
+    });
+  }
 
   void _setupListeners() {
     // 建立所有控制項
@@ -652,7 +687,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       nameController.addListener(() {
         if (_isLoading) return;
         _syncCharacterName(nameController.text);
-        _saveCurrentCharacterData();
+        _markAsModified();
       });
     }
 
@@ -661,7 +696,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       if (entry.key == "name") continue; // Handled specially
       
       entry.value.addListener(() {
-        if (!_isLoading) _saveCurrentCharacterData();
+        if (!_isLoading) _markAsModified();
       });
     }
   }
@@ -693,6 +728,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
   @override
   void dispose() {
+    if (_debounceTimer?.isActive ?? false) {
+      _debounceTimer!.cancel();
+      _saveCurrentCharacterData();
+    }
     _tabController.dispose();
     _newCharacterController.dispose();
     
@@ -1267,7 +1306,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           onChanged: (value) {
             setState(() {
               selectedAlignment = value;
-              _saveCurrentCharacterData();
+              _markAsModified();
             });
           },
         );
@@ -1463,7 +1502,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           onChanged: (bool? value) {
             setState(() {
               values[entry.key] = value ?? false;
-              _saveCurrentCharacterData();
+              _markAsModified();
             });
           },
         );
@@ -1510,7 +1549,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     onChanged: (value) {
                       setState(() {
                         commonAbilityValues[index] = value;
-                        _saveCurrentCharacterData();
+                        _markAsModified();
                       });
                     },
                   ),
@@ -1552,7 +1591,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           onChanged: (value) {
             setState(() {
               selectedRelationship = value;
-              _saveCurrentCharacterData();
+              _markAsModified();
             });
           },
         )),
@@ -1575,7 +1614,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           onChanged: (value) {
             setState(() {
               isFindNewLove = value ?? false;
-              _saveCurrentCharacterData();
+              _markAsModified();
             });
           },
         ),
@@ -1587,7 +1626,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           onChanged: (value) {
             setState(() {
               isHarem = value ?? false;
-              _saveCurrentCharacterData();
+              _markAsModified();
             });
           },
         ),
@@ -1627,7 +1666,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     onChanged: (value) {
                       setState(() {
                         socialItemValues[index] = value;
-                        _saveCurrentCharacterData();
+                        _markAsModified();
                       });
                     },
                   ),
@@ -1680,7 +1719,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     onChanged: (value) {
                       setState(() {
                         approachValues[index] = value;
-                        _saveCurrentCharacterData();
+                        _markAsModified();
                       });
                     },
                   ),
@@ -1741,7 +1780,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     onChanged: (value) {
                       setState(() {
                         traitsValues[index] = value;
-                        _saveCurrentCharacterData();
+                        _markAsModified();
                       });
                     },
                   ),
@@ -1780,6 +1819,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   
   // 儲存當前角色資料
   void _saveCurrentCharacterData() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     if (selectedCharacter == null) return;
     
     final data = <String, dynamic>{};

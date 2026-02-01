@@ -208,18 +208,14 @@ class TemplatePreset {
 class WorldSettingsCodec {
   static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
     builder.element(name, nest: () {
-      if (value.isEmpty) {
-        builder.text("");
-      } else {
-        builder.cdata(value);
-      }
+      builder.text(_encodeNewlines(value));
     });
   }
 
   static String _readElementText(xml.XmlElement? element) {
     if (element == null) return "";
     if (element.children.isEmpty) {
-      return element.innerText;
+      return _decodeNewlines(element.innerText);
     }
     final cdataBuffer = StringBuffer();
     for (final node in element.children) {
@@ -229,7 +225,7 @@ class WorldSettingsCodec {
     }
     final cdataText = cdataBuffer.toString();
     if (cdataText.isNotEmpty) {
-      return cdataText;
+      return _decodeNewlines(cdataText);
     }
     final buffer = StringBuffer();
     for (final node in element.children) {
@@ -238,7 +234,37 @@ class WorldSettingsCodec {
       }
     }
     final text = buffer.toString();
-    return text.isNotEmpty ? text : element.innerText;
+    return _decodeNewlines(text.isNotEmpty ? text : element.innerText);
+  }
+
+  static String _encodeNewlines(String value) {
+    if (value.isEmpty) return value;
+    final normalized = value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+    final buffer = StringBuffer();
+    for (final codeUnit in normalized.codeUnits) {
+      switch (codeUnit) {
+        case 10: // \n
+          buffer.write("&#10;");
+          break;
+        case 35: // #
+          buffer.write("&#35;");
+          break;
+        case 59: // ;
+          buffer.write("&#59;");
+          break;
+        default:
+          buffer.writeCharCode(codeUnit);
+      }
+    }
+    return buffer.toString();
+  }
+
+  static String _decodeNewlines(String value) {
+    return value
+        .replaceAll("&#13;", "")
+        .replaceAll("&#10;", "\n")
+        .replaceAll("&#35;", "#")
+        .replaceAll("&#59;", ";");
   }
 
   static String? saveXML(List<LocationData> locations) {
@@ -264,11 +290,7 @@ class WorldSettingsCodec {
       if (loc.customVal.isNotEmpty) {
         for (final kv in loc.customVal) {
           builder.element("Key", attributes: {"Name": kv.key}, nest: () {
-            if (kv.val.isEmpty) {
-              builder.text("");
-            } else {
-              builder.cdata(kv.val);
-            }
+            builder.text(_encodeNewlines(kv.val));
           });
         }
       }
