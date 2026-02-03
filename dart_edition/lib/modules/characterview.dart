@@ -26,14 +26,14 @@ import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
 
-/// 定義特質/能力/滑桿的結構，解決硬編碼問題
+// MARK: - 滑桿結構(解決硬編碼問題)
 class TraitDefinition {
   final String xmlTitle; // XML 儲存用的 Title 或 Key
-  final String uiTitle;  // UI 顯示用的標題
-  final String xmlLeft;  // XML 左側標籤
+  final String uiTitle; // UI 顯示用的標題
+  final String xmlLeft; // XML 左側標籤
   final String xmlRight; // XML 右側標籤
-  final String uiLeft;   // UI 左側標籤
-  final String uiRight;  // UI 右側標籤
+  final String uiLeft; // UI 左側標籤
+  final String uiRight; // UI 右側標籤
 
   const TraitDefinition({
     required this.xmlTitle,
@@ -47,68 +47,439 @@ class TraitDefinition {
 
 class TraitDefinitions {
   static const commonAbilities = [
-    TraitDefinition(xmlTitle: "cooking", uiTitle: "料理", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "cleaning", uiTitle: "清潔", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "finance", uiTitle: "理財", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "fitness", uiTitle: "體能", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "art", uiTitle: "藝術", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "music", uiTitle: "音樂", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "dance", uiTitle: "舞蹈", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "handicraft", uiTitle: "手工", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "social", uiTitle: "社交", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "leadership", uiTitle: "領導", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "analysis", uiTitle: "分析", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "creativity", uiTitle: "創意", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "memory", uiTitle: "記憶", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "observation", uiTitle: "觀察", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "adaptability", uiTitle: "應變", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
-    TraitDefinition(xmlTitle: "learning", uiTitle: "學習", xmlLeft: "poor", xmlRight: "good", uiLeft: "不擅長", uiRight: "擅長"),
+    TraitDefinition(
+      xmlTitle: "cooking",
+      uiTitle: "料理",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "cleaning",
+      uiTitle: "清潔",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "finance",
+      uiTitle: "理財",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "fitness",
+      uiTitle: "體能",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "art",
+      uiTitle: "藝術",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "music",
+      uiTitle: "音樂",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "dance",
+      uiTitle: "舞蹈",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "handicraft",
+      uiTitle: "手工",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "social",
+      uiTitle: "社交",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "leadership",
+      uiTitle: "領導",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "analysis",
+      uiTitle: "分析",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "creativity",
+      uiTitle: "創意",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "memory",
+      uiTitle: "記憶",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "observation",
+      uiTitle: "觀察",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "adaptability",
+      uiTitle: "應變",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
+    TraitDefinition(
+      xmlTitle: "learning",
+      uiTitle: "學習",
+      xmlLeft: "poor",
+      xmlRight: "good",
+      uiLeft: "不擅長",
+      uiRight: "擅長",
+    ),
   ];
 
   static const socialItems = [
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "introverted", xmlRight: "extroverted", uiLeft: "內向", uiRight: "外向"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "emotional", xmlRight: "rational", uiLeft: "感性", uiRight: "理性"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "passive", xmlRight: "active", uiLeft: "被動", uiRight: "主動"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "conservative", xmlRight: "open", uiLeft: "保守", uiRight: "開放"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "cautious", xmlRight: "adventurous", uiLeft: "謹慎", uiRight: "冒險"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "dependent", xmlRight: "independent", uiLeft: "依賴", uiRight: "獨立"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "compliant", xmlRight: "stubborn", uiLeft: "柔順", uiRight: "固執"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "pessimistic", xmlRight: "optimistic", uiLeft: "悲觀", uiRight: "樂觀"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "serious", xmlRight: "humorous", uiLeft: "嚴肅", uiRight: "幽默"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "shy", xmlRight: "outgoing", uiLeft: "害羞", uiRight: "大方"),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "introverted",
+      xmlRight: "extroverted",
+      uiLeft: "內向",
+      uiRight: "外向",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "emotional",
+      xmlRight: "rational",
+      uiLeft: "感性",
+      uiRight: "理性",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "passive",
+      xmlRight: "active",
+      uiLeft: "被動",
+      uiRight: "主動",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "conservative",
+      xmlRight: "open",
+      uiLeft: "保守",
+      uiRight: "開放",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "cautious",
+      xmlRight: "adventurous",
+      uiLeft: "謹慎",
+      uiRight: "冒險",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "dependent",
+      xmlRight: "independent",
+      uiLeft: "依賴",
+      uiRight: "獨立",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "compliant",
+      xmlRight: "stubborn",
+      uiLeft: "柔順",
+      uiRight: "固執",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "pessimistic",
+      xmlRight: "optimistic",
+      uiLeft: "悲觀",
+      uiRight: "樂觀",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "serious",
+      xmlRight: "humorous",
+      uiLeft: "嚴肅",
+      uiRight: "幽默",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "shy",
+      xmlRight: "outgoing",
+      uiLeft: "害羞",
+      uiRight: "大方",
+    ),
   ];
 
   static const approaches = [
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "low-key", xmlRight: "high-profile", uiLeft: "低調", uiRight: "高調"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "passive", xmlRight: "proactive", uiLeft: "消極", uiRight: "積極"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "cunning", xmlRight: "honest", uiLeft: "狡猾", uiRight: "老實"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "immature", xmlRight: "mature", uiLeft: "幼稚", uiRight: "成熟"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "calm", xmlRight: "impulsive", uiLeft: "冷靜", uiRight: "衝動"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "taciturn", xmlRight: "talkative", uiLeft: "寡言", uiRight: "多話"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "obstinate", xmlRight: "obedient", uiLeft: "執拗", uiRight: "順從"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "unrestrained", xmlRight: "disciplined", uiLeft: "奔放", uiRight: "自律"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "serious", xmlRight: "frivolous", uiLeft: "嚴肅", uiRight: "輕浮"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "reserved", xmlRight: "frank", uiLeft: "彆扭", uiRight: "坦率"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "indifferent", xmlRight: "curious", uiLeft: "淡漠", uiRight: "好奇"),
-    TraitDefinition(xmlTitle: "", uiTitle: "", xmlLeft: "dull", xmlRight: "perceptive", uiLeft: "遲鈍", uiRight: "敏銳"),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "low-key",
+      xmlRight: "high-profile",
+      uiLeft: "低調",
+      uiRight: "高調",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "passive",
+      xmlRight: "proactive",
+      uiLeft: "消極",
+      uiRight: "積極",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "cunning",
+      xmlRight: "honest",
+      uiLeft: "狡猾",
+      uiRight: "老實",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "immature",
+      xmlRight: "mature",
+      uiLeft: "幼稚",
+      uiRight: "成熟",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "calm",
+      xmlRight: "impulsive",
+      uiLeft: "冷靜",
+      uiRight: "衝動",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "taciturn",
+      xmlRight: "talkative",
+      uiLeft: "寡言",
+      uiRight: "多話",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "obstinate",
+      xmlRight: "obedient",
+      uiLeft: "執拗",
+      uiRight: "順從",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "unrestrained",
+      xmlRight: "disciplined",
+      uiLeft: "奔放",
+      uiRight: "自律",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "serious",
+      xmlRight: "frivolous",
+      uiLeft: "嚴肅",
+      uiRight: "輕浮",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "reserved",
+      xmlRight: "frank",
+      uiLeft: "彆扭",
+      uiRight: "坦率",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "indifferent",
+      xmlRight: "curious",
+      uiLeft: "淡漠",
+      uiRight: "好奇",
+    ),
+    TraitDefinition(
+      xmlTitle: "",
+      uiTitle: "",
+      xmlLeft: "dull",
+      xmlRight: "perceptive",
+      uiLeft: "遲鈍",
+      uiRight: "敏銳",
+    ),
   ];
 
   static const traits = [
-    TraitDefinition(xmlTitle: "attitude", uiTitle: "態度", xmlLeft: "pessimistic", xmlRight: "optimistic", uiLeft: "悲觀", uiRight: "樂觀"),
-    TraitDefinition(xmlTitle: "expression", uiTitle: "表情", xmlLeft: "expressionless", xmlRight: "vivid", uiLeft: "面癱", uiRight: "生動"),
-    TraitDefinition(xmlTitle: "aptitude", uiTitle: "資質", xmlLeft: "dull", xmlRight: "genius", uiLeft: "笨蛋", uiRight: "天才"),
-    TraitDefinition(xmlTitle: "mindset", uiTitle: "思想", xmlLeft: "simple", xmlRight: "complex", uiLeft: "單純", uiRight: "複雜"),
-    TraitDefinition(xmlTitle: "shamelessness", uiTitle: "臉皮", xmlLeft: "thin-skinned", xmlRight: "thick-skinned", uiLeft: "極薄", uiRight: "極厚"),
-    TraitDefinition(xmlTitle: "temper", uiTitle: "脾氣", xmlLeft: "gentle", xmlRight: "hot-tempered", uiLeft: "溫和", uiRight: "火爆"),
-    TraitDefinition(xmlTitle: "manners", uiTitle: "舉止", xmlLeft: "rude", xmlRight: "refined", uiLeft: "粗魯", uiRight: "斯文"),
-    TraitDefinition(xmlTitle: "willpower", uiTitle: "意志", xmlLeft: "fragile", xmlRight: "strong", uiLeft: "易碎", uiRight: "堅強"),
-    TraitDefinition(xmlTitle: "desire", uiTitle: "慾望", xmlLeft: "ascetic", xmlRight: "intense", uiLeft: "無慾", uiRight: "強烈"),
-    TraitDefinition(xmlTitle: "courage", uiTitle: "膽量", xmlLeft: "cowardly", xmlRight: "brave", uiLeft: "膽小", uiRight: "勇敢"),
-    TraitDefinition(xmlTitle: "eloquence", uiTitle: "談吐", xmlLeft: "inarticulate", xmlRight: "witty", uiLeft: "木訥", uiRight: "風趣"),
-    TraitDefinition(xmlTitle: "vigilance", uiTitle: "戒心", xmlLeft: "gullible", xmlRight: "suspicious", uiLeft: "輕信", uiRight: "多疑"),
-    TraitDefinition(xmlTitle: "self-esteem", uiTitle: "自尊", xmlLeft: "low", xmlRight: "high", uiLeft: "低下", uiRight: "高亢"),
-    TraitDefinition(xmlTitle: "confidence", uiTitle: "自信", xmlLeft: "low", xmlRight: "high", uiLeft: "低下", uiRight: "高亢"),
-    TraitDefinition(xmlTitle: "archetype", uiTitle: "陰陽", xmlLeft: "antagonist", xmlRight: "protagonist", uiLeft: "陰角", uiRight: "陽角"),
+    TraitDefinition(
+      xmlTitle: "attitude",
+      uiTitle: "態度",
+      xmlLeft: "pessimistic",
+      xmlRight: "optimistic",
+      uiLeft: "悲觀",
+      uiRight: "樂觀",
+    ),
+    TraitDefinition(
+      xmlTitle: "expression",
+      uiTitle: "表情",
+      xmlLeft: "expressionless",
+      xmlRight: "vivid",
+      uiLeft: "面癱",
+      uiRight: "生動",
+    ),
+    TraitDefinition(
+      xmlTitle: "aptitude",
+      uiTitle: "資質",
+      xmlLeft: "dull",
+      xmlRight: "genius",
+      uiLeft: "笨蛋",
+      uiRight: "天才",
+    ),
+    TraitDefinition(
+      xmlTitle: "mindset",
+      uiTitle: "思想",
+      xmlLeft: "simple",
+      xmlRight: "complex",
+      uiLeft: "單純",
+      uiRight: "複雜",
+    ),
+    TraitDefinition(
+      xmlTitle: "shamelessness",
+      uiTitle: "臉皮",
+      xmlLeft: "thin-skinned",
+      xmlRight: "thick-skinned",
+      uiLeft: "極薄",
+      uiRight: "極厚",
+    ),
+    TraitDefinition(
+      xmlTitle: "temper",
+      uiTitle: "脾氣",
+      xmlLeft: "gentle",
+      xmlRight: "hot-tempered",
+      uiLeft: "溫和",
+      uiRight: "火爆",
+    ),
+    TraitDefinition(
+      xmlTitle: "manners",
+      uiTitle: "舉止",
+      xmlLeft: "rude",
+      xmlRight: "refined",
+      uiLeft: "粗魯",
+      uiRight: "斯文",
+    ),
+    TraitDefinition(
+      xmlTitle: "willpower",
+      uiTitle: "意志",
+      xmlLeft: "fragile",
+      xmlRight: "strong",
+      uiLeft: "易碎",
+      uiRight: "堅強",
+    ),
+    TraitDefinition(
+      xmlTitle: "desire",
+      uiTitle: "慾望",
+      xmlLeft: "ascetic",
+      xmlRight: "intense",
+      uiLeft: "無慾",
+      uiRight: "強烈",
+    ),
+    TraitDefinition(
+      xmlTitle: "courage",
+      uiTitle: "膽量",
+      xmlLeft: "cowardly",
+      xmlRight: "brave",
+      uiLeft: "膽小",
+      uiRight: "勇敢",
+    ),
+    TraitDefinition(
+      xmlTitle: "eloquence",
+      uiTitle: "談吐",
+      xmlLeft: "inarticulate",
+      xmlRight: "witty",
+      uiLeft: "木訥",
+      uiRight: "風趣",
+    ),
+    TraitDefinition(
+      xmlTitle: "vigilance",
+      uiTitle: "戒心",
+      xmlLeft: "gullible",
+      xmlRight: "suspicious",
+      uiLeft: "輕信",
+      uiRight: "多疑",
+    ),
+    TraitDefinition(
+      xmlTitle: "self-esteem",
+      uiTitle: "自尊",
+      xmlLeft: "low",
+      xmlRight: "high",
+      uiLeft: "低下",
+      uiRight: "高亢",
+    ),
+    TraitDefinition(
+      xmlTitle: "confidence",
+      uiTitle: "自信",
+      xmlLeft: "low",
+      xmlRight: "high",
+      uiLeft: "低下",
+      uiRight: "高亢",
+    ),
+    TraitDefinition(
+      xmlTitle: "archetype",
+      uiTitle: "陰陽",
+      xmlLeft: "antagonist",
+      xmlRight: "protagonist",
+      uiLeft: "陰角",
+      uiRight: "陽角",
+    ),
   ];
 }
 
@@ -116,30 +487,64 @@ class TraitDefinitions {
 
 class CharacterCodec {
   static const basicKeys = [
-    "name", "nickname", "age", "gender", "occupation", 
-    "birthday", "native", "live", "address"
+    "name",
+    "nickname",
+    "age",
+    "gender",
+    "occupation",
+    "birthday",
+    "native",
+    "live",
+    "address",
   ];
-  
+
   static const appearanceKeys = [
-    "height", "weight", "blood", "hair", "eye", "skin", 
-    "faceFeatures", "eyeFeatures", "earFeatures", "noseFeatures", 
-    "mouthFeatures", "eyebrowFeatures", "body", "dress"
+    "height",
+    "weight",
+    "blood",
+    "hair",
+    "eye",
+    "skin",
+    "faceFeatures",
+    "eyeFeatures",
+    "earFeatures",
+    "noseFeatures",
+    "mouthFeatures",
+    "eyebrowFeatures",
+    "body",
+    "dress",
   ];
-  
+
   static const personalityKeys = [
-    "mbti", "personality", "language", "interest", "habit", 
-    "alignment", "belief", "limit", "future", "cherish", 
-    "disgust", "fear", "curious", "expect", "intention", "otherValues"
+    "mbti",
+    "personality",
+    "language",
+    "interest",
+    "habit",
+    "alignment",
+    "belief",
+    "limit",
+    "future",
+    "cherish",
+    "disgust",
+    "fear",
+    "curious",
+    "expect",
+    "intention",
+    "otherValues",
   ];
 
   static const socialKeys = [
-     "impression", "likable", "family", "otherShowLove", 
-     "otherGoodwill", "otherHatePeople", "otherRelationship"
+    "impression",
+    "likable",
+    "family",
+    "otherShowLove",
+    "otherGoodwill",
+    "otherHatePeople",
+    "otherRelationship",
   ];
 
-  static const otherKeys = [
-    "originalName", "otherText"
-  ];
+  static const otherKeys = ["originalName", "otherText"];
 
   static const allControllerKeys = [
     ...basicKeys,
@@ -156,179 +561,373 @@ class CharacterCodec {
     }
 
     final builder = xml.XmlBuilder();
-    builder.element("Type", nest: () {
-      builder.element("Name", nest: "Characters");
+    builder.element(
+      "Type",
+      nest: () {
+        builder.element("Name", nest: "Characters");
 
-      for (final entry in characterData.entries) {
-        final characterName = entry.key;
-        final data = entry.value;
+        for (final entry in characterData.entries) {
+          final characterName = entry.key;
+          final data = entry.value;
 
-        builder.element("Character", attributes: {"Name": characterName}, nest: () {
-          // Basic Info
-          builder.element("BasicInfo", nest: () {
-            _saveStrings(builder, data, basicKeys);
-          });
+          builder.element(
+            "Character",
+            attributes: {"Name": characterName},
+            nest: () {
+              // Basic Info
+              builder.element(
+                "BasicInfo",
+                nest: () {
+                  _saveStrings(builder, data, basicKeys);
+                },
+              );
 
-          // Appearance
-          builder.element("Appearance", nest: () {
-            _saveStrings(builder, data, appearanceKeys);
-          });
+              // Appearance
+              builder.element(
+                "Appearance",
+                nest: () {
+                  _saveStrings(builder, data, appearanceKeys);
+                },
+              );
 
-          // Personality
-          builder.element("Personality", nest: () {
-            _saveStrings(builder, data, personalityKeys);
+              // Personality
+              builder.element(
+                "Personality",
+                nest: () {
+                  _saveStrings(builder, data, personalityKeys);
 
-            final hinderEvents = data["hinderEvents"] as List<Map<String, String>>? ?? [];
-            if (hinderEvents.isNotEmpty) {
-              builder.element("hinderEvents", nest: () {
-                for (final event in hinderEvents) {
-                  builder.element("event", nest: () {
-                    _writeTextElement(builder, "name", event["event"] ?? "");
-                    _writeTextElement(builder, "solve", event["solve"] ?? "");
-                  });
-                }
-              });
-            }
-          });
+                  final hinderEvents =
+                      data["hinderEvents"] as List<Map<String, String>>? ?? [];
+                  if (hinderEvents.isNotEmpty) {
+                    builder.element(
+                      "hinderEvents",
+                      nest: () {
+                        for (final event in hinderEvents) {
+                          builder.element(
+                            "event",
+                            nest: () {
+                              _writeTextElement(
+                                builder,
+                                "name",
+                                event["event"] ?? "",
+                              );
+                              _writeTextElement(
+                                builder,
+                                "solve",
+                                event["solve"] ?? "",
+                              );
+                            },
+                          );
+                        }
+                      },
+                    );
+                  }
+                },
+              );
 
-          // Ability
-          builder.element("Ability", nest: () {
-            _saveList(builder, "loveToDoList", data["loveToDoList"]);
-            _saveList(builder, "hateToDoList", data["hateToDoList"]);
-            _saveList(builder, "proficientToDoList", data["proficientToDoList"]);
-            _saveList(builder, "unProficientToDoList", data["unProficientToDoList"]);
+              // Ability
+              builder.element(
+                "Ability",
+                nest: () {
+                  _saveList(builder, "loveToDoList", data["loveToDoList"]);
+                  _saveList(builder, "hateToDoList", data["hateToDoList"]);
+                  _saveList(
+                    builder,
+                    "proficientToDoList",
+                    data["proficientToDoList"],
+                  );
+                  _saveList(
+                    builder,
+                    "unProficientToDoList",
+                    data["unProficientToDoList"],
+                  );
 
-            final commonAbilityValues = data["commonAbilityValues"] as List<double>? ?? [];
-            
-            if (commonAbilityValues.isNotEmpty) {
-              builder.element("commonAbilitySliders", nest: () {
-                for (int i = 0; i < commonAbilityValues.length && i < TraitDefinitions.commonAbilities.length; i++) {
-                  final def = TraitDefinitions.commonAbilities[i];
-                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, commonAbilityValues[i]);
-                }
-              });
-            }
-          });
+                  final commonAbilityValues =
+                      data["commonAbilityValues"] as List<double>? ?? [];
 
-          // Social
-          builder.element("Social", nest: () {
-            _writeTextElement(builder, "impression", data["impression"] ?? "");
-            _writeTextElement(builder, "likable", data["likable"] ?? "");
-            _writeTextElement(builder, "family", data["family"] ?? "");
+                  if (commonAbilityValues.isNotEmpty) {
+                    builder.element(
+                      "commonAbilitySliders",
+                      nest: () {
+                        for (
+                          int i = 0;
+                          i < commonAbilityValues.length &&
+                              i < TraitDefinitions.commonAbilities.length;
+                          i++
+                        ) {
+                          final def = TraitDefinitions.commonAbilities[i];
+                          _saveSlider(
+                            builder,
+                            def.xmlTitle,
+                            def.xmlLeft,
+                            def.xmlRight,
+                            commonAbilityValues[i],
+                          );
+                        }
+                      },
+                    );
+                  }
+                },
+              );
 
-            _saveCheckboxGroup(builder, "howToShowLove", data["howToShowLove"]);
-            _writeTextElement(builder, "otherShowLove", data["otherShowLove"] ?? "");
+              // Social
+              builder.element(
+                "Social",
+                nest: () {
+                  _writeTextElement(
+                    builder,
+                    "impression",
+                    data["impression"] ?? "",
+                  );
+                  _writeTextElement(builder, "likable", data["likable"] ?? "");
+                  _writeTextElement(builder, "family", data["family"] ?? "");
 
-            _saveCheckboxGroup(builder, "howToShowGoodwill", data["howToShowGoodwill"]);
-            _writeTextElement(builder, "otherGoodwill", data["otherGoodwill"] ?? "");
+                  _saveCheckboxGroup(
+                    builder,
+                    "howToShowLove",
+                    data["howToShowLove"],
+                  );
+                  _writeTextElement(
+                    builder,
+                    "otherShowLove",
+                    data["otherShowLove"] ?? "",
+                  );
 
-            _saveCheckboxGroup(builder, "handleHatePeople", data["handleHatePeople"]);
-            _writeTextElement(builder, "otherHatePeople", data["otherHatePeople"] ?? "");
+                  _saveCheckboxGroup(
+                    builder,
+                    "howToShowGoodwill",
+                    data["howToShowGoodwill"],
+                  );
+                  _writeTextElement(
+                    builder,
+                    "otherGoodwill",
+                    data["otherGoodwill"] ?? "",
+                  );
 
-            // Social Item Sliders
-            final socialItemValues = data["socialItemValues"] as List<double>? ?? [];
-            
-            if (socialItemValues.isNotEmpty) {
-              builder.element("socialItemSliders", nest: () {
-                for (int i = 0; i < socialItemValues.length && i < TraitDefinitions.socialItems.length; i++) {
-                  final def = TraitDefinitions.socialItems[i];
-                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, socialItemValues[i]);
-                }
-              });
-            }
+                  _saveCheckboxGroup(
+                    builder,
+                    "handleHatePeople",
+                    data["handleHatePeople"],
+                  );
+                  _writeTextElement(
+                    builder,
+                    "otherHatePeople",
+                    data["otherHatePeople"] ?? "",
+                  );
 
-            _writeTextElement(builder, "relationship", data["relationship"] ?? "");
-            builder.element("isFindNewLove", nest: (data["isFindNewLove"] ?? false).toString());
-            builder.element("isHarem", nest: (data["isHarem"] ?? false).toString());
-            _writeTextElement(builder, "otherRelationship", data["otherRelationship"] ?? "");
+                  // Social Item Sliders
+                  final socialItemValues =
+                      data["socialItemValues"] as List<double>? ?? [];
 
-            // Approach Style Sliders
-            final approachValues = data["approachValues"] as List<double>? ?? [];
-            
-            if (approachValues.isNotEmpty) {
-              builder.element("approachSliders", nest: () {
-                for (int i = 0; i < approachValues.length && i < TraitDefinitions.approaches.length; i++) {
-                  final def = TraitDefinitions.approaches[i];
-                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, approachValues[i]);
-                }
-              });
-            }
+                  if (socialItemValues.isNotEmpty) {
+                    builder.element(
+                      "socialItemSliders",
+                      nest: () {
+                        for (
+                          int i = 0;
+                          i < socialItemValues.length &&
+                              i < TraitDefinitions.socialItems.length;
+                          i++
+                        ) {
+                          final def = TraitDefinitions.socialItems[i];
+                          _saveSlider(
+                            builder,
+                            def.xmlTitle,
+                            def.xmlLeft,
+                            def.xmlRight,
+                            socialItemValues[i],
+                          );
+                        }
+                      },
+                    );
+                  }
 
-            // Traits Sliders
-            final traitsValues = data["traitsValues"] as List<double>? ?? [];
-            
-            if (traitsValues.isNotEmpty) {
-              builder.element("traitsSliders", nest: () {
-                for (int i = 0; i < traitsValues.length && i < TraitDefinitions.traits.length; i++) {
-                  final def = TraitDefinitions.traits[i];
-                  _saveSlider(builder, def.xmlTitle, def.xmlLeft, def.xmlRight, traitsValues[i]);
-                }
-              });
-            }
-          });
+                  _writeTextElement(
+                    builder,
+                    "relationship",
+                    data["relationship"] ?? "",
+                  );
+                  builder.element(
+                    "isFindNewLove",
+                    nest: (data["isFindNewLove"] ?? false).toString(),
+                  );
+                  builder.element(
+                    "isHarem",
+                    nest: (data["isHarem"] ?? false).toString(),
+                  );
+                  _writeTextElement(
+                    builder,
+                    "otherRelationship",
+                    data["otherRelationship"] ?? "",
+                  );
 
-          // Other
-          builder.element("Other", nest: () {
-            _writeTextElement(builder, "originalName", data["originalName"] ?? "");
-            _saveList(builder, "likeItemList", data["likeItemList"]);
-            _saveList(builder, "hateItemList", data["hateItemList"]);
-            _saveList(builder, "familiarItemList", data["familiarItemList"]);
-            _writeTextElement(builder, "otherText", data["otherText"] ?? "");
-          });
-        });
-      }
-    });
+                  // Approach Style Sliders
+                  final approachValues =
+                      data["approachValues"] as List<double>? ?? [];
+
+                  if (approachValues.isNotEmpty) {
+                    builder.element(
+                      "approachSliders",
+                      nest: () {
+                        for (
+                          int i = 0;
+                          i < approachValues.length &&
+                              i < TraitDefinitions.approaches.length;
+                          i++
+                        ) {
+                          final def = TraitDefinitions.approaches[i];
+                          _saveSlider(
+                            builder,
+                            def.xmlTitle,
+                            def.xmlLeft,
+                            def.xmlRight,
+                            approachValues[i],
+                          );
+                        }
+                      },
+                    );
+                  }
+
+                  // Traits Sliders
+                  final traitsValues =
+                      data["traitsValues"] as List<double>? ?? [];
+
+                  if (traitsValues.isNotEmpty) {
+                    builder.element(
+                      "traitsSliders",
+                      nest: () {
+                        for (
+                          int i = 0;
+                          i < traitsValues.length &&
+                              i < TraitDefinitions.traits.length;
+                          i++
+                        ) {
+                          final def = TraitDefinitions.traits[i];
+                          _saveSlider(
+                            builder,
+                            def.xmlTitle,
+                            def.xmlLeft,
+                            def.xmlRight,
+                            traitsValues[i],
+                          );
+                        }
+                      },
+                    );
+                  }
+                },
+              );
+
+              // Other
+              builder.element(
+                "Other",
+                nest: () {
+                  _writeTextElement(
+                    builder,
+                    "originalName",
+                    data["originalName"] ?? "",
+                  );
+                  _saveList(builder, "likeItemList", data["likeItemList"]);
+                  _saveList(builder, "hateItemList", data["hateItemList"]);
+                  _saveList(
+                    builder,
+                    "familiarItemList",
+                    data["familiarItemList"],
+                  );
+                  _writeTextElement(
+                    builder,
+                    "otherText",
+                    data["otherText"] ?? "",
+                  );
+                },
+              );
+            },
+          );
+        }
+      },
+    );
 
     return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
 
-  static void _saveList(xml.XmlBuilder builder, String tagName, dynamic listData) {
+  static void _saveList(
+    xml.XmlBuilder builder,
+    String tagName,
+    dynamic listData,
+  ) {
     final list = listData as List<String>? ?? [];
     if (list.isNotEmpty) {
-      builder.element(tagName, nest: () {
-        for (final item in list) {
-          _writeTextElement(builder, "item", item);
-        }
-      });
+      builder.element(
+        tagName,
+        nest: () {
+          for (final item in list) {
+            _writeTextElement(builder, "item", item);
+          }
+        },
+      );
     }
   }
 
-  static void _saveStrings(xml.XmlBuilder builder, Map<String, dynamic> data, List<String> keys) {
+  static void _saveStrings(
+    xml.XmlBuilder builder,
+    Map<String, dynamic> data,
+    List<String> keys,
+  ) {
     for (final key in keys) {
       _writeTextElement(builder, key, data[key] ?? "");
     }
   }
 
-  static void _loadStrings(Map<String, dynamic> data, xml.XmlElement node, List<String> keys) {
+  static void _loadStrings(
+    Map<String, dynamic> data,
+    xml.XmlElement node,
+    List<String> keys,
+  ) {
     for (final key in keys) {
       data[key] = _getText(node, key);
     }
   }
 
-  static void _saveCheckboxGroup(xml.XmlBuilder builder, String tagName, dynamic mapData) {
+  static void _saveCheckboxGroup(
+    xml.XmlBuilder builder,
+    String tagName,
+    dynamic mapData,
+  ) {
     final map = mapData as Map<String, bool>? ?? {};
     if (map.isNotEmpty) {
-      builder.element(tagName, nest: () {
-        for (final entry in map.entries) {
-          builder.element("item", attributes: {"key": entry.key}, nest: entry.value.toString());
-        }
-      });
+      builder.element(
+        tagName,
+        nest: () {
+          for (final entry in map.entries) {
+            builder.element(
+              "item",
+              attributes: {"key": entry.key},
+              nest: entry.value.toString(),
+            );
+          }
+        },
+      );
     }
   }
 
-  static void _saveSlider(xml.XmlBuilder builder, String title, String leftTag, String rightTag, double value) {
-    builder.element("slider", attributes: {
-      "Title": title,
-      "leftTag": leftTag,
-      "rightTag": rightTag,
-    }, nest: value.toStringAsFixed(1));
+  static void _saveSlider(
+    xml.XmlBuilder builder,
+    String title,
+    String leftTag,
+    String rightTag,
+    double value,
+  ) {
+    builder.element(
+      "slider",
+      attributes: {"Title": title, "leftTag": leftTag, "rightTag": rightTag},
+      nest: value.toStringAsFixed(1),
+    );
   }
 
   /// 從 XML 載入角色資料
   static Map<String, Map<String, dynamic>>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-      
+
       final typeElement = document.findAllElements("Type").firstOrNull;
       if (typeElement == null) return null;
 
@@ -339,9 +938,9 @@ class CharacterCodec {
 
       for (final charNode in typeElement.findAllElements("Character")) {
         final characterName = charNode.getAttribute("Name") ?? "";
-        
+
         final data = <String, dynamic>{};
-        
+
         // Basic Info
         final basicInfo = charNode.findAllElements("BasicInfo").firstOrNull;
         if (basicInfo != null) {
@@ -366,9 +965,18 @@ class CharacterCodec {
         if (ability != null) {
           data["loveToDoList"] = _parseList(ability, "loveToDoList");
           data["hateToDoList"] = _parseList(ability, "hateToDoList");
-          data["proficientToDoList"] = _parseList(ability, "proficientToDoList");
-          data["unProficientToDoList"] = _parseList(ability, "unProficientToDoList");
-          data["commonAbilityValues"] = _parseSliders(ability, "commonAbilitySliders");
+          data["proficientToDoList"] = _parseList(
+            ability,
+            "proficientToDoList",
+          );
+          data["unProficientToDoList"] = _parseList(
+            ability,
+            "unProficientToDoList",
+          );
+          data["commonAbilityValues"] = _parseSliders(
+            ability,
+            "commonAbilitySliders",
+          );
         }
 
         // Social
@@ -379,9 +987,15 @@ class CharacterCodec {
           data["family"] = _getText(social, "family");
           data["howToShowLove"] = _parseCheckboxGroup(social, "howToShowLove");
           data["otherShowLove"] = _getText(social, "otherShowLove");
-          data["howToShowGoodwill"] = _parseCheckboxGroup(social, "howToShowGoodwill");
+          data["howToShowGoodwill"] = _parseCheckboxGroup(
+            social,
+            "howToShowGoodwill",
+          );
           data["otherGoodwill"] = _getText(social, "otherGoodwill");
-          data["handleHatePeople"] = _parseCheckboxGroup(social, "handleHatePeople");
+          data["handleHatePeople"] = _parseCheckboxGroup(
+            social,
+            "handleHatePeople",
+          );
           data["otherHatePeople"] = _getText(social, "otherHatePeople");
           data["socialItemValues"] = _parseSliders(social, "socialItemSliders");
           data["relationship"] = _getText(social, "relationship");
@@ -404,7 +1018,7 @@ class CharacterCodec {
 
         characterData[characterName] = data;
       }
-      
+
       return characterData.isNotEmpty ? characterData : null;
     } catch (e) {
       print("Error parsing Character XML: $e");
@@ -417,10 +1031,17 @@ class CharacterCodec {
     return _readElementText(element);
   }
 
-  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
-    builder.element(name, nest: () {
-      builder.text(_encodeNewlines(value));
-    });
+  static void _writeTextElement(
+    xml.XmlBuilder builder,
+    String name,
+    String value,
+  ) {
+    builder.element(
+      name,
+      nest: () {
+        builder.text(_encodeNewlines(value));
+      },
+    );
   }
 
   static String _readElementText(xml.XmlElement? element) {
@@ -489,7 +1110,10 @@ class CharacterCodec {
     return list;
   }
 
-  static Map<String, bool> _parseCheckboxGroup(xml.XmlElement node, String tagName) {
+  static Map<String, bool> _parseCheckboxGroup(
+    xml.XmlElement node,
+    String tagName,
+  ) {
     final map = <String, bool>{};
     final parent = node.findAllElements(tagName).firstOrNull;
     if (parent != null) {
@@ -535,11 +1159,7 @@ class CharacterView extends StatefulWidget {
   final Map<String, Map<String, dynamic>>? initialData;
   final ValueChanged<Map<String, Map<String, dynamic>>>? onDataChanged;
 
-  const CharacterView({
-    super.key,
-    this.initialData,
-    this.onDataChanged,
-  });
+  const CharacterView({super.key, this.initialData, this.onDataChanged});
 
   @override
   State<CharacterView> createState() => _CharacterViewState();
@@ -547,18 +1167,19 @@ class CharacterView extends StatefulWidget {
 
 // MARK: - 角色資料控制項
 
-class _CharacterViewState extends State<CharacterView> with SingleTickerProviderStateMixin {
+class _CharacterViewState extends State<CharacterView>
+    with SingleTickerProviderStateMixin {
   // Tab Controller
   late TabController _tabController;
-  
+
   // Character List
   List<String> characters = [];
   String? selectedCharacter;
   int? selectedCharacterIndex;
-  
+
   // Character Data Storage - 每個角色的完整資料
   Map<String, Map<String, dynamic>> characterData = {};
-  
+
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
 
@@ -581,14 +1202,19 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   List<String> unProficientToDoList = [];
   final TextEditingController _loveToDoController = TextEditingController();
   final TextEditingController _hateToDoController = TextEditingController();
-  final TextEditingController _proficientToDoController = TextEditingController();
-  final TextEditingController _unProficientToDoController = TextEditingController();
+  final TextEditingController _proficientToDoController =
+      TextEditingController();
+  final TextEditingController _unProficientToDoController =
+      TextEditingController();
 
   // Common Ability Sliders - 生活常用技能
-  List<double> commonAbilityValues = List.filled(TraitDefinitions.commonAbilities.length, 50.0);
+  List<double> commonAbilityValues = List.filled(
+    TraitDefinitions.commonAbilities.length,
+    50.0,
+  );
 
   // Social - 社交
-  
+
   // How to show love - 如何表達「喜歡」
   final Map<String, bool> howToShowLove = {
     "confess_directly": false,
@@ -604,7 +1230,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "get_attention": "做些小動作引起注意",
     "watch_silently": "默默關注對方",
   };
-  
+
   // How to show goodwill - 如何表達好意
   final Map<String, bool> howToShowGoodwill = {
     "smile": false,
@@ -622,7 +1248,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "invite": "邀請對方",
     "share_things": "分享自己的事",
   };
-  
+
   // Handle hate people - 如何應對討厭的人
   final Map<String, bool> handleHatePeople = {
     "ignore_directly": false,
@@ -640,9 +1266,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     "confront": "正面衝突",
     "ask_for_help": "找人幫忙",
   };
-  
+
   // Social Item Sliders - 社交相關項目
-  List<double> socialItemValues = List.filled(TraitDefinitions.socialItems.length, 50.0);
+  List<double> socialItemValues = List.filled(
+    TraitDefinitions.socialItems.length,
+    50.0,
+  );
 
   // MBTI
 
@@ -652,7 +1281,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   bool isHarem = false;
 
   // Approach Style - 行事作風
-  List<double> approachValues = List.filled(TraitDefinitions.approaches.length, 50.0);
+  List<double> approachValues = List.filled(
+    TraitDefinitions.approaches.length,
+    50.0,
+  );
 
   // Traits - 性格特質
   List<double> traitsValues = List.filled(TraitDefinitions.traits.length, 50.0);
@@ -694,7 +1326,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     // Batch setup listeners
     for (var entry in _controllers.entries) {
       if (entry.key == "name") continue; // Handled specially
-      
+
       entry.value.addListener(() {
         if (!_isLoading) _markAsModified();
       });
@@ -711,12 +1343,14 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         setState(() {});
       }
     });
-    
+
     // 載入初始資料
     if (widget.initialData != null && widget.initialData!.isNotEmpty) {
-      characterData = Map<String, Map<String, dynamic>>.from(widget.initialData!);
+      characterData = Map<String, Map<String, dynamic>>.from(
+        widget.initialData!,
+      );
       characters = characterData.keys.toList();
-      
+
       // 如果有角色,選取第一個
       if (characters.isNotEmpty) {
         selectedCharacterIndex = 0;
@@ -734,7 +1368,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     }
     _tabController.dispose();
     _newCharacterController.dispose();
-    
+
     // Dispose unified controllers
     for (var controller in _controllers.values) {
       controller.dispose();
@@ -764,7 +1398,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
-              
+
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -779,9 +1413,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                       const SizedBox(width: 12),
                       Text(
                         "角色編輯",
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -816,7 +1449,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     decoration: const InputDecoration(
                       labelText: "新角色名稱",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     onSubmitted: (_) => _addCharacter(),
                   ),
@@ -842,7 +1478,9 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   return ListTile(
                     title: Text(characters[index]),
                     selected: selectedCharacterIndex == index,
-                    selectedTileColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                    selectedTileColor: Theme.of(
+                      context,
+                    ).primaryColor.withOpacity(0.1),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, size: 20),
                       onPressed: () => _deleteCharacter(index),
@@ -869,7 +1507,11 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.person_outline, size: 80, color: Colors.grey.shade400),
+                Icon(
+                  Icons.person_outline,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   "請選取一個角色",
@@ -881,7 +1523,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         ),
       );
     }
-    
+
     return Card(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -921,6 +1563,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - 角色基本資訊
+
   Widget _buildBasicInfoTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -951,7 +1595,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         _buildTextField("眉型：", _controllers["eyebrowFeatures"]!),
         _buildTextField("體格：", _controllers["body"]!),
         _buildTextField("服裝：", _controllers["dress"]!),
-        
+
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -980,7 +1624,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                         decoration: const InputDecoration(
                           labelText: "阻礙事件",
                           border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                       ),
                     ),
@@ -992,7 +1639,9 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete),
-                      onPressed: selectedHinderIndex != null ? _deleteHinderEvent : null,
+                      onPressed: selectedHinderIndex != null
+                          ? _deleteHinderEvent
+                          : null,
                       tooltip: "刪除",
                     ),
                   ],
@@ -1003,7 +1652,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: "解決方式",
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -1013,6 +1665,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       ],
     );
   }
+
+  // MARK: - 角色個性＆價值觀
 
   Widget _buildPersonalityTab() {
     return Column(
@@ -1076,17 +1730,43 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - 角色能力＆才華
+
   Widget _buildAbilityTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildListSection("熱愛做的事情", loveToDoList, _loveToDoController, _addLoveToDo, _deleteLoveToDo),
+        _buildListSection(
+          "熱愛做的事情",
+          loveToDoList,
+          _loveToDoController,
+          _addLoveToDo,
+          _deleteLoveToDo,
+        ),
         const SizedBox(height: 16),
-        _buildListSection("討厭做的事情", hateToDoList, _hateToDoController, _addHateToDo, _deleteHateToDo),
+        _buildListSection(
+          "討厭做的事情",
+          hateToDoList,
+          _hateToDoController,
+          _addHateToDo,
+          _deleteHateToDo,
+        ),
         const SizedBox(height: 16),
-        _buildListSection("擅長做的事情", proficientToDoList, _proficientToDoController, _addProficientToDo, _deleteProficientToDo),
+        _buildListSection(
+          "擅長做的事情",
+          proficientToDoList,
+          _proficientToDoController,
+          _addProficientToDo,
+          _deleteProficientToDo,
+        ),
         const SizedBox(height: 16),
-        _buildListSection("不擅長做的事情", unProficientToDoList, _unProficientToDoController, _addUnProficientToDo, _deleteUnProficientToDo),
+        _buildListSection(
+          "不擅長做的事情",
+          unProficientToDoList,
+          _unProficientToDoController,
+          _addUnProficientToDo,
+          _deleteUnProficientToDo,
+        ),
         const SizedBox(height: 16),
         Card(
           child: Padding(
@@ -1105,6 +1785,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - 角色社交相關
+
   Widget _buildSocialTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1121,7 +1803,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("如何表達「喜歡」", style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  "如何表達「喜歡」",
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowLove, howToShowLoveLabels),
                 const SizedBox(height: 8),
@@ -1130,7 +1815,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -1153,7 +1841,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -1167,7 +1858,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("如何應對討厭的人？", style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  "如何應對討厭的人？",
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
@@ -1176,7 +1870,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: "其他",
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -1215,6 +1912,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - 角色其他資料
+
   Widget _buildOtherTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1228,11 +1927,29 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           ),
         ),
         const SizedBox(height: 16),
-        _buildListSection("喜歡的人事物", likeItemList, _likeItemController, _addLikeItem, _deleteLikeItem),
+        _buildListSection(
+          "喜歡的人事物",
+          likeItemList,
+          _likeItemController,
+          _addLikeItem,
+          _deleteLikeItem,
+        ),
         const SizedBox(height: 16),
-        _buildListSection("討厭的人事物", hateItemList, _hateItemController, _addHateItem, _deleteHateItem),
+        _buildListSection(
+          "討厭的人事物",
+          hateItemList,
+          _hateItemController,
+          _addHateItem,
+          _deleteHateItem,
+        ),
         const SizedBox(height: 16),
-        _buildListSection("習慣的人事物", familiarItemList, _familiarItemController, _addFamiliarItem, _deleteFamiliarItem),
+        _buildListSection(
+          "習慣的人事物",
+          familiarItemList,
+          _familiarItemController,
+          _addFamiliarItem,
+          _deleteFamiliarItem,
+        ),
         const SizedBox(height: 16),
         _buildMultilineField("其他補充", _controllers["otherText"]!),
       ],
@@ -1252,6 +1969,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - UI 元件建構
+
   // 專門用於處理角色名稱的欄位,會同步更新列表
   Widget _buildNameField(String label, TextEditingController controller) {
     return Padding(
@@ -1266,6 +1985,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // 多行文字欄位
+
   Widget _buildMultilineField(String label, TextEditingController controller) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -1279,6 +2000,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       ),
     );
   }
+
+  // 九宮格陣營選擇
 
   Widget _buildAlignmentGrid() {
     final alignments = [
@@ -1300,7 +2023,11 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         final col = index % 3;
         final alignment = alignments[row][col];
         return RadioListTile<String>(
-          title: Text(alignment, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+          title: Text(
+            alignment,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12),
+          ),
           value: alignment,
           groupValue: selectedAlignment,
           onChanged: (value) {
@@ -1313,6 +2040,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       },
     );
   }
+
+  // 阻礙事件表格
 
   Widget _buildHinderTable() {
     return Container(
@@ -1373,7 +2102,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   },
                   child: Container(
                     decoration: BoxDecoration(
-                      color: selectedHinderIndex == index 
+                      color: selectedHinderIndex == index
                           ? Theme.of(context).primaryColor.withOpacity(0.1)
                           : null,
                       border: Border(
@@ -1409,14 +2138,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   }
 
   Widget _buildListSection(
-    String title, 
-    List<String> items, 
+    String title,
+    List<String> items,
     TextEditingController controller,
-    VoidCallback onAdd, 
+    VoidCallback onAdd,
     VoidCallback onDelete,
   ) {
-    int? selectedIndex;
-    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -1424,40 +2151,38 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Container(
-              height: 150,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  return ListTile(
-                    title: Text(items[index]),
-                    selected: selectedIndex == index,
-                    selectedTileColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                    onTap: () {
-                      setState(() {
-                        selectedIndex = index;
-                        controller.text = items[index];
-                      });
+            const SizedBox(height: 12),
+            if (items.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: items.map((item) {
+                  return Chip(
+                    label: Text(item),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      controller.text = item;
+                      onDelete();
                     },
                   );
-                },
+                }).toList(),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: controller,
                     decoration: const InputDecoration(
+                      labelText: "新增項目",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
+                    onSubmitted: (_) => onAdd(),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1465,11 +2190,6 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                   icon: const Icon(Icons.add),
                   onPressed: onAdd,
                   tooltip: "新增",
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: onDelete,
-                  tooltip: "刪除",
                 ),
               ],
             ),
@@ -1479,7 +2199,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
-  Widget _buildCheckboxGroup(Map<String, bool> values, Map<String, String> labels) {
+  // Checkbox
+
+  Widget _buildCheckboxGroup(
+    Map<String, bool> values,
+    Map<String, String> labels,
+  ) {
     final entries = values.entries.toList();
     return GridView.builder(
       shrinkWrap: true,
@@ -1494,7 +2219,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       itemBuilder: (context, index) {
         final entry = entries[index];
         return CheckboxListTile(
-          title: Text(labels[entry.key] ?? entry.key, style: const TextStyle(fontSize: 13)),
+          title: Text(
+            labels[entry.key] ?? entry.key,
+            style: const TextStyle(fontSize: 13),
+          ),
           value: entry.value,
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
@@ -1510,91 +2238,27 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
-  Widget _buildCommonAbilitySliders() {
-    return Column(
-      children: List.generate(TraitDefinitions.commonAbilities.length, (index) {
-        final def = TraitDefinitions.commonAbilities[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 80,
-                child: Text(
-                  def.uiTitle,
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiLeft,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                  ),
-                  child: Slider(
-                    value: commonAbilityValues[index],
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: commonAbilityValues[index].toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        commonAbilityValues[index] = value;
-                        _markAsModified();
-                      });
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiRight,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-
   Widget _buildRelationshipSection() {
-    final relationships = [
-      "單身",
-      "已婚/準備結婚",
-      "戀愛中/準備戀愛",
-      "喪偶",
-      "其他",
-    ];
+    final relationships = ["單身", "已婚/準備結婚", "戀愛中/準備戀愛", "喪偶", "其他"];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ...relationships.map((rel) => RadioListTile<String>(
-          title: Text(rel),
-          value: rel,
-          groupValue: selectedRelationship,
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          onChanged: (value) {
-            setState(() {
-              selectedRelationship = value;
-              _markAsModified();
-            });
-          },
-        )),
+        ...relationships.map(
+          (rel) => RadioListTile<String>(
+            title: Text(rel),
+            value: rel,
+            groupValue: selectedRelationship,
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (value) {
+              setState(() {
+                selectedRelationship = value;
+                _markAsModified();
+              });
+            },
+          ),
+        ),
         const SizedBox(height: 8),
         TextField(
           controller: _controllers["otherRelationship"]!,
@@ -1634,6 +2298,69 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
+  // MARK: - 滑桿元件控制
+
+  Widget _buildCommonAbilitySliders() {
+    return Column(
+      children: List.generate(TraitDefinitions.commonAbilities.length, (index) {
+        final def = TraitDefinitions.commonAbilities[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(def.uiTitle, style: const TextStyle(fontSize: 13)),
+              ),
+              SizedBox(
+                width: 70,
+                child: Text(
+                  def.uiLeft,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    showValueIndicator: ShowValueIndicator.onDrag,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 16,
+                    ),
+                  ),
+                  child: Slider(
+                    value: commonAbilityValues[index],
+                    min: 0,
+                    max: 100,
+                    divisions: 100,
+                    label: commonAbilityValues[index].toStringAsFixed(0),
+                    onChanged: (value) {
+                      setState(() {
+                        commonAbilityValues[index] = value;
+                        _markAsModified();
+                      });
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 70,
+                child: Text(
+                  def.uiRight,
+                  textAlign: TextAlign.left,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
   Widget _buildSocialItemSliders() {
     return Column(
       children: List.generate(TraitDefinitions.socialItems.length, (index) {
@@ -1654,8 +2381,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 child: SliderTheme(
                   data: SliderThemeData(
                     showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 16,
+                    ),
                   ),
                   child: Slider(
                     value: socialItemValues[index],
@@ -1707,8 +2438,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 child: SliderTheme(
                   data: SliderThemeData(
                     showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 16,
+                    ),
                   ),
                   child: Slider(
                     value: approachValues[index],
@@ -1753,7 +2488,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 child: Text(
                   def.uiTitle,
                   textAlign: TextAlign.left,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               SizedBox(
@@ -1768,8 +2506,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
                 child: SliderTheme(
                   data: SliderThemeData(
                     showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 16,
+                    ),
                   ),
                   child: Slider(
                     value: traitsValues[index],
@@ -1801,32 +2543,32 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     );
   }
 
-  // Action methods
-  
+  // MARK: - Action methods
+
   // 選擇角色時載入資料
   void _selectCharacter(int index) {
     // 先儲存當前角色的資料
     if (selectedCharacter != null) {
       _saveCurrentCharacterData();
     }
-    
+
     setState(() {
       selectedCharacterIndex = index;
       selectedCharacter = characters[index];
       _loadCharacterData(selectedCharacter!);
     });
   }
-  
+
   // 儲存當前角色資料
   void _saveCurrentCharacterData() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     if (selectedCharacter == null) return;
-    
+
     final data = <String, dynamic>{};
 
     // Save all text controllers
     for (final key in CharacterCodec.allControllerKeys) {
-        data[key] = _controllers[key]?.text ?? "";
+      data[key] = _controllers[key]?.text ?? "";
     }
 
     // Add complex data
@@ -1849,18 +2591,18 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     data["likeItemList"] = List<String>.from(likeItemList);
     data["hateItemList"] = List<String>.from(hateItemList);
     data["familiarItemList"] = List<String>.from(familiarItemList);
-    
+
     characterData[selectedCharacter!] = data;
-    
+
     // 通知外部資料已改變
     widget.onDataChanged?.call(characterData);
   }
-  
+
   // 載入角色資料
   void _loadCharacterData(String characterName) {
     _isLoading = true;
     final data = characterData[characterName];
-    
+
     if (data == null) {
       _clearAllFields();
       if (_controllers.containsKey("name")) {
@@ -1872,12 +2614,12 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
     // Load all text controllers
     for (final key in CharacterCodec.allControllerKeys) {
-        _controllers[key]?.text = data[key] ?? "";
+      _controllers[key]?.text = data[key] ?? "";
     }
-    
+
     // Fallback for name if empty
     if ((_controllers["name"]?.text ?? "").isEmpty) {
-        _controllers["name"]?.text = characterName;
+      _controllers["name"]?.text = characterName;
     }
 
     // Helper to ensure list length to prevent RangeError
@@ -1895,41 +2637,58 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
 
     selectedAlignment = data["alignment"]?.toString().replaceAll("\r\n", "\n");
     hinderEvents = List<Map<String, String>>.from(data["hinderEvents"] ?? []);
-    
+
     loveToDoList = List<String>.from(data["loveToDoList"] ?? []);
     hateToDoList = List<String>.from(data["hateToDoList"] ?? []);
     proficientToDoList = List<String>.from(data["proficientToDoList"] ?? []);
-    unProficientToDoList = List<String>.from(data["unProficientToDoList"] ?? []);
-    commonAbilityValues = ensureList("commonAbilityValues", TraitDefinitions.commonAbilities.length);
-    
+    unProficientToDoList = List<String>.from(
+      data["unProficientToDoList"] ?? [],
+    );
+    commonAbilityValues = ensureList(
+      "commonAbilityValues",
+      TraitDefinitions.commonAbilities.length,
+    );
+
     if (data["howToShowLove"] != null) {
-      howToShowLove.updateAll((key, value) => data["howToShowLove"][key] ?? false);
+      howToShowLove.updateAll(
+        (key, value) => data["howToShowLove"][key] ?? false,
+      );
     }
     if (data["howToShowGoodwill"] != null) {
-      howToShowGoodwill.updateAll((key, value) => data["howToShowGoodwill"][key] ?? false);
+      howToShowGoodwill.updateAll(
+        (key, value) => data["howToShowGoodwill"][key] ?? false,
+      );
     }
     if (data["handleHatePeople"] != null) {
-      handleHatePeople.updateAll((key, value) => data["handleHatePeople"][key] ?? false);
+      handleHatePeople.updateAll(
+        (key, value) => data["handleHatePeople"][key] ?? false,
+      );
     }
-    
-    socialItemValues = ensureList("socialItemValues", TraitDefinitions.socialItems.length);
+
+    socialItemValues = ensureList(
+      "socialItemValues",
+      TraitDefinitions.socialItems.length,
+    );
     selectedRelationship = data["relationship"];
     isFindNewLove = data["isFindNewLove"] ?? false;
     isHarem = data["isHarem"] ?? false;
-    approachValues = ensureList("approachValues", TraitDefinitions.approaches.length);
+    approachValues = ensureList(
+      "approachValues",
+      TraitDefinitions.approaches.length,
+    );
     traitsValues = ensureList("traitsValues", TraitDefinitions.traits.length);
-    
+
     likeItemList = List<String>.from(data["likeItemList"] ?? []);
     hateItemList = List<String>.from(data["hateItemList"] ?? []);
     familiarItemList = List<String>.from(data["familiarItemList"] ?? []);
-    
+
     _isLoading = false;
   }
-  
+
   // 清空所有欄位
   void _clearAllFields() {
     for (var controller in _controllers.values) {
-        controller.clear();
+      controller.clear();
     }
 
     selectedAlignment = null;
@@ -1938,24 +2697,27 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     hateToDoList.clear();
     proficientToDoList.clear();
     unProficientToDoList.clear();
-    commonAbilityValues = List.filled(TraitDefinitions.commonAbilities.length, 50.0);
-    
+    commonAbilityValues = List.filled(
+      TraitDefinitions.commonAbilities.length,
+      50.0,
+    );
+
     howToShowLove.updateAll((key, value) => false);
     howToShowGoodwill.updateAll((key, value) => false);
     handleHatePeople.updateAll((key, value) => false);
-    
+
     socialItemValues = List.filled(TraitDefinitions.socialItems.length, 50.0);
     selectedRelationship = null;
     isFindNewLove = false;
     isHarem = false;
-    
+
     approachValues = List.filled(TraitDefinitions.approaches.length, 50.0);
     traitsValues = List.filled(TraitDefinitions.traits.length, 50.0);
-    
+
     likeItemList.clear();
     hateItemList.clear();
     familiarItemList.clear();
-    
+
     // Clear helpers
     _hinderEventController.clear();
     _solveController.clear();
@@ -1967,46 +2729,46 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     _hateItemController.clear();
     _familiarItemController.clear();
   }
-  
+
   // 同步角色名稱到列表
   void _syncCharacterName(String newName) {
     if (selectedCharacter == null || selectedCharacterIndex == null) return;
-    
+
     final trimmedName = newName.trim();
     if (trimmedName.isEmpty) return;
-    
+
     // 檢查名稱是否與其他角色重複
     if (trimmedName != selectedCharacter && characters.contains(trimmedName)) {
       // 如果重複,不進行更新,可以顯示提示
       return;
     }
-    
+
     setState(() {
       final oldName = selectedCharacter!;
-      
+
       // 更新列表中的角色名稱
       characters[selectedCharacterIndex!] = trimmedName;
-      
+
       // 如果 characterData 中有舊名稱的資料,需要轉移到新名稱
       if (characterData.containsKey(oldName)) {
         final data = characterData[oldName]!;
         characterData.remove(oldName);
         characterData[trimmedName] = data;
       }
-      
+
       // 更新當前選中的角色名稱
       selectedCharacter = trimmedName;
     });
   }
-  
+
   void _addCharacter() {
     final name = _newCharacterController.text.trim();
     if (name.isEmpty) return;
-    
+
     if (characters.contains(name)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("角色名稱已存在")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("角色名稱已存在")));
       return;
     }
 
@@ -2014,10 +2776,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     if (selectedCharacter != null) {
       _saveCurrentCharacterData();
     }
-    
+
     setState(() {
       characters.add(name);
-      
+
       // 初始化新角色資料並通知更新
       characterData[name] = {"name": name};
       widget.onDataChanged?.call(characterData);
@@ -2027,10 +2789,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       _selectCharacter(characters.length - 1);
     });
   }
-  
+
   void _deleteCharacter(int index) {
     final characterName = characters[index];
-    
+
     // 確保現有更動被儲存
     if (selectedCharacter != null) {
       _saveCurrentCharacterData();
@@ -2039,7 +2801,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
     setState(() {
       characters.removeAt(index);
       characterData.remove(characterName);
-      
+
       // 通知更新
       widget.onDataChanged?.call(characterData);
 
@@ -2048,7 +2810,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
         selectedCharacterIndex = null;
         selectedCharacter = null;
         _clearAllFields();
-      } else if (selectedCharacterIndex != null && selectedCharacterIndex! > index) {
+      } else if (selectedCharacterIndex != null &&
+          selectedCharacterIndex! > index) {
         // 調整索引
         selectedCharacterIndex = selectedCharacterIndex! - 1;
       }
@@ -2056,7 +2819,8 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
   }
 
   void _addHinderEvent() {
-    if (_hinderEventController.text.isNotEmpty && _solveController.text.isNotEmpty) {
+    if (_hinderEventController.text.isNotEmpty &&
+        _solveController.text.isNotEmpty) {
       setState(() {
         if (selectedHinderIndex != null) {
           // Update existing
@@ -2100,9 +2864,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteLoveToDo() {
-    if (_loveToDoController.text.isNotEmpty && loveToDoList.contains(_loveToDoController.text)) {
+    if (_loveToDoController.text.isNotEmpty &&
+        loveToDoList.contains(_loveToDoController.text)) {
       setState(() {
         loveToDoList.remove(_loveToDoController.text);
         _loveToDoController.clear();
@@ -2110,7 +2875,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addHateToDo() {
     if (_hateToDoController.text.isNotEmpty) {
       setState(() {
@@ -2120,9 +2885,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteHateToDo() {
-    if (_hateToDoController.text.isNotEmpty && hateToDoList.contains(_hateToDoController.text)) {
+    if (_hateToDoController.text.isNotEmpty &&
+        hateToDoList.contains(_hateToDoController.text)) {
       setState(() {
         hateToDoList.remove(_hateToDoController.text);
         _hateToDoController.clear();
@@ -2130,7 +2896,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addProficientToDo() {
     if (_proficientToDoController.text.isNotEmpty) {
       setState(() {
@@ -2140,9 +2906,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteProficientToDo() {
-    if (_proficientToDoController.text.isNotEmpty && proficientToDoList.contains(_proficientToDoController.text)) {
+    if (_proficientToDoController.text.isNotEmpty &&
+        proficientToDoList.contains(_proficientToDoController.text)) {
       setState(() {
         proficientToDoList.remove(_proficientToDoController.text);
         _proficientToDoController.clear();
@@ -2150,7 +2917,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addUnProficientToDo() {
     if (_unProficientToDoController.text.isNotEmpty) {
       setState(() {
@@ -2160,9 +2927,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteUnProficientToDo() {
-    if (_unProficientToDoController.text.isNotEmpty && unProficientToDoList.contains(_unProficientToDoController.text)) {
+    if (_unProficientToDoController.text.isNotEmpty &&
+        unProficientToDoList.contains(_unProficientToDoController.text)) {
       setState(() {
         unProficientToDoList.remove(_unProficientToDoController.text);
         _unProficientToDoController.clear();
@@ -2170,7 +2938,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addLikeItem() {
     if (_likeItemController.text.isNotEmpty) {
       setState(() {
@@ -2180,9 +2948,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteLikeItem() {
-    if (_likeItemController.text.isNotEmpty && likeItemList.contains(_likeItemController.text)) {
+    if (_likeItemController.text.isNotEmpty &&
+        likeItemList.contains(_likeItemController.text)) {
       setState(() {
         likeItemList.remove(_likeItemController.text);
         _likeItemController.clear();
@@ -2190,7 +2959,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addHateItem() {
     if (_hateItemController.text.isNotEmpty) {
       setState(() {
@@ -2200,9 +2969,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteHateItem() {
-    if (_hateItemController.text.isNotEmpty && hateItemList.contains(_hateItemController.text)) {
+    if (_hateItemController.text.isNotEmpty &&
+        hateItemList.contains(_hateItemController.text)) {
       setState(() {
         hateItemList.remove(_hateItemController.text);
         _hateItemController.clear();
@@ -2210,7 +2980,7 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _addFamiliarItem() {
     if (_familiarItemController.text.isNotEmpty) {
       setState(() {
@@ -2220,9 +2990,10 @@ class _CharacterViewState extends State<CharacterView> with SingleTickerProvider
       });
     }
   }
-  
+
   void _deleteFamiliarItem() {
-    if (_familiarItemController.text.isNotEmpty && familiarItemList.contains(_familiarItemController.text)) {
+    if (_familiarItemController.text.isNotEmpty &&
+        familiarItemList.contains(_familiarItemController.text)) {
       setState(() {
         familiarItemList.remove(_familiarItemController.text);
         _familiarItemController.clear();

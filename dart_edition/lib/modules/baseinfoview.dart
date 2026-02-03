@@ -750,7 +750,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
               Icons.access_time,
             ),
             
-            const Divider(height: 24),
+            const Divider(height: 16),
             
             // 總字數
             _buildStatRow(
@@ -758,7 +758,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
               "${widget.totalWords} 字",
               Icons.format_list_numbered,
             ),
-            const Divider(height: 24),
+            const Divider(height: 16),
             
             // 本章字數
             _buildStatRow(
@@ -773,29 +773,37 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   }
 
   Widget _buildStatRow(String label, String value, IconData icon) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          color: Theme.of(context).colorScheme.onTertiaryContainer.withOpacity(0.7),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onTertiaryContainer,
+        Row(
+          children: [
+            Icon(
+              icon,
+              color: Theme.of(context).colorScheme.onTertiaryContainer.withOpacity(0.7),
             ),
-            overflow: TextOverflow.ellipsis,
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onTertiaryContainer,
-          ),
+        Padding(
+          padding: const EdgeInsets.only(left: 36, top: 4),
+          child:
+            Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
+              ),
+            ),
         ),
       ],
     );

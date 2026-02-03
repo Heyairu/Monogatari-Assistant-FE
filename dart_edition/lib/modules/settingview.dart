@@ -13,11 +13,11 @@
  */
 
 import "package:flutter/material.dart";
-import "../bin/theme_manager.dart";
+import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 
 class SettingView extends StatefulWidget {
-  final ThemeManager themeManager;
+  final UILibrary themeManager;
   final SettingsManager settingsManager;
   
   const SettingView({
@@ -231,9 +231,9 @@ class _SettingViewState extends State<SettingView> {
             mainAxisSpacing: 12,
             childAspectRatio: 1.0,
           ),
-          itemCount: ThemeManager.supportedColors.length,
+          itemCount: UILibrary.supportedColors.length,
           itemBuilder: (context, index) {
-            final entry = ThemeManager.supportedColors.entries.elementAt(index);
+            final entry = UILibrary.supportedColors.entries.elementAt(index);
             final isSelected = widget.themeManager.themeColor.value == entry.value.value;
             
             return Center(

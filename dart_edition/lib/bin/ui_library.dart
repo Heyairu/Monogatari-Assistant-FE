@@ -22,7 +22,7 @@ enum AppThemeMode {
 }
 
 /// 主題管理器 - 管理應用的主題狀態
-class ThemeManager extends ChangeNotifier {
+class UILibrary extends ChangeNotifier {
   static const String _themePreferenceKey = "app_theme_mode";
   static const String _colorPreferenceKey = "app_theme_color";
   

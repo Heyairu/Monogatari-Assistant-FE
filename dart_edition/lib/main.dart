@@ -20,7 +20,7 @@ import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
-import "bin/theme_manager.dart";
+import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
@@ -51,7 +51,7 @@ class MainApp extends StatefulWidget {
 }
 
 class _MainAppState extends State<MainApp> {
-  final ThemeManager _themeManager = ThemeManager();
+  final UILibrary _themeManager = UILibrary();
   final SettingsManager _settingsManager = SettingsManager();
   bool _isInitializing = true;
 
@@ -220,7 +220,7 @@ class SimpleLocation {
 
 // 主要 ContentView
 class ContentView extends StatefulWidget {
-  final ThemeManager themeManager;
+  final UILibrary themeManager;
   final SettingsManager settingsManager;
   
   const ContentView({
