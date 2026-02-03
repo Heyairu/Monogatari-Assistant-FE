@@ -274,3 +274,80 @@ class AppTheme {
     );
   }
 }
+
+// MARK: - 通用元件
+
+/// 新增項目元件
+class AddItemInput extends StatefulWidget {
+  final String title;
+  final ValueChanged<String> onAdd;
+  final TextEditingController? controller;
+
+  const AddItemInput({
+    super.key,
+    required this.title,
+    required this.onAdd,
+    this.controller,
+  });
+
+  @override
+  State<AddItemInput> createState() => _AddItemInputState();
+}
+
+class _AddItemInputState extends State<AddItemInput> {
+  late final TextEditingController _controller;
+  bool _isInternalController = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.controller != null) {
+      _controller = widget.controller!;
+    } else {
+      _controller = TextEditingController();
+      _isInternalController = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_isInternalController) {
+      _controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _handleAdd() {
+    final value = _controller.text.trim();
+    if (value.isNotEmpty) {
+      widget.onAdd(value);
+      _controller.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            decoration: InputDecoration(
+              hintText: "新增${widget.title}",
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onSubmitted: (_) => _handleAdd(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          onPressed: _handleAdd,
+          icon: const Icon(Icons.add_circle, color: Colors.green),
+          tooltip: "新增${widget.title}",
+        ),
+      ],
+    );
+  }
+}
+
