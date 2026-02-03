@@ -631,6 +631,8 @@ class CharacterCodec {
                 nest: () {
                   _saveList(builder, "loveToDoList", data["loveToDoList"]);
                   _saveList(builder, "hateToDoList", data["hateToDoList"]);
+                  _saveList(builder, "wantToDoList", data["wantToDoList"]);
+                  _saveList(builder, "fearToDoList", data["fearToDoList"]);
                   _saveList(
                     builder,
                     "proficientToDoList",
@@ -827,7 +829,9 @@ class CharacterCodec {
                     data["originalName"] ?? "",
                   );
                   _saveList(builder, "likeItemList", data["likeItemList"]);
+                  _saveList(builder, "admireItemList", data["admireItemList"]);
                   _saveList(builder, "hateItemList", data["hateItemList"]);
+                  _saveList(builder, "fearItemList", data["fearItemList"]);
                   _saveList(
                     builder,
                     "familiarItemList",
@@ -965,6 +969,8 @@ class CharacterCodec {
         if (ability != null) {
           data["loveToDoList"] = _parseList(ability, "loveToDoList");
           data["hateToDoList"] = _parseList(ability, "hateToDoList");
+          data["wantToDoList"] = _parseList(ability, "wantToDoList");
+          data["fearToDoList"] = _parseList(ability, "fearToDoList");
           data["proficientToDoList"] = _parseList(
             ability,
             "proficientToDoList",
@@ -1011,7 +1017,9 @@ class CharacterCodec {
         if (other != null) {
           data["originalName"] = _getText(other, "originalName");
           data["likeItemList"] = _parseList(other, "likeItemList");
+          data["admireItemList"] = _parseList(other, "admireItemList");
           data["hateItemList"] = _parseList(other, "hateItemList");
+          data["fearItemList"] = _parseList(other, "fearItemList");
           data["familiarItemList"] = _parseList(other, "familiarItemList");
           data["otherText"] = _getText(other, "otherText");
         }
@@ -1198,10 +1206,14 @@ class _CharacterViewState extends State<CharacterView>
   // Ability Lists - 能力列表
   List<String> loveToDoList = [];
   List<String> hateToDoList = [];
+  List<String> wantToDoList = [];
+  List<String> fearToDoList = [];
   List<String> proficientToDoList = [];
   List<String> unProficientToDoList = [];
   final TextEditingController _loveToDoController = TextEditingController();
   final TextEditingController _hateToDoController = TextEditingController();
+  final TextEditingController _wantToDoController = TextEditingController();
+  final TextEditingController _fearToDoController = TextEditingController();
   final TextEditingController _proficientToDoController =
       TextEditingController();
   final TextEditingController _unProficientToDoController =
@@ -1291,10 +1303,14 @@ class _CharacterViewState extends State<CharacterView>
 
   // Other - 其他
   List<String> likeItemList = [];
+  List<String> admireItemList = [];
   List<String> hateItemList = [];
+  List<String> fearItemList = [];
   List<String> familiarItemList = [];
   final TextEditingController _likeItemController = TextEditingController();
+  final TextEditingController _admireItemController = TextEditingController();
   final TextEditingController _hateItemController = TextEditingController();
+  final TextEditingController _fearItemController = TextEditingController();
   final TextEditingController _familiarItemController = TextEditingController();
 
   bool _isLoading = false;
@@ -1379,10 +1395,14 @@ class _CharacterViewState extends State<CharacterView>
     _solveController.dispose();
     _loveToDoController.dispose();
     _hateToDoController.dispose();
+    _wantToDoController.dispose();
+    _fearToDoController.dispose();
     _proficientToDoController.dispose();
     _unProficientToDoController.dispose();
     _likeItemController.dispose();
+    _admireItemController.dispose();
     _hateItemController.dispose();
+    _fearItemController.dispose();
     _familiarItemController.dispose();
     super.dispose();
   }
@@ -1745,11 +1765,27 @@ class _CharacterViewState extends State<CharacterView>
         ),
         const SizedBox(height: 16),
         _buildListSection(
+          "想要做還沒做的事情",
+          wantToDoList,
+          _wantToDoController,
+          _addWantToDo,
+          _deleteWantToDo,
+        ),
+        const SizedBox(height: 16),
+        _buildListSection(
           "討厭做的事情",
           hateToDoList,
           _hateToDoController,
           _addHateToDo,
           _deleteHateToDo,
+        ),
+        const SizedBox(height: 16),
+        _buildListSection(
+          "害怕做的事情",
+          fearToDoList,
+          _fearToDoController,
+          _addFearToDo,
+          _deleteFearToDo,
         ),
         const SizedBox(height: 16),
         _buildListSection(
@@ -1936,11 +1972,27 @@ class _CharacterViewState extends State<CharacterView>
         ),
         const SizedBox(height: 16),
         _buildListSection(
+          "憧憬的人事物",
+          admireItemList,
+          _admireItemController,
+          _addAdmireItem,
+          _deleteAdmireItem,
+        ),
+        const SizedBox(height: 16),
+        _buildListSection(
           "討厭的人事物",
           hateItemList,
           _hateItemController,
           _addHateItem,
           _deleteHateItem,
+        ),
+        const SizedBox(height: 16),
+        _buildListSection(
+          "害怕的人事物",
+          fearItemList,
+          _fearItemController,
+          _addFearItem,
+          _deleteFearItem,
         ),
         const SizedBox(height: 16),
         _buildListSection(
@@ -2576,6 +2628,8 @@ class _CharacterViewState extends State<CharacterView>
     data["hinderEvents"] = List<Map<String, String>>.from(hinderEvents);
     data["loveToDoList"] = List<String>.from(loveToDoList);
     data["hateToDoList"] = List<String>.from(hateToDoList);
+    data["wantToDoList"] = List<String>.from(wantToDoList);
+    data["fearToDoList"] = List<String>.from(fearToDoList);
     data["proficientToDoList"] = List<String>.from(proficientToDoList);
     data["unProficientToDoList"] = List<String>.from(unProficientToDoList);
     data["commonAbilityValues"] = List<double>.from(commonAbilityValues);
@@ -2589,7 +2643,9 @@ class _CharacterViewState extends State<CharacterView>
     data["approachValues"] = List<double>.from(approachValues);
     data["traitsValues"] = List<double>.from(traitsValues);
     data["likeItemList"] = List<String>.from(likeItemList);
+    data["admireItemList"] = List<String>.from(admireItemList);
     data["hateItemList"] = List<String>.from(hateItemList);
+    data["fearItemList"] = List<String>.from(fearItemList);
     data["familiarItemList"] = List<String>.from(familiarItemList);
 
     characterData[selectedCharacter!] = data;
@@ -2640,6 +2696,8 @@ class _CharacterViewState extends State<CharacterView>
 
     loveToDoList = List<String>.from(data["loveToDoList"] ?? []);
     hateToDoList = List<String>.from(data["hateToDoList"] ?? []);
+    wantToDoList = List<String>.from(data["wantToDoList"] ?? []);
+    fearToDoList = List<String>.from(data["fearToDoList"] ?? []);
     proficientToDoList = List<String>.from(data["proficientToDoList"] ?? []);
     unProficientToDoList = List<String>.from(
       data["unProficientToDoList"] ?? [],
@@ -2679,7 +2737,9 @@ class _CharacterViewState extends State<CharacterView>
     traitsValues = ensureList("traitsValues", TraitDefinitions.traits.length);
 
     likeItemList = List<String>.from(data["likeItemList"] ?? []);
+    admireItemList = List<String>.from(data["admireItemList"] ?? []);
     hateItemList = List<String>.from(data["hateItemList"] ?? []);
+    fearItemList = List<String>.from(data["fearItemList"] ?? []);
     familiarItemList = List<String>.from(data["familiarItemList"] ?? []);
 
     _isLoading = false;
@@ -2695,6 +2755,8 @@ class _CharacterViewState extends State<CharacterView>
     hinderEvents.clear();
     loveToDoList.clear();
     hateToDoList.clear();
+    wantToDoList.clear();
+    fearToDoList.clear();
     proficientToDoList.clear();
     unProficientToDoList.clear();
     commonAbilityValues = List.filled(
@@ -2715,7 +2777,9 @@ class _CharacterViewState extends State<CharacterView>
     traitsValues = List.filled(TraitDefinitions.traits.length, 50.0);
 
     likeItemList.clear();
+    admireItemList.clear();
     hateItemList.clear();
+    fearItemList.clear();
     familiarItemList.clear();
 
     // Clear helpers
@@ -2723,10 +2787,14 @@ class _CharacterViewState extends State<CharacterView>
     _solveController.clear();
     _loveToDoController.clear();
     _hateToDoController.clear();
+    _wantToDoController.clear();
+    _fearToDoController.clear();
     _proficientToDoController.clear();
     _unProficientToDoController.clear();
     _likeItemController.clear();
+    _admireItemController.clear();
     _hateItemController.clear();
+    _fearItemController.clear();
     _familiarItemController.clear();
   }
 
@@ -2897,6 +2965,48 @@ class _CharacterViewState extends State<CharacterView>
     }
   }
 
+  void _addWantToDo() {
+    if (_wantToDoController.text.isNotEmpty) {
+      setState(() {
+        wantToDoList.add(_wantToDoController.text);
+        _wantToDoController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _deleteWantToDo() {
+    if (_wantToDoController.text.isNotEmpty &&
+        wantToDoList.contains(_wantToDoController.text)) {
+      setState(() {
+        wantToDoList.remove(_wantToDoController.text);
+        _wantToDoController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _addFearToDo() {
+    if (_fearToDoController.text.isNotEmpty) {
+      setState(() {
+        fearToDoList.add(_fearToDoController.text);
+        _fearToDoController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _deleteFearToDo() {
+    if (_fearToDoController.text.isNotEmpty &&
+        fearToDoList.contains(_fearToDoController.text)) {
+      setState(() {
+        fearToDoList.remove(_fearToDoController.text);
+        _fearToDoController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
   void _addProficientToDo() {
     if (_proficientToDoController.text.isNotEmpty) {
       setState(() {
@@ -2960,6 +3070,27 @@ class _CharacterViewState extends State<CharacterView>
     }
   }
 
+  void _addAdmireItem() {
+    if (_admireItemController.text.isNotEmpty) {
+      setState(() {
+        admireItemList.add(_admireItemController.text);
+        _admireItemController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _deleteAdmireItem() {
+    if (_admireItemController.text.isNotEmpty &&
+        admireItemList.contains(_admireItemController.text)) {
+      setState(() {
+        admireItemList.remove(_admireItemController.text);
+        _admireItemController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
   void _addHateItem() {
     if (_hateItemController.text.isNotEmpty) {
       setState(() {
@@ -2976,6 +3107,27 @@ class _CharacterViewState extends State<CharacterView>
       setState(() {
         hateItemList.remove(_hateItemController.text);
         _hateItemController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _addFearItem() {
+    if (_fearItemController.text.isNotEmpty) {
+      setState(() {
+        fearItemList.add(_fearItemController.text);
+        _fearItemController.clear();
+        _saveCurrentCharacterData();
+      });
+    }
+  }
+
+  void _deleteFearItem() {
+    if (_fearItemController.text.isNotEmpty &&
+        fearItemList.contains(_fearItemController.text)) {
+      setState(() {
+        fearItemList.remove(_fearItemController.text);
+        _fearItemController.clear();
         _saveCurrentCharacterData();
       });
     }
