@@ -25,6 +25,10 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "../bin/ui_library.dart";
+import "package:logging/logging.dart";
+
+final _log = Logger("CharacterView");
 
 // MARK: - 滑桿結構(解決硬編碼問題)
 class TraitDefinition {
@@ -1029,7 +1033,7 @@ class CharacterCodec {
 
       return characterData.isNotEmpty ? characterData : null;
     } catch (e) {
-      print("Error parsing Character XML: $e");
+      _log.severe("Error parsing Character XML: $e");
       return null;
     }
   }
@@ -1210,14 +1214,7 @@ class _CharacterViewState extends State<CharacterView>
   List<String> fearToDoList = [];
   List<String> proficientToDoList = [];
   List<String> unProficientToDoList = [];
-  final TextEditingController _loveToDoController = TextEditingController();
-  final TextEditingController _hateToDoController = TextEditingController();
-  final TextEditingController _wantToDoController = TextEditingController();
-  final TextEditingController _fearToDoController = TextEditingController();
-  final TextEditingController _proficientToDoController =
-      TextEditingController();
-  final TextEditingController _unProficientToDoController =
-      TextEditingController();
+
 
   // Common Ability Sliders - 生活常用技能
   List<double> commonAbilityValues = List.filled(
@@ -1307,11 +1304,6 @@ class _CharacterViewState extends State<CharacterView>
   List<String> hateItemList = [];
   List<String> fearItemList = [];
   List<String> familiarItemList = [];
-  final TextEditingController _likeItemController = TextEditingController();
-  final TextEditingController _admireItemController = TextEditingController();
-  final TextEditingController _hateItemController = TextEditingController();
-  final TextEditingController _fearItemController = TextEditingController();
-  final TextEditingController _familiarItemController = TextEditingController();
 
   bool _isLoading = false;
   Timer? _debounceTimer;
@@ -1393,17 +1385,6 @@ class _CharacterViewState extends State<CharacterView>
 
     _hinderEventController.dispose();
     _solveController.dispose();
-    _loveToDoController.dispose();
-    _hateToDoController.dispose();
-    _wantToDoController.dispose();
-    _fearToDoController.dispose();
-    _proficientToDoController.dispose();
-    _unProficientToDoController.dispose();
-    _likeItemController.dispose();
-    _admireItemController.dispose();
-    _hateItemController.dispose();
-    _fearItemController.dispose();
-    _familiarItemController.dispose();
     super.dispose();
   }
 
@@ -1461,29 +1442,10 @@ class _CharacterViewState extends State<CharacterView>
             Text("角色列表", style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             // 新增角色輸入框
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _newCharacterController,
-                    decoration: const InputDecoration(
-                      labelText: "新角色名稱",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onSubmitted: (_) => _addCharacter(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: _addCharacter,
-                  tooltip: "新增",
-                ),
-              ],
+            AddItemInput(
+              title: "角色名稱",
+              controller: _newCharacterController,
+              onAdd: (_) => _addCharacter(),
             ),
             const SizedBox(height: 8),
             Container(
@@ -1756,52 +1718,52 @@ class _CharacterViewState extends State<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildListSection(
-          "熱愛做的事情",
-          loveToDoList,
-          _loveToDoController,
-          _addLoveToDo,
-          _deleteLoveToDo,
+        CardList(
+          title: "熱愛做的事情",
+          icon: Icons.favorite,
+          items: loveToDoList,
+          onAdd: _addLoveToDo,
+          onRemove: _deleteLoveToDo,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "想要做還沒做的事情",
-          wantToDoList,
-          _wantToDoController,
-          _addWantToDo,
-          _deleteWantToDo,
+        CardList(
+          title: "想要做還沒做的事情",
+          icon: Icons.star_border,
+          items: wantToDoList,
+          onAdd: _addWantToDo,
+          onRemove: _deleteWantToDo,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "討厭做的事情",
-          hateToDoList,
-          _hateToDoController,
-          _addHateToDo,
-          _deleteHateToDo,
+        CardList(
+          title: "討厭做的事情",
+          icon: Icons.sentiment_very_dissatisfied,
+          items: hateToDoList,
+          onAdd: _addHateToDo,
+          onRemove: _deleteHateToDo,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "害怕做的事情",
-          fearToDoList,
-          _fearToDoController,
-          _addFearToDo,
-          _deleteFearToDo,
+        CardList(
+          title: "害怕做的事情",
+          icon: Icons.warning_amber,
+          items: fearToDoList,
+          onAdd: _addFearToDo,
+          onRemove: _deleteFearToDo,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "擅長做的事情",
-          proficientToDoList,
-          _proficientToDoController,
-          _addProficientToDo,
-          _deleteProficientToDo,
+        CardList(
+          title: "擅長做的事情",
+          icon: Icons.check_circle_outline,
+          items: proficientToDoList,
+          onAdd: _addProficientToDo,
+          onRemove: _deleteProficientToDo,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "不擅長做的事情",
-          unProficientToDoList,
-          _unProficientToDoController,
-          _addUnProficientToDo,
-          _deleteUnProficientToDo,
+        CardList(
+          title: "不擅長做的事情",
+          icon: Icons.cancel_outlined,
+          items: unProficientToDoList,
+          onAdd: _addUnProficientToDo,
+          onRemove: _deleteUnProficientToDo,
         ),
         const SizedBox(height: 16),
         Card(
@@ -1963,44 +1925,44 @@ class _CharacterViewState extends State<CharacterView>
           ),
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "喜歡的人事物",
-          likeItemList,
-          _likeItemController,
-          _addLikeItem,
-          _deleteLikeItem,
+        CardList(
+          title: "喜歡的人事物",
+          icon: Icons.thumb_up_alt_outlined,
+          items: likeItemList,
+          onAdd: _addLikeItem,
+          onRemove: _deleteLikeItem,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "憧憬的人事物",
-          admireItemList,
-          _admireItemController,
-          _addAdmireItem,
-          _deleteAdmireItem,
+        CardList(
+          title: "憧憬的人事物",
+          icon: Icons.auto_awesome,
+          items: admireItemList,
+          onAdd: _addAdmireItem,
+          onRemove: _deleteAdmireItem,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "討厭的人事物",
-          hateItemList,
-          _hateItemController,
-          _addHateItem,
-          _deleteHateItem,
+        CardList(
+          title: "討厭的人事物",
+          icon: Icons.thumb_down_alt_outlined,
+          items: hateItemList,
+          onAdd: _addHateItem,
+          onRemove: _deleteHateItem,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "害怕的人事物",
-          fearItemList,
-          _fearItemController,
-          _addFearItem,
-          _deleteFearItem,
+        CardList(
+          title: "害怕的人事物",
+          icon: Icons.bug_report,
+          items: fearItemList,
+          onAdd: _addFearItem,
+          onRemove: _deleteFearItem,
         ),
         const SizedBox(height: 16),
-        _buildListSection(
-          "習慣的人事物",
-          familiarItemList,
-          _familiarItemController,
-          _addFamiliarItem,
-          _deleteFamiliarItem,
+        CardList(
+          title: "習慣的人事物",
+          icon: Icons.history,
+          items: familiarItemList,
+          onAdd: _addFamiliarItem,
+          onRemove: _deleteFamiliarItem,
         ),
         const SizedBox(height: 16),
         _buildMultilineField("其他補充", _controllers["otherText"]!),
@@ -2185,68 +2147,6 @@ class _CharacterViewState extends State<CharacterView>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildListSection(
-    String title,
-    List<String> items,
-    TextEditingController controller,
-    VoidCallback onAdd,
-    VoidCallback onDelete,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            if (items.isNotEmpty) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: items.map((item) {
-                  return Chip(
-                    label: Text(item),
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                    onDeleted: () {
-                      controller.text = item;
-                      onDelete();
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: "新增項目",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onSubmitted: (_) => onAdd(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: onAdd,
-                  tooltip: "新增",
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -2785,17 +2685,6 @@ class _CharacterViewState extends State<CharacterView>
     // Clear helpers
     _hinderEventController.clear();
     _solveController.clear();
-    _loveToDoController.clear();
-    _hateToDoController.clear();
-    _wantToDoController.clear();
-    _fearToDoController.clear();
-    _proficientToDoController.clear();
-    _unProficientToDoController.clear();
-    _likeItemController.clear();
-    _admireItemController.clear();
-    _hateItemController.clear();
-    _fearItemController.clear();
-    _familiarItemController.clear();
   }
 
   // 同步角色名稱到列表
@@ -2923,234 +2812,180 @@ class _CharacterViewState extends State<CharacterView>
     }
   }
 
-  void _addLoveToDo() {
-    if (_loveToDoController.text.isNotEmpty) {
+  void _addLoveToDo(String value) {
+    if (value.isNotEmpty) {
       setState(() {
-        loveToDoList.add(_loveToDoController.text);
-        _loveToDoController.clear();
+        loveToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteLoveToDo() {
-    if (_loveToDoController.text.isNotEmpty &&
-        loveToDoList.contains(_loveToDoController.text)) {
+  void _deleteLoveToDo(int index) {
       setState(() {
-        loveToDoList.remove(_loveToDoController.text);
-        _loveToDoController.clear();
+        loveToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addHateToDo(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        hateToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _addHateToDo() {
-    if (_hateToDoController.text.isNotEmpty) {
+  void _deleteHateToDo(int index) {
       setState(() {
-        hateToDoList.add(_hateToDoController.text);
-        _hateToDoController.clear();
+        hateToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addWantToDo(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        wantToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteHateToDo() {
-    if (_hateToDoController.text.isNotEmpty &&
-        hateToDoList.contains(_hateToDoController.text)) {
+  void _deleteWantToDo(int index) {
       setState(() {
-        hateToDoList.remove(_hateToDoController.text);
-        _hateToDoController.clear();
+        wantToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addFearToDo(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        fearToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _addWantToDo() {
-    if (_wantToDoController.text.isNotEmpty) {
+  void _deleteFearToDo(int index) {
       setState(() {
-        wantToDoList.add(_wantToDoController.text);
-        _wantToDoController.clear();
+        fearToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addProficientToDo(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        proficientToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteWantToDo() {
-    if (_wantToDoController.text.isNotEmpty &&
-        wantToDoList.contains(_wantToDoController.text)) {
+  void _deleteProficientToDo(int index) {
       setState(() {
-        wantToDoList.remove(_wantToDoController.text);
-        _wantToDoController.clear();
+        proficientToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addUnProficientToDo(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        unProficientToDoList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _addFearToDo() {
-    if (_fearToDoController.text.isNotEmpty) {
+  void _deleteUnProficientToDo(int index) {
       setState(() {
-        fearToDoList.add(_fearToDoController.text);
-        _fearToDoController.clear();
+        unProficientToDoList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addLikeItem(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        likeItemList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteFearToDo() {
-    if (_fearToDoController.text.isNotEmpty &&
-        fearToDoList.contains(_fearToDoController.text)) {
+  void _deleteLikeItem(int index) {
       setState(() {
-        fearToDoList.remove(_fearToDoController.text);
-        _fearToDoController.clear();
+        likeItemList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addAdmireItem(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        admireItemList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _addProficientToDo() {
-    if (_proficientToDoController.text.isNotEmpty) {
+  void _deleteAdmireItem(int index) {
       setState(() {
-        proficientToDoList.add(_proficientToDoController.text);
-        _proficientToDoController.clear();
+        admireItemList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addHateItem(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        hateItemList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteProficientToDo() {
-    if (_proficientToDoController.text.isNotEmpty &&
-        proficientToDoList.contains(_proficientToDoController.text)) {
+  void _deleteHateItem(int index) {
       setState(() {
-        proficientToDoList.remove(_proficientToDoController.text);
-        _proficientToDoController.clear();
+        hateItemList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addFearItem(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        fearItemList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _addUnProficientToDo() {
-    if (_unProficientToDoController.text.isNotEmpty) {
+  void _deleteFearItem(int index) {
       setState(() {
-        unProficientToDoList.add(_unProficientToDoController.text);
-        _unProficientToDoController.clear();
+        fearItemList.removeAt(index);
+        _saveCurrentCharacterData();
+      });
+  }
+
+  void _addFamiliarItem(String value) {
+    if (value.isNotEmpty) {
+      setState(() {
+        familiarItemList.add(value);
         _saveCurrentCharacterData();
       });
     }
   }
 
-  void _deleteUnProficientToDo() {
-    if (_unProficientToDoController.text.isNotEmpty &&
-        unProficientToDoList.contains(_unProficientToDoController.text)) {
+  void _deleteFamiliarItem(int index) {
       setState(() {
-        unProficientToDoList.remove(_unProficientToDoController.text);
-        _unProficientToDoController.clear();
+        familiarItemList.removeAt(index);
         _saveCurrentCharacterData();
       });
-    }
-  }
-
-  void _addLikeItem() {
-    if (_likeItemController.text.isNotEmpty) {
-      setState(() {
-        likeItemList.add(_likeItemController.text);
-        _likeItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _deleteLikeItem() {
-    if (_likeItemController.text.isNotEmpty &&
-        likeItemList.contains(_likeItemController.text)) {
-      setState(() {
-        likeItemList.remove(_likeItemController.text);
-        _likeItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _addAdmireItem() {
-    if (_admireItemController.text.isNotEmpty) {
-      setState(() {
-        admireItemList.add(_admireItemController.text);
-        _admireItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _deleteAdmireItem() {
-    if (_admireItemController.text.isNotEmpty &&
-        admireItemList.contains(_admireItemController.text)) {
-      setState(() {
-        admireItemList.remove(_admireItemController.text);
-        _admireItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _addHateItem() {
-    if (_hateItemController.text.isNotEmpty) {
-      setState(() {
-        hateItemList.add(_hateItemController.text);
-        _hateItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _deleteHateItem() {
-    if (_hateItemController.text.isNotEmpty &&
-        hateItemList.contains(_hateItemController.text)) {
-      setState(() {
-        hateItemList.remove(_hateItemController.text);
-        _hateItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _addFearItem() {
-    if (_fearItemController.text.isNotEmpty) {
-      setState(() {
-        fearItemList.add(_fearItemController.text);
-        _fearItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _deleteFearItem() {
-    if (_fearItemController.text.isNotEmpty &&
-        fearItemList.contains(_fearItemController.text)) {
-      setState(() {
-        fearItemList.remove(_fearItemController.text);
-        _fearItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _addFamiliarItem() {
-    if (_familiarItemController.text.isNotEmpty) {
-      setState(() {
-        familiarItemList.add(_familiarItemController.text);
-        _familiarItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
-  }
-
-  void _deleteFamiliarItem() {
-    if (_familiarItemController.text.isNotEmpty &&
-        familiarItemList.contains(_familiarItemController.text)) {
-      setState(() {
-        familiarItemList.remove(_familiarItemController.text);
-        _familiarItemController.clear();
-        _saveCurrentCharacterData();
-      });
-    }
   }
 }
+

@@ -31,7 +31,377 @@ class FindReplaceOptions {
   });
 }
 
+
+// ==================== 自定義 UI Controller ====================
+
+// 自定義 TextEditingController，支持高亮顯示
+class HighlightTextEditingController extends TextEditingController {
+  List<TextSelection> searchMatches = [];
+  int currentMatchIndex = -1;
+  Color? highlightColor;
+  Color? currentHighlightColor;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (searchMatches.isEmpty) {
+      return TextSpan(text: text, style: style);
+    }
+
+    final List<TextSpan> spans = [];
+    int lastEnd = 0;
+    
+    // 獲取主題顏色設定
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    // 定義高亮顏色 - 使用高對比度顏色
+    // 當前選中項：使用 Tertiary Container 作為背景，這是 Material 3 推薦的對比色用法
+    final Color activeBgColor = currentHighlightColor ?? colorScheme.tertiaryContainer;
+            
+    // 當前選中項文字顏色：使用對應的 On Color 以確保最大可讀性
+    final Color? activeFgColor = currentHighlightColor != null 
+        ? null 
+        : colorScheme.onTertiaryContainer;
+
+    // 其他匹配項：使用 Secondary Container，較柔和但仍清晰可見
+    final Color inactiveBgColor = highlightColor ?? colorScheme.secondaryContainer;
+    
+    // 其他匹配項文字顏色
+    final Color? inactiveFgColor = highlightColor != null
+        ? null
+        : colorScheme.onSecondaryContainer;
+
+    for (int i = 0; i < searchMatches.length; i++) {
+      final match = searchMatches[i];
+      
+      // 添加匹配項之前的普通文本
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: style,
+        ));
+      }
+
+      // 添加高亮的匹配項
+      final isCurrentMatch = i == currentMatchIndex;
+      
+      spans.add(TextSpan(
+        text: text.substring(match.start, match.end),
+        style: style?.copyWith(
+          backgroundColor: isCurrentMatch ? activeBgColor : inactiveBgColor,
+          color: isCurrentMatch 
+              ? (activeFgColor ?? style.color) 
+              : (inactiveFgColor ?? style.color),
+        ),
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // 添加最後一個匹配項之後的文本
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: style,
+      ));
+    }
+
+    return TextSpan(children: spans, style: style);
+  }
+
+  void updateHighlights({
+    required List<TextSelection> matches,
+    required int currentIndex,
+    Color? highlight,
+    Color? currentHighlight,
+  }) {
+    searchMatches = matches;
+    currentMatchIndex = currentIndex;
+    highlightColor = highlight;
+    currentHighlightColor = currentHighlight;
+    notifyListeners();
+  }
+
+  void clearHighlights() {
+    searchMatches = [];
+    currentMatchIndex = -1;
+    notifyListeners();
+  }
+}
+
+// ==================== 搜尋與取代邏輯操作 ====================
+
+/// 執行搜尋
+void performFind(
+  HighlightTextEditingController textController,
+  String findText,
+  FindReplaceOptions options,
+  FocusNode editorFocusNode,
+  List<TextSelection> currentMatches,
+  int currentMatchIndex,
+  Function(List<TextSelection> matches, int index) onStateUpdate, {
+  bool forward = true,
+}) {
+  if (findText.isEmpty) {
+    return;
+  }
+  
+  final text = textController.text;
+  if (text.isEmpty) {
+    return;
+  }
+  
+  // 找出所有匹配項
+  final searchMatches = findAllMatches(text, findText, options);
+  
+  if (searchMatches.isEmpty) {
+    textController.updateHighlights(
+      matches: [],
+      currentIndex: -1,
+    );
+    onStateUpdate([], -1); // 更新 UI 以顯示 0 個匹配
+    return;
+  }
+  
+  // 取得當前光標位置
+  final currentOffset = textController.selection.baseOffset;
+  
+  int newMatchIndex = currentMatchIndex;
+
+  // 如果是第一次搜尋（currentMatchIndex == -1），從當前光標位置開始搜尋
+  if (newMatchIndex == -1 || currentMatches.isEmpty) {
+    if (forward) {
+      // 向下搜尋：找到第一個在光標位置之後的匹配項
+      newMatchIndex = searchMatches.indexWhere((match) => match.start >= currentOffset);
+      // 如果沒找到，從頭開始
+      if (newMatchIndex == -1) {
+        newMatchIndex = 0;
+      }
+    } else {
+      // 向上搜尋：找到最後一個在光標位置之前的匹配項
+      newMatchIndex = searchMatches.lastIndexWhere((match) => match.end <= currentOffset);
+      // 如果沒找到，從最後一個開始
+      if (newMatchIndex == -1) {
+        newMatchIndex = searchMatches.length - 1;
+      }
+    }
+  } else {
+    // 移動到下一個/上一個匹配項
+    if (forward) {
+      newMatchIndex = (newMatchIndex + 1) % searchMatches.length;
+    } else {
+      newMatchIndex = (newMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+    }
+  }
+  
+  // 更新高亮顯示
+  textController.updateHighlights(
+    matches: searchMatches,
+    currentIndex: newMatchIndex,
+  );
+  
+  // 選中當前匹配項
+  if (newMatchIndex >= 0 && newMatchIndex < searchMatches.length) {
+    final match = searchMatches[newMatchIndex];
+    textController.selection = match;
+  }
+  
+  // 請求焦點以顯示選取效果
+  editorFocusNode.requestFocus();
+  
+  onStateUpdate(searchMatches, newMatchIndex); // 更新 UI 以顯示當前匹配數
+}
+
+/// 執行取代（取代當前選中的項目）
+void performReplace(
+  BuildContext context,
+  HighlightTextEditingController textController,
+  String findText,
+  String replaceText,
+  FindReplaceOptions options,
+  FocusNode editorFocusNode,
+  List<TextSelection> currentMatches,
+  int currentMatchIndex,
+  Function(List<TextSelection> matches, int index) onStateUpdate,
+  Function(String newText) onTextUpdate,
+) {
+  if (findText.isEmpty) {
+    return;
+  }
+  
+  final selection = textController.selection;
+  if (!selection.isValid || selection.isCollapsed) {
+    // 如果沒有選取，先搜尋
+    performFind(
+      textController, 
+      findText, 
+      options, 
+      editorFocusNode, 
+      currentMatches, 
+      currentMatchIndex, 
+      onStateUpdate, 
+      forward: true
+    );
+    return;
+  }
+  
+  // 檢查當前選取是否對應當前匹配項
+  if (currentMatchIndex >= 0 && currentMatchIndex < currentMatches.length) {
+    final currentMatch = currentMatches[currentMatchIndex];
+    
+    // 確認選取範圍與當前匹配項一致
+    if (selection.start == currentMatch.start && selection.end == currentMatch.end) {
+      String actualReplaceText = replaceText;
+      
+      // 如果是正則表達式模式，處理捕獲組
+      if (options.useRegexp) {
+        try {
+          // 正則表達式模式固定啟用大小寫相符
+          final regex = RegExp(findText, caseSensitive: true);
+          final text = textController.text;
+          final matchText = text.substring(selection.start, selection.end);
+          final regexMatch = regex.firstMatch(matchText);
+          
+          if (regexMatch != null) {
+            actualReplaceText = replaceText;
+            // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
+            for (int i = 0; i <= regexMatch.groupCount; i++) {
+              final groupValue = regexMatch.group(i) ?? "";
+              // 支援 $0, $1, $2, ... 語法
+              actualReplaceText = actualReplaceText.replaceAll("\$$i", groupValue);
+              // 支援 \0, \1, \2, ... 反向引用語法
+              actualReplaceText = actualReplaceText.replaceAll("\\$i", groupValue);
+            }
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("正則表達式錯誤: $e")),
+          );
+          return;
+        }
+      }
+      
+      // 執行取代
+      final newText = textController.text.replaceRange(
+        selection.start,
+        selection.end,
+        actualReplaceText,
+      );
+      
+      textController.text = newText;
+      textController.selection = TextSelection.collapsed(
+        offset: selection.start + actualReplaceText.length,
+      );
+      
+      // 清除搜尋狀態，因為文本已改變
+      textController.clearHighlights();
+      
+      // 通知外部文本更新和狀態重置
+      onTextUpdate(newText);
+      onStateUpdate([], -1);
+      
+      // 自動尋找下一個
+      // 這裡需要用新的空狀態來調用，因為我們剛剛清除了狀態
+      performFind(
+        textController, 
+        findText, 
+        options, 
+        editorFocusNode, 
+        [], 
+        -1, 
+        onStateUpdate, 
+        forward: true
+      );
+      return;
+    }
+  }
+  
+  // 如果不匹配，嘗試先搜尋
+  performFind(
+    textController, 
+    findText, 
+    options, 
+    editorFocusNode, 
+    currentMatches, 
+    currentMatchIndex, 
+    onStateUpdate, 
+    forward: true
+  );
+}
+
+/// 執行全部取代
+void performReplaceAll(
+  BuildContext context,
+  HighlightTextEditingController textController,
+  String findText,
+  String replaceText,
+  FindReplaceOptions options,
+  Function(List<TextSelection> matches, int index) onStateUpdate,
+  Function(String newText) onTextUpdate,
+) {
+  if (findText.isEmpty) {
+    return;
+  }
+  
+  final text = textController.text;
+  if (text.isEmpty) {
+    return;
+  }
+  
+  // 找出所有匹配項
+  final matches = findAllMatches(text, findText, options);
+  
+  if (matches.isEmpty) {
+    return;
+  }
+  
+  String newText = text;
+  
+  // 如果是正則表達式模式，使用正則表達式替換來支援捕獲組
+  if (options.useRegexp) {
+    try {
+      // 正則表達式模式固定啟用大小寫相符
+      final regex = RegExp(findText, caseSensitive: true);
+      newText = newText.replaceAllMapped(regex, (match) {
+        String replacement = replaceText;
+        // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
+        for (int i = 0; i <= match.groupCount; i++) {
+          final groupValue = match.group(i) ?? "";
+          // 支援 $0, $1, $2, ... 語法
+          replacement = replacement.replaceAll("\$$i", groupValue);
+          // 支援 \0, \1, \2, ... 反向引用語法
+          replacement = replacement.replaceAll("\\$i", groupValue);
+        }
+        return replacement;
+      });
+    } catch (e) {
+      // 如果正則表達式無效，顯示錯誤並返回
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("正則表達式錯誤: $e")),
+      );
+      return;
+    }
+  } else {
+    // 非正則表達式模式，從後往前取代，避免位置偏移問題
+    for (int i = matches.length - 1; i >= 0; i--) {
+      final match = matches[i];
+      newText = newText.replaceRange(match.start, match.end, replaceText);
+    }
+  }
+  
+  textController.text = newText;
+  textController.selection = TextSelection.collapsed(offset: 0);
+  textController.clearHighlights();
+  
+  onTextUpdate(newText);
+  onStateUpdate([], -1);
+}
+
 // ==================== 搜尋功能函數 ====================
+
 
 /// 找出所有匹配項
 List<TextSelection> findAllMatches(String text, String findText, FindReplaceOptions options) {
@@ -650,6 +1020,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       widget.options,
                     );
                   },
+                  color: Theme.of(context).colorScheme.onSurface,
                   tooltip: "上一個",
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -663,6 +1034,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       widget.options,
                     );
                   },
+                  color: Theme.of(context).colorScheme.onSurface,
                   tooltip: "下一個",
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -679,6 +1051,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       _isExpanded = !_isExpanded;
                     });
                   },
+                  color: Theme.of(context).colorScheme.onSurface,
                   tooltip: _isExpanded ? "收合" : "展開取代",
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -692,6 +1065,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       _showOptions = !_showOptions;
                     });
                   },
+                  color: _showOptions 
+                      ? Theme.of(context).colorScheme.primary 
+                      : Theme.of(context).colorScheme.onSurface,
                   tooltip: "搜尋選項",
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -1138,6 +1514,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               _isExpanded = !_isExpanded;
                             });
                           },
+                          color: Theme.of(context).colorScheme.onSurface,
                           padding: EdgeInsets.zero,
                           icon: Icon(
                             _isExpanded ? Icons.expand_less : Icons.expand_more,
@@ -1157,6 +1534,9 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               _showOptions = !_showOptions;
                             });
                           },
+                          color: _showOptions 
+                              ? Theme.of(context).colorScheme.primary 
+                              : Theme.of(context).colorScheme.onSurface,
                           padding: EdgeInsets.zero,
                           icon: Icon(
                             Icons.tune,
@@ -1173,6 +1553,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         child: IconButton(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
+                          color: Theme.of(context).colorScheme.onSurface,
                           padding: EdgeInsets.zero,
                         ),
                       ),

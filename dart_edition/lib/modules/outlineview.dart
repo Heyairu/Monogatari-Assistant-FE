@@ -15,6 +15,10 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "../bin/ui_library.dart";
+import "package:logging/logging.dart";
+
+final _log = Logger("OutlineView");
 
 // MARK: - 拖放數據類型
 
@@ -487,7 +491,7 @@ class OutlineCodec {
       
       return storylines.isEmpty ? null : storylines;
     } catch (e) {
-      print("Error parsing Outline XML: $e");
+      _log.severe("Error parsing Outline XML: $e");
       return null;
     }
   }
@@ -520,15 +524,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   final TextEditingController newStorylineController = TextEditingController();
   final TextEditingController newEventController = TextEditingController();
   final TextEditingController newSceneController = TextEditingController();
-
-  final TextEditingController newPersonController = TextEditingController();
-  final TextEditingController newItemController = TextEditingController();
-  final TextEditingController newDoingController = TextEditingController();
-
-  final TextEditingController newStorylinePersonController = TextEditingController();
-  final TextEditingController newStorylineItemController = TextEditingController();
-  final TextEditingController newEventPersonController = TextEditingController();
-  final TextEditingController newEventItemController = TextEditingController();
   
   // 備註欄位控制器
   final TextEditingController storylineMemoController = TextEditingController();
@@ -793,13 +788,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     newStorylineController.dispose();
     newEventController.dispose();
     newSceneController.dispose();
-    newPersonController.dispose();
-    newItemController.dispose();
-    newDoingController.dispose();
-    newStorylinePersonController.dispose();
-    newStorylineItemController.dispose();
-    newEventPersonController.dispose();
-    newEventItemController.dispose();
     storylineMemoController.dispose();
     eventMemoController.dispose();
     sceneMemoController.dispose();
@@ -1207,28 +1195,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             const SizedBox(height: 16),
             
             // 新增故事線
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: newStorylineController,
-                    decoration: InputDecoration(
-                      hintText: "新增故事線名稱",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    ),
-                    onSubmitted: (_) => _addStoryline(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: _addStoryline,
-                  label: const Text("＋"),
-                ),
-              ],
+            AddItemInput(
+              title: "故事線名稱",
+              controller: newStorylineController,
+              onAdd: (_) => _addStoryline(),
+              allowEmpty: true,
             ),
             
             // 故事線詳細編輯
@@ -1498,10 +1469,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "預設人物",
+              icon: Icons.person,
               items: storyline.people,
-              controller: newStorylinePersonController,
               onAdd: (item) {
                 setState(() {
                   storyline.people.add(item);
@@ -1518,10 +1489,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "預設物件",
+              icon: Icons.category,
               items: storyline.item,
-              controller: newStorylineItemController,
               onAdd: (item) {
                 setState(() {
                   storyline.item.add(item);
@@ -1647,28 +1618,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               
               const SizedBox(height: 16),
               
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: newEventController,
-                      decoration: InputDecoration(
-                        hintText: "新增事件名稱",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                      ),
-                      onSubmitted: (_) => _addEvent(),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: _addEvent,
-                    label: const Text("＋"),
-                  ),
-                ],
+              AddItemInput(
+                title: "事件名稱",
+                controller: newEventController,
+                onAdd: (_) => _addEvent(),
+                allowEmpty: true,
               ),
               
               if (selectedEventIndex != null) ...[
@@ -1944,10 +1898,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "預設人物",
+              icon: Icons.person,
               items: event.people,
-              controller: newEventPersonController,
               onAdd: (item) {
                 setState(() {
                   event.people.add(item);
@@ -1964,10 +1918,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "預設物件",
+              icon: Icons.category,
               items: event.item,
-              controller: newEventItemController,
               onAdd: (item) {
                 setState(() {
                   event.item.add(item);
@@ -2093,28 +2047,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               
               const SizedBox(height: 16),
               
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: newSceneController,
-                      decoration: InputDecoration(
-                        hintText: "新增場景名稱",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                      ),
-                      onSubmitted: (_) => _addScene(),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: _addScene,
-                    label: const Text("＋"),
-                  ),
-                ],
+              AddItemInput(
+                title: "場景名稱",
+                controller: newSceneController,
+                onAdd: (_) => _addScene(),
+                allowEmpty: true,
               ),
               
               if (selectedSceneIndex != null) ...[
@@ -2471,10 +2408,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "人物",
+              icon: Icons.person,
               items: scene.people,
-              controller: newPersonController,
               onAdd: (item) {
                 setState(() {
                   scene.people.add(item);
@@ -2491,10 +2428,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "物件",
+              icon: Icons.category,
               items: scene.item,
-              controller: newItemController,
               onAdd: (item) {
                 setState(() {
                   scene.item.add(item);
@@ -2511,10 +2448,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             
             const SizedBox(height: 16),
             
-            _buildTagListEditor(
+            CardList(
               title: "行動",
+              icon: Icons.directions_run,
               items: scene.doingThings,
-              controller: newDoingController,
               onAdd: (item) {
                 setState(() {
                   scene.doingThings.add(item);
@@ -2557,77 +2494,6 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           ],
         ),
       ),
-    );
-  }
-
-  // MARK: - 小型編輯元件
-  Widget _buildTagListEditor({
-    required String title,
-    required List<String> items,
-    required TextEditingController controller,
-    required ValueChanged<String> onAdd,
-    required ValueChanged<int> onRemove,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 8),
-        
-        if (items.isNotEmpty) ...[
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              return Chip(
-                label: Text(item),
-                deleteIcon: const Icon(Icons.close, size: 18),
-                onDeleted: () => onRemove(index),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 8),
-        ],
-        
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                decoration: InputDecoration(
-                  hintText: "新增$title",
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onSubmitted: (value) {
-                  final trimmed = value.trim();
-                  if (trimmed.isNotEmpty) {
-                    onAdd(trimmed);
-                    controller.clear();
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () {
-                final value = controller.text.trim();
-                if (value.isNotEmpty) {
-                  onAdd(value);
-                  controller.clear();
-                }
-              },
-              icon: const Icon(Icons.add_circle, color: Colors.green),
-              tooltip: "新增$title",
-            ),
-          ],
-        ),
-      ],
     );
   }
 

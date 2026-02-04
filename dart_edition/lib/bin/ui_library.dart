@@ -277,17 +277,21 @@ class AppTheme {
 
 // MARK: - 通用元件
 
-/// 新增項目元件
+// 新增項目元件
 class AddItemInput extends StatefulWidget {
   final String title;
   final ValueChanged<String> onAdd;
   final TextEditingController? controller;
+  final bool allowEmpty;
+  final bool enabled;
 
   const AddItemInput({
     super.key,
     required this.title,
     required this.onAdd,
     this.controller,
+    this.allowEmpty = false,
+    this.enabled = true,
   });
 
   @override
@@ -319,7 +323,7 @@ class _AddItemInputState extends State<AddItemInput> {
 
   void _handleAdd() {
     final value = _controller.text.trim();
-    if (value.isNotEmpty) {
+    if ((widget.allowEmpty || value.isNotEmpty) && widget.enabled) {
       widget.onAdd(value);
       _controller.clear();
     }
@@ -332,22 +336,104 @@ class _AddItemInputState extends State<AddItemInput> {
         Expanded(
           child: TextField(
             controller: _controller,
+            enabled: widget.enabled,
             decoration: InputDecoration(
-              hintText: "新增${widget.title}",
+              hintText: widget.enabled ? "新增${widget.title}" : widget.title,
               border: const OutlineInputBorder(),
               isDense: true,
             ),
-            onSubmitted: (_) => _handleAdd(),
+            onSubmitted: (value) {
+               if (widget.enabled && (widget.allowEmpty || value.trim().isNotEmpty)) {
+                 _handleAdd();
+               }
+            },
           ),
         ),
         const SizedBox(width: 8),
-        IconButton(
-          onPressed: _handleAdd,
-          icon: const Icon(Icons.add_circle, color: Colors.green),
-          tooltip: "新增${widget.title}",
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _controller,
+          builder: (context, value, child) {
+            final text = value.text.trim();
+            final bool canAdd = widget.enabled && (widget.allowEmpty || text.isNotEmpty);
+            
+            return IconButton(
+              onPressed: canAdd ? _handleAdd : null,
+              icon: Icon(
+                Icons.add_circle,
+                color: canAdd ? Colors.green : Colors.grey,
+              ),
+              tooltip: "新增${widget.title}",
+            );
+          },
         ),
       ],
     );
   }
 }
+
+// Chip 元件
+class CardList extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<String> items;
+  final ValueChanged<String> onAdd;
+  final ValueChanged<int> onRemove;
+
+  const CardList({
+    super.key,
+    required this.title,
+    required this.icon,
+    this.items = const [],
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // 現有項目
+        if (items.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              return Chip(
+                label: Text(item),
+                deleteIcon: const Icon(Icons.close, size: 18),
+                onDeleted: () => onRemove(index),
+                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // 新增項目
+        AddItemInput(
+           title: title,
+           onAdd: onAdd,
+        ),
+      ],
+    );
+  }
+}
+
 

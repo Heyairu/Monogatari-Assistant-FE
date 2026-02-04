@@ -13,17 +13,28 @@
 import "package:flutter/material.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
+/// 字數計算模式
+enum WordCountMode {
+  /// 字元數 (Grapheme Clusters)
+  characters,
+  /// 全形字元數 + 半形單字數
+  wordsAndCharacters,
+}
+
 /// 應用設定管理器
 class SettingsManager extends ChangeNotifier {
   static const String _showExitWarningKey = "show_exit_warning";
   static const String _fontSizeKey = "app_font_size";
+  static const String _wordCountModeKey = "word_count_mode";
   
   bool _showExitWarning = true;
   double _fontSize = 14.0;
+  WordCountMode _wordCountMode = WordCountMode.wordsAndCharacters;
   bool _isInitialized = false;
   
   bool get showExitWarning => _showExitWarning;
   double get fontSize => _fontSize;
+  WordCountMode get wordCountMode => _wordCountMode;
   bool get isInitialized => _isInitialized;
   
   /// 初始化設定管理器
@@ -32,9 +43,14 @@ class SettingsManager extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _showExitWarning = prefs.getBool(_showExitWarningKey) ?? true;
       _fontSize = prefs.getDouble(_fontSizeKey) ?? 14.0;
+      final modeIndex = prefs.getInt(_wordCountModeKey) ?? WordCountMode.wordsAndCharacters.index;
+      _wordCountMode = WordCountMode.values.length > modeIndex 
+          ? WordCountMode.values[modeIndex] 
+          : WordCountMode.wordsAndCharacters;
     } catch (e) {
       _showExitWarning = true;
       _fontSize = 14.0;
+      _wordCountMode = WordCountMode.wordsAndCharacters;
       debugPrint("Failed to load settings: $e");
     } finally {
       _isInitialized = true;
@@ -68,6 +84,21 @@ class SettingsManager extends ChangeNotifier {
         await prefs.setDouble(_fontSizeKey, value);
       } catch (e) {
         debugPrint("Failed to save font size setting: $e");
+      }
+    }
+  }
+
+  /// 設定字數計算模式
+  Future<void> setWordCountMode(WordCountMode value) async {
+    if (_wordCountMode != value) {
+      _wordCountMode = value;
+      notifyListeners();
+      
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_wordCountModeKey, value.index);
+      } catch (e) {
+        debugPrint("Failed to save word count mode setting: $e");
       }
     }
   }

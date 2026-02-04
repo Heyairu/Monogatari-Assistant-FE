@@ -26,6 +26,9 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "../bin/ui_library.dart";
+import "../bin/content_manager.dart";
+import "../bin/settings_manager.dart";
 
 // MARK: - 拖放數據類型
 
@@ -59,7 +62,7 @@ class ChapterData {
     String? chapterUUID,
   }) : chapterUUID = chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
   
-  int get chapterWordsCount => chapterContent.length;
+  int getWordCount(WordCountMode mode) => ContentManager.calculateWordCount(chapterContent, mode: mode);
   String get id => chapterUUID;
   
   @override
@@ -265,6 +268,7 @@ class ChapterSelectionView extends StatefulWidget {
   // 綁定主程式：段落與編輯器文字
   final List<SegmentData> segments;
   final String contentText;
+  final WordCountMode wordCountMode;
   // 將「目前選取的 Seg/Chapter」提升為外部綁定，方便外層存檔前回寫
   final String? selectedSegmentID;
   final String? selectedChapterID;
@@ -277,6 +281,7 @@ class ChapterSelectionView extends StatefulWidget {
     super.key,
     required this.segments,
     required this.contentText,
+    required this.wordCountMode,
     this.selectedSegmentID,
     this.selectedChapterID,
     this.onSegmentsChanged,
@@ -295,10 +300,6 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   // 編輯名稱（雙擊）狀態
   String? _editingSegmentID;
   String? _editingChapterID;
-  
-  // 新增輸入框
-  String _newSegmentName = "";
-  String _newChapterName = "";
   
   // 滾動控制器
   final ScrollController _pageScrollController = ScrollController();
@@ -323,6 +324,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   int get _totalChaptersCount {
     return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
   }
+
+  int get _totalWordCount {
+    return _segments.fold(0, (sum, seg) => sum + seg.chapters.fold(0, (s, c) => s + c.getWordCount(widget.wordCountMode)));
+  }
   
   int? get _selectedSegmentIndex {
     if (widget.selectedSegmentID == null) return null;
@@ -341,7 +346,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   @override
   void didUpdateWidget(ChapterSelectionView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.segments != widget.segments) {
+    if (oldWidget.segments != widget.segments || oldWidget.wordCountMode != widget.wordCountMode) {
       _initializeSegments();
       _initializeIfEmpty();
       
@@ -582,10 +587,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   
   // MARK: - 新增方法
   
-  void _addSegment() {
+  void _addSegment(String name) {
     _commitCurrentEditorToSelectedChapter();
     
-    final name = _newSegmentName.trim();
+    name = name.trim();
     final finalName = name.isEmpty ? "Seg ${_segments.length + 1}" : name;
     final firstChapter = ChapterData(chapterName: "Chapter 1", chapterContent: "");
     final newSegment = SegmentData(
@@ -593,25 +598,23 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       chapters: [firstChapter],
     );
     
-    _segments.add(newSegment);
     setState(() {
-      _newSegmentName = "";
+      _segments.add(newSegment);
     });
     _notifySegmentsChanged();
     
     _selectSegment(newSegment.segmentUUID);
   }
 
-  void _addChapter(int segIdx) {
+  void _addChapter(int segIdx, String name) {
     _commitCurrentEditorToSelectedChapter();
     
-    final name = _newChapterName.trim();
+    name = name.trim();
     final finalName = name.isEmpty ? "Chapter ${_segments[segIdx].chapters.length + 1}" : name;
     final newChapter = ChapterData(chapterName: finalName, chapterContent: "");
     
-    _segments[segIdx].chapters.add(newChapter);
     setState(() {
-      _newChapterName = "";
+      _segments[segIdx].chapters.add(newChapter);
     });
     _notifySegmentsChanged();
     
@@ -841,6 +844,31 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.onetwothree,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        "全書共 $_totalWordCount 字",
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 32),
@@ -987,36 +1015,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             const SizedBox(height: 16),
             
             // 新增區段
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: TextEditingController(text: _newSegmentName)
-                      ..selection = TextSelection.fromPosition(
-                        TextPosition(offset: _newSegmentName.length),
-                      ),
-                    decoration: InputDecoration(
-                      hintText: "新增區段名稱",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _newSegmentName = value;
-                      });
-                    },
-                    onSubmitted: (_) => _addSegment(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: _addSegment,
-                  label: const Text("＋"),
-                ),
-              ],
+            AddItemInput(
+              title: "區段",
+              onAdd: _addSegment,
             ),
           ],
         ),
@@ -1147,37 +1148,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             const SizedBox(height: 16),
             
             // 新增章節
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: TextEditingController(text: _newChapterName)
-                      ..selection = TextSelection.fromPosition(
-                        TextPosition(offset: _newChapterName.length),
-                      ),
-                    decoration: InputDecoration(
-                      hintText: selectedSegIdx != null ? "新增章節名稱" : "請先選擇區段",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    ),
-                    enabled: selectedSegIdx != null,
-                    onChanged: (value) {
-                      setState(() {
-                        _newChapterName = value;
-                      });
-                    },
-                    onSubmitted: (_) => selectedSegIdx != null ? _addChapter(selectedSegIdx) : null,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: selectedSegIdx != null ? () => _addChapter(selectedSegIdx) : null,
-                  label: const Text("＋"),
-                ),
-              ],
+            AddItemInput(
+              title: selectedSegIdx != null ? "章節名稱" : "請先選擇區段",
+              enabled: selectedSegIdx != null,
+              onAdd: (val) {
+                if (selectedSegIdx != null) {
+                  _addChapter(selectedSegIdx, val);
+                }
+              },
             ),
           ],
         ),
@@ -1257,6 +1235,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           index: index,
           isSelected: isSelected,
           isEditing: isEditing,
+          wordCountMode: widget.wordCountMode,
           onEditStart: () {
             setState(() {
               _editingSegmentID = segment.segmentUUID;
@@ -1326,6 +1305,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               index: index,
               isSelected: isSelected,
               isEditing: isEditing,
+              wordCountMode: widget.wordCountMode,
               onEditStart: () {
                 setState(() {
                   _editingSegmentID = segment.segmentUUID;
@@ -1417,7 +1397,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "${chapter.chapterWordsCount} 字",
+                      "${chapter.getWordCount(widget.wordCountMode)} 字",
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
@@ -1438,6 +1418,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           chapterIdx: chapterIdx,
           isSelected: isSelected,
           isEditing: isEditing,
+          wordCountMode: widget.wordCountMode,
           onEditStart: () {
             setState(() {
               _editingChapterID = chapter.chapterUUID;
@@ -1497,6 +1478,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               chapterIdx: chapterIdx,
               isSelected: isSelected,
               isEditing: isEditing,
+              wordCountMode: widget.wordCountMode,
               onEditStart: () {
                 setState(() {
                   _editingChapterID = chapter.chapterUUID;
@@ -1528,6 +1510,7 @@ class _SegmentListItem extends StatefulWidget {
   final int index;
   final bool isSelected;
   final bool isEditing;
+  final WordCountMode wordCountMode;
   final VoidCallback onEditStart;
   final ValueChanged<String> onEditSubmit;
   final VoidCallback onDelete;
@@ -1538,6 +1521,7 @@ class _SegmentListItem extends StatefulWidget {
     required this.index,
     required this.isSelected,
     required this.isEditing,
+    required this.wordCountMode,
     required this.onEditStart,
     required this.onEditSubmit,
     required this.onDelete,
@@ -1600,6 +1584,10 @@ class _SegmentListItemState extends State<_SegmentListItem> {
                     : null,
               ),
             ),
+      subtitle: Text(
+        "${widget.segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(widget.wordCountMode))} 字",
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1627,6 +1615,7 @@ class _ChapterListItem extends StatefulWidget {
   final int chapterIdx;
   final bool isSelected;
   final bool isEditing;
+  final WordCountMode wordCountMode;
   final VoidCallback onEditStart;
   final ValueChanged<String> onEditSubmit;
   final VoidCallback onDelete;
@@ -1638,6 +1627,7 @@ class _ChapterListItem extends StatefulWidget {
     required this.chapterIdx,
     required this.isSelected,
     required this.isEditing,
+    required this.wordCountMode,
     required this.onEditStart,
     required this.onEditSubmit,
     required this.onDelete,
@@ -1698,7 +1688,7 @@ class _ChapterListItemState extends State<_ChapterListItem> {
               ),
             ),
       subtitle: Text(
-        "${widget.chapter.chapterWordsCount} 字",
+        "${widget.chapter.getWordCount(widget.wordCountMode)} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       trailing: Row(

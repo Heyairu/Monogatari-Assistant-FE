@@ -147,6 +147,8 @@ class _SettingViewState extends State<SettingView> {
                         setState(() {});
                       },
                     ),
+                    const SizedBox(height: 16),
+                    _buildWordCountSetting(),
                     const SizedBox(height: 8),
                     _buildPlaceholderSetting("自動儲存", Icons.save),
                     _buildPlaceholderSetting("自動備份", Icons.backup),
@@ -364,6 +366,64 @@ class _SettingViewState extends State<SettingView> {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // MARK: - 字數計算模式設定
+  Widget _buildWordCountSetting() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              Icon(Icons.numbers, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "字數統計模式",
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  Text(
+                    widget.settingsManager.wordCountMode == WordCountMode.characters
+                        ? "純字元數 (不建議)"
+                        : "全形字元 + 半形單字",
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<WordCountMode>(
+            segments: const [
+              ButtonSegment<WordCountMode>(
+                value: WordCountMode.characters,
+                label: Text("字元數 (不建議)"),
+                icon: Icon(Icons.abc),
+              ),
+              ButtonSegment<WordCountMode>(
+                value: WordCountMode.wordsAndCharacters,
+                label: Text("混合模式"),
+                icon: Icon(Icons.text_fields),
+              ),
+            ],
+            selected: {widget.settingsManager.wordCountMode},
+            onSelectionChanged: (Set<WordCountMode> newSelection) async {
+              await widget.settingsManager.setWordCountMode(newSelection.first);
+              setState(() {});
+            },
           ),
         ),
       ],

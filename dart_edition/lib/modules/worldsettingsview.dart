@@ -19,6 +19,10 @@ import "dart:convert";
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
 import "package:xml/xml.dart" as xml;
+import "../bin/ui_library.dart";
+import "package:logging/logging.dart";
+
+final _log = Logger("WorldSettingsView");
 
 // MARK: - 拖放數據類型
 
@@ -326,7 +330,7 @@ class WorldSettingsCodec {
       
       return roots;
     } catch (e) {
-      print("Error parsing WorldSettings XML: $e");
+      _log.severe("Error parsing WorldSettings XML: $e");
       return null;
     }
   }
@@ -375,7 +379,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   String? selectedNodeId;
   String? lastSelectedNodeId; // 記錄上次選取的節點
   String? editingNodeId;
-  String newName = "";
   String tempCustomKey = "";
   String tempCustomVal = "";
   List<TemplatePreset> templatePresets = [];
@@ -390,7 +393,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   String? _draggingLocationId;
   
   // 控制器
-  final TextEditingController newNameController = TextEditingController();
   final TextEditingController tempKeyController = TextEditingController();
   final TextEditingController tempValController = TextEditingController();
   final TextEditingController locationNameController = TextEditingController();
@@ -401,7 +403,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   void initState() {
     super.initState();
     _rebuildFlatList();
-    newNameController.text = newName;
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
     
@@ -436,7 +437,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     locationNameController.removeListener(_onNameChanged);
     locationTypeController.removeListener(_onTypeChanged);
     locationNoteController.removeListener(_onNoteChanged);
-    newNameController.dispose();
     tempKeyController.dispose();
     tempValController.dispose();
     locationNameController.dispose();
@@ -634,41 +634,11 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                         // 新增地點輸入框
                         Expanded(
                           flex: 0,
-                          child: SizedBox(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: newNameController,
-                                      decoration: InputDecoration(
-                                        labelText: "新地點名稱",
-                                        hintText: selectedNodeId != null ? "作為子地點添加" : "作為頂層地點添加",
-                                        border: const OutlineInputBorder(),
-                                        isDense: true,
-                                      ),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          newName = value;
-                                        });
-                                      },
-                                      onSubmitted: (_) {
-                                        if (newName.trim().isNotEmpty) {
-                                          _addLocation();
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: newName.trim().isEmpty ? null : _addLocation,
-                                    icon: Icon(
-                                      Icons.add_circle,
-                                      color: newName.trim().isEmpty ? Colors.grey : Colors.green,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: AddItemInput(
+                              title: selectedNodeId != null ? "子地點" : "頂層地點",
+                              onAdd: _addLocation,
                             ),
                           ),
                         ),
@@ -1372,7 +1342,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       final file = File(filePath);
       await file.writeAsString(xml);
     } catch (e) {
-      print("儲存模板失敗：${e.toString()}");
+      _log.warning("儲存模板失敗：${e.toString()}");
     }
   }
 
@@ -1390,7 +1360,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       final presets = _parseAllTemplatesXML(xml);
       
       if (presets.isEmpty) {
-        print("讀檔成功但解析為空，保留現有預設。");
+        _log.info("讀檔成功但解析為空，保留現有預設。");
         _ensureBlankPresetExists();
         return;
       }
@@ -1401,7 +1371,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         selectedPresetName = templatePresets.isNotEmpty ? templatePresets.first.name : "空白";
       });
     } catch (e) {
-      print("讀取模板失敗：${e.toString()}");
+      _log.warning("讀取模板失敗：${e.toString()}");
       _ensureBlankPresetExists();
     }
   }
@@ -1413,20 +1383,18 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   // TreeView 操作
-  void _addLocation() {
-    final trimmed = newName.trim();
-    if (trimmed.isEmpty) return;
+  void _addLocation(String name) {
+    name = name.trim();
+    if (name.isEmpty) return;
     
     // 根據是否有選中節點來決定添加位置
     if (selectedNodeId != null) {
       // 有選中節點：作為選中節點的子節點添加
-      _addChild(selectedNodeId!, trimmed);
+      _addChild(selectedNodeId!, name);
     } else {
       // 沒有選中節點：作為頂層節點添加
       setState(() {
-        widget.locations.add(LocationData(localName: trimmed));
-        newName = "";
-        newNameController.clear();
+        widget.locations.add(LocationData(localName: name));
       });
       _notifyChange();
     }
@@ -1436,8 +1404,6 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     _addChildRecursive(parentId, name, widget.locations);
     setState(() {
       _rebuildFlatList();
-      newName = "";
-      newNameController.clear();
     });
     _notifyChange();
   }

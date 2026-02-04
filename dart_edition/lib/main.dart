@@ -22,6 +22,7 @@ import "bin/file.dart";
 import "bin/findreplace.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
+import "bin/content_manager.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -128,81 +129,6 @@ class _MainAppState extends State<MainApp> {
   }
 }
 
-// 自定義 TextEditingController，支持高亮顯示
-class HighlightTextEditingController extends TextEditingController {
-  List<TextSelection> searchMatches = [];
-  int currentMatchIndex = -1;
-  Color? highlightColor;
-  Color? currentHighlightColor;
-
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    if (searchMatches.isEmpty) {
-      return TextSpan(text: text, style: style);
-    }
-
-    final List<TextSpan> spans = [];
-    int lastEnd = 0;
-
-    for (int i = 0; i < searchMatches.length; i++) {
-      final match = searchMatches[i];
-      
-      // 添加匹配項之前的普通文本
-      if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: style,
-        ));
-      }
-
-      // 添加高亮的匹配項
-      final isCurrentMatch = i == currentMatchIndex;
-      spans.add(TextSpan(
-        text: text.substring(match.start, match.end),
-        style: style?.copyWith(
-          backgroundColor: isCurrentMatch
-              ? (currentHighlightColor ?? Colors.orange.withOpacity(0.6))
-              : (highlightColor ?? Colors.yellow.withOpacity(0.4)),
-        ),
-      ));
-
-      lastEnd = match.end;
-    }
-
-    // 添加最後一個匹配項之後的文本
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: style,
-      ));
-    }
-
-    return TextSpan(children: spans, style: style);
-  }
-
-  void updateHighlights({
-    required List<TextSelection> matches,
-    required int currentIndex,
-    Color? highlight,
-    Color? currentHighlight,
-  }) {
-    searchMatches = matches;
-    currentMatchIndex = currentIndex;
-    highlightColor = highlight;
-    currentHighlightColor = currentHighlight;
-    notifyListeners();
-  }
-
-  void clearHighlights() {
-    searchMatches = [];
-    currentMatchIndex = -1;
-    notifyListeners();
-  }
-}
 
 // 數據模型類別（BaseInfoData, ChapterData, SegmentData 現在從模組導入）
 
@@ -325,7 +251,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       if (!_isSyncing && contentText != textController.text) {
         setState(() {
           contentText = textController.text;
-          totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
+          totalWords = _calculateTotalWords();
           
           // 標記有未儲存的變更
           _markAsModified();
@@ -342,10 +268,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _newProject();
     });
+    
+    // 監聽設定變更
+    widget.settingsManager.addListener(_onSettingsChanged);
   }
   
   @override
   void dispose() {
+    widget.settingsManager.removeListener(_onSettingsChanged);
     if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
         defaultTargetPlatform == TargetPlatform.linux || 
         defaultTargetPlatform == TargetPlatform.macOS)) {
@@ -356,6 +286,27 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     replaceController.dispose();
     editorFocusNode.dispose();
     super.dispose();
+  }
+  
+  int _calculateTotalWords() {
+    int sum = 0;
+    for (final seg in segmentsData) {
+      for (final chap in seg.chapters) {
+        if (selectedSegID != null && selectedChapID != null && 
+            seg.segmentUUID == selectedSegID && chap.chapterUUID == selectedChapID) {
+          sum += ContentManager.calculateWordCount(textController.text, mode: widget.settingsManager.wordCountMode);
+        } else {
+          sum += ContentManager.calculateWordCount(chap.chapterContent, mode: widget.settingsManager.wordCountMode);
+        }
+      }
+    }
+    return sum;
+  }
+  
+  void _onSettingsChanged() {
+    setState(() {
+      totalWords = _calculateTotalWords();
+    });
   }
   
   // WindowListener 實作
@@ -418,219 +369,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   @override
   void onWindowUndocked() {}
   
-  // 搜尋與取代功能實作
-  
-  /// 執行搜尋
-  void _performFind(String findText, FindReplaceOptions options, {bool forward = true}) {
-    if (findText.isEmpty) {
-      return;
-    }
-    
-    final text = textController.text;
-    if (text.isEmpty) {
-      return;
-    }
-    
-    // 找出所有匹配項（使用 findreplace.dart 的函數）
-    _searchMatches = findAllMatches(text, findText, options);
-    
-    if (_searchMatches.isEmpty) {
-      _currentMatchIndex = -1;
-      textController.updateHighlights(
-        matches: [],
-        currentIndex: -1,
-      );
-      setState(() {}); // 更新 UI 以顯示 0 個匹配
-      return;
-    }
-    
-    // 取得當前光標位置
-    final currentOffset = textController.selection.baseOffset;
-    
-    // 如果是第一次搜尋（_currentMatchIndex == -1），從當前光標位置開始搜尋
-    if (_currentMatchIndex == -1) {
-      if (forward) {
-        // 向下搜尋：找到第一個在光標位置之後的匹配項
-        _currentMatchIndex = _searchMatches.indexWhere((match) => match.start >= currentOffset);
-        // 如果沒找到，從頭開始
-        if (_currentMatchIndex == -1) {
-          _currentMatchIndex = 0;
-        }
-      } else {
-        // 向上搜尋：找到最後一個在光標位置之前的匹配項
-        _currentMatchIndex = _searchMatches.lastIndexWhere((match) => match.end <= currentOffset);
-        // 如果沒找到，從最後一個開始
-        if (_currentMatchIndex == -1) {
-          _currentMatchIndex = _searchMatches.length - 1;
-        }
-      }
-    } else {
-      // 移動到下一個/上一個匹配項
-      if (forward) {
-        _currentMatchIndex = (_currentMatchIndex + 1) % _searchMatches.length;
-      } else {
-        _currentMatchIndex = (_currentMatchIndex - 1 + _searchMatches.length) % _searchMatches.length;
-      }
-    }
-    
-    // 更新高亮顯示
-    textController.updateHighlights(
-      matches: _searchMatches,
-      currentIndex: _currentMatchIndex,
-    );
-    
-    // 選中當前匹配項
-    final match = _searchMatches[_currentMatchIndex];
-    textController.selection = match;
-    
-    // 請求焦點以顯示選取效果
-    editorFocusNode.requestFocus();
-    
-    setState(() {}); // 更新 UI 以顯示當前匹配數
-  }
-  
-  /// 執行取代（取代當前選中的項目）
-  void _performReplace(String findText, String replaceText, FindReplaceOptions options) {
-    if (findText.isEmpty) {
-      return;
-    }
-    
-    final selection = textController.selection;
-    if (!selection.isValid || selection.isCollapsed) {
-      // 如果沒有選取，先搜尋
-      _performFind(findText, options, forward: true);
-      return;
-    }
-    
-    // 檢查當前選取是否對應當前匹配項
-    if (_currentMatchIndex >= 0 && _currentMatchIndex < _searchMatches.length) {
-      final currentMatch = _searchMatches[_currentMatchIndex];
-      
-      // 確認選取範圍與當前匹配項一致
-      if (selection.start == currentMatch.start && selection.end == currentMatch.end) {
-        String actualReplaceText = replaceText;
-        
-        // 如果是正則表達式模式，處理捕獲組
-        if (options.useRegexp) {
-          try {
-            // 正則表達式模式固定啟用大小寫相符
-            final regex = RegExp(findText, caseSensitive: true);
-            final text = textController.text;
-            final matchText = text.substring(selection.start, selection.end);
-            final regexMatch = regex.firstMatch(matchText);
-            
-            if (regexMatch != null) {
-              actualReplaceText = replaceText;
-              // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
-              for (int i = 0; i <= regexMatch.groupCount; i++) {
-                final groupValue = regexMatch.group(i) ?? "";
-                // 支援 $0, $1, $2, ... 語法
-                actualReplaceText = actualReplaceText.replaceAll("\$$i", groupValue);
-                // 支援 \0, \1, \2, ... 反向引用語法
-                actualReplaceText = actualReplaceText.replaceAll("\\$i", groupValue);
-              }
-            }
-          } catch (e) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("正則表達式錯誤: $e")),
-            );
-            return;
-          }
-        }
-        
-        // 執行取代
-        final newText = textController.text.replaceRange(
-          selection.start,
-          selection.end,
-          actualReplaceText,
-        );
-        
-        setState(() {
-          textController.text = newText;
-          textController.selection = TextSelection.collapsed(
-            offset: selection.start + actualReplaceText.length,
-          );
-          contentText = newText;
-          totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
-          
-          // 清除搜尋狀態，因為文本已改變
-          _searchMatches = [];
-          _currentMatchIndex = -1;
-          textController.clearHighlights();
-        });
-        
-        // 自動尋找下一個
-        _performFind(findText, options, forward: true);
-        return;
-      }
-    }
-    
-    // 如果不匹配，嘗試先搜尋
-    _performFind(findText, options, forward: true);
-  }
-  
-  /// 執行全部取代
-  void _performReplaceAll(String findText, String replaceText, FindReplaceOptions options) {
-    if (findText.isEmpty) {
-      return;
-    }
-    
-    final text = textController.text;
-    if (text.isEmpty) {
-      return;
-    }
-    
-    // 找出所有匹配項（使用 findreplace.dart 的函數）
-    final matches = findAllMatches(text, findText, options);
-    
-    if (matches.isEmpty) {
-      return;
-    }
-    
-    String newText = text;
-    
-    // 如果是正則表達式模式，使用正則表達式替換來支援捕獲組
-    if (options.useRegexp) {
-      try {
-        // 正則表達式模式固定啟用大小寫相符
-        final regex = RegExp(findText, caseSensitive: true);
-        newText = newText.replaceAllMapped(regex, (match) {
-          String replacement = replaceText;
-          // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
-          for (int i = 0; i <= match.groupCount; i++) {
-            final groupValue = match.group(i) ?? "";
-            // 支援 $0, $1, $2, ... 語法
-            replacement = replacement.replaceAll("\$$i", groupValue);
-            // 支援 \0, \1, \2, ... 反向引用語法
-            replacement = replacement.replaceAll("\\$i", groupValue);
-          }
-          return replacement;
-        });
-      } catch (e) {
-        // 如果正則表達式無效，顯示錯誤並返回
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("正則表達式錯誤: $e")),
-        );
-        return;
-      }
-    } else {
-      // 非正則表達式模式，從後往前取代，避免位置偏移問題
-      for (int i = matches.length - 1; i >= 0; i--) {
-        final match = matches[i];
-        newText = newText.replaceRange(match.start, match.end, replaceText);
-      }
-    }
-    
-    setState(() {
-      textController.text = newText;
-      textController.selection = TextSelection.collapsed(offset: 0);
-      contentText = newText;
-      totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
-      _currentMatchIndex = -1;
-      _searchMatches = [];
-      textController.clearHighlights();
-    });
-  }
+
 
   // MARK: 主體建構方法
   @override
@@ -896,6 +635,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     String saveTimeStr = _lastSavedTime != null 
         ? DateFormat("HH:mm").format(_lastSavedTime!) 
         : "--:--";
+        
+    final int currentWords = ContentManager.calculateWordCount(contentText, mode: widget.settingsManager.wordCountMode);
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -949,7 +690,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              "$totalWords 字",
+              "$currentWords / $totalWords 字",
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.bold,
@@ -1237,72 +978,135 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildEditor() {
     return Container(
       color: Theme.of(context).colorScheme.surface,
-      child: CustomScrollView(
-        slivers: [
+      child: Column(
+        children: [
           // 搜尋列（當開啟時）
           if (showFindReplaceWindow)
-            SliverToBoxAdapter(
-              child: FindReplaceBar(
-                findController: findController,
-                replaceController: replaceController,
-                options: findReplaceOptions,
-                currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
-                totalMatches: _searchMatches.length,
-                onFindNext: (findText, replaceText, options) {
-                  _performFind(findText, options, forward: true);
-                },
-                onFindPrevious: (findText, replaceText, options) {
-                  _performFind(findText, options, forward: false);
-                },
-                onReplace: (findText, replaceText, options) {
-                  _performReplace(findText, replaceText, options);
-                },
-                onReplaceAll: (findText, replaceText, options) {
-                  _performReplaceAll(findText, replaceText, options);
-                },
-                onSearchChanged: (findText, options) {
-                  // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
-                  if (findText.isNotEmpty) {
-                    final text = textController.text;
-                    if (text.isNotEmpty) {
-                      setState(() {
-                        _searchMatches = findAllMatches(text, findText, options);
-                        // 如果當前選中的匹配項仍然有效，保持它
-                        if (_currentMatchIndex >= _searchMatches.length) {
-                          _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
-                        }
-                        // 更新高亮顯示
-                        textController.updateHighlights(
-                          matches: _searchMatches,
-                          currentIndex: _currentMatchIndex,
-                        );
-                      });
-                    }
-                  } else {
+            FindReplaceBar(
+              findController: findController,
+              replaceController: replaceController,
+              options: findReplaceOptions,
+              currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
+              totalMatches: _searchMatches.length,
+              onFindNext: (findText, replaceText, options) {
+                performFind(
+                  textController,
+                  findText,
+                  options,
+                  editorFocusNode,
+                  _searchMatches,
+                  _currentMatchIndex,
+                  (matches, index) {
                     setState(() {
-                      _searchMatches = [];
-                      _currentMatchIndex = -1;
-                      textController.clearHighlights();
+                      _searchMatches = matches;
+                      _currentMatchIndex = index;
+                    });
+                  },
+                  forward: true,
+                );
+              },
+              onFindPrevious: (findText, replaceText, options) {
+                performFind(
+                  textController,
+                  findText,
+                  options,
+                  editorFocusNode,
+                  _searchMatches,
+                  _currentMatchIndex,
+                  (matches, index) {
+                    setState(() {
+                      _searchMatches = matches;
+                      _currentMatchIndex = index;
+                    });
+                  },
+                  forward: false,
+                );
+              },
+              onReplace: (findText, replaceText, options) {
+                performReplace(
+                  context,
+                  textController,
+                  findText,
+                  replaceText,
+                  options,
+                  editorFocusNode,
+                  _searchMatches,
+                  _currentMatchIndex,
+                  (matches, index) {
+                    setState(() {
+                      _searchMatches = matches;
+                      _currentMatchIndex = index;
+                    });
+                  },
+                  (newText) {
+                    setState(() {
+                      contentText = newText;
+                      totalWords = _calculateTotalWords();
+                    });
+                  },
+                );
+              },
+              onReplaceAll: (findText, replaceText, options) {
+                performReplaceAll(
+                  context,
+                  textController,
+                  findText,
+                  replaceText,
+                  options,
+                  (matches, index) {
+                    setState(() {
+                      _searchMatches = matches;
+                      _currentMatchIndex = index;
+                    });
+                  },
+                  (newText) {
+                    setState(() {
+                      contentText = newText;
+                      totalWords = _calculateTotalWords();
+                    });
+                  },
+                );
+              },
+              onSearchChanged: (findText, options) {
+                // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
+                if (findText.isNotEmpty) {
+                  final text = textController.text;
+                  if (text.isNotEmpty) {
+                    setState(() {
+                      _searchMatches = findAllMatches(text, findText, options);
+                      // 如果當前選中的匹配項仍然有效，保持它
+                      if (_currentMatchIndex >= _searchMatches.length) {
+                        _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
+                      }
+                      // 更新高亮顯示
+                      textController.updateHighlights(
+                        matches: _searchMatches,
+                        currentIndex: _currentMatchIndex,
+                      );
                     });
                   }
-                },
-                onClose: () {
+                } else {
                   setState(() {
-                    showFindReplaceWindow = false;
-                    // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
                     _searchMatches = [];
                     _currentMatchIndex = -1;
                     textController.clearHighlights();
-                    // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                   });
-                },
-              ),
+                }
+              },
+              onClose: () {
+                setState(() {
+                  showFindReplaceWindow = false;
+                  // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
+                  _searchMatches = [];
+                  _currentMatchIndex = -1;
+                  textController.clearHighlights();
+                  // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
+                });
+              },
             ),
-          
 
-          // 文本編輯器 - 使用 SliverFillRemaining 確保填滿剩餘空間
-          SliverFillRemaining(
-            hasScrollBody: false,
+          // 文本編輯器 - 使用 Expanded 填充剩餘空間
+          Expanded(
             child: Container(
               margin: const EdgeInsets.all(16),
               child: TextField(
@@ -1355,6 +1159,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       data: baseInfoData,
       contentText: contentText,
       totalWords: totalWords,
+      wordCountMode: widget.settingsManager.wordCountMode,
       onDataChanged: (updatedData) {
         setState(() {
           baseInfoData = updatedData;
@@ -1368,15 +1173,34 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     return ChapterModule.ChapterSelectionView(
       segments: segmentsData,
       contentText: contentText,
+      wordCountMode: widget.settingsManager.wordCountMode,
       selectedSegmentID: selectedSegID,
       selectedChapterID: selectedChapID,
       onSegmentsChanged: (updatedSegments) {
         // 先存：總是嘗試保存當前編輯器內容（如果有選中的章節）
         _syncEditorToSelectedChapter();
         
+        // 建立內容映射表 (UUID -> Content)，確保從 ChapterSelectionView 回傳的結構變更不會覆蓋掉實際的內容
+        final Map<String, String> contentMap = {};
+        for (final seg in segmentsData) {
+          for (final chap in seg.chapters) {
+            contentMap[chap.chapterUUID] = chap.chapterContent;
+          }
+        }
+        
+        // 將內容回填到 updatedSegments
+        for (final seg in updatedSegments) {
+          for (final chap in seg.chapters) {
+            if (contentMap.containsKey(chap.chapterUUID)) {
+              chap.chapterContent = contentMap[chap.chapterUUID]!;
+            }
+          }
+        }
+        
         // 然後更新 segmentsData
         setState(() {
           segmentsData = updatedSegments;
+          totalWords = _calculateTotalWords();
         });
         
         _markAsModified();
@@ -1392,7 +1216,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             contentText = newContent;
             textController.text = contentText;
             // 重新計算字數
-            totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
+            totalWords = _calculateTotalWords();
           });
           _isSyncing = false;
         }
@@ -1800,7 +1624,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       _isSyncing = true;
       textController.text = contentText;
       _isSyncing = false;
-      totalWords = data.totalWords;
+      totalWords = _calculateTotalWords();
     } else {
       selectedSegID = null;
       selectedChapID = null;

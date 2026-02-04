@@ -15,6 +15,12 @@
 import "package:flutter/material.dart";
 import "package:intl/intl.dart";
 import "package:xml/xml.dart" as xml;
+import "../bin/ui_library.dart";
+import "package:logging/logging.dart";
+import "../bin/content_manager.dart";
+import "../bin/settings_manager.dart";
+
+final _log = Logger("BaseInfoView");
 
 // MARK: - Model
 
@@ -31,8 +37,8 @@ class BaseInfoData {
 
   BaseInfoData();
 
-  void recalcNowWords(String content) {
-    nowWords = content.replaceAll(RegExp(r"\s"), "").length;
+  void recalcNowWords(String content, {WordCountMode mode = WordCountMode.characters}) {
+    nowWords = ContentManager.calculateWordCount(content, mode: mode);
   }
 
   bool get isEffectivelyEmpty {
@@ -153,6 +159,7 @@ class BaseInfoCodec {
     required int totalWords,
     required String contentText,
     bool updateLatestSave = true,
+    WordCountMode wordCountMode = WordCountMode.characters,
   }) {
     if (data.isEffectivelyEmpty) return null;
 
@@ -166,7 +173,7 @@ class BaseInfoCodec {
       ..tags = List.from(data.tags)
       ..latestSave = updateLatestSave ? DateTime.now() : data.latestSave;
 
-    snapshot.recalcNowWords(contentText);
+    snapshot.recalcNowWords(contentText, mode: wordCountMode);
 
     // Update original data if requested
     if (updateLatestSave) {
@@ -264,7 +271,7 @@ class BaseInfoCodec {
 
       return data;
     } catch (e) {
-      print("Error parsing BaseInfo XML: $e");
+      _log.severe("Error parsing BaseInfo XML: $e");
       return null;
     }
   }
@@ -276,6 +283,7 @@ class BaseInfoView extends StatefulWidget {
   final BaseInfoData data;
   final String contentText;
   final int totalWords;
+  final WordCountMode wordCountMode;
   final ValueChanged<BaseInfoData>? onDataChanged;
 
   const BaseInfoView({
@@ -283,6 +291,7 @@ class BaseInfoView extends StatefulWidget {
     required this.data,
     required this.contentText,
     required this.totalWords,
+    required this.wordCountMode,
     this.onDataChanged,
   });
 
@@ -292,7 +301,6 @@ class BaseInfoView extends StatefulWidget {
 
 class _BaseInfoViewState extends State<BaseInfoView> {
   late BaseInfoData _data;
-  final TextEditingController _newTagController = TextEditingController();
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
   
   // 為每個文字欄位創建專用的 TextEditingController
@@ -317,7 +325,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       ..latestSave = widget.data.latestSave
       ..nowWords = widget.data.nowWords;
     
-    _data.recalcNowWords(widget.contentText);
+    _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
     
     // 初始化各個文字欄位的 controller
     _bookNameController = TextEditingController(text: _data.bookName);
@@ -364,7 +372,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     super.didUpdateWidget(oldWidget);
     
     // 檢查 data 是否變化（新建或開啟檔案時）
-    if (oldWidget.data != widget.data) {
+    if (oldWidget.data != widget.data || oldWidget.wordCountMode != widget.wordCountMode) {
       setState(() {
         // 更新內部數據
         _data = BaseInfoData()
@@ -378,7 +386,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
           ..latestSave = widget.data.latestSave
           ..nowWords = widget.data.nowWords;
         
-        _data.recalcNowWords(widget.contentText);
+        _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
         
         // 更新所有 TextEditingController（暫時移除監聽器以避免循環通知）
         _bookNameController.removeListener(() {});
@@ -429,14 +437,13 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     } else if (oldWidget.contentText != widget.contentText) {
       // 只有 contentText 變化時，重新計算字數
       setState(() {
-        _data.recalcNowWords(widget.contentText);
+        _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
       });
     }
   }
 
   @override
   void dispose() {
-    _newTagController.dispose();
     _bookNameController.dispose();
     _authorController.dispose();
     _purposeController.dispose();
@@ -450,16 +457,14 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     widget.onDataChanged?.call(_data);
   }
 
-  void _addTag() {
-    final tagText = _newTagController.text.trim();
+  void _addTag(String tagText) {
+    tagText = tagText.trim();
     if (tagText.isEmpty || _data.tags.contains(tagText)) {
-      _newTagController.clear();
       return;
     }
 
     setState(() {
       _data.tags.add(tagText);
-      _newTagController.clear();
     });
     _notifyDataChanged();
   }
@@ -617,68 +622,12 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   }
 
   Widget _buildTagsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.local_offer, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              "標籤",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // 現有標籤
-        if (_data.tags.isNotEmpty) ...[
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _data.tags.asMap().entries.map((entry) {
-              final index = entry.key;
-              final tag = entry.value;
-              return Chip(
-                label: Text(tag),
-                deleteIcon: const Icon(Icons.close),
-                onDeleted: () => _removeTag(index),
-                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-        ],
-
-        // 新增標籤
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _newTagController,
-                decoration: InputDecoration(
-                  hintText: "新增標籤",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-                ),
-                onSubmitted: (_) => _addTag(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            FilledButton.icon(
-              onPressed: _addTag,
-              icon: const Icon(Icons.add),
-              label: const Text("新增"),
-            ),
-          ],
-        ),
-      ],
+    return CardList(
+      title: "標籤",
+      icon: Icons.local_offer,
+      items: _data.tags,
+      onAdd: _addTag,
+      onRemove: _removeTag,
     );
   }
 
@@ -746,7 +695,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
               "最後儲存時間",
               _data.latestSave != null
                 ? _dateFormatter.format(_data.latestSave!)
-                : "YYYY.MM.DD hh.mm.ss",
+                : "--:--:--",
               Icons.access_time,
             ),
             
