@@ -492,6 +492,101 @@ class ProjectManager {
       onError("匯出檔案失敗：${e.toString()}");
     }
   }
+
+  static Future<void> exportSelective(
+    BuildContext context, {
+    required ProjectData currentData,
+    required String defaultFileName,
+    required Set<String> selectedModules,
+    required String format, // "xml" or "md"
+    required Function(bool) setLoading,
+    required Function(String) onSuccess,
+    required Function(String) onError,
+  }) async {
+    try {
+      setLoading(true);
+      final buffer = StringBuffer();
+      
+      if (format == "xml") {
+        buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        buffer.writeln("<Project>");
+        
+        if (selectedModules.contains("BaseInfo")) {
+          final xml = BaseInfoModule.BaseInfoCodec.saveXML(
+            data: currentData.baseInfoData,
+            totalWords: currentData.totalWords,
+            contentText: currentData.contentText,
+          );
+          if (xml != null) buffer.writeln(xml);
+        }
+        
+        if (selectedModules.contains("Chapters")) {
+          final xml = ChapterModule.ChapterSelectionCodec.saveXML(currentData.segmentsData);
+          if (xml != null) buffer.writeln(xml);
+        }
+
+        if (selectedModules.contains("Outline")) {
+          final xml = OutlineModule.OutlineCodec.saveXML(currentData.outlineData);
+          if (xml != null) buffer.writeln(xml);
+        }
+
+        if (selectedModules.contains("WorldSettings")) {
+          final xml = WorldSettingsCodec.saveXML(currentData.worldSettingsData);
+          if (xml != null) buffer.writeln(xml);
+        }
+
+        if (selectedModules.contains("Characters")) {
+          final xml = CharacterCodec.saveXML(currentData.characterData);
+          if (xml != null) buffer.writeln(xml);
+        }
+        
+        buffer.writeln("</Project>");
+      } else {
+        // Markdown
+        if (selectedModules.contains("BaseInfo")) {
+          buffer.writeln(_ProjectMerger.generateBaseInfoMD(currentData.baseInfoData, currentData.totalWords));
+          buffer.writeln("---");
+          buffer.writeln();
+        }
+
+        if (selectedModules.contains("Chapters")) {
+          buffer.writeln(_ProjectMerger.generateChapterMD(currentData.segmentsData));
+          buffer.writeln("---");
+          buffer.writeln();
+        }
+
+        if (selectedModules.contains("Outline")) {
+          buffer.writeln(_ProjectMerger.generateOutlineMD(currentData.outlineData));
+          buffer.writeln("---");
+          buffer.writeln();
+        }
+
+        if (selectedModules.contains("WorldSettings")) {
+          buffer.writeln(_ProjectMerger.generateWorldSettingsMD(currentData.worldSettingsData));
+          buffer.writeln("---");
+          buffer.writeln();
+        }
+
+        if (selectedModules.contains("Characters")) {
+          buffer.writeln(_ProjectMerger.generateCharacterMD(currentData.characterData));
+          buffer.writeln("---");
+          buffer.writeln();
+        }
+      }
+
+      await FileService.exportText(
+        content: buffer.toString(),
+        fileName: defaultFileName,
+        extension: format == "xml" ? ".xml" : ".md",
+      );
+
+      setLoading(false);
+      onSuccess("匯出成功！");
+    } catch (e) {
+      setLoading(false);
+      onError("匯出失敗：${e.toString()}");
+    }
+  }
 }
 
 // MARK: - 4. Data Structures (資料結構)
@@ -765,6 +860,358 @@ class _ProjectMerger {
     }
     
     return markdown.toString();
+  }
+
+  /// 生成 BaseInfo Markdown
+  static String generateBaseInfoMD(BaseInfoModule.BaseInfoData data, int totalWords) {
+    final buffer = StringBuffer();
+    buffer.writeln("# 故事設定 (Base Info)");
+    buffer.writeln();
+    buffer.writeln("- **書名**: ${data.bookName}");
+    buffer.writeln("- **作者**: ${data.author}");
+    buffer.writeln("- **類型**: ${data.storyType}");
+    buffer.writeln("- **主旨**: ${data.purpose}");
+    buffer.writeln("- **一句話簡介**: ${data.toRecap}");
+    buffer.writeln("- **標籤**: ${data.tags.join(", ")}");
+    buffer.writeln("- **簡介**: \n${data.intro}");
+    buffer.writeln("- **總字數**: $totalWords");
+    buffer.writeln();
+    return buffer.toString();
+  }
+
+  /// 生成 Chapter Markdown
+  static String generateChapterMD(List<ChapterModule.SegmentData> segments) {
+    final buffer = StringBuffer();
+    buffer.writeln("# 章節內容 (Chapters)");
+    buffer.writeln();
+    for (final segment in segments) {
+      buffer.writeln("## ${segment.segmentName}");
+      for (final chapter in segment.chapters) {
+        buffer.writeln("### ${chapter.chapterName}");
+        buffer.writeln(chapter.chapterContent);
+        buffer.writeln();
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// 生成 Outline Markdown
+  static String generateOutlineMD(List<OutlineModule.StorylineData> storylines) {
+    final buffer = StringBuffer();
+    buffer.writeln("# 大綱 (Outline)");
+    buffer.writeln();
+    for (final storyline in storylines) {
+      buffer.writeln("## ${storyline.storylineName} (${storyline.storylineType})");
+      if (storyline.memo.isNotEmpty) buffer.writeln("備註: ${storyline.memo}");
+      if (storyline.conflictPoint.isNotEmpty) buffer.writeln("衝突點: ${storyline.conflictPoint}");
+      if (storyline.people.isNotEmpty) buffer.writeln("人物: ${storyline.people.join(", ")}");
+      if (storyline.item.isNotEmpty) buffer.writeln("物件: ${storyline.item.join(", ")}");
+      
+      buffer.writeln("### 場景列表:");
+      for (final event in storyline.scenes) {
+        buffer.writeln("- **${event.storyEvent}**");
+        if (event.memo.isNotEmpty) buffer.writeln("  - 備註: ${event.memo}");
+        if (event.conflictPoint.isNotEmpty) buffer.writeln("  - 衝突: ${event.conflictPoint}");
+        if (event.people.isNotEmpty) buffer.writeln("  - 人物: ${event.people.join(", ")}");
+        if (event.item.isNotEmpty) buffer.writeln("  - 物件: ${event.item.join(", ")}");
+        
+        for (final scene in event.scenes) {
+          buffer.writeln("  - [場景] ${scene.sceneName}");
+          if (scene.doingThings.isNotEmpty) buffer.writeln("    - 行動: ${scene.doingThings.join(", ")}");
+          if (scene.people.isNotEmpty) buffer.writeln("    - 人物: ${scene.people.join(", ")}");
+          if (scene.item.isNotEmpty) buffer.writeln("    - 物件: ${scene.item.join(", ")}");
+        }
+      }
+      buffer.writeln();
+    }
+    return buffer.toString();
+  }
+
+  /// 生成 WorldSettings Markdown
+  static String generateWorldSettingsMD(List<LocationData> locations) {
+    final buffer = StringBuffer();
+    buffer.writeln("# 世界設定 (World Settings)");
+    buffer.writeln();
+    
+    void printLocation(LocationData loc, int level) {
+      final indent = "  " * level;
+      final bullet = "- "; // Markdown list style
+      
+      // Node Info
+      buffer.write("$indent$bullet**${loc.localName}**");
+      if (loc.localType.isNotEmpty) buffer.write(" [${loc.localType}]");
+      buffer.writeln();
+
+      // Custom Values only (Note: original note field is typically printed too, but user asked for Key-Value)
+      // Including Note as well for completeness if available
+      if (loc.note.isNotEmpty) {
+        buffer.writeln("$indent  備註: ${loc.note.replaceAll('\n', ' ')}");
+      }
+      
+      if (loc.customVal.isNotEmpty) {
+        for (final kv in loc.customVal) {
+          buffer.writeln("$indent  - ${kv.key}: ${kv.val}");
+        }
+      }
+      
+      // Recursion
+      for (final child in loc.child) {
+        printLocation(child, level + 1);
+      }
+    }
+
+    for (final loc in locations) {
+      printLocation(loc, 0);
+    }
+    
+    return buffer.toString();
+  }
+
+  /// 生成 Character Markdown
+  static String generateCharacterMD(Map<String, Map<String, dynamic>> characters) {
+    // Mapping keys to UI titles
+    final Map<String, String> keyTitleMap = {
+      // Basic Info
+      "name": "姓名",
+      "nickname": "暱稱",
+      "age": "年齡",
+      "gender": "性別",
+      "occupation": "職業",
+      "birthday": "生日",
+      "native": "出生地",
+      "live": "居住地",
+      "address": "住址",
+      
+      // Appearance
+      "height": "身高",
+      "weight": "體重",
+      "blood": "血型",
+      "hair": "髮色",
+      "eye": "瞳色",
+      "skin": "膚色",
+      "faceFeatures": "臉型",
+      "eyeFeatures": "眼型",
+      "earFeatures": "耳型",
+      "noseFeatures": "鼻型",
+      "mouthFeatures": "嘴型",
+      "eyebrowFeatures": "眉型",
+      "body": "體格",
+      "dress": "服裝",
+
+      // Story
+      "intention": "故事中的動機、目標",
+      
+      // Personality
+      "mbti": "MBTI",
+      "personality": "個性",
+      "language": "口頭禪、慣用語",
+      "interest": "興趣",
+      "habit": "習慣、癖好",
+      "belief": "信仰",
+      "limit": "底線",
+      "future": "將來想變得如何",
+      "cherish": "最珍視的事物",
+      "disgust": "最厭惡的事物",
+      "fear": "最害怕的事物",
+      "curious": "最好奇的事物",
+      "expect": "最期待的事物",
+      "alignment": "陣營",
+      "otherValues": "其他補充(個性)",
+
+      // Social
+      "impression": "來自他人的印象",
+      "likable": "最受他人欣賞/喜愛的特點",
+      "family": "簡述原生家庭",
+      "otherShowLove": "其他(表達喜歡)",
+      "otherGoodwill": "其他(表達好意)",
+      "otherHatePeople": "其他(應對討厭的人)",
+      "relationship": "戀愛關係",
+      "isFindNewLove": "另尋新歡",
+      "isHarem": "后宮型作品",
+      "otherRelationship": "其他(戀愛關係)",
+
+      // Other
+      "originalName": "原文姓名",
+      "otherText": "其他補充",
+    };
+
+    final howToShowLoveLabels = {
+      "confess_directly": "直接告白",
+      "give_gift": "送禮物",
+      "talk_often": "常常找對方講話",
+      "get_attention": "做些小動作引起注意",
+      "watch_silently": "默默關注對方",
+    };
+    final howToShowGoodwillLabels = {
+      "smile": "微笑",
+      "greet_actively": "主動打招呼",
+      "help_actively": "主動幫忙",
+      "give_small_gift": "送小禮物",
+      "invite": "邀請對方",
+      "share_things": "分享自己的事",
+    };
+    final handleHatePeopleLabels = {
+      "ignore_directly": "直接無視",
+      "keep_distance": "保持距離",
+      "be_polite": "禮貌應對",
+      "sarcastic": "冷嘲熱諷",
+      "confront": "正面衝突",
+      "ask_for_help": "找人幫忙",
+    };
+
+    final buffer = StringBuffer();
+    buffer.writeln("# 角色設定 (Characters)");
+    buffer.writeln();
+
+    characters.forEach((id, charData) {
+      buffer.writeln("## ${charData['name'] ?? '未命名'}");
+      
+      // Helper for simple fields
+      void writeSimpleField(String key) {
+        if (charData.containsKey(key) && charData[key] != null && charData[key].toString().isNotEmpty) {
+           buffer.writeln("- **${keyTitleMap[key] ?? key}**: ${charData[key]}");
+        }
+      }
+
+      void writeList(String title, String key) {
+         if (charData[key] != null) {
+            final list = charData[key] as List<dynamic>;
+            if (list.isNotEmpty) {
+               buffer.writeln("- **$title**: ${list.join(", ")}");
+            }
+         }
+      }
+
+      void writeCheckboxMap(String title, String key, Map<String, String> labels) {
+         if (charData[key] != null) {
+           final map = charData[key] as Map<String, dynamic>;
+           final selected = <String>[];
+           map.forEach((k, v) {
+             if (v == true) {
+               selected.add(labels[k] ?? k);
+             }
+           });
+           if (selected.isNotEmpty) {
+             buffer.writeln("- **$title**: ${selected.join(", ")}");
+           }
+         }
+      }
+
+      void writeSliders(String title, String key, List<TraitDefinition> defs) {
+        if (charData[key] != null) {
+          final values = charData[key] as List<dynamic>;
+          if (values.isNotEmpty) {
+            buffer.writeln("- **$title**:");
+            for (int i = 0; i < values.length && i < defs.length; i++) {
+              final def = defs[i];
+              final rawVal = (values[i] as num).toDouble();
+              
+              String displayTitle = def.uiTitle;
+              String displayValue = "";
+              
+              if (displayTitle.isNotEmpty) {
+                 displayValue = rawVal.toStringAsFixed(1);
+                 buffer.writeln("  - $displayTitle: $displayValue");
+              } else {
+                 if (rawVal < 50) {
+                   displayTitle = def.uiLeft;
+                   displayValue = (100 - rawVal).toStringAsFixed(1);
+                 } else {
+                   displayTitle = def.uiRight;
+                   displayValue = rawVal.toStringAsFixed(1);
+                 }
+                 buffer.writeln("  - $displayTitle: $displayValue");
+              }
+            }
+          }
+        }
+      }
+
+      // --- Output Sections ---
+
+      // Basic
+      for (var key in ["name", "nickname", "age", "gender", "occupation", "birthday", "native", "live", "address"]) {
+        writeSimpleField(key);
+      }
+      
+      // Appearance
+      buffer.writeln("\n### 外觀");
+      for (var key in ["height", "weight", "blood", "hair", "eye", "skin", "faceFeatures", "eyeFeatures", "earFeatures", "noseFeatures", "mouthFeatures", "eyebrowFeatures", "body", "dress"]) {
+        writeSimpleField(key);
+      }
+
+      // Story
+      buffer.writeln("\n### 故事相關");
+      writeSimpleField("intention");
+      
+      if (charData["hinderEvents"] != null) {
+        final events = charData["hinderEvents"] as List<dynamic>;
+        if (events.isNotEmpty) {
+           buffer.writeln("- **阻礙事件**:");
+           for (var e in events) {
+             final event = e as Map<String, dynamic>;
+             buffer.writeln("  - 事件: ${event['event'] ?? ''}, 解決: ${event['solve'] ?? ''}");
+           }
+        }
+      }
+
+      // Personality
+      buffer.writeln("\n### 個性＆價值觀");
+      for (var key in ["mbti", "personality", "language", "interest", "habit", "belief", "limit", "future", "cherish", "disgust", "fear", "curious", "expect", "alignment"]) {
+        writeSimpleField(key);
+      }
+      writeSimpleField("otherValues");
+
+      writeSliders("性格特質", "traitsValues", TraitDefinitions.traits);
+      writeSliders("行事作風", "approachValues", TraitDefinitions.approaches);
+
+      // Ability
+      buffer.writeln("\n### 能力＆才華");
+      writeList("熱愛做的事情", "loveToDoList");
+      writeList("想要做還沒做的事情", "wantToDoList");
+      writeList("討厭做的事情", "hateToDoList");
+      writeList("害怕做的事情", "fearToDoList");
+      writeList("擅長做的事情", "proficientToDoList");
+      writeList("不擅長做的事情", "unProficientToDoList");
+      
+      writeSliders("生活常用技能", "commonAbilityValues", TraitDefinitions.commonAbilities);
+
+      // Social
+      buffer.writeln("\n### 社交相關");
+      writeSimpleField("impression");
+      writeSimpleField("likable");
+      writeSimpleField("family");
+      
+      writeCheckboxMap("如何表達「喜歡」", "howToShowLove", howToShowLoveLabels);
+      writeSimpleField("otherShowLove");
+
+      writeCheckboxMap("如何表達好意", "howToShowGoodwill", howToShowGoodwillLabels);
+      writeSimpleField("otherGoodwill");
+      
+      writeCheckboxMap("如何應對討厭的人", "handleHatePeople", handleHatePeopleLabels);
+      writeSimpleField("otherHatePeople");
+
+      writeSimpleField("relationship");
+      writeSimpleField("isFindNewLove");
+      writeSimpleField("isHarem");
+      writeSimpleField("otherRelationship");
+      
+      writeSliders("社交相關項目", "socialItemValues", TraitDefinitions.socialItems);
+
+      // Other
+      buffer.writeln("\n### 其他");
+      writeSimpleField("originalName");
+      writeList("喜歡的人事物", "likeItemList");
+      writeList("憧憬的人事物", "admireItemList");
+      writeList("討厭的人事物", "hateItemList");
+      writeList("害怕的人事物", "fearItemList");
+      writeList("習慣的人事物", "familiarItemList");
+      writeSimpleField("otherText");
+
+      buffer.writeln("---");
+      buffer.writeln();
+    });
+    return buffer.toString();
   }
 }
 

@@ -20,6 +20,7 @@ import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
+import "bin/input_assist.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 import "bin/content_manager.dart";
@@ -144,6 +145,12 @@ class SimpleLocation {
   }) : locationUUID = locationUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 }
 
+// Intent classes for keyboard shortcuts
+class NewFileIntent extends Intent { const NewFileIntent(); }
+class OpenFileIntent extends Intent { const OpenFileIntent(); }
+class SaveFileIntent extends Intent { const SaveFileIntent(); }
+class FindIntent extends Intent { const FindIntent(); }
+
 // 主要 ContentView
 class ContentView extends StatefulWidget {
   final UILibrary themeManager;
@@ -170,6 +177,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
+  bool showInputAssistWindow = false;
   final TextEditingController findController = TextEditingController();
   final TextEditingController replaceController = TextEditingController();
   final FindReplaceOptions findReplaceOptions = FindReplaceOptions();
@@ -374,27 +382,62 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // MARK: 主體建構方法
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) async {
-        if (didPop) return;
-        
-        final shouldPop = await _handleExit();
-        if (shouldPop && context.mounted) {
-          Navigator.of(context).pop();
-        }
+    // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
+    final bool isApple = !kIsWeb && (defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS);
+
+    return Shortcuts(
+      shortcuts: <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.keyN, control: !isApple, meta: isApple): const NewFileIntent(),
+        SingleActivator(LogicalKeyboardKey.keyO, control: !isApple, meta: isApple): const OpenFileIntent(),
+        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple): const SaveFileIntent(),
+        SingleActivator(LogicalKeyboardKey.keyF, control: !isApple, meta: isApple): const FindIntent(),
       },
-      child: Scaffold(
-        appBar: _buildAppBar(),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
-            if (constraints.maxWidth < 800) {
-              return _buildMobileLayout();
-            } else {
-              return _buildDesktopLayout();
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          NewFileIntent: CallbackAction<NewFileIntent>(onInvoke: (intent) => _newProject()),
+          OpenFileIntent: CallbackAction<OpenFileIntent>(onInvoke: (intent) => _openProject()),
+          SaveFileIntent: CallbackAction<SaveFileIntent>(onInvoke: (intent) => _saveProject()),
+          FindIntent: CallbackAction<FindIntent>(onInvoke: (intent) {
+            setState(() {
+              // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
+              if (slidePage < 10) {
+                slidePage = 10;
+                showFindReplaceWindow = true;
+              } else {
+                // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
+                if (!showFindReplaceWindow) {
+                  // 打開搜尋窗口時，重置搜尋狀態但保留編輯器的光標位置
+                  _currentMatchIndex = -1;
+                }
+                showFindReplaceWindow = !showFindReplaceWindow;
+              }
+            });
+            return null;
+          }),
+        },
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, dynamic result) async {
+            if (didPop) return;
+            
+            final shouldPop = await _handleExit();
+            if (shouldPop && context.mounted) {
+              Navigator.of(context).pop();
             }
           },
+          child: Scaffold(
+            appBar: _buildAppBar(),
+            body: LayoutBuilder(
+              builder: (context, constraints) {
+                // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
+                if (constraints.maxWidth < 800) {
+                  return _buildMobileLayout();
+                } else {
+                  return _buildDesktopLayout();
+                }
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -471,6 +514,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: "export_selective",
+                    child: ListTile(
+                      leading: Icon(Icons.output),
+                      title: Text("匯出..."),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 ],
               ),
               
@@ -511,6 +563,33 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 icon: const Icon(Icons.redo),
                 onPressed: () => _performEditorAction("redo"),
                 tooltip: "Redo",
+              ),
+              Container(
+                decoration: showInputAssistWindow
+                    ? BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      )
+                    : null,
+                child: IconButton(
+                  iconSize: iconSize,
+                  icon: const Icon(Icons.keyboard_alt),
+                  color: showInputAssistWindow
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : null,
+                  onPressed: () {
+                    // 切換到編輯器頁面並顯示/隱藏標點符號列
+                    setState(() {
+                      if (slidePage < 10) {
+                        slidePage = 10;
+                        showInputAssistWindow = true;
+                      } else {
+                        showInputAssistWindow = !showInputAssistWindow;
+                      }
+                    });
+                  },
+                  tooltip: showInputAssistWindow ? "關閉標點符號" : "標點符號",
+                ),
               ),
               Container(
                 decoration: showFindReplaceWindow
@@ -980,6 +1059,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [
+          // 標點符號列（當開啟時）
+          if (showInputAssistWindow)
+            InputAssistBar(
+              onInsert: _insertText,
+              onClose: () {
+                setState(() {
+                  showInputAssistWindow = false;
+                });
+              },
+            ),
+
           // 搜尋列（當開啟時）
           if (showFindReplaceWindow)
             FindReplaceBar(
@@ -1389,6 +1479,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       case "saveAs":
         _saveProjectAs();
         break;
+      case "export_selective":
+        _showExportDialog();
+        break;
       case "export_txt":
         _exportAs("txt");
         break;
@@ -1397,7 +1490,139 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         break;
     }
   }
+
+  Future<void> _showExportDialog() async {
+    final Set<String> selectedModules = {
+      "BaseInfo", "Chapters", "Outline", "WorldSettings", "Characters"
+    };
+    String selectedFormat = "xml";
+    
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text("匯出選項"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("選擇匯出格式：", style: TextStyle(fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        Radio<String>(
+                          value: "xml",
+                          groupValue: selectedFormat,
+                          onChanged: (val) => setDialogState(() => selectedFormat = val!),
+                        ),
+                        const Text("XML"),
+                        const SizedBox(width: 16),
+                        Radio<String>(
+                          value: "md",
+                          groupValue: selectedFormat,
+                          onChanged: (val) => setDialogState(() => selectedFormat = val!),
+                        ),
+                        const Text("Markdown"),
+                      ],
+                    ),
+                    const Divider(),
+                    const Text("選擇匯出模組：", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    // Modules checkboxes
+                    ...["BaseInfo", "Chapters", "Outline", "WorldSettings", "Characters"].map((module) {
+                      final displayNames = {
+                        "BaseInfo": "故事設定",
+                        "Chapters": "章節內容",
+                        "Outline": "大綱",
+                        "WorldSettings": "世界設定",
+                        "Characters": "角色設定"
+                      };
+                      return CheckboxListTile(
+                        title: Text(displayNames[module] ?? module),
+                        value: selectedModules.contains(module),
+                        onChanged: (bool? value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              selectedModules.add(module);
+                            } else {
+                              if (selectedModules.length > 1) {
+                                selectedModules.remove(module);
+                              }
+                            }
+                          });
+                        },
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("取消"),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _exportSelective(selectedModules, selectedFormat);
+                  },
+                  child: const Text("匯出"),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  Future<void> _exportSelective(Set<String> modules, String format) async {
+    _syncEditorToSelectedChapter();
+    final currentData = _collectProjectData();
+    final defaultName = currentProject?.nameWithoutExtension ?? "MonogatariExport";
+    
+    await ProjectManager.exportSelective(
+      context,
+      currentData: currentData,
+      defaultFileName: defaultName,
+      selectedModules: modules,
+      format: format,
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: _showError,
+    );
+  }
   
+  // 插入文字到編輯器當前位置
+  void _insertText(String textToInsert) {
+    final text = textController.text;
+    final selection = textController.selection;
+    
+    if (selection.isValid && selection.start >= 0) {
+      final newText = text.replaceRange(selection.start, selection.end, textToInsert);
+      final newSelectionIndex = selection.start + textToInsert.length;
+           
+      textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newSelectionIndex),
+        composing: TextRange.empty,
+      );
+    } else {
+      // 如果沒有有效選區，附加到最後
+      final newText = text + textToInsert;
+      textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+        composing: TextRange.empty,
+      );
+    }
+  }
+
   // 編輯器操作
   void _performEditorAction(String action) {
     // 這裡可以實作編輯器的 undo, redo, copy, paste 等功能
