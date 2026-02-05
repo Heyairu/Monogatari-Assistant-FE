@@ -1,17 +1,16 @@
-import 'package:characters/characters.dart';
-import 'settings_manager.dart';
+import "package:characters/characters.dart";
+import "settings_manager.dart";
 
 // 內容管理器
 class ContentManager {
   
   // 計算本章字數
-  // mode: 計算模式 (預設為字元數)
+  // mode: 計算模式 (預設為混合模式)
   static int calculateWordCount(String content, {WordCountMode mode = WordCountMode.characters}) {
     if (content.isEmpty) return 0;
 
     if (mode == WordCountMode.characters) {
-      // 純字元數 गणना (Grapheme Clusters)
-      // 使用 characters 套件來正確計算包含 Emoji 或組合與字元的長度
+      // 純字元數計算，使用 characters 套件來正確計算包含 Emoji 或組合與字元的長度
       return content.characters.length;
     } else {
       // 混合模式：全形字元 + 半形單字

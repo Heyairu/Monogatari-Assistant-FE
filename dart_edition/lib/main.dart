@@ -170,6 +170,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // 狀態變數
   int slidePage = 0;
   int autoSaveTime = 1;
+  double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
   
   // 主編輯器文字
   String contentText = "";
@@ -231,6 +232,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
+
+  // 追蹤最後一個焦點輸入框
+  FocusNode? _lastFocusedEditableNode;
+
+  void _onFocusChange() {
+    final node = WidgetsBinding.instance.focusManager.primaryFocus;
+    if (node != null && node.context != null) {
+      if (node.context!.findAncestorStateOfType<EditableTextState>() != null) {
+        _lastFocusedEditableNode = node;
+      }
+    }
+  }
   
   @override
   void initState() {
@@ -279,11 +292,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     
     // 監聽設定變更
     widget.settingsManager.addListener(_onSettingsChanged);
+    
+    // 監聽焦點變化
+    WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
   }
   
   @override
   void dispose() {
     widget.settingsManager.removeListener(_onSettingsChanged);
+    WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
         defaultTargetPlatform == TargetPlatform.linux || 
         defaultTargetPlatform == TargetPlatform.macOS)) {
@@ -573,19 +590,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     : null,
                 child: IconButton(
                   iconSize: iconSize,
-                  icon: const Icon(Icons.keyboard_alt),
+                  icon: Icon(
+                    showInputAssistWindow ? Icons.keyboard_hide : Icons.keyboard_alt,
+                  ),
                   color: showInputAssistWindow
                       ? Theme.of(context).colorScheme.onPrimaryContainer
                       : null,
                   onPressed: () {
                     // 切換到編輯器頁面並顯示/隱藏標點符號列
                     setState(() {
-                      if (slidePage < 10) {
-                        slidePage = 10;
-                        showInputAssistWindow = true;
-                      } else {
-                        showInputAssistWindow = !showInputAssistWindow;
-                      }
+                      showInputAssistWindow = !showInputAssistWindow;
                     });
                   },
                   tooltip: showInputAssistWindow ? "關閉標點符號" : "標點符號",
@@ -651,6 +665,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           _buildEditor(),
         ],
       ),
+      bottomSheet: showInputAssistWindow ? InputAssistBar(
+        onInsert: _insertText,
+        onClose: () {
+          setState(() {
+            showInputAssistWindow = false;
+          });
+        },
+      ) : null,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -971,26 +993,75 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               
               // 主要內容區域
               Expanded(
-                child: Row(
-                  children: [
-                    // 左側內容區域
-                    Expanded(
-                      flex: 2,
-                      child: Container(
-                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                        child: _buildPageContent(),
-                      ),
-                    ),
-                    
-                    // 垂直分隔線
-                    const VerticalDivider(thickness: 1, width: 1),
-                    
-                    // 右側編輯器
-                    Expanded(
-                      flex: 3,
-                      child: _buildEditor(),
-                    ),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final double maxWidth = constraints.maxWidth;
+                    // 計算側邊欄寬度，並限制在 0.2 - 0.4 之間
+                    final double sidebarWidth = (maxWidth * _sidebarWidthRatio).clamp(
+                      maxWidth * 0.2, 
+                      maxWidth * 0.4
+                    );
+
+                    return Row(
+                      children: [
+                        // 左側內容區域
+                        SizedBox(
+                          width: sidebarWidth,
+                          child: Container(
+                            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                            child: _buildPageContent(),
+                          ),
+                        ),
+                        
+                        // 垂直分隔線 (可拖曳)
+                        MouseRegion(
+                          cursor: SystemMouseCursors.resizeColumn,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onPanUpdate: (details) {
+                              setState(() {
+                                double newRatio = _sidebarWidthRatio + (details.delta.dx / maxWidth);
+                                _sidebarWidthRatio = newRatio.clamp(0.2, 0.4);
+                              });
+                            },
+                            child: Container(
+                              width: 9,
+                              color: Theme.of(context).colorScheme.surface,
+                              alignment: Alignment.center,
+                              child: VerticalDivider(
+                                thickness: 1, 
+                                width: 1,
+                                color: Theme.of(context).colorScheme.outlineVariant,
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        // 右側編輯器
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              _buildEditor(),
+                              if (showInputAssistWindow)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: InputAssistBar(
+                                    onInsert: _insertText,
+                                    onClose: () {
+                                      setState(() {
+                                        showInputAssistWindow = false;
+                                      });
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -1059,17 +1130,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [
-          // 標點符號列（當開啟時）
-          if (showInputAssistWindow)
-            InputAssistBar(
-              onInsert: _insertText,
-              onClose: () {
-                setState(() {
-                  showInputAssistWindow = false;
-                });
-              },
-            ),
-
           // 搜尋列（當開啟時）
           if (showFindReplaceWindow)
             FindReplaceBar(
@@ -1598,28 +1658,54 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     );
   }
   
-  // 插入文字到編輯器當前位置
+  // 插入文字到編輯器當前位置 (支援所有輸入框)
   void _insertText(String textToInsert) {
-    final text = textController.text;
-    final selection = textController.selection;
+    var targetNode = WidgetsBinding.instance.focusManager.primaryFocus;
+    EditableTextState? editable;
     
-    if (selection.isValid && selection.start >= 0) {
-      final newText = text.replaceRange(selection.start, selection.end, textToInsert);
-      final newSelectionIndex = selection.start + textToInsert.length;
-           
-      textController.value = TextEditingValue(
+    // 1. 嘗試獲取當前焦點的 EditableTextState
+    if (targetNode != null && targetNode.context != null) {
+      editable = targetNode.context!.findAncestorStateOfType<EditableTextState>();
+    }
+    
+    // 2. 如果當前焦點無效，嘗試使用最後一次的焦點
+    if (editable == null) {
+      if (_lastFocusedEditableNode != null && 
+          _lastFocusedEditableNode!.context != null && 
+          _lastFocusedEditableNode!.context!.mounted) {
+        targetNode = _lastFocusedEditableNode;
+        targetNode!.requestFocus();
+        editable = targetNode.context!.findAncestorStateOfType<EditableTextState>();
+      }
+    }
+    
+    // 3. 執行插入
+    if (editable != null) {
+      final oldValue = editable.textEditingValue;
+      final text = oldValue.text;
+      final selection = oldValue.selection;
+      
+      String newText;
+      int newSelectionIndex;
+      
+      if (selection.isValid && selection.start >= 0) {
+        newText = text.replaceRange(selection.start, selection.end, textToInsert);
+        newSelectionIndex = selection.start + textToInsert.length;
+      } else {
+        newText = text + textToInsert;
+        newSelectionIndex = newText.length;
+      }
+      
+      editable.updateEditingValue(TextEditingValue(
         text: newText,
         selection: TextSelection.collapsed(offset: newSelectionIndex),
         composing: TextRange.empty,
-      );
-    } else {
-      // 如果沒有有效選區，附加到最後
-      final newText = text + textToInsert;
-      textController.value = TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: newText.length),
-        composing: TextRange.empty,
-      );
+      ));
+      
+      // 確保焦點回到該輸入框
+      if (targetNode != WidgetsBinding.instance.focusManager.primaryFocus) {
+        targetNode!.requestFocus();
+      }
     }
   }
 

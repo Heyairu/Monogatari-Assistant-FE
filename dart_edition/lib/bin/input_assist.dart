@@ -30,19 +30,19 @@ class _InputAssistBarState extends State<InputAssistBar> {
   bool isFullWidth = true;
 
   // 全形符號列表
-  // Note: '　' is full-width space
+  // Note: "　" is full-width space
   final List<String> fullWidthSymbols = [
-    '。', '，', '、', '；', '：', '？', '！', 
-    '「', '」', '『', '』', '（', '）', 
-    '……', '——', 
-    '《', '》', '·', '　'
+    "。", "，", "、", "；", "：", "？", "！", 
+    "「", "」", "『", "』", "（", "）", 
+    "……", "——", 
+    "《", "》", "·", "　"
   ];
 
   // 半形符號列表
   final List<String> halfWidthSymbols = [
-    '.', ',', ';', ':', '?', '!', 
-    '"', '\'', '(', ')', 
-    '…', '-', '/', '¿', '¡'
+    ".", ",", ";", ":", "?", "!", 
+    "\"", "'", "(", ")",
+    "…", "-", "/", "¿", "¡"
   ];
 
   @override
@@ -101,23 +101,31 @@ class _InputAssistBarState extends State<InputAssistBar> {
                   children: symbols.map((symbol) {
                     // 特殊處理顯示文字（如全形空格顯示為 [ ] 或其他可見符號）
                     String displayLabel = symbol;
-                    if (symbol == '　') {
-                      displayLabel = '空'; // 全形空格使用文字提示
+                    if (symbol == "　") {
+                      displayLabel = "␣";
                     }
                     
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: TextButton(
-                        onPressed: () => widget.onInsert(symbol),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(36, 36),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          foregroundColor: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        child: Text(
-                          displayLabel,
-                          style: const TextStyle(fontSize: 14),
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                        child: InkWell(
+                          onTap: () => widget.onInsert(symbol),
+                          canRequestFocus: false, // 關鍵：防止 InkWell 獲取焦點
+                          borderRadius: BorderRadius.circular(4),
+                          child: Container(
+                            alignment: Alignment.center,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              displayLabel,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -127,15 +135,6 @@ class _InputAssistBarState extends State<InputAssistBar> {
             ),
             
             const SizedBox(width: 8),
-            
-            // 關閉按鈕
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: widget.onClose,
-              tooltip: "關閉標點符號列",
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-            ),
           ],
         ),
       ),
