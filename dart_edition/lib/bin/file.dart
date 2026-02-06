@@ -510,6 +510,7 @@ class ProjectManager {
       if (format == "xml") {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         buffer.writeln("<Project>");
+        buffer.writeln("<ver>${FileService.projectVersion}</ver>");
         
         if (selectedModules.contains("BaseInfo")) {
           final xml = BaseInfoModule.BaseInfoCodec.saveXML(
@@ -803,6 +804,7 @@ class _ProjectMerger {
     
     buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     buffer.writeln("<Project>");
+    buffer.writeln("<ver>${FileService.projectVersion}</ver>");
     
     // BaseInfo
     final baseInfoXml = BaseInfoModule.BaseInfoCodec.saveXML(
@@ -945,7 +947,7 @@ class _ProjectMerger {
       // Custom Values only (Note: original note field is typically printed too, but user asked for Key-Value)
       // Including Note as well for completeness if available
       if (loc.note.isNotEmpty) {
-        buffer.writeln("$indent  備註: ${loc.note.replaceAll('\n', ' ')}");
+        buffer.writeln("$indent  備註: ${loc.note.replaceAll("\n", " ")}");
       }
       
       if (loc.customVal.isNotEmpty) {
@@ -1064,7 +1066,7 @@ class _ProjectMerger {
     buffer.writeln();
 
     characters.forEach((id, charData) {
-      buffer.writeln("## ${charData['name'] ?? '未命名'}");
+      buffer.writeln("## ${charData["name"] ?? "未命名"}");
       
       // Helper for simple fields
       void writeSimpleField(String key) {
@@ -1150,7 +1152,7 @@ class _ProjectMerger {
            buffer.writeln("- **阻礙事件**:");
            for (var e in events) {
              final event = e as Map<String, dynamic>;
-             buffer.writeln("  - 事件: ${event['event'] ?? ''}, 解決: ${event['solve'] ?? ''}");
+             buffer.writeln("  - 事件: ${event["event"] ?? ""}, 解決: ${event["solve"] ?? ""}");
            }
         }
       }
@@ -1223,6 +1225,7 @@ class FileService {
   static const String projectExtension = ".mnproj"; // MonogatariAssistant 專案檔案
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
+  static const String projectVersion = "1.02"; // 專案結構版本
 
   // --- 專案生命週期 ---
 

@@ -436,4 +436,214 @@ class CardList extends StatelessWidget {
   }
 }
 
+// MARK: - 可拖曳卡片節點
+
+enum DropPosition {
+  before,
+  child,
+  after,
+}
+
+enum NodeType {
+  root,
+  folder,
+  item,
+  leaf,
+  unknown,
+}
+
+class DraggableCardNode<T extends Object> extends StatelessWidget {
+  final T dragData;
+  final String nodeId;
+  final NodeType nodeType;
+  
+  // 狀態
+  final bool isDragging;
+  final bool isThisDragging;
+  final bool isDragForbidden;
+  final bool isSelected;
+  
+  // 內容與回調
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final VoidCallback? onClicked;
+  
+  // 拖放回調
+  final VoidCallback? onDragStarted;
+  final VoidCallback? onDragEnd;
+  final bool Function(T data, DropPosition pos)? onWillAccept;
+  final void Function(T data, DropPosition pos)? onAccept;
+  final double Function(DropPosition pos) getDropZoneSize;
+  
+  // 樣式
+  final double indent;
+  final Color? selectedColor;
+  final Color? baseColor;
+
+  const DraggableCardNode({
+    super.key,
+    required this.dragData,
+    required this.nodeId,
+    this.nodeType = NodeType.unknown,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.trailing,
+    this.onClicked,
+    
+    this.isDragging = false,
+    this.isThisDragging = false,
+    this.isDragForbidden = false,
+    this.isSelected = false,
+    
+    this.onDragStarted,
+    this.onDragEnd,
+    this.onWillAccept,
+    this.onAccept,
+    required this.getDropZoneSize,
+    
+    this.indent = 0.0,
+    this.selectedColor,
+    this.baseColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 卡片本體
+    Widget cardContent = Card(
+      elevation: 0,
+      margin: EdgeInsets.all(0),
+      color: isSelected 
+          ? (selectedColor ?? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3))
+          : (baseColor ?? Theme.of(context).colorScheme.surfaceContainerLowest),
+      child: ListTile(
+        dense: true,
+        // ListTile 預設 padding 可能導致對齊問題，這裡根據需求微調
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 0.0),
+        leading: leading,
+        title: title,
+        subtitle: subtitle,
+        trailing: trailing,
+        onTap: onClicked,
+      ),
+    );
+
+    // 拖曳包裝
+    Widget draggable = LongPressDraggable<T>(
+      data: dragData,
+      onDragStarted: onDragStarted,
+      onDragEnd: (_) => onDragEnd?.call(),
+      onDraggableCanceled: (_, __) => onDragEnd?.call(),
+      feedback: Material(
+        elevation: 8,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 280,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 12)],
+              Expanded(
+                child: DefaultTextStyle(
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.primary,
+                    fontSize: 16,
+                  ),
+                  child: title,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: cardContent,
+      ),
+      child: cardContent,
+    );
+
+    // 拖放區域堆疊
+    Widget contentWithDropZones = Stack(
+      children: [
+        draggable,
+        if (isDragging && !isThisDragging && !isDragForbidden)
+          Positioned.fill(
+            child: Column(
+              children: [
+                _buildDropZone(context, DropPosition.before),
+                _buildDropZone(context, DropPosition.child),
+                _buildDropZone(context, DropPosition.after),
+              ],
+            ),
+          ),
+      ],
+    );
+
+    // 縮排處理
+    return Container(
+      margin: EdgeInsets.only(left: indent, bottom: 4.0),
+      child: contentWithDropZones,
+    );
+  }
+
+  Widget _buildDropZone(BuildContext context, DropPosition pos) {
+    double size = getDropZoneSize(pos);
+    if (size <= 0) return const SizedBox.shrink();
+
+    return Expanded(
+      flex: (size * 100).toInt(),
+      child: DragTarget<T>(
+        onWillAcceptWithDetails: (details) => onWillAccept?.call(details.data, pos) ?? true,
+        onAcceptWithDetails: (details) {
+          onAccept?.call(details.data, pos);
+        },
+        builder: (context, candidates, rejected) {
+          if (candidates.isEmpty) {
+            return Container(color: Colors.transparent);
+          }
+          
+          Color color;
+          IconData icon;
+          if (pos == DropPosition.before) {
+            color = Theme.of(context).colorScheme.tertiary;
+            icon = Icons.arrow_upward;
+          } else if (pos == DropPosition.after) {
+            color = Theme.of(context).colorScheme.secondary;
+            icon = Icons.arrow_downward;
+          } else {
+            color = Theme.of(context).colorScheme.primary;
+            icon = Icons.subdirectory_arrow_right;
+          }
+          
+          return Container(
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.2),
+              border: pos == DropPosition.child 
+                  ? Border.all(color: color, width: 2)
+                  : Border(
+                      top: pos == DropPosition.before ? BorderSide(color: color, width: 3) : BorderSide.none,
+                      bottom: pos == DropPosition.after ? BorderSide(color: color, width: 3) : BorderSide.none,
+                    )
+            ),
+            child: Center(child: Icon(icon, color: color)),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
 

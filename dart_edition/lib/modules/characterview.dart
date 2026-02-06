@@ -1181,6 +1181,10 @@ class CharacterView extends StatefulWidget {
 
 class _CharacterViewState extends State<CharacterView>
     with SingleTickerProviderStateMixin {
+  // 拖動相關狀態
+  bool _isDragging = false;
+  String? _currentDragData;
+
   // Tab Controller
   late TabController _tabController;
 
@@ -1369,6 +1373,35 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   @override
+  void didUpdateWidget(covariant CharacterView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialData != oldWidget.initialData) {
+      if (widget.initialData != null && widget.initialData!.isNotEmpty) {
+        characterData = Map<String, Map<String, dynamic>>.from(
+          widget.initialData!,
+        );
+        characters = characterData.keys.toList();
+
+        if (characters.isNotEmpty) {
+          selectedCharacterIndex = 0;
+          selectedCharacter = characters[0];
+          _loadCharacterData(selectedCharacter!);
+        } else {
+          selectedCharacterIndex = null;
+          selectedCharacter = null;
+          _clearAllFields();
+        }
+      } else {
+        characterData = {};
+        characters = [];
+        selectedCharacterIndex = null;
+        selectedCharacter = null;
+        _clearAllFields();
+      }
+    }
+  }
+
+  @override
   void dispose() {
     if (_debounceTimer?.isActive ?? false) {
       _debounceTimer!.cancel();
@@ -1457,18 +1490,56 @@ class _CharacterViewState extends State<CharacterView>
               child: ListView.builder(
                 itemCount: characters.length,
                 itemBuilder: (context, index) {
-                  return ListTile(
-                    title: Text(characters[index]),
-                    selected: selectedCharacterIndex == index,
-                    selectedTileColor: Theme.of(
-                      context,
-                    ).primaryColor.withOpacity(0.1),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, size: 20),
-                      onPressed: () => _deleteCharacter(index),
-                      tooltip: "刪除",
-                    ),
-                    onTap: () => _selectCharacter(index),
+                  final name = characters[index];
+                  final isSelected = selectedCharacterIndex == index;
+                  
+                  return DraggableCardNode<String>(
+                     key: ValueKey(name),
+                     dragData: name,
+                     nodeId: name,
+                     nodeType: NodeType.item,
+                     isDragging: _isDragging,
+                     isThisDragging: _currentDragData == name,
+                     isSelected: isSelected,
+                     
+                     title: Text(name, style: isSelected ? TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary) : null),
+                     trailing: IconButton(
+                        icon: const Icon(Icons.delete, size: 20),
+                        onPressed: () => _deleteCharacter(index),
+                        tooltip: "刪除",
+                     ),
+                     onClicked: () => _selectCharacter(index),
+                     
+                     onDragStarted: () {
+                        setState(() {
+                           _isDragging = true;
+                           _currentDragData = name;
+                        });
+                     },
+                     onDragEnd: () {
+                        setState(() {
+                           _isDragging = false;
+                           _currentDragData = null;
+                        });
+                     },
+                     getDropZoneSize: (pos) {
+                        if (_currentDragData == null) return 0.0;
+                         // 這裡只支援上下排序，不支援資料夾
+                         return pos == DropPosition.child ? 0.0 : 0.5;
+                     },
+                     onAccept: (data, pos) {
+                         if (pos == DropPosition.child) return;
+                         
+                         int toIndex = index;
+                         if (pos == DropPosition.after) toIndex++;
+                         
+                         int fromIndex = characters.indexOf(data);
+                         if (fromIndex < 0) return;
+                         
+                         if (fromIndex < toIndex) toIndex--;
+                         
+                         _moveCharacter(fromIndex, toIndex);
+                     },
                   );
                 },
               ),
@@ -1477,6 +1548,25 @@ class _CharacterViewState extends State<CharacterView>
         ),
       ),
     );
+  }
+
+  void _moveCharacter(int oldIndex, int newIndex) {
+      if (oldIndex < newIndex) {
+        newIndex -= 1;
+      }
+      final item = characters.removeAt(oldIndex);
+      characters.insert(newIndex, item);
+      // Update Selection
+      if (selectedCharacterIndex == oldIndex) {
+         selectedCharacterIndex = newIndex;
+      } else if (selectedCharacterIndex != null) {
+         if (oldIndex < selectedCharacterIndex! && newIndex >= selectedCharacterIndex!) {
+            selectedCharacterIndex = selectedCharacterIndex! - 1;
+         } else if (oldIndex > selectedCharacterIndex! && newIndex <= selectedCharacterIndex!) {
+            selectedCharacterIndex = selectedCharacterIndex! + 1;
+         }
+      }
+      _markAsModified();
   }
 
   Widget _buildCharacterEditSection() {

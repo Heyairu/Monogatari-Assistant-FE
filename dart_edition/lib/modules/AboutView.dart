@@ -124,7 +124,7 @@ class AboutView extends StatelessWidget {
               
               // 版權信息
               Text(
-                "© 2025 Heyairu(部屋伊琉).",
+                "© 2025~2026 Heyairu(部屋伊琉).",
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                 ),

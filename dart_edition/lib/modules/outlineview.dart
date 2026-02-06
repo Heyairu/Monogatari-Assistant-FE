@@ -177,7 +177,7 @@ class OutlineCodec {
     final cdataBuffer = StringBuffer();
     for (final node in element.children) {
       if (node is xml.XmlCDATA) {
-        cdataBuffer.write(node.text);
+        cdataBuffer.write(node.value);
       }
     }
     final cdataText = cdataBuffer.toString();
@@ -187,7 +187,7 @@ class OutlineCodec {
     final buffer = StringBuffer();
     for (final node in element.children) {
       if (node is xml.XmlText || node is xml.XmlCDATA) {
-        buffer.write(node.text);
+        buffer.write(node.value);
       }
     }
     final text = buffer.toString();
@@ -548,6 +548,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
 
   // 拖動相關狀態
   bool _isDragging = false;
+  OutlineDragData? _currentDragData; // 新增
+  TextEditingController? _renameListController; // 新增
   Timer? _autoScrollTimer;
   ScrollController? _currentScrollController;
   final ScrollController _pageScrollController = ScrollController();
@@ -1166,12 +1168,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: Border.all(
                       color: isHighlighted
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                          : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
                       width: isHighlighted ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: isHighlighted
-                        ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1)
+                        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
                         : null,
                   ),
                   child: storylines.isEmpty
@@ -1212,7 +1214,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             Text(
               "大箱：故事的大致走向。標記可以使用「三幕劇」、「起承轉合」、「故事七步驟」等結構",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -1221,179 +1223,78 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     );
   }
 
-  Widget _buildStorylineRow(StorylineData storyline, int index) {
-    final isSelected = storyline.chapterUUID == selectedStorylineID;
-    final isEditing = storyline.chapterUUID == editingStorylineID;
-    
-    return LongPressDraggable<OutlineDragData>(
-      data: OutlineDragData(
-        id: storyline.chapterUUID,
-        type: OutlineDragType.storyline,
-        currentIndex: index,
-      ),
-      onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onDragEnd: (_) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      onDraggableCanceled: (_, __) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      feedback: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 280,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.secondary,
-              width: 2,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.library_books,
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  storyline.storylineName.isEmpty ? "(未命名故事線)" : storyline.storylineName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: _StorylineListItem(
-          storyline: storyline,
-          isSelected: isSelected,
-          isEditing: isEditing,
-          onEditStart: () {
-            setState(() {
-              editingStorylineID = storyline.chapterUUID;
-            });
-          },
-          onEditSubmit: (value) {
-            setState(() {
-              storyline.storylineName = value.trim().isEmpty 
-                  ? "(未命名故事線)" 
-                  : value.trim();
-              editingStorylineID = null;
-            });
-            _notifyChange();
-          },
-          onDelete: () => _deleteStoryline(storyline.chapterUUID),
-          canDelete: storylines.length > 1,
-          onSelect: () {
-            setState(() {
-              selectedStorylineID = storyline.chapterUUID;
-              _updateSelectionAfterStorylineChange();
-            });
-          },
-        ),
-      ),
-      child: DragTarget<OutlineDragData>(
-        onWillAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.storyline) {
-            return dragData.currentIndex != index;
-          } else if (dragData.type == OutlineDragType.event) {
-            return true;
-          }
-          return false;
-        },
-        onAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.storyline) {
-            _moveStorylineByDrag(dragData.currentIndex, index);
-          } else if (dragData.type == OutlineDragType.event) {
-            _moveEventToStoryline(dragData.id, storyline.chapterUUID);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("事件已移動到「${storyline.storylineName}」"),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isHighlighted = candidateData.isNotEmpty;
-          return Container(
-            key: ValueKey(storyline.chapterUUID),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-                  : (isHighlighted 
-                      ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
-                      : Colors.transparent),
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                ),
-              ),
-              borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
-            ),
-            child: _StorylineListItem(
-              storyline: storyline,
-              isSelected: isSelected,
-              isEditing: isEditing,
-              onEditStart: () {
-                setState(() {
-                  editingStorylineID = storyline.chapterUUID;
-                });
-              },
-              onEditSubmit: (value) {
-                setState(() {
-                  storyline.storylineName = value.trim().isEmpty 
-                      ? "(未命名故事線)" 
-                      : value.trim();
-                  editingStorylineID = null;
-                });
-                _notifyChange();
-              },
-              onDelete: () => _deleteStoryline(storyline.chapterUUID),
-              canDelete: storylines.length > 1,
-              onSelect: () {
-                setState(() {
-                  selectedStorylineID = storyline.chapterUUID;
-                  _updateSelectionAfterStorylineChange();
-                });
-              },
-            ),
-          );
-        },
-      ),
-    );
+  // MARK: - 列表內直接改名 Helpers
+
+  void _startRenamingStoryline(StorylineData data) {
+    setState(() {
+      editingStorylineID = data.chapterUUID;
+      editingEventID = null;
+      editingSceneID = null;
+      _renameListController?.dispose();
+      _renameListController = TextEditingController(text: data.storylineName);
+    });
+  }
+
+  void _submitRenamingStoryline(int index) {
+      if (editingStorylineID != null && _renameListController != null) {
+          final val = _renameListController!.text.trim();
+          storylines[index].storylineName = val.isEmpty ? "(未命名故事線)" : val;
+          _notifyChange();
+      }
+      _cancelRenaming();
+  }
+
+  void _startRenamingEvent(StoryEventData data) {
+    setState(() {
+      editingEventID = data.storyEventUUID;
+      editingStorylineID = null;
+      editingSceneID = null;
+      _renameListController?.dispose();
+      _renameListController = TextEditingController(text: data.storyEvent);
+    });
+  }
+
+  void _submitRenamingEvent(int slIdx, int evIdx) {
+      if (editingEventID != null && _renameListController != null) {
+          final val = _renameListController!.text.trim();
+          storylines[slIdx].scenes[evIdx].storyEvent = val.isEmpty ? "(未命名事件)" : val;
+          _notifyChange();
+      }
+      _cancelRenaming();
+  }
+  
+  void _startRenamingScene(SceneData data) {
+    setState(() {
+      editingSceneID = data.sceneUUID;
+      editingStorylineID = null;
+      editingEventID = null;
+      _renameListController?.dispose();
+      _renameListController = TextEditingController(text: data.sceneName);
+    });
+  }
+
+  void _submitRenamingScene(int slIdx, int evIdx, int scIdx) {
+      if (editingSceneID != null && _renameListController != null) {
+          final val = _renameListController!.text.trim();
+          storylines[slIdx].scenes[evIdx].scenes[scIdx].sceneName = val.isEmpty ? "(未命名場景)" : val;
+          _notifyChange();
+      }
+      _cancelRenaming();
+  }
+
+  void _cancelRenaming() {
+      setState(() {
+          editingStorylineID = null;
+          editingEventID = null;
+          editingSceneID = null;
+          _renameListController?.dispose();
+          _renameListController = null;
+      });
   }
 
   Widget _buildStorylineDetails() {
     final si = selectedStorylineIndex;
-    if (si == null || si < 0 || si >= storylines.length) {
-      return const SizedBox.shrink();
-    }
-    final storyline = storylines[si];
+    if (si == null || si < 0 || si >= storylines.length) return const SizedBox.shrink();
     
     return Card(
       child: Padding(
@@ -1408,129 +1309,42 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               ),
             ),
             const SizedBox(height: 16),
-            
-            Builder(
-              builder: (context) {
-                if (storylineNameController.text != storyline.storylineName) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    storylineNameController.text = storyline.storylineName;
-                  });
-                }
-                return TextField(
-                  controller: storylineNameController,
-                  decoration: const InputDecoration(
-                    labelText: "故事線名稱",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                );
-              },
+            TextField(
+              controller: storylineNameController,
+               decoration: const InputDecoration(
+                labelText: "故事線名稱",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
-            
             const SizedBox(height: 12),
-            
-            Builder(
-              builder: (context) {
-                if (storylineTypeController.text != storyline.storylineType) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    storylineTypeController.text = storyline.storylineType;
-                  });
-                }
-                return TextField(
-                  controller: storylineTypeController,
-                  decoration: const InputDecoration(
-                    labelText: "標記（例如：轉、衝突）",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                );
-              },
+            TextField(
+               controller: storylineTypeController,
+               decoration: const InputDecoration(
+                labelText: "類型 (如：懸疑、愛情)",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
-            
             const SizedBox(height: 12),
-            
-            Builder(
-              builder: (context) {
-                if (storylineConflictController.text != storyline.conflictPoint) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    storylineConflictController.text = storyline.conflictPoint;
-                  });
-                }
-                return TextField(
-                  controller: storylineConflictController,
-                  decoration: const InputDecoration(
-                    labelText: "衝突點",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                );
-              },
+            TextField(
+               controller: storylineConflictController,
+               decoration: const InputDecoration(
+                labelText: "主要衝突",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
-            
             const SizedBox(height: 16),
-            
-            CardList(
-              title: "預設人物",
-              icon: Icons.person,
-              items: storyline.people,
-              onAdd: (item) {
-                setState(() {
-                  storyline.people.add(item);
-                });
-                _notifyChange();
-              },
-              onRemove: (index) {
-                setState(() {
-                  storyline.people.removeAt(index);
-                });
-                _notifyChange();
-              },
-            ),
-            
-            const SizedBox(height: 16),
-            
-            CardList(
-              title: "預設物件",
-              icon: Icons.category,
-              items: storyline.item,
-              onAdd: (item) {
-                setState(() {
-                  storyline.item.add(item);
-                });
-                _notifyChange();
-              },
-              onRemove: (index) {
-                setState(() {
-                  storyline.item.removeAt(index);
-                });
-                _notifyChange();
-              },
-            ),
-            
-            const SizedBox(height: 16),
-            
-            Text(
-              "備註",
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            Text("備註", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            Builder(
-              builder: (context) {
-                // 當選中的故事線改變時，同步控制器內容
-                if (storylineMemoController.text != storyline.memo) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    storylineMemoController.text = storyline.memo;
-                  });
-                }
-                return TextField(
-                  controller: storylineMemoController,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: "輸入備註...",
-                  ),
-                  maxLines: 4,
-                );
-              },
+            TextField(
+              controller: storylineMemoController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: "輸入備註...",
+              ),
+              maxLines: 4,
             ),
           ],
         ),
@@ -1575,13 +1389,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     _isDragging = false;
                   });
                   _stopAutoScroll();
-                  final dragData = details.data;
-                  if (selectedStorylineIndex != null && dragData.type == OutlineDragType.event) {
-                    _moveEventToStoryline(dragData.id, storylines[selectedStorylineIndex!].chapterUUID);
-                  }
                 },
                 builder: (context, candidateData, rejectedData) {
                   final isHighlighted = candidateData.isNotEmpty;
+                  final si = selectedStorylineIndex!;
+                  final events = storylines[si].scenes;
                   
                   return Container(
                     key: _eventListKey,
@@ -1590,18 +1402,18 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                       border: Border.all(
                         color: isHighlighted
                             ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                            : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
                         width: isHighlighted ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(8),
                       color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1)
+                          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
                           : null,
                     ),
-                    child: storylines[selectedStorylineIndex!].scenes.isEmpty
+                    child: events.isEmpty
                         ? Center(
                             child: Text(
-                              "暫無事件",
+                              "此故事線暫無事件",
                               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
@@ -1609,8 +1421,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                           )
                         : ListView.builder(
                             controller: _eventListScrollController,
-                            itemCount: storylines[selectedStorylineIndex!].scenes.length,
-                            itemBuilder: (context, index) => _buildEventRow(storylines[selectedStorylineIndex!].scenes[index], index),
+                            itemCount: events.length,
+                            itemBuilder: (context, index) => _buildEventRow(events[index], index),
                           ),
                   );
                 },
@@ -1630,30 +1442,29 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _buildEventDetails(),
               ],
             ] else ...[
-              Container(
-                height: 250,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+               Container(
+                  height: 250,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    "請先選擇一個故事線",
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  child: Center(
+                    child: Text(
+                      "請先選擇故事線",
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                         color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              ),
+               ),
             ],
             
             const SizedBox(height: 12),
             Text(
-              "中箱：故事的事件。",
+              "中箱：具體發生的事件。",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -1662,178 +1473,265 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     );
   }
 
+  // MARK: - 故事線 Row
+  Widget _buildStorylineRow(StorylineData storyline, int index) {
+    final isSelected = storyline.chapterUUID == selectedStorylineID;
+    final isEditing = storyline.chapterUUID == editingStorylineID;
+    
+    return DraggableCardNode<OutlineDragData>(
+      key: ValueKey(storyline.chapterUUID),
+      dragData: OutlineDragData(
+        id: storyline.chapterUUID,
+        type: OutlineDragType.storyline,
+        currentIndex: index,
+      ),
+      nodeId: storyline.chapterUUID,
+      nodeType: NodeType.folder,
+      
+      isDragging: _isDragging,
+      isThisDragging: _currentDragData?.id == storyline.chapterUUID,
+      isSelected: isSelected,
+      
+      title: isEditing
+          ? TextField(
+              controller: _renameListController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onSubmitted: (_) => _submitRenamingStoryline(index),
+            )
+          : GestureDetector(
+              onDoubleTap: () => _startRenamingStoryline(storyline),
+              child: Text(
+                storyline.storylineName.isEmpty ? "(未命名故事線)" : storyline.storylineName,
+                style: isSelected
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      )
+                    : null,
+              ),
+            ),
+      subtitle: Text(
+        storyline.storylineType.isEmpty ? "未設定類型" : storyline.storylineType,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      leading: Icon(
+        Icons.library_books,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: () => _startRenamingStoryline(storyline),
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: storylines.length > 1 ? () => _deleteStoryline(storyline.chapterUUID) : null,
+            icon: Icon(
+              Icons.delete,
+              size: 20,
+              color: storylines.length > 1 ? Theme.of(context).colorScheme.error : null,
+            ),
+            tooltip: "刪除故事線",
+          ),
+        ],
+      ),
+      onClicked: () {
+            setState(() {
+              selectedStorylineID = storyline.chapterUUID;
+              _updateSelectionAfterStorylineChange();
+            });
+      },
+      
+      onDragStarted: () {
+        setState(() {
+          _isDragging = true;
+          _currentDragData = OutlineDragData(
+             id: storyline.chapterUUID,
+             type: OutlineDragType.storyline,
+             currentIndex: index
+          );
+        });
+      },
+      onDragEnd: () {
+        setState(() {
+          _isDragging = false;
+          _currentDragData = null;
+        });
+        _stopAutoScroll();
+      },
+      
+      getDropZoneSize: (pos) {
+         if (_currentDragData == null) return 0.0;
+         
+         if (_currentDragData!.type == OutlineDragType.storyline) {
+             // Reorder Storyline (Same level)
+             return pos == DropPosition.child ? 0.0 : 0.5;
+         } else if (_currentDragData!.type == OutlineDragType.event) {
+             // Drop Event into Storyline (Child to Parent)
+             return pos == DropPosition.child ? 1.0 : 0.0;
+         }
+         return 0.0;
+      },
+      
+      onAccept: (data, pos) {
+          if (data.type == OutlineDragType.storyline) {
+             int toIndex = index;
+             if (pos == DropPosition.after) toIndex++;
+             
+             final fromIndex = data.currentIndex;
+             if (fromIndex < toIndex) toIndex--;
+             
+             _moveStorylineByDrag(fromIndex, toIndex);
+          } else if (data.type == OutlineDragType.event && pos == DropPosition.child) {
+             _moveEventToStoryline(data.id, storyline.chapterUUID);
+             ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("事件已移動到「${storyline.storylineName}」"),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+      },
+    );
+  }
+
+  // MARK: - 事件 Row
   Widget _buildEventRow(StoryEventData event, int index) {
     final isSelected = event.storyEventUUID == selectedEventID;
     final isEditing = event.storyEventUUID == editingEventID;
+    final slIdx = selectedStorylineIndex!;
     
-    return LongPressDraggable<OutlineDragData>(
-      data: OutlineDragData(
+    return DraggableCardNode<OutlineDragData>(
+      key: ValueKey(event.storyEventUUID),
+      dragData: OutlineDragData(
         id: event.storyEventUUID,
         type: OutlineDragType.event,
         currentIndex: index,
       ),
-      onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onDragEnd: (_) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      onDraggableCanceled: (_, __) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      feedback: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 300,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary,
-              width: 2,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.event_note, 
-                color: Theme.of(context).colorScheme.primary,
-                size: 24,
+      nodeId: event.storyEventUUID,
+      nodeType: NodeType.folder,
+      
+      isDragging: _isDragging,
+      isThisDragging: _currentDragData?.id == event.storyEventUUID,
+      isSelected: isSelected,
+      
+      title: isEditing
+          ? TextField(
+              controller: _renameListController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      event.storyEvent.isEmpty ? "(未命名事件)" : event.storyEvent,
-                      style: TextStyle(
+              onSubmitted: (_) => _submitRenamingEvent(slIdx, index),
+            )
+          : GestureDetector(
+              onDoubleTap: () => _startRenamingEvent(event),
+              child: Text(
+                event.storyEvent.isEmpty ? "(未命名事件)" : event.storyEvent,
+                style: isSelected
+                    ? TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "${event.scenes.length} 個場景",
-                      style: TextStyle(
-                        fontSize: 12,
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ],
-                ),
+                      )
+                    : null,
               ),
-            ],
-          ),
-        ),
+            ),
+      subtitle: Text(
+        "${event.scenes.length} 個場景",
+        style: Theme.of(context).textTheme.bodySmall,
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: _EventListItem(
-          event: event,
-          isSelected: isSelected,
-          isEditing: isEditing,
-          onEditStart: () {
-            setState(() {
-              editingEventID = event.storyEventUUID;
-            });
-          },
-          onEditSubmit: (value) {
-            setState(() {
-              event.storyEvent = value.trim().isEmpty 
-                  ? "(未命名事件)" 
-                  : value.trim();
-              editingEventID = null;
-            });
-            _notifyChange();
-          },
-          onDelete: () => _deleteEvent(event.storyEventUUID, selectedStorylineIndex!),
-          onSelect: () {
+      leading: Icon(
+        Icons.event_note,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: () => _startRenamingEvent(event),
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: () => _deleteEvent(event.storyEventUUID, slIdx),
+            icon: Icon(
+               Icons.delete,
+               size: 20,
+               color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: "刪除事件",
+          ),
+        ],
+      ),
+      onClicked: () {
             setState(() {
               selectedEventID = event.storyEventUUID;
               _updateSelectionAfterEventChange();
             });
-          },
-        ),
-      ),
-      child: DragTarget<OutlineDragData>(
-        onWillAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.event) {
-            return dragData.currentIndex != index;
-          } else if (dragData.type == OutlineDragType.scene) {
-            return true;
-          }
-          return false;
-        },
-        onAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.event && selectedStorylineIndex != null) {
-            _moveEventByDrag(selectedStorylineIndex!, dragData.currentIndex, index);
-          } else if (dragData.type == OutlineDragType.scene && selectedStorylineIndex != null) {
-            _moveSceneToEvent(dragData.id, selectedStorylineIndex!, index);
-          }
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isHighlighted = candidateData.isNotEmpty;
-          return Container(
-            key: ValueKey(event.storyEventUUID),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-                  : (isHighlighted
-                      ? Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.5)
-                      : Colors.transparent),
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                ),
-              ),
-              borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
-            ),
-            child: _EventListItem(
-              event: event,
-              isSelected: isSelected,
-              isEditing: isEditing,
-              onEditStart: () {
-                setState(() {
-                  editingEventID = event.storyEventUUID;
-                });
-              },
-              onEditSubmit: (value) {
-                setState(() {
-                  event.storyEvent = value.trim().isEmpty 
-                      ? "(未命名事件)" 
-                      : value.trim();
-                  editingEventID = null;
-                });
-                _notifyChange();
-              },
-              onDelete: () => _deleteEvent(event.storyEventUUID, selectedStorylineIndex!),
-              onSelect: () {
-                setState(() {
-                  selectedEventID = event.storyEventUUID;
-                  _updateSelectionAfterEventChange();
-                });
-              },
-            ),
+      },
+      
+      onDragStarted: () {
+        setState(() {
+          _isDragging = true;
+          _currentDragData = OutlineDragData(
+             id: event.storyEventUUID,
+             type: OutlineDragType.event,
+             currentIndex: index
           );
-        },
-      ),
+        });
+      },
+      onDragEnd: () {
+        setState(() {
+          _isDragging = false;
+          _currentDragData = null;
+        });
+        _stopAutoScroll();
+      },
+      
+      getDropZoneSize: (pos) {
+         if (_currentDragData == null) return 0.0;
+         
+         if (_currentDragData!.type == OutlineDragType.event) {
+             // Reorder Event (Same level)
+             return pos == DropPosition.child ? 0.0 : 0.5;
+         } else if (_currentDragData!.type == OutlineDragType.scene) {
+             // Drop Scene into Event (Child to Parent)
+             return pos == DropPosition.child ? 1.0 : 0.0;
+         }
+         return 0.0;
+      },
+      
+      onAccept: (data, pos) {
+         if (data.type == OutlineDragType.event) {
+             int toIndex = index;
+             if (pos == DropPosition.after) toIndex++;
+             
+             final fromIndex = data.currentIndex;
+             if (fromIndex < toIndex) toIndex--;
+             
+             _moveEventByDrag(slIdx, fromIndex, toIndex);
+         } else if (data.type == OutlineDragType.scene && pos == DropPosition.child) {
+             // Need original indices of Scene. 
+             // _moveSceneToEvent uses sceneId to find it.
+             _moveSceneToEvent(data.id, slIdx, index);
+         }
+      },
     );
   }
+
 
   Widget _buildEventDetails() {
     final si = selectedStorylineIndex;
@@ -2019,12 +1917,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                       border: Border.all(
                         color: isHighlighted
                             ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                            : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
                         width: isHighlighted ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(8),
                       color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1)
+                          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
                           : null,
                     ),
                     child: storylines[selectedStorylineIndex!].scenes[selectedEventIndex!].scenes.isEmpty
@@ -2063,7 +1961,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 height: 250,
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -2082,7 +1980,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             Text(
               "小箱：事件的詳細場景。",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -2095,179 +1993,134 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final isSelected = scene.sceneUUID == selectedSceneID;
     final isEditing = scene.sceneUUID == editingSceneID;
     
-    return LongPressDraggable<OutlineDragData>(
-      data: OutlineDragData(
+    return DraggableCardNode<OutlineDragData>(
+      key: ValueKey(scene.sceneUUID),
+      dragData: OutlineDragData(
         id: scene.sceneUUID,
         type: OutlineDragType.scene,
         currentIndex: index,
       ),
-      onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onDragEnd: (_) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      onDraggableCanceled: (_, __) {
-        setState(() {
-          _isDragging = false;
-        });
-        _stopAutoScroll();
-      },
-      feedback: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.tertiaryContainer,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.tertiary,
-              width: 2,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.theater_comedy,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
-                size: 24,
+      nodeId: scene.sceneUUID,
+      nodeType: NodeType.leaf,
+      
+      isDragging: _isDragging,
+      isThisDragging: _currentDragData?.id == scene.sceneUUID,
+      isSelected: isSelected,
+      
+      title: isEditing
+          ? TextField(
+              controller: _renameListController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      scene.sceneName.isEmpty ? "(未命名場景)" : scene.sceneName,
-                      style: TextStyle(
+              onSubmitted: (_) => _submitRenamingScene(selectedStorylineIndex!, selectedEventIndex!, index),
+            )
+          : GestureDetector(
+              onDoubleTap: () => _startRenamingScene(scene),
+              child: Text(
+                scene.sceneName.isEmpty ? "(未命名場景)" : scene.sceneName,
+                style: isSelected
+                    ? TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onTertiaryContainer,
-                        fontSize: 16,
-                      ),
-                    ),
-                    if (scene.time.isNotEmpty || scene.location.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          if (scene.time.isNotEmpty) ...[
-                            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onTertiaryContainer),
-                            const SizedBox(width: 4),
-                            Text(scene.time, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onTertiaryContainer)),
-                          ],
-                          if (scene.time.isNotEmpty && scene.location.isNotEmpty) 
-                            Text(" • ", style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onTertiaryContainer)),
-                          if (scene.location.isNotEmpty) ...[
-                            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onTertiaryContainer),
-                            const SizedBox(width: 4),
-                            Text(scene.location, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onTertiaryContainer)),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      )
+                    : null,
               ),
-            ],
-          ),
-        ),
+            ),
+      subtitle: (scene.time.isNotEmpty || scene.location.isNotEmpty) ? Row(
+        children: [
+          if (scene.time.isNotEmpty) ...[
+            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(scene.time, style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (scene.time.isNotEmpty && scene.location.isNotEmpty) 
+            Text(" • ", style: Theme.of(context).textTheme.bodySmall),
+          if (scene.location.isNotEmpty) ...[
+            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(scene.location, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ],
+      ) : null,
+      leading: Icon(
+        Icons.theater_comedy,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        size: 24,
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: _SceneListItem(
-          scene: scene,
-          isSelected: isSelected,
-          isEditing: isEditing,
-          onEditStart: () {
-            setState(() {
-              editingSceneID = scene.sceneUUID;
-            });
-          },
-          onEditSubmit: (value) {
-            setState(() {
-              scene.sceneName = value.trim().isEmpty 
-                  ? "(未命名場景)" 
-                  : value.trim();
-              editingSceneID = null;
-            });
-            _notifyChange();
-          },
-          onDelete: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
-          onSelect: () {
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: () => _startRenamingScene(scene),
+            icon: const Icon(Icons.edit, size: 20),
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            onPressed: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
+            icon: Icon(
+               Icons.delete,
+               size: 20,
+               color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: "刪除場景",
+          ),
+        ],
+      ),
+      onClicked: () {
             setState(() {
               selectedSceneID = scene.sceneUUID;
               _syncAllControllers();
             });
-          },
-        ),
-      ),
-      child: DragTarget<OutlineDragData>(
-        onWillAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.scene) {
-            return dragData.currentIndex != index;
-          }
-          return false;
-        },
-        onAcceptWithDetails: (details) {
-          final dragData = details.data;
-          if (dragData.type == OutlineDragType.scene && selectedStorylineIndex != null && selectedEventIndex != null) {
-            _moveSceneByDrag(selectedStorylineIndex!, selectedEventIndex!, dragData.currentIndex, index);
-          }
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isHighlighted = candidateData.isNotEmpty;
-          return Container(
-            key: ValueKey(scene.sceneUUID),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-                  : (isHighlighted
-                      ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.5)
-                      : Colors.transparent),
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-                ),
-              ),
-              borderRadius: isHighlighted ? BorderRadius.circular(8) : null,
-            ),
-            child: _SceneListItem(
-              scene: scene,
-              isSelected: isSelected,
-              isEditing: isEditing,
-              onEditStart: () {
-                setState(() {
-                  editingSceneID = scene.sceneUUID;
-                });
-              },
-              onEditSubmit: (value) {
-                setState(() {
-                  scene.sceneName = value.trim().isEmpty 
-                      ? "(未命名場景)" 
-                      : value.trim();
-                  editingSceneID = null;
-                });
-                _notifyChange();
-              },
-              onDelete: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
-              onSelect: () {
-                setState(() {
-                  selectedSceneID = scene.sceneUUID;
-                  _syncAllControllers();
-                });
-              },
-            ),
+      },
+      
+      onDragStarted: () {
+        setState(() {
+          _isDragging = true;
+          _currentDragData = OutlineDragData(
+             id: scene.sceneUUID,
+             type: OutlineDragType.scene,
+             currentIndex: index
           );
-        },
-      ),
+        });
+      },
+      onDragEnd: () {
+        setState(() {
+          _isDragging = false;
+          _currentDragData = null;
+        });
+        _stopAutoScroll();
+      },
+      
+      getDropZoneSize: (pos) {
+         if (_currentDragData == null) return 0.0;
+         
+         if (_currentDragData!.type == OutlineDragType.scene) {
+             // Reorder Scene (Same level)
+             return pos == DropPosition.child ? 0.0 : 0.5;
+         }
+         return 0.0;
+      },
+      
+      onAccept: (data, pos) {
+         if (data.type == OutlineDragType.scene) {
+             final slIdx = selectedStorylineIndex;
+             final evIdx = selectedEventIndex;
+             if (slIdx != null && evIdx != null) {
+                int toIndex = index;
+                if (pos == DropPosition.after) toIndex++;
+                
+                final fromIndex = data.currentIndex;
+                if (fromIndex < toIndex) toIndex--;
+                
+                _moveSceneByDrag(slIdx, evIdx, fromIndex, toIndex);
+             }
+         }
+      },
     );
   }
 
@@ -2755,337 +2608,3 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 }
 
-class _StorylineListItem extends StatefulWidget {
-  final StorylineData storyline;
-  final bool isSelected;
-  final bool isEditing;
-  final VoidCallback onSelect;
-  final VoidCallback onEditStart;
-  final ValueChanged<String> onEditSubmit;
-  final VoidCallback onDelete;
-  final bool canDelete;
-
-  const _StorylineListItem({
-    required this.storyline,
-    required this.isSelected,
-    required this.isEditing,
-    required this.onSelect,
-    required this.onEditStart,
-    required this.onEditSubmit,
-    required this.onDelete,
-    this.canDelete = true,
-  });
-
-  @override
-  State<_StorylineListItem> createState() => _StorylineListItemState();
-}
-
-class _StorylineListItemState extends State<_StorylineListItem> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.storyline.storylineName);
-  }
-
-  @override
-  void didUpdateWidget(_StorylineListItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isEditing && !oldWidget.isEditing) {
-       _controller.text = widget.storyline.storylineName;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        Icons.library_books,
-        color: widget.isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: widget.isEditing
-          ? TextField(
-              autofocus: true,
-              controller: _controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: widget.onEditSubmit,
-              onEditingComplete: () => widget.onEditSubmit(_controller.text),
-            )
-          : GestureDetector(
-              onDoubleTap: widget.onEditStart,
-              child: Text(
-                widget.storyline.storylineName.isEmpty ? "(未命名故事線)" : widget.storyline.storylineName,
-                style: widget.isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
-            ),
-      subtitle: Text(
-        widget.storyline.storylineType.isEmpty ? "未設定類型" : widget.storyline.storylineType,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: widget.onEditStart,
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: widget.canDelete ? widget.onDelete : null,
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: widget.canDelete ? Theme.of(context).colorScheme.error : null,
-            ),
-            tooltip: "刪除故事線",
-          ),
-        ],
-      ),
-      onTap: widget.onSelect,
-    );
-  }
-}
-
-class _EventListItem extends StatefulWidget {
-  final StoryEventData event;
-  final bool isSelected;
-  final bool isEditing;
-  final VoidCallback onSelect;
-  final VoidCallback onEditStart;
-  final ValueChanged<String> onEditSubmit;
-  final VoidCallback onDelete;
-
-  const _EventListItem({
-    required this.event,
-    required this.isSelected,
-    required this.isEditing,
-    required this.onSelect,
-    required this.onEditStart,
-    required this.onEditSubmit,
-    required this.onDelete,
-  });
-
-  @override
-  State<_EventListItem> createState() => _EventListItemState();
-}
-
-class _EventListItemState extends State<_EventListItem> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.event.storyEvent);
-  }
-
-  @override
-  void didUpdateWidget(_EventListItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isEditing && !oldWidget.isEditing) {
-      _controller.text = widget.event.storyEvent;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        Icons.event_note,
-        color: widget.isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: widget.isEditing
-          ? TextField(
-              autofocus: true,
-              controller: _controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: widget.onEditSubmit,
-              onEditingComplete: () => widget.onEditSubmit(_controller.text),
-            )
-          : GestureDetector(
-              onDoubleTap: widget.onEditStart,
-              child: Text(
-                widget.event.storyEvent.isEmpty ? "(未命名事件)" : widget.event.storyEvent,
-                style: widget.isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
-            ),
-      subtitle: Text(
-        "${widget.event.scenes.length} 個場景",
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: widget.onEditStart,
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: widget.onDelete,
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除事件",
-          ),
-        ],
-      ),
-      onTap: widget.onSelect,
-    );
-  }
-}
-
-class _SceneListItem extends StatefulWidget {
-  final SceneData scene;
-  final bool isSelected;
-  final bool isEditing;
-  final VoidCallback onSelect;
-  final VoidCallback onEditStart;
-  final ValueChanged<String> onEditSubmit;
-  final VoidCallback onDelete;
-
-  const _SceneListItem({
-    required this.scene,
-    required this.isSelected,
-    required this.isEditing,
-    required this.onSelect,
-    required this.onEditStart,
-    required this.onEditSubmit,
-    required this.onDelete,
-  });
-
-  @override
-  State<_SceneListItem> createState() => _SceneListItemState();
-}
-
-class _SceneListItemState extends State<_SceneListItem> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.scene.sceneName);
-  }
-
-  @override
-  void didUpdateWidget(_SceneListItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isEditing && !oldWidget.isEditing) {
-      _controller.text = widget.scene.sceneName;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        Icons.theater_comedy,
-        color: widget.isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 24,
-      ),
-      title: widget.isEditing
-          ? TextField(
-              autofocus: true,
-              controller: _controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              onSubmitted: widget.onEditSubmit,
-              onEditingComplete: () => widget.onEditSubmit(_controller.text),
-            )
-          : GestureDetector(
-              onDoubleTap: widget.onEditStart,
-              child: Text(
-                widget.scene.sceneName.isEmpty ? "(未命名場景)" : widget.scene.sceneName,
-                style: widget.isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-              ),
-            ),
-      subtitle: Row(
-        children: [
-          if (widget.scene.time.isNotEmpty) ...[
-            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(widget.scene.time, style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (widget.scene.time.isNotEmpty && widget.scene.location.isNotEmpty) 
-            Text(" • ", style: Theme.of(context).textTheme.bodySmall),
-          if (widget.scene.location.isNotEmpty) ...[
-            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(widget.scene.location, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: widget.onEditStart,
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: widget.onDelete,
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除場景",
-          ),
-        ],
-      ),
-      onTap: widget.onSelect,
-    );
-  }
-}

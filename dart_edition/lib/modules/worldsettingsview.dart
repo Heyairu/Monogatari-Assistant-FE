@@ -688,238 +688,164 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     final isSelected = selectedNodeId == location.id;
     final isEditing = editingNodeId == location.id;
     
-    Widget cardWidget = Card(
-      elevation: 0,
-      margin: EdgeInsets.all(0),
-      color: isSelected 
-          ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-          : Theme.of(context).colorScheme.surfaceContainerLowest,
-      child: ListTile(
-        dense: true,
-        leading: Icon(
-          Icons.location_on_outlined,
-          size: 20,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        title: isEditing
-            ? TextField(
-                autofocus: true,
-                controller: TextEditingController(text: location.localName),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                ),
-                onSubmitted: (value) {
-                  _renameNode(location.id, value);
-                  setState(() {
-                    editingNodeId = null;
-                  });
-                },
-                onEditingComplete: () {
-                  setState(() {
-                    editingNodeId = null;
-                  });
-                },
-              )
-            : GestureDetector(
-                onDoubleTap: () {
-                  setState(() {
-                    editingNodeId = location.id;
-                  });
-                },
-                child: Text(
-                  location.localName.isEmpty ? "（未命名）" : location.localName,
-                  style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    color: isSelected 
-                        ? Theme.of(context).colorScheme.primary 
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ),
-        subtitle: Text(
-          "${location.child.length} 個子節點",
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        onTap: () {
-          setState(() {
-            selectedNodeId = location.id;
-            lastSelectedNodeId = location.id;
-            _syncDetailControllers();
-          });
-        },
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(
-                Icons.edit_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              onPressed: () {
-                setState(() {
-                  editingNodeId = location.id;
-                });
-              },
-              tooltip: "重新命名",
+    // 標題組件
+    Widget titleWidget = isEditing
+        ? TextField(
+            autofocus: true,
+            controller: TextEditingController(text: location.localName),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             ),
-            IconButton(
-              icon: Icon(
-                Icons.delete_outline,
-                size: 18,
-                color: Theme.of(context).colorScheme.error,
+            onSubmitted: (value) {
+              _renameNode(location.id, value);
+              setState(() {
+                editingNodeId = null;
+              });
+            },
+            onEditingComplete: () {
+              setState(() {
+                editingNodeId = null;
+              });
+            },
+          )
+        : GestureDetector(
+            onDoubleTap: () {
+              setState(() {
+                editingNodeId = location.id;
+              });
+            },
+            child: Text(
+              location.localName.isEmpty ? "（未命名）" : location.localName,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isSelected 
+                    ? Theme.of(context).colorScheme.primary 
+                    : Theme.of(context).colorScheme.onSurface,
               ),
-              onPressed: () => _deleteNode(location.id),
-              tooltip: "刪除地點",
             ),
-          ],
-        ),
-      ),
-    );
-    
-    Widget draggableWidget = LongPressDraggable<LocationDragData>(
-      data: LocationDragData(
+          );
+
+    return DraggableCardNode<LocationDragData>(
+      dragData: LocationDragData(
         locationId: location.id,
         locationName: location.localName,
       ),
+      nodeId: location.id,
+      nodeType: location.child.isEmpty ? NodeType.item : NodeType.folder,
+      
+      // 內容
+      leading: Icon(
+        Icons.location_on_outlined,
+        size: 20,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      title: titleWidget,
+      subtitle: Text(
+        "${location.child.length} 個子節點",
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              Icons.edit_outlined,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            onPressed: () {
+              setState(() {
+                editingNodeId = location.id;
+              });
+            },
+            tooltip: "重新命名",
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => _deleteNode(location.id),
+            tooltip: "刪除地點",
+          ),
+        ],
+      ),
+      
+      // 狀態與回調
+      isSelected: isSelected,
+      onClicked: () {
+        setState(() {
+          selectedNodeId = location.id;
+          lastSelectedNodeId = location.id;
+          _syncDetailControllers();
+        });
+      },
+      
+      // 拖放
+      isDragging: _isDragging,
+      isThisDragging: _draggingLocationId == location.id,
+      isDragForbidden: _isDragging && _draggingLocationId != null && _isDescendant(_draggingLocationId!, location.id),
+      
       onDragStarted: () {
         setState(() {
           _isDragging = true;
           _draggingLocationId = location.id;
         });
       },
-      onDragEnd: (_) {
-          setState(() {
-            _isDragging = false;
-            _draggingLocationId = null;
-          });
-        },
-        onDraggableCanceled: (_, __) {
-          setState(() {
-            _isDragging = false;
-            _draggingLocationId = null;
-          });
-        },
-        feedback: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 280,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.primary,
-                width: 2,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.location_on_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    location.localName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        childWhenDragging: Opacity(
-          opacity: 0.3,
-          child: cardWidget,
-        ),
-        child: cardWidget,
-      );
-    
-    Widget contentWithDropZones = Stack(
-      children: [
-        draggableWidget,
-        if (_isDragging && _draggingLocationId != location.id && !_isDescendant(_draggingLocationId!, location.id))
-          Positioned.fill(
-            child: Column(
-              children: [
-                _buildDropZone(location, "before", 0.3),
-                _buildDropZone(location, "child", 0.4),
-                _buildDropZone(location, "after", 0.3),
-              ],
-            ),
-          ),
-      ],
-    );
-
-    return Container(
-      margin: EdgeInsets.only(left: depth * 16.0, bottom: 4.0),
-      child: contentWithDropZones,
+      onDragEnd: () {
+        setState(() {
+          _isDragging = false;
+          _draggingLocationId = null;
+        });
+      },
+      
+      getDropZoneSize: (pos) {
+        switch (pos) {
+          case DropPosition.before: return 0.3;
+          case DropPosition.child: return 0.4;
+          case DropPosition.after: return 0.3;
+        }
+      },
+      
+      onWillAccept: (data, pos) {
+        if (data.locationId == location.id) return false;
+        return true;
+      },
+      
+      onAccept: (data, pos) {
+        String positionStr;
+        String messageKey;
+        
+        switch (pos) {
+          case DropPosition.before: 
+            positionStr = "before"; 
+            messageKey = "之前";
+            break;
+          case DropPosition.child: 
+            positionStr = "child"; 
+            messageKey = "的子地點";
+            break;
+          case DropPosition.after: 
+            positionStr = "after"; 
+            messageKey = "之後";
+            break;
+        }
+        
+        final message = pos == DropPosition.child 
+            ? "「${data.locationName}」已成為「${location.localName}」$messageKey"
+            : "「${data.locationName}」已移動到「${location.localName}」$messageKey";
+            
+        _moveLocationTo(data.locationId, location.id, positionStr);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 1)));
+      },
+      
+      indent: depth * 16.0,
     );
   }
 
-  Widget _buildDropZone(LocationData target, String position, double flex) {
-     return Expanded(
-       flex: (flex * 100).toInt(),
-       child: DragTarget<LocationDragData>(
-         onWillAcceptWithDetails: (details) {
-            if (details.data.locationId == target.id) return false;
-            return true;
-         },
-         onAcceptWithDetails: (details) {
-             final dragData = details.data;
-             String message;
-             if (position == "before") {
-               message = "「${dragData.locationName}」已移動到「${target.localName}」之前";
-             } else if (position == "after") {
-                message = "「${dragData.locationName}」已移動到「${target.localName}」之後";
-             } else {
-                message = "「${dragData.locationName}」已成為「${target.localName}」的子地點";
-             }
-             _moveLocationTo(dragData.locationId, target.id, position);
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 1)));
-         },
-         builder: (context, candidates, rejected) {
-           if (candidates.isEmpty) return Container(color: Colors.transparent);
-           
-           Color color;
-           IconData icon;
-           if (position == "before") {
-             color = Theme.of(context).colorScheme.tertiary;
-             icon = Icons.arrow_upward;
-           } else if (position == "after") {
-             color = Theme.of(context).colorScheme.secondary;
-             icon = Icons.arrow_downward;
-           } else {
-             color = Theme.of(context).colorScheme.primary;
-             icon = Icons.subdirectory_arrow_right;
-           }
-           
-           return Container(
-             decoration: BoxDecoration(
-               color: color.withOpacity(0.2),
-               border: position == "child" 
-                   ? Border.all(color: color, width: 2)
-                   : Border(
-                       top: position == "before" ? BorderSide(color: color, width: 3) : BorderSide.none,
-                       bottom: position == "after" ? BorderSide(color: color, width: 3) : BorderSide.none,
-                     )
-             ),
-             child: Center(child: Icon(icon, color: color)),
-           );
-         },
-       ),
-     );
-  }
 
   Widget _buildDetailPanel() {
     // 如果當前沒有選中節點，使用上次選取的節點

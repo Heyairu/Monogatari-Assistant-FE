@@ -20,7 +20,7 @@ import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/file.dart";
 import "bin/findreplace.dart";
-import "bin/input_assist.dart";
+import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 import "bin/content_manager.dart";
@@ -151,6 +151,22 @@ class OpenFileIntent extends Intent { const OpenFileIntent(); }
 class SaveFileIntent extends Intent { const SaveFileIntent(); }
 class FindIntent extends Intent { const FindIntent(); }
 
+class _ProjectInitialState {
+  final String? selectedSegID;
+  final String? selectedChapID;
+  final String contentText;
+  final int totalWords;
+  final bool hasSelection;
+
+  _ProjectInitialState({
+    this.selectedSegID,
+    this.selectedChapID,
+    required this.contentText,
+    required this.totalWords,
+    required this.hasSelection,
+  });
+}
+
 // 主要 ContentView
 class ContentView extends StatefulWidget {
   final UILibrary themeManager;
@@ -178,7 +194,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
-  bool showInputAssistWindow = false;
+  bool showPunctuationPanel = false;
   final TextEditingController findController = TextEditingController();
   final TextEditingController replaceController = TextEditingController();
   final FindReplaceOptions findReplaceOptions = FindReplaceOptions();
@@ -582,7 +598,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 tooltip: "Redo",
               ),
               Container(
-                decoration: showInputAssistWindow
+                decoration: showPunctuationPanel
                     ? BoxDecoration(
                         color: Theme.of(context).colorScheme.primaryContainer,
                         borderRadius: BorderRadius.circular(8),
@@ -591,18 +607,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 child: IconButton(
                   iconSize: iconSize,
                   icon: Icon(
-                    showInputAssistWindow ? Icons.keyboard_hide : Icons.keyboard_alt,
+                    showPunctuationPanel ? Icons.keyboard_hide : Icons.keyboard_alt,
                   ),
-                  color: showInputAssistWindow
+                  color: showPunctuationPanel
                       ? Theme.of(context).colorScheme.onPrimaryContainer
                       : null,
                   onPressed: () {
                     // 切換到編輯器頁面並顯示/隱藏標點符號列
                     setState(() {
-                      showInputAssistWindow = !showInputAssistWindow;
+                      showPunctuationPanel = !showPunctuationPanel;
                     });
                   },
-                  tooltip: showInputAssistWindow ? "關閉標點符號" : "標點符號",
+                  tooltip: showPunctuationPanel ? "關閉標點符號" : "標點符號",
                 ),
               ),
               Container(
@@ -665,11 +681,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           _buildEditor(),
         ],
       ),
-      bottomSheet: showInputAssistWindow ? InputAssistBar(
+      bottomSheet: showPunctuationPanel ? PunctuationPanel(
         onInsert: _insertText,
         onClose: () {
           setState(() {
-            showInputAssistWindow = false;
+            showPunctuationPanel = false;
           });
         },
       ) : null,
@@ -1042,16 +1058,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                           child: Stack(
                             children: [
                               _buildEditor(),
-                              if (showInputAssistWindow)
+                              if (showPunctuationPanel)
                                 Positioned(
                                   top: 0,
                                   left: 0,
                                   right: 0,
-                                  child: InputAssistBar(
+                                  child: PunctuationPanel(
                                     onInsert: _insertText,
                                     onClose: () {
                                       setState(() {
-                                        showInputAssistWindow = false;
+                                        showPunctuationPanel = false;
                                       });
                                     },
                                   ),
@@ -1806,9 +1822,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onSuccess: _showMessage,
       onError: _showError,
       onProjectLoaded: (newProject, newData) {
+        // 在 SetState 之前執行耗時計算
+        final initialState = _calculateInitialState(newData, widget.settingsManager.wordCountMode);
+        
         setState(() {
           currentProject = newProject;
-          _applyProjectData(newData);
+          _applyProjectData(newData, initialState);
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
@@ -1825,9 +1844,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onSuccess: _showMessage,
       onError: _showError,
       onProjectLoaded: (projectFile, data) {
+         // 在 SetState 之前執行耗時計算
+        final initialState = _calculateInitialState(data, widget.settingsManager.wordCountMode);
+
         setState(() {
           currentProject = projectFile;
-          _applyProjectData(data);
+          _applyProjectData(data, initialState);
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
@@ -1919,8 +1941,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     );
   }
   
-  // 輔助方法：應用專案數據到狀態
-  void _applyProjectData(ProjectData data) {
+  // 輔助方法：應用專案數據到狀態 (改為接收預先計算的狀態)
+  void _applyProjectData(ProjectData data, _ProjectInitialState initialState) {
     baseInfoData = data.baseInfoData;
     segmentsData = data.segmentsData;
     outlineData = data.outlineData;
@@ -1928,23 +1950,55 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     characterData = data.characterData;
     
     // 設定初始選擇
-    if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
-      selectedSegID = segmentsData[0].segmentUUID;
-      selectedChapID = segmentsData[0].chapters[0].chapterUUID;
-      contentText = segmentsData[0].chapters[0].chapterContent;
+    selectedSegID = initialState.selectedSegID;
+    selectedChapID = initialState.selectedChapID;
+    contentText = initialState.contentText;
+    
+    if (initialState.hasSelection) {
       _isSyncing = true;
       textController.text = contentText;
       _isSyncing = false;
-      totalWords = _calculateTotalWords();
     } else {
-      selectedSegID = null;
-      selectedChapID = null;
-      contentText = "";
       _isSyncing = true;
       textController.text = "";
       _isSyncing = false;
-      totalWords = 0;
     }
+    
+    totalWords = initialState.totalWords;
+    
+    // Force rebuild of all modules by using keys or ensuring state update
+    // Note: Since we are replacing the data objects, didUpdateWidget in children should trigger
+  }
+
+  // 輔助類別：專案初始狀態
+  static _ProjectInitialState _calculateInitialState(ProjectData data, WordCountMode mode) {
+    String? segID;
+    String? chapID;
+    String content = "";
+    int words = 0;
+    bool hasSel = false;
+
+    if (data.segmentsData.isNotEmpty && data.segmentsData[0].chapters.isNotEmpty) {
+      segID = data.segmentsData[0].segmentUUID;
+      chapID = data.segmentsData[0].chapters[0].chapterUUID;
+      content = data.segmentsData[0].chapters[0].chapterContent;
+      hasSel = true;
+    }
+
+    // 計算總字數 (不依賴 UI 狀態)
+    for (final seg in data.segmentsData) {
+      for (final chap in seg.chapters) {
+        words += ContentManager.calculateWordCount(chap.chapterContent, mode: mode);
+      }
+    }
+
+    return _ProjectInitialState(
+      selectedSegID: segID,
+      selectedChapID: chapID,
+      contentText: content,
+      totalWords: words,
+      hasSelection: hasSel,
+    );
   }
   
   // 訊息處理

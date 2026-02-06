@@ -12,21 +12,21 @@
 
 import "package:flutter/material.dart";
 
-class InputAssistBar extends StatefulWidget {
+class PunctuationPanel extends StatefulWidget {
   final Function(String) onInsert;
   final VoidCallback? onClose;
 
-  const InputAssistBar({
+  const PunctuationPanel({
     super.key,
     required this.onInsert,
     this.onClose,
   });
 
   @override
-  State<InputAssistBar> createState() => _InputAssistBarState();
+  State<PunctuationPanel> createState() => _PunctuationPanelState();
 }
 
-class _InputAssistBarState extends State<InputAssistBar> {
+class _PunctuationPanelState extends State<PunctuationPanel> {
   bool isFullWidth = true;
 
   // 全形符號列表
