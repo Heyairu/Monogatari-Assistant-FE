@@ -34,8 +34,8 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 
 ### Android
 
-| Items | Minimum Requirements |
-|------|----------|
+| Items | Minimum Requirements | Recommended |
+|------|----------|----------|
 | System | Android 5 (API Level 21) | Android 8+ |
 | RAM | 2 GiB up | 6 GiB up |
 | Storage | 200MiB Available | 500MiB Available |
