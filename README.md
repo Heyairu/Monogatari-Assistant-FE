@@ -25,47 +25,28 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 
 ### Windows / macOS / Linux
 
-| Items | Minimum Requirements |
-|------|----------|
-| CPU | x64/Arm64, 1GHz up, Intel Celeron equivalenta & greater |
-| RAM | 2 GiB up |
-| Storage | 500MiB Available |
-| System | Win10(1809) / macOS 10.14 / Ubuntu 20.04 |
-
-| Items | Recommended |
-|------|----------|
-| CPU | x64/Arm64, i5-4570 equivalent & greater |
-| RAM | 8 GiB up |
-| Storage | 1GiB Available |
-| System | Win10(22H2)+ / macOS 14+ / Ubuntu 20.04+ |
+| Items | Minimum Requirements | Recommended |
+|------|----------|----------|
+| CPU | x64/Arm64, 1GHz up, Intel Celeron | i5-4570 equivalent & greater |
+| RAM | 2 GiB up | 8 GiB up |
+| Storage | 500MiB Available | 1GiB Available |
+| System | Win10(1809) / macOS 10.14 / Ubuntu 20.04 | Win10(22H2)+ / macOS 14+ / Ubuntu 20.04+ |
 
 ### Android
 
 | Items | Minimum Requirements |
 |------|----------|
-| System | Android 5 (API Level 21) |
-| RAM | 2 GiB up |
-| Storage | 200MiB Available |
-
-| Items | Recommended |
-|------|----------|
-| System | Android 8+ |
-| RAM | 6 GiB up |
-| Storage | 500MiB Available |
+| System | Android 5 (API Level 21) | Android 8+ |
+| RAM | 2 GiB up | 6 GiB up |
+| Storage | 200MiB Available | 500MiB Available |
 
 ### iOS
 
-| Items | Minimum Requirements |
-|------|----------|
-| System | iOS 12.0 |
-| Device | iPhone 6s equivalent & greater |
-| Storage | 200 MiB Available |
-
-| Items | Recommended |
-|------|----------|
-| System | iOS 15+ |
-| Device | iPhone 8 equivalent & greater |
-| Storage | 500 MiB Available |
+| Items | Minimum Requirements | Recommended |
+|------|----------|----------|
+| System | iOS 12.0 | iOS 15+ |
+| Device | iPhone 6s equivalent & greater | iPhone 8 equivalent & greater |
+| Storage | 200 MiB Available | 500 MiB Available |
 
 ## 功能說明
 ### 1. 故事設定
@@ -96,27 +77,22 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 
 ### 5. 角色設定
 詳細的角色資料管理系統：
-#### 基本資料
-- 姓名、暱稱、年齡、性別
-- 職業、學歷、收入
-- 出生地、現居地、家庭成員
-#### 外觀特徵
-- 身高、體重、體型
-- 髮型、瞳色、五官特徵
-- 穿著風格
-#### 性格設定
-- MBTI 人格類型
-- 個性描述
-- 阻礙事件（角色成長的障礙）
-#### 能力評估
-- 生活技能滑桿（料理、清潔、理財等）
-- 熱愛做的事情列表
-#### 社交特質
-- 社交傾向（內向/外向、低調/高調等）
-- 性格特質（悲觀/樂觀、保守/開放等）
-#### 其他資訊
-- 原文姓名、喜歡/討厭的事物
-- 嗜好、口頭禪、角色註解
+- **基本資料**
+  - 姓名、暱稱、年齡、性別
+- **外觀特徵**
+  - 身高、體重、體型、髮型、瞳色、五官特徵、穿著
+- **性格設定**
+  - MBTI 人格類型、個性描述
+  - 阻礙事件（角色成長的障礙）
+- **能力評估**
+  - 生活技能評估（料理、清潔、理財等）
+  - 喜愛、討厭、害怕做的事
+- **社交特質**
+  - 社交傾向（內向/外向、低調/高調等）
+  - 性格特質（悲觀/樂觀、保守/開放等）
+- **其他資訊**
+  - 原文姓名、喜歡/討厭的人事物
+  - 口頭禪、角色註解
 
 ## 使用技巧
 ### 建立新專案
