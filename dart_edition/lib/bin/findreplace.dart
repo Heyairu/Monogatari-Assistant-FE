@@ -11,6 +11,7 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter/foundation.dart"; // Added for compute
 
 // 搜尋選項類別
 class FindReplaceOptions {
@@ -134,8 +135,22 @@ class HighlightTextEditingController extends TextEditingController {
 
 // ==================== 搜尋與取代邏輯操作 ====================
 
-/// 執行搜尋
-void performFind(
+// 用於 Isolate 的參數封裝
+class _FindParams {
+  final String text;
+  final String findText;
+  final FindReplaceOptions options;
+
+  _FindParams(this.text, this.findText, this.options);
+}
+
+// Isolate 執行的任務函數
+List<TextSelection> _findAllMatchesTask(_FindParams params) {
+  return findAllMatchesSync(params.text, params.findText, params.options);
+}
+
+/// 執行搜尋 (Async)
+Future<void> performFind(
   HighlightTextEditingController textController,
   String findText,
   FindReplaceOptions options,
@@ -144,7 +159,7 @@ void performFind(
   int currentMatchIndex,
   Function(List<TextSelection> matches, int index) onStateUpdate, {
   bool forward = true,
-}) {
+}) async {
   if (findText.isEmpty) {
     return;
   }
@@ -154,8 +169,8 @@ void performFind(
     return;
   }
   
-  // 找出所有匹配項
-  final searchMatches = findAllMatches(text, findText, options);
+  // 找出所有匹配項 (使用 compute)
+  final searchMatches = await findAllMatchesAsync(text, findText, options);
   
   if (searchMatches.isEmpty) {
     textController.updateHighlights(
@@ -216,7 +231,7 @@ void performFind(
 }
 
 /// 執行取代（取代當前選中的項目）
-void performReplace(
+Future<void> performReplace(
   BuildContext context,
   HighlightTextEditingController textController,
   String findText,
@@ -227,7 +242,7 @@ void performReplace(
   int currentMatchIndex,
   Function(List<TextSelection> matches, int index) onStateUpdate,
   Function(String newText) onTextUpdate,
-) {
+) async {
   if (findText.isEmpty) {
     return;
   }
@@ -235,7 +250,7 @@ void performReplace(
   final selection = textController.selection;
   if (!selection.isValid || selection.isCollapsed) {
     // 如果沒有選取，先搜尋
-    performFind(
+    await performFind(
       textController, 
       findText, 
       options, 
@@ -277,9 +292,11 @@ void performReplace(
             }
           }
         } catch (e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("正則表達式錯誤: $e")),
-          );
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("正則表達式錯誤: $e")),
+            );
+          }
           return;
         }
       }
@@ -305,7 +322,7 @@ void performReplace(
       
       // 自動尋找下一個
       // 這裡需要用新的空狀態來調用，因為我們剛剛清除了狀態
-      performFind(
+      await performFind(
         textController, 
         findText, 
         options, 
@@ -320,7 +337,7 @@ void performReplace(
   }
   
   // 如果不匹配，嘗試先搜尋
-  performFind(
+  await performFind(
     textController, 
     findText, 
     options, 
@@ -333,7 +350,7 @@ void performReplace(
 }
 
 /// 執行全部取代
-void performReplaceAll(
+Future<void> performReplaceAll(
   BuildContext context,
   HighlightTextEditingController textController,
   String findText,
@@ -341,7 +358,7 @@ void performReplaceAll(
   FindReplaceOptions options,
   Function(List<TextSelection> matches, int index) onStateUpdate,
   Function(String newText) onTextUpdate,
-) {
+) async {
   if (findText.isEmpty) {
     return;
   }
@@ -351,8 +368,8 @@ void performReplaceAll(
     return;
   }
   
-  // 找出所有匹配項
-  final matches = findAllMatches(text, findText, options);
+  // 找出所有匹配項 (Async)
+  final matches = await findAllMatchesAsync(text, findText, options);
   
   if (matches.isEmpty) {
     return;
@@ -365,6 +382,7 @@ void performReplaceAll(
     try {
       // 正則表達式模式固定啟用大小寫相符
       final regex = RegExp(findText, caseSensitive: true);
+      // replaceAllMapped 在 Dart 內部已經優化，這裡直接使用
       newText = newText.replaceAllMapped(regex, (match) {
         String replacement = replaceText;
         // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
@@ -378,18 +396,36 @@ void performReplaceAll(
         return replacement;
       });
     } catch (e) {
-      // 如果正則表達式無效，顯示錯誤並返回
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("正則表達式錯誤: $e")),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("正則表達式錯誤: $e")),
+        );
+      }
       return;
     }
   } else {
-    // 非正則表達式模式，從後往前取代，避免位置偏移問題
-    for (int i = matches.length - 1; i >= 0; i--) {
-      final match = matches[i];
-      newText = newText.replaceRange(match.start, match.end, replaceText);
+    // 非正則表達式模式，使用 StringBuffer 優化大量取代的效能
+    // matches 必須是按順序排列的 (findAllMatchesSync 返回順序)
+    StringBuffer buffer = StringBuffer();
+    int lastEnd = 0;
+    
+    for (final match in matches) {
+      // 添加匹配項之前的文字
+      if (match.start > lastEnd) {
+        buffer.write(text.substring(lastEnd, match.start));
+      }
+      // 添加取代文字
+      buffer.write(replaceText);
+      // 更新最後處理位置
+      lastEnd = match.end;
     }
+    
+    // 添加最後剩餘的文字
+    if (lastEnd < text.length) {
+      buffer.write(text.substring(lastEnd));
+    }
+    
+    newText = buffer.toString();
   }
   
   textController.text = newText;
@@ -402,9 +438,15 @@ void performReplaceAll(
 
 // ==================== 搜尋功能函數 ====================
 
+/// 找出所有匹配項 (Async)
+Future<List<TextSelection>> findAllMatchesAsync(String text, String findText, FindReplaceOptions options) async {
+  if (text.isEmpty || findText.isEmpty) return [];
+  // 使用 compute 在背景 isolate 執行計算，避免阻塞 UI
+  return await compute(_findAllMatchesTask, _FindParams(text, findText, options));
+}
 
-/// 找出所有匹配項
-List<TextSelection> findAllMatches(String text, String findText, FindReplaceOptions options) {
+/// 找出所有匹配項 (Sync)
+List<TextSelection> findAllMatchesSync(String text, String findText, FindReplaceOptions options) {
   final matches = <TextSelection>[];
   
   if (findText.isEmpty) return matches;

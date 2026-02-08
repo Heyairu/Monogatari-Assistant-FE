@@ -366,7 +366,7 @@ class TraitDefinitions {
   static const traits = [
     TraitDefinition(
       xmlTitle: "attitude",
-      uiTitle: "態度",
+      uiTitle: "",
       xmlLeft: "pessimistic",
       xmlRight: "optimistic",
       uiLeft: "悲觀",
@@ -374,7 +374,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "expression",
-      uiTitle: "表情",
+      uiTitle: "",
       xmlLeft: "expressionless",
       xmlRight: "vivid",
       uiLeft: "面癱",
@@ -382,7 +382,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "aptitude",
-      uiTitle: "資質",
+      uiTitle: "",
       xmlLeft: "dull",
       xmlRight: "genius",
       uiLeft: "笨蛋",
@@ -390,7 +390,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "mindset",
-      uiTitle: "思想",
+      uiTitle: "",
       xmlLeft: "simple",
       xmlRight: "complex",
       uiLeft: "單純",
@@ -398,15 +398,15 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "shamelessness",
-      uiTitle: "臉皮",
+      uiTitle: "",
       xmlLeft: "thin-skinned",
       xmlRight: "thick-skinned",
-      uiLeft: "極薄",
-      uiRight: "極厚",
+      uiLeft: "臉薄",
+      uiRight: "厚顏",
     ),
     TraitDefinition(
       xmlTitle: "temper",
-      uiTitle: "脾氣",
+      uiTitle: "",
       xmlLeft: "gentle",
       xmlRight: "hot-tempered",
       uiLeft: "溫和",
@@ -414,7 +414,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "manners",
-      uiTitle: "舉止",
+      uiTitle: "",
       xmlLeft: "rude",
       xmlRight: "refined",
       uiLeft: "粗魯",
@@ -422,15 +422,15 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "willpower",
-      uiTitle: "意志",
+      uiTitle: "",
       xmlLeft: "fragile",
       xmlRight: "strong",
-      uiLeft: "易碎",
-      uiRight: "堅強",
+      uiLeft: "軟弱",
+      uiRight: "堅定",
     ),
     TraitDefinition(
       xmlTitle: "desire",
-      uiTitle: "慾望",
+      uiTitle: "",
       xmlLeft: "ascetic",
       xmlRight: "intense",
       uiLeft: "無慾",
@@ -438,7 +438,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "courage",
-      uiTitle: "膽量",
+      uiTitle: "",
       xmlLeft: "cowardly",
       xmlRight: "brave",
       uiLeft: "膽小",
@@ -446,7 +446,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "eloquence",
-      uiTitle: "談吐",
+      uiTitle: "",
       xmlLeft: "inarticulate",
       xmlRight: "witty",
       uiLeft: "木訥",
@@ -454,7 +454,7 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "vigilance",
-      uiTitle: "戒心",
+      uiTitle: "",
       xmlLeft: "gullible",
       xmlRight: "suspicious",
       uiLeft: "輕信",
@@ -462,23 +462,23 @@ class TraitDefinitions {
     ),
     TraitDefinition(
       xmlTitle: "self-esteem",
-      uiTitle: "自尊",
+      uiTitle: "",
       xmlLeft: "low",
       xmlRight: "high",
-      uiLeft: "低下",
-      uiRight: "高亢",
+      uiLeft: "自卑",
+      uiRight: "自信",
     ),
     TraitDefinition(
       xmlTitle: "confidence",
-      uiTitle: "自信",
+      uiTitle: "",
       xmlLeft: "low",
       xmlRight: "high",
-      uiLeft: "低下",
-      uiRight: "高亢",
+      uiLeft: "退縮",
+      uiRight: "果敢",
     ),
     TraitDefinition(
       xmlTitle: "archetype",
-      uiTitle: "陰陽",
+      uiTitle: "",
       xmlLeft: "antagonist",
       xmlRight: "protagonist",
       uiLeft: "陰角",
@@ -1383,9 +1383,23 @@ class _CharacterViewState extends State<CharacterView>
         characters = characterData.keys.toList();
 
         if (characters.isNotEmpty) {
-          selectedCharacterIndex = 0;
-          selectedCharacter = characters[0];
-          _loadCharacterData(selectedCharacter!);
+          // 嘗試保留目前的選擇
+          int newIndex = -1;
+          if (selectedCharacter != null) {
+            newIndex = characters.indexOf(selectedCharacter!);
+          }
+          
+          if (newIndex >= 0) {
+            selectedCharacterIndex = newIndex;
+            // 不需要重新載入資料，因為資料已經更新且編輯器內容應保留或由 _saveCurrentCharacterData 同步
+            // 不過如果外部資料變更了（例如從檔案載入），這裡可能需要重新載入
+            // 如果是自動儲存觸發的更新，這裡的資料其實就是剛才儲存的
+          } else {
+            // 如果當前選中的角色不在新列表中，選取第一個
+            selectedCharacterIndex = 0;
+            selectedCharacter = characters[0];
+            _loadCharacterData(selectedCharacter!);
+          }
         } else {
           selectedCharacterIndex = null;
           selectedCharacter = null;
@@ -1425,43 +1439,41 @@ class _CharacterViewState extends State<CharacterView>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          // Main Content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+    return Column(
+      children: [
+        // Main Content
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Title
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.person_rounded,
-                        size: 32,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        "角色編輯",
-                        style: Theme.of(context).textTheme.headlineLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  _buildCharacterListSection(),
-                  const SizedBox(height: 16),
-                  _buildCharacterEditSection(),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Title
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_rounded,
+                      size: 32,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      "角色編輯",
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                _buildCharacterListSection(),
+                const SizedBox(height: 16),
+                _buildCharacterEditSection(),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1551,11 +1563,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _moveCharacter(int oldIndex, int newIndex) {
-      if (oldIndex < newIndex) {
-        newIndex -= 1;
-      }
+    setState(() {
       final item = characters.removeAt(oldIndex);
       characters.insert(newIndex, item);
+      
       // Update Selection
       if (selectedCharacterIndex == oldIndex) {
          selectedCharacterIndex = newIndex;
@@ -1566,7 +1577,24 @@ class _CharacterViewState extends State<CharacterView>
             selectedCharacterIndex = selectedCharacterIndex! + 1;
          }
       }
-      _markAsModified();
+
+      // Reorder Map to match List order
+      final newMap = <String, Map<String, dynamic>>{};
+      for (final name in characters) {
+        if (characterData.containsKey(name)) {
+          newMap[name] = characterData[name]!;
+        }
+      }
+      characterData = newMap;
+    });
+    
+    // 這裡直接通知更新而不是透過 _markAsModified，
+    // 因為位置變更應該立即生效，不需要等 Debounce (Debounce 是為了保存文字輸入)
+    // 當然如果要統一也可以用 _saveCurrentCharacterData
+    
+    // 但 _saveCurrentCharacterData 會讀取當前控制器的值覆蓋回來，
+    // 如果剛好在輸入中這是期望的。
+    _markAsModified();
   }
 
   Widget _buildCharacterEditSection() {
@@ -1613,26 +1641,31 @@ class _CharacterViewState extends State<CharacterView>
           ),
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: AnimatedSize(
+            child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              alignment: Alignment.topCenter,
-              child: IndexedStack(
-                index: _tabController.index,
-                sizing: StackFit.loose,
-                children: [
-                  _buildBasicInfoTab(),
-                  _buildPersonalityTab(),
-                  _buildAbilityTab(),
-                  _buildSocialTab(),
-                  _buildOtherTab(),
-                ],
+              transitionBuilder: (Widget child, Animation<double> animation) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+              child: KeyedSubtree(
+                key: ValueKey<int>(_tabController.index),
+                child: _buildCurrentTab(),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+  
+  Widget _buildCurrentTab() {
+     switch (_tabController.index) {
+        case 0: return _buildBasicInfoTab();
+        case 1: return _buildPersonalityTab();
+        case 2: return _buildAbilityTab();
+        case 3: return _buildSocialTab();
+        case 4: return _buildOtherTab();
+        default: return Container();
+     }
   }
 
   // MARK: - 角色基本資訊
@@ -2061,48 +2094,22 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   Widget _buildTextField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
-      ),
-    );
+    return CharacterTextField(label: label, controller: controller);
   }
 
   // MARK: - UI 元件建構
 
   // 專門用於處理角色名稱的欄位,會同步更新列表
   Widget _buildNameField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
-      ),
-    );
+    // 這裡使用 CharacterTextField，它是一個 Stateless Widget
+    // 名稱同步邏輯已經在 _setupListeners 中的 addListener 處理了
+    return CharacterTextField(label: label, controller: controller);
   }
 
   // 多行文字欄位
 
   Widget _buildMultilineField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: TextField(
-        controller: controller,
-        maxLines: 4,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
-      ),
-    );
+    return CharacterTextField(label: label, controller: controller, maxLines: 4);
   }
 
   // 九宮格陣營選擇
@@ -2346,58 +2353,17 @@ class _CharacterViewState extends State<CharacterView>
     return Column(
       children: List.generate(TraitDefinitions.commonAbilities.length, (index) {
         final def = TraitDefinitions.commonAbilities[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 80,
-                child: Text(def.uiTitle, style: const TextStyle(fontSize: 13)),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiLeft,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: commonAbilityValues[index],
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: commonAbilityValues[index].toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        commonAbilityValues[index] = value;
-                        _markAsModified();
-                      });
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiRight,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
+        return CharacterSlider(
+          title: def.uiTitle,
+          leftLabel: def.uiLeft,
+          rightLabel: def.uiRight,
+          value: commonAbilityValues[index],
+          onChanged: (value) {
+            setState(() {
+              commonAbilityValues[index] = value;
+              _markAsModified();
+            });
+          },
         );
       }),
     );
@@ -2407,54 +2373,17 @@ class _CharacterViewState extends State<CharacterView>
     return Column(
       children: List.generate(TraitDefinitions.socialItems.length, (index) {
         final def = TraitDefinitions.socialItems[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiLeft,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: socialItemValues[index],
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: socialItemValues[index].toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        socialItemValues[index] = value;
-                        _markAsModified();
-                      });
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text(
-                  def.uiRight,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
+        return CharacterSlider(
+          title: def.uiTitle,
+          leftLabel: def.uiLeft,
+          rightLabel: def.uiRight,
+          value: socialItemValues[index],
+          onChanged: (value) {
+            setState(() {
+              socialItemValues[index] = value;
+              _markAsModified();
+            });
+          },
         );
       }),
     );
@@ -2464,54 +2393,17 @@ class _CharacterViewState extends State<CharacterView>
     return Column(
       children: List.generate(TraitDefinitions.approaches.length, (index) {
         final def = TraitDefinitions.approaches[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 60,
-                child: Text(
-                  def.uiLeft,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: approachValues[index],
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: approachValues[index].toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        approachValues[index] = value;
-                        _markAsModified();
-                      });
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 60,
-                child: Text(
-                  def.uiRight,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
+        return CharacterSlider(
+          title: def.uiTitle,
+          leftLabel: def.uiLeft,
+          rightLabel: def.uiRight,
+          value: approachValues[index],
+          onChanged: (value) {
+            setState(() {
+              approachValues[index] = value;
+              _markAsModified();
+            });
+          },
         );
       }),
     );
@@ -2521,65 +2413,17 @@ class _CharacterViewState extends State<CharacterView>
     return Column(
       children: List.generate(TraitDefinitions.traits.length, (index) {
         final def = TraitDefinitions.traits[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 50,
-                child: Text(
-                  def.uiTitle,
-                  textAlign: TextAlign.left,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 50,
-                child: Text(
-                  def.uiLeft,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.onDrag,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: traitsValues[index],
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: traitsValues[index].toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        traitsValues[index] = value;
-                        _markAsModified();
-                      });
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 50,
-                child: Text(
-                  def.uiRight,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
+        return CharacterSlider(
+          title: def.uiTitle,
+          leftLabel: def.uiLeft,
+          rightLabel: def.uiRight,
+          value: traitsValues[index],
+          onChanged: (value) {
+            setState(() {
+              traitsValues[index] = value;
+              _markAsModified();
+            });
+          },
         );
       }),
     );
@@ -3078,4 +2922,139 @@ class _CharacterViewState extends State<CharacterView>
       });
   }
 }
+
+// MARK: - Independent Widgets
+
+class CharacterSlider extends StatefulWidget {
+  final String title;
+  final String leftLabel;
+  final String rightLabel;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const CharacterSlider({
+    super.key,
+    required this.title,
+    required this.leftLabel,
+    required this.rightLabel,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<CharacterSlider> createState() => _CharacterSliderState();
+}
+
+class _CharacterSliderState extends State<CharacterSlider> {
+  late double _currentValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(CharacterSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((widget.value - _currentValue).abs() > 0.01 && widget.value != oldWidget.value) {
+      _currentValue = widget.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (widget.title.isNotEmpty) ...[
+            SizedBox(
+              width: 60,
+              child: Text(
+                widget.title,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      widget.leftLabel,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    Text(
+                      widget.rightLabel,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderThemeData(
+                    showValueIndicator: ShowValueIndicator.always,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                  ),
+                  child: Slider(
+                    value: _currentValue,
+                    min: 0,
+                    max: 100,
+                    divisions: 100,
+                    label: _currentValue.toStringAsFixed(0),
+                    onChanged: (value) {
+                      setState(() {
+                        _currentValue = value;
+                      });
+                      widget.onChanged(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CharacterTextField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String? hintText;
+  final int maxLines;
+
+  const CharacterTextField({
+    super.key,
+    required this.label,
+    required this.controller,
+    this.hintText,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hintText,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      ),
+    );
+  }
+}
+
 

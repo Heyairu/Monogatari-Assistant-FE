@@ -13,6 +13,8 @@
 import "dart:io";
 import "dart:convert";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart"; // Added for MethodChannel
+import "package:flutter/foundation.dart"; // Added for compute
 import "package:file_picker/file_picker.dart";
 import "package:path_provider/path_provider.dart";
 import "package:path/path.dart" as path;
@@ -60,8 +62,22 @@ class _FileIO {
 // MARK: - 2. System Calls (系統調用)
 /// 負責與作業系統交互 (Dialogs, Path Providers, File Info)
 class _SystemBridge {
+  static const platform = MethodChannel("com.heyairu.monogatari_assistant/file");
+
+  /// 寫入 URI (Android SAF)
+  static Future<void> writeToUri(String uri, String content) async {
+    try {
+      await platform.invokeMethod("writeToUri", {
+        "uri": uri,
+        "content": content,
+      });
+    } on PlatformException catch (e) {
+      throw FileException("寫入 URI 失敗: ${e.message}");
+    }
+  }
+
   /// 選擇專案檔案並讀取內容 (因為 FilePicker 在某些平台直接給 bytes)
-  static Future<({String name, String? path, String content})?> pickProjectFile() async {
+  static Future<({String name, String? path, String? uri, String content})?> pickProjectFile() async {
     FilePickerResult? result;
     
     if (Platform.isAndroid) {
@@ -80,7 +96,7 @@ class _SystemBridge {
     if (result != null && result.files.single.bytes != null) {
       final file = result.files.single;
       final content = utf8.decode(file.bytes!);
-      return (name: file.name, path: file.path, content: content);
+      return (name: file.name, path: file.path, uri: file.identifier, content: content);
     }
     return null;
   }
@@ -183,14 +199,14 @@ class ProjectManager {
   }
 
   /// 生成專案XML內容
-  static String generateProjectXML(ProjectData data) {
-    return FileService.generateProjectXML(data);
+  static Future<String> generateProjectXML(ProjectData data) async {
+    return compute(FileService.generateProjectXML, data);
   }
 
   /// 從XML載入專案
   static Future<ProjectData> loadProjectFromXML(ProjectFile projectFile) async {
     try {
-      return FileService.parseProjectXML(projectFile.content);
+      return compute(FileService.parseProjectXML, projectFile.content);
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");
     }
@@ -415,7 +431,7 @@ class ProjectManager {
         return;
       }
       
-      final xmlContent = generateProjectXML(currentData);
+      final xmlContent = await generateProjectXML(currentData);
       currentProject.content = xmlContent;
       
       final savedProject = await FileService.saveProject(currentProject);
@@ -442,7 +458,7 @@ class ProjectManager {
       
       final projectToSave = currentProject ?? await FileService.createNewProject();
       
-      final xmlContent = generateProjectXML(currentData);
+      final xmlContent = await generateProjectXML(currentData);
       projectToSave.content = xmlContent;
       
       final savedProject = await FileService.saveProjectAs(projectToSave);
@@ -647,16 +663,18 @@ class ProjectData {
 class ProjectFile {
   String fileName;
   String? filePath;
+  String? uri;
   String content;
   
   ProjectFile({
     required this.fileName,
     required this.filePath,
+    this.uri,
     required this.content,
   });
   
   /// 檢查是否為新檔案（未儲存）
-  bool get isNewFile => filePath == null;
+  bool get isNewFile => filePath == null && uri == null;
   
   /// 獲取檔案名稱（不包含副檔名）
   String get nameWithoutExtension {
@@ -1246,6 +1264,7 @@ class FileService {
         return ProjectFile(
           fileName: result.name,
           filePath: result.path,
+          uri: result.uri,
           content: result.content,
         );
       }
@@ -1258,10 +1277,31 @@ class FileService {
   /// 儲存專案檔案
   static Future<ProjectFile> saveProject(ProjectFile projectFile) async {
     try {
+      // Android SAF URI Support
+      if (Platform.isAndroid && projectFile.uri != null) {
+        try {
+          await _SystemBridge.writeToUri(projectFile.uri!, projectFile.content);
+          return projectFile;
+        } catch (e) {
+          debugPrint("SAF Write failed (URI might be invalid or expired): $e");
+          // Fallback to saveProjectAs if writing to URI fails
+          return await saveProjectAs(projectFile);
+        }
+      }
+
       if (projectFile.filePath != null) {
         // 儲存到現有路徑
-        await _FileIO.write(projectFile.filePath!, projectFile.content);
-        return projectFile;
+        try {
+          await _FileIO.write(projectFile.filePath!, projectFile.content);
+          return projectFile;
+        } catch (e) {
+          // 在移動設備上，如果直接寫入失敗（常見於外部存儲權限問題），則退回到另存新檔
+          // 這樣可以確保檔案能被儲存，雖然會跳出對話框，但優於儲存失敗
+          if (Platform.isAndroid || Platform.isIOS) {
+            return await saveProjectAs(projectFile);
+          }
+          rethrow;
+        }
       } else {
         // 另存新檔
         return await saveProjectAs(projectFile);
@@ -1275,7 +1315,7 @@ class FileService {
   static Future<ProjectFile> saveProjectAs(ProjectFile projectFile) async {
     try {
       final outputFile = await _SystemBridge.saveProjectFileDialog(
-        defaultName: "${projectFile.fileName}$projectExtension",
+        defaultName: "${projectFile.nameWithoutExtension}$projectExtension",
         content: projectFile.content,
       );
 

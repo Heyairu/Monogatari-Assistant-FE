@@ -53,16 +53,47 @@ enum DragType {
 
 class ChapterData {
   String chapterName;
-  String chapterContent;
+  String _chapterContent;
   String chapterUUID;
+  
+  // Cache for word count to avoid expensive recalculation
+  int? _cachedWordCount;
+  WordCountMode? _cachedMode;
   
   ChapterData({
     this.chapterName = "",
-    this.chapterContent = "",
+    String chapterContent = "",
     String? chapterUUID,
-  }) : chapterUUID = chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+  }) : _chapterContent = chapterContent,
+       chapterUUID = chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
   
-  int getWordCount(WordCountMode mode) => ContentManager.calculateWordCount(chapterContent, mode: mode);
+  String get chapterContent => _chapterContent;
+  
+  set chapterContent(String value) {
+    if (_chapterContent != value) {
+      _chapterContent = value;
+      // Invalidate cache when content changes
+      _cachedWordCount = null;
+    }
+  }
+  
+  int getWordCount(WordCountMode mode) {
+    // Return cached value if available and mode matches
+    if (_cachedWordCount != null && _cachedMode == mode) {
+      return _cachedWordCount!;
+    }
+    // Fallback to synchronous calculation if not cached
+    _cachedWordCount = ContentManager.calculateWordCount(_chapterContent, mode: mode);
+    _cachedMode = mode;
+    return _cachedWordCount!;
+  }
+  
+  // Method to update cache from async calculation
+  void updateCachedWordCount(int count, WordCountMode mode) {
+    _cachedWordCount = count;
+    _cachedMode = mode;
+  }
+
   String get id => chapterUUID;
   
   @override
@@ -70,12 +101,12 @@ class ChapterData {
     if (identical(this, other)) return true;
     return other is ChapterData &&
            other.chapterName == chapterName &&
-           other.chapterContent == chapterContent &&
+           other.chapterContent == _chapterContent &&
            other.chapterUUID == chapterUUID;
   }
   
   @override
-  int get hashCode => Object.hash(chapterName, chapterContent, chapterUUID);
+  int get hashCode => Object.hash(chapterName, _chapterContent, chapterUUID);
 }
 
 class SegmentData {

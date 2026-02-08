@@ -301,6 +301,7 @@ class BaseInfoView extends StatefulWidget {
 
 class _BaseInfoViewState extends State<BaseInfoView> {
   late BaseInfoData _data;
+  bool _isUpdating = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
   
   // 為每個文字欄位創建專用的 TextEditingController
@@ -337,31 +338,37 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     
     // 添加監聽器
     _bookNameController.addListener(() {
+      if (_isUpdating) return;
       _data.bookName = _bookNameController.text;
       _notifyDataChanged();
     });
     
     _authorController.addListener(() {
+      if (_isUpdating) return;
       _data.author = _authorController.text;
       _notifyDataChanged();
     });
     
     _purposeController.addListener(() {
+      if (_isUpdating) return;
       _data.purpose = _purposeController.text;
       _notifyDataChanged();
     });
     
     _toRecapController.addListener(() {
+      if (_isUpdating) return;
       _data.toRecap = _toRecapController.text;
       _notifyDataChanged();
     });
     
     _storyTypeController.addListener(() {
+      if (_isUpdating) return;
       _data.storyType = _storyTypeController.text;
       _notifyDataChanged();
     });
     
     _introController.addListener(() {
+      if (_isUpdating) return;
       _data.intro = _introController.text;
       _notifyDataChanged();
     });
@@ -388,51 +395,15 @@ class _BaseInfoViewState extends State<BaseInfoView> {
         
         _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
         
-        // 更新所有 TextEditingController（暫時移除監聽器以避免循環通知）
-        _bookNameController.removeListener(() {});
-        _authorController.removeListener(() {});
-        _purposeController.removeListener(() {});
-        _toRecapController.removeListener(() {});
-        _storyTypeController.removeListener(() {});
-        _introController.removeListener(() {});
-        
+        // 更新所有 TextEditingController，使用 _isUpdating 標記防止循環通知
+        _isUpdating = true;
         _bookNameController.text = _data.bookName;
         _authorController.text = _data.author;
         _purposeController.text = _data.purpose;
         _toRecapController.text = _data.toRecap;
         _storyTypeController.text = _data.storyType;
         _introController.text = _data.intro;
-        
-        // 重新添加監聽器
-        _bookNameController.addListener(() {
-          _data.bookName = _bookNameController.text;
-          _notifyDataChanged();
-        });
-        
-        _authorController.addListener(() {
-          _data.author = _authorController.text;
-          _notifyDataChanged();
-        });
-        
-        _purposeController.addListener(() {
-          _data.purpose = _purposeController.text;
-          _notifyDataChanged();
-        });
-        
-        _toRecapController.addListener(() {
-          _data.toRecap = _toRecapController.text;
-          _notifyDataChanged();
-        });
-        
-        _storyTypeController.addListener(() {
-          _data.storyType = _storyTypeController.text;
-          _notifyDataChanged();
-        });
-        
-        _introController.addListener(() {
-          _data.intro = _introController.text;
-          _notifyDataChanged();
-        });
+        _isUpdating = false;
       });
     } else if (oldWidget.contentText != widget.contentText) {
       // 只有 contentText 變化時，重新計算字數

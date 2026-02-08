@@ -1,9 +1,30 @@
 import "package:characters/characters.dart";
+import "package:flutter/foundation.dart"; // Add foundation for compute
 import "settings_manager.dart";
+
+// Helper class for passing parameters to isolate
+class _WordCountParams {
+  final String content;
+  final WordCountMode mode;
+  
+  _WordCountParams(this.content, this.mode);
+}
+
+// Top-level function for compute
+int _calculateWordCountTask(_WordCountParams params) {
+  return ContentManager.calculateWordCount(params.content, mode: params.mode);
+}
 
 // 內容管理器
 class ContentManager {
   
+  // 異步計算字數 (使用 Isolate)
+  static Future<int> calculateWordCountAsync(String content, {WordCountMode mode = WordCountMode.characters}) async {
+    if (content.isEmpty) return 0;
+    // 使用 compute 在背景 isolate 執行計算
+    return await compute(_calculateWordCountTask, _WordCountParams(content, mode));
+  }
+
   // 計算本章字數
   // mode: 計算模式 (預設為混合模式)
   static int calculateWordCount(String content, {WordCountMode mode = WordCountMode.characters}) {

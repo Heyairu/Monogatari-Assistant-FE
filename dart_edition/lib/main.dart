@@ -12,6 +12,9 @@
  * and repackaging without permission are prohibited.
  */
 
+import "dart:math";
+import "dart:async"; // Added for Timer
+
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter/foundation.dart";
@@ -288,7 +291,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       if (!_isSyncing && contentText != textController.text) {
         setState(() {
           contentText = textController.text;
-          totalWords = _calculateTotalWords();
+           // Trigger async incremental update instead of full sync recalculation
+          _debouncedWordCountUpdate();
           
           // 標記有未儲存的變更
           _markAsModified();
@@ -315,6 +319,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   @override
   void dispose() {
+    _wordCountDebounce?.cancel(); // Cancel timer
     widget.settingsManager.removeListener(_onSettingsChanged);
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
@@ -329,25 +334,85 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     super.dispose();
   }
   
-  int _calculateTotalWords() {
+  Timer? _wordCountDebounce;
+
+  void _debouncedWordCountUpdate() {
+    if (_wordCountDebounce?.isActive ?? false) _wordCountDebounce!.cancel();
+    _wordCountDebounce = Timer(const Duration(milliseconds: 500), () {
+       _updateActiveWordCountAsync();
+    });
+  }
+
+  Future<void> _updateActiveWordCountAsync() async {
+     if (selectedSegID == null || selectedChapID == null) return;
+     
+     final text = contentText;
+     final mode = widget.settingsManager.wordCountMode;
+     
+     // Use Isolate to calculate word count for active chapter only
+     final count = await ContentManager.calculateWordCountAsync(text, mode: mode);
+     
+     if (!mounted) return;
+     
+     setState(() {
+         // Update cache for the active chapter
+         for (final seg in segmentsData) {
+             if (seg.segmentUUID == selectedSegID) {
+                 for (final chap in seg.chapters) {
+                     if (chap.chapterUUID == selectedChapID) {
+                         // Update the cached value in ChapterData
+                         // Note: We are updating the cache associated with the object which might have stale content string
+                         // but this is the correct "current" count for the UI.
+                         chap.updateCachedWordCount(count, mode);
+                         break;
+                     }
+                 }
+             }
+         }
+         
+         // Re-sum using cached values (Fast)
+         totalWords = _recalculateSumFast();
+     });
+  }
+
+  Future<void> _updateAllWordCounts() async {
+    final mode = widget.settingsManager.wordCountMode;
+    // Create a list of futures to calculate all in parallel (or batched)
+    final List<Future<void>> futures = [];
+    
+    for (final seg in segmentsData) {
+      for (final chap in seg.chapters) {
+         futures.add(ContentManager.calculateWordCountAsync(chap.chapterContent, mode: mode).then((count) {
+             chap.updateCachedWordCount(count, mode);
+         }));
+      }
+    }
+    
+    await Future.wait(futures);
+    
+    if (mounted) {
+      setState(() {
+        totalWords = _recalculateSumFast();
+      });
+    }
+  }
+
+  int _recalculateSumFast() {
     int sum = 0;
     for (final seg in segmentsData) {
       for (final chap in seg.chapters) {
-        if (selectedSegID != null && selectedChapID != null && 
-            seg.segmentUUID == selectedSegID && chap.chapterUUID == selectedChapID) {
-          sum += ContentManager.calculateWordCount(textController.text, mode: widget.settingsManager.wordCountMode);
-        } else {
-          sum += ContentManager.calculateWordCount(chap.chapterContent, mode: widget.settingsManager.wordCountMode);
-        }
+        // use getWordCount for reading. It will use cache if available. 
+        // If cache is null (first load and async hasn't finished), it might calc sync.
+        // But we try to rely on async updates.
+        sum += chap.getWordCount(widget.settingsManager.wordCountMode);
       }
     }
     return sum;
   }
   
   void _onSettingsChanged() {
-    setState(() {
-      totalWords = _calculateTotalWords();
-    });
+    // When settings change (e.g. counting mode), recalculate all
+    _updateAllWordCounts();
   }
   
   // WindowListener 實作
@@ -681,14 +746,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           _buildEditor(),
         ],
       ),
-      bottomSheet: showPunctuationPanel ? PunctuationPanel(
-        onInsert: _insertText,
-        onClose: () {
-          setState(() {
-            showPunctuationPanel = false;
-          });
-        },
-      ) : null,
+      bottomSheet: null,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -823,6 +881,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildMobileFunctionPage() {
     return Column(
       children: [
+        // 標點符號列（當開啟時）
+        if (showPunctuationPanel)
+          PunctuationPanel(
+            onInsert: _insertText,
+            onClose: () {
+              setState(() {
+                showPunctuationPanel = false;
+              });
+            },
+          ),
+
         // 功能頁面導航
         Container(
           height: 60,
@@ -832,7 +901,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < 9; i++)
+                for (int i = 0; i < 10; i++)
                   _buildMobileNavigationChip(i),
               ],
             ),
@@ -842,9 +911,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePage.clamp(0, 8),
+            index: slidePage.clamp(0, 9),
             children: [
-              for (int i = 0; i < 9; i++)
+              for (int i = 0; i < 10; i++)
                 _buildSpecificPageContent(i),
             ],
           ),
@@ -1012,10 +1081,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final double maxWidth = constraints.maxWidth;
-                    // 計算側邊欄寬度，並限制在 0.2 - 0.4 之間
+                    // 計算側邊欄寬度，並限制在 320px - 40% 之間
+                    final double minSidebarWidth = max(maxWidth*0.2, 320);
+                    final double maxSidebarWidth = max(maxWidth*0.4, 320);
+                    // 確保最大寬度至少能容納最小寬度
+                    final double effectiveMaxWidth = maxSidebarWidth < minSidebarWidth ? minSidebarWidth : maxSidebarWidth;
+                    
                     final double sidebarWidth = (maxWidth * _sidebarWidthRatio).clamp(
-                      maxWidth * 0.2, 
-                      maxWidth * 0.4
+                      minSidebarWidth, 
+                      effectiveMaxWidth
                     );
 
                     return Row(
@@ -1036,8 +1110,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                             behavior: HitTestBehavior.translucent,
                             onPanUpdate: (details) {
                               setState(() {
-                                double newRatio = _sidebarWidthRatio + (details.delta.dx / maxWidth);
-                                _sidebarWidthRatio = newRatio.clamp(0.2, 0.4);
+                                // 根據像素變化計算新的寬度
+                                double currentWidth = sidebarWidth;
+                                double newWidth = currentWidth + details.delta.dx;
+                                
+                                // 轉換回比例並限制
+                                double newRatio = newWidth / maxWidth;
+                                double minRatio = minSidebarWidth / maxWidth;
+                                double maxRatio = effectiveMaxWidth / maxWidth;
+                                
+                                _sidebarWidthRatio = newRatio.clamp(minRatio, maxRatio);
                               });
                             },
                             child: Container(
@@ -1055,25 +1137,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                         
                         // 右側編輯器
                         Expanded(
-                          child: Stack(
-                            children: [
-                              _buildEditor(),
-                              if (showPunctuationPanel)
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  child: PunctuationPanel(
-                                    onInsert: _insertText,
-                                    onClose: () {
-                                      setState(() {
-                                        showPunctuationPanel = false;
-                                      });
-                                    },
-                                  ),
-                                ),
-                            ],
-                          ),
+                          child: _buildEditor(),
                         ),
                       ],
                     );
@@ -1099,7 +1163,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 獲取 NavigationRail 的選中索引
   int _getNavigationIndex() {
-    return slidePage > 8 ? 0 : slidePage.clamp(0, 8);
+    return slidePage > 9 ? 0 : slidePage.clamp(0, 9);
   }
 
   // 頁面內容
@@ -1146,7 +1210,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [
-          // 搜尋列（當開啟時）
+          // 標點符號列（當開啟時）- 放在最上方
+          if (showPunctuationPanel)
+            PunctuationPanel(
+              onInsert: _insertText,
+              onClose: () {
+                setState(() {
+                  showPunctuationPanel = false;
+                });
+              },
+            ),
+            
+          // 搜尋列（當開啟時）- 放在標點符號列下方
           if (showFindReplaceWindow)
             FindReplaceBar(
               findController: findController,
@@ -1154,8 +1229,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               options: findReplaceOptions,
               currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
               totalMatches: _searchMatches.length,
-              onFindNext: (findText, replaceText, options) {
-                performFind(
+              onFindNext: (findText, replaceText, options) async {
+                await performFind(
                   textController,
                   findText,
                   options,
@@ -1171,8 +1246,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   forward: true,
                 );
               },
-              onFindPrevious: (findText, replaceText, options) {
-                performFind(
+              onFindPrevious: (findText, replaceText, options) async {
+                await performFind(
                   textController,
                   findText,
                   options,
@@ -1188,8 +1263,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   forward: false,
                 );
               },
-              onReplace: (findText, replaceText, options) {
-                performReplace(
+              onReplace: (findText, replaceText, options) async {
+                await performReplace(
                   context,
                   textController,
                   findText,
@@ -1207,13 +1282,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   (newText) {
                     setState(() {
                       contentText = newText;
-                      totalWords = _calculateTotalWords();
+                      _debouncedWordCountUpdate();
                     });
                   },
                 );
               },
-              onReplaceAll: (findText, replaceText, options) {
-                performReplaceAll(
+              onReplaceAll: (findText, replaceText, options) async {
+                await performReplaceAll(
                   context,
                   textController,
                   findText,
@@ -1228,18 +1303,22 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   (newText) {
                     setState(() {
                       contentText = newText;
-                      totalWords = _calculateTotalWords();
+                      _debouncedWordCountUpdate();
                     });
                   },
                 );
               },
-              onSearchChanged: (findText, options) {
+              onSearchChanged: (findText, options) async {
                 // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
                 if (findText.isNotEmpty) {
                   final text = textController.text;
                   if (text.isNotEmpty) {
+                    // Async search
+                    final matches = await findAllMatchesAsync(text, findText, options);
+                    if (!mounted) return;
+                    
                     setState(() {
-                      _searchMatches = findAllMatches(text, findText, options);
+                      _searchMatches = matches;
                       // 如果當前選中的匹配項仍然有效，保持它
                       if (_currentMatchIndex >= _searchMatches.length) {
                         _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
@@ -1270,6 +1349,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 });
               },
             ),
+
 
           // 文本編輯器 - 使用 Expanded 填充剩餘空間
           Expanded(
@@ -1348,9 +1428,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         
         // 建立內容映射表 (UUID -> Content)，確保從 ChapterSelectionView 回傳的結構變更不會覆蓋掉實際的內容
         final Map<String, String> contentMap = {};
+        final Map<String, int> countMap = {};
+        final mode = widget.settingsManager.wordCountMode;
+
         for (final seg in segmentsData) {
           for (final chap in seg.chapters) {
             contentMap[chap.chapterUUID] = chap.chapterContent;
+            countMap[chap.chapterUUID] = chap.getWordCount(mode);
           }
         }
         
@@ -1359,6 +1443,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           for (final chap in seg.chapters) {
             if (contentMap.containsKey(chap.chapterUUID)) {
               chap.chapterContent = contentMap[chap.chapterUUID]!;
+              if (countMap.containsKey(chap.chapterUUID)) {
+                chap.updateCachedWordCount(countMap[chap.chapterUUID]!, mode);
+              }
             }
           }
         }
@@ -1366,7 +1453,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 然後更新 segmentsData
         setState(() {
           segmentsData = updatedSegments;
-          totalWords = _calculateTotalWords();
+          totalWords = _recalculateSumFast();
         });
         
         _markAsModified();
@@ -1382,7 +1469,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             contentText = newContent;
             textController.text = contentText;
             // 重新計算字數
-            totalWords = _calculateTotalWords();
+            totalWords = _recalculateSumFast();
           });
           _isSyncing = false;
         }
@@ -1823,6 +1910,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onError: _showError,
       onProjectLoaded: (newProject, newData) {
         // 在 SetState 之前執行耗時計算
+        // 注意：為了性能，這裡不再同步計算總字數，設為 0，稍後異步更新
         final initialState = _calculateInitialState(newData, widget.settingsManager.wordCountMode);
         
         setState(() {
@@ -1831,6 +1919,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
+        
+        // 觸發異步字數更新
+        _updateAllWordCounts();
       },
       onSave: _saveProject,
     );
@@ -1853,6 +1944,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
+        
+        // 觸發異步字數更新
+        _updateAllWordCounts();
       },
       onSave: _saveProject,
     );
@@ -1985,12 +2079,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       hasSel = true;
     }
 
-    // 計算總字數 (不依賴 UI 狀態)
-    for (final seg in data.segmentsData) {
-      for (final chap in seg.chapters) {
-        words += ContentManager.calculateWordCount(chap.chapterContent, mode: mode);
-      }
-    }
+    // 優化：初始載入時不進行同步字數計算，改為後續異步更新，避免大型專案開啟時卡頓
+    words = 0;
 
     return _ProjectInitialState(
       selectedSegID: segID,

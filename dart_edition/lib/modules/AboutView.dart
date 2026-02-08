@@ -18,13 +18,12 @@ class AboutView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // 應用圖標
               Container(
@@ -132,9 +131,8 @@ class AboutView extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
   
   Widget _buildFeatureItem(BuildContext context, IconData icon, String text) {
     return Padding(
