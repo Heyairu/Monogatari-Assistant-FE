@@ -153,6 +153,7 @@ class _SettingViewState extends State<SettingView> {
                     _buildPlaceholderSetting("自動儲存", Icons.save),
                     _buildPlaceholderSetting("自動備份", Icons.backup),
                     _buildPlaceholderSetting("語言設定", Icons.language),
+                    _buildPlaceholderSetting("文件同步", Icons.sync),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
                   ],
                 ),

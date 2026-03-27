@@ -31,7 +31,9 @@ import "bin/content_manager.dart";
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
 import "modules/AboutView.dart" as AboutModule;
+import "modules/glossaryview.dart" as GlossaryModule;
 import "modules/outlineview.dart" as OutlineModule;
+import "modules/proofreadingview.dart" as ProofReadingModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
 import "modules/settingview.dart";
@@ -1530,22 +1532,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
   
   Widget _buildGlossaryView() {
-    return _buildPlaceholderPage(
-      icon: Icons.library_books,
-      title: "詞語參考",
-      description: "詞語參考功能開發中...",
-      color: Colors.teal,
-    );
+    return const GlossaryModule.GlossaryView();
   }
   
   
   Widget _buildProofreadingView() {
-    return _buildPlaceholderPage(
-      icon: Icons.spellcheck,
-      title: "文本校正",
-      description: "文本校正功能開發中...",
-      color: Colors.red,
-    );
+    return const ProofReadingModule.ProofReadingView();
   }
   
   Widget _buildCopilotView() {
