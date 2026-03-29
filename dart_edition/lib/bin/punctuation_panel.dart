@@ -71,11 +71,11 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                 segments: const [
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text("全形", style: TextStyle(fontSize: 12)),
+                    label: Text("全", style: TextStyle(fontSize: 12)),
                   ),
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text("半形", style: TextStyle(fontSize: 12)),
+                    label: Text("半", style: TextStyle(fontSize: 12)),
                   ),
                 ],
                 selected: {isFullWidth},

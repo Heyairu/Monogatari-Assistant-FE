@@ -34,6 +34,7 @@ import "modules/AboutView.dart" as AboutModule;
 import "modules/glossaryview.dart" as GlossaryModule;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/proofreadingview.dart" as ProofReadingModule;
+import "modules/WelcomeView.dart" as WelcomeModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
 import "modules/settingview.dart";
@@ -189,7 +190,9 @@ class ContentView extends StatefulWidget {
 
 class _ContentViewState extends State<ContentView> with WindowListener {
   // 狀態變數
-  int slidePage = 0;
+  int slidePageCounts = 13;
+  int slidePageIndexCurrent = 0;
+  int slidePageIndexNow = 0;
   int autoSaveTime = 1;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
   
@@ -500,8 +503,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           FindIntent: CallbackAction<FindIntent>(onInvoke: (intent) {
             setState(() {
               // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
-              if (slidePage < 10) {
-                slidePage = 10;
+              if (slidePageIndexNow < slidePageCounts) {
+                slidePageIndexNow = 114514;
                 showFindReplaceWindow = true;
               } else {
                 // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
@@ -707,8 +710,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     // 切換到編輯器頁面並顯示/隱藏浮動視窗
                     setState(() {
                       // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
-                      if (slidePage < 10) {
-                        slidePage = 10;
+                      if (slidePageIndexNow < slidePageCounts) {
+                        slidePageIndexNow = 114514;
                         showFindReplaceWindow = true;
                       } else {
                         // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
@@ -737,8 +740,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 手機佈局（使用 BottomNavigationBar）
   Widget _buildMobileLayout() {
-    // 檢查是否在編輯器頁面（slidePage > 9 表示編輯器）
-    bool isEditorMode = slidePage > 9;
+    // 檢查是否在編輯器頁面（slidePageIndexNow > (slidePageCounts - 1) 表示編輯器）
+    bool isEditorMode = slidePageIndexNow > (slidePageCounts - 1);
     
     return Scaffold(
       body: IndexedStack(
@@ -762,10 +765,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               setState(() {
                 if (index == 0) {
                   // 切換到功能頁面，保持當前的功能選項
-                  if (slidePage > 9) slidePage = 0; // 如果在編輯器，切回第一個功能
+                  if (slidePageIndexNow > (slidePageCounts - 1)) slidePageIndexNow = 0; // 如果在編輯器，切回第一個功能
                 } else {
                   // 切換到編輯器
-                  slidePage = 10; // 使用 10 作為編輯器的標識
+                  slidePageIndexNow = 114514; // 使用 114514 作為編輯器的標識
                 }
               });
             },
@@ -913,7 +916,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePage.clamp(0, 9),
+            index: slidePageIndexNow.clamp(0, (slidePageCounts - 1)), // 確保索引在有效範圍內
             children: [
               for (int i = 0; i < 10; i++)
                 _buildSpecificPageContent(i),
@@ -927,11 +930,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // 手機導航晶片
   Widget _buildMobileNavigationChip(int index) {
     final List<Map<String, dynamic>> functions = [
+      {"icon": Icons.home, "label": "主頁"},
       {"icon": Icons.book, "label": "故事設定"},
       {"icon": Icons.menu_book, "label": "章節選擇"},
       {"icon": Icons.list, "label": "大綱調整"},
       {"icon": Icons.public, "label": "世界設定"},
       {"icon": Icons.person, "label": "角色設定"},
+      {"icon": Icons.view_timeline_outlined, "label": "時間軸"},
+      {"icon": Icons.group, "label": "關係設定"},
       {"icon": Icons.library_books, "label": "詞語參考"},
       {"icon": Icons.spellcheck, "label": "文本校正"},
       {"icon": Icons.auto_awesome, "label": "Copilot"},
@@ -940,7 +946,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     ];
     
     final function = functions[index];
-    final isSelected = slidePage == index;
+    final isSelected = slidePageIndexNow == index;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -952,7 +958,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             _syncEditorToSelectedChapter();
             
             setState(() {
-              slidePage = index;
+              slidePageIndexNow = index;
             });
           }
         },
@@ -983,24 +989,30 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildSpecificPageContent(int pageIndex) {
     switch (pageIndex) {
       case 0:
-        return _buildBaseInfoView();
+        return _buildWelcomeView();
       case 1:
-        return _buildChapterSelectionView();
+        return _buildBaseInfoView();
       case 2:
-        return _buildOutlineView();
+        return _buildChapterSelectionView();
       case 3:
-        return _buildWorldSettingsView();
+        return _buildOutlineView();
       case 4:
-        return _buildCharacterSettingsView();
+        return _buildWorldSettingsView();
       case 5:
-        return _buildGlossaryView();
+        return _buildCharacterSettingsView();
       case 6:
-        return _buildProofreadingView();
+        return _buildTimelineView();
       case 7:
-        return _buildCopilotView();
+        return _buildRelationView();
       case 8:
-        return _buildSettingView();
+        return _buildGlossaryView();
       case 9:
+        return _buildProofreadingView();
+      case 10:
+        return _buildCopilotView();
+      case 11:
+        return _buildSettingView();
+      case 12:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -1024,12 +1036,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       _syncEditorToSelectedChapter();
                       
                       setState(() {
-                        slidePage = index;
+                        slidePageIndexNow = index;
                       });
                     },
                     labelType: NavigationRailLabelType.all,
                     backgroundColor: Theme.of(context).colorScheme.surface,
                     destinations: const [
+                      NavigationRailDestination(
+                        icon: Icon(Icons.home),
+                        label: Text("主頁"),
+                      ),
                       NavigationRailDestination(
                         icon: Icon(Icons.book),
                         label: Text("故事設定"),
@@ -1049,6 +1065,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       NavigationRailDestination(
                         icon: Icon(Icons.person),
                         label: Text("角色設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.view_timeline_outlined),
+                        label: Text("時間軸"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.group),
+                        label: Text("關係設定"),
                       ),
                       NavigationRailDestination(
                         icon: Icon(Icons.library_books),
@@ -1125,7 +1149,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                               });
                             },
                             child: Container(
-                              width: 9,
+                              width: 8,
                               color: Theme.of(context).colorScheme.surface,
                               alignment: Alignment.center,
                               child: VerticalDivider(
@@ -1165,7 +1189,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 獲取 NavigationRail 的選中索引
   int _getNavigationIndex() {
-    return slidePage > 9 ? 0 : slidePage.clamp(0, 9);
+    return slidePageIndexNow > (slidePageCounts - 1) ? 0 : slidePageIndexNow.clamp(0, (slidePageCounts - 1));
   }
 
   // 頁面內容
@@ -1178,28 +1202,34 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   
   // 頁面視圖
   Widget _buildPageView() {
-    int pageIndex = slidePage > 9 ? 0 : slidePage; // 如果在編輯器模式，預設顯示第一頁
+    int pageIndex = slidePageIndexNow > (slidePageCounts - 1) ? 0 : slidePageIndexNow; // 如果在編輯器模式，預設顯示第一頁
     
     switch (pageIndex) {
       case 0:
-        return _buildBaseInfoView();
+        return _buildWelcomeView();
       case 1:
-        return _buildChapterSelectionView();
+        return _buildBaseInfoView();
       case 2:
-        return _buildOutlineView();
+        return _buildChapterSelectionView();
       case 3:
-        return _buildWorldSettingsView();
+        return _buildOutlineView();
       case 4:
-        return _buildCharacterSettingsView();
+        return _buildWorldSettingsView();
       case 5:
-        return _buildGlossaryView();
+        return _buildCharacterSettingsView();
       case 6:
-        return _buildProofreadingView();
+        return _buildTimelineView();
       case 7:
-        return _buildCopilotView();
+        return _buildRelationView();
       case 8:
-        return _buildSettingView();
+        return _buildGlossaryView();
       case 9:
+        return _buildProofreadingView();
+      case 10:
+        return _buildCopilotView();
+      case 11:
+        return _buildSettingView();
+      case 12:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -1400,6 +1430,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       ),
     );
   }
+
+  Widget _buildWelcomeView() {
+    return const WelcomeModule.WelcomeView();
+  }
   
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
@@ -1528,6 +1562,24 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         });
         _markAsModified();
       },
+    );
+  }
+
+  Widget _buildTimelineView() {
+    return _buildPlaceholderPage(
+      icon: Icons.view_timeline_outlined,
+      title: "時間軸",
+      description: "時間軸功能開發中...",
+      color: Colors.teal,
+    );
+  }
+
+  Widget _buildRelationView() {
+    return _buildPlaceholderPage(
+      icon: Icons.group,
+      title: "人物關係圖",
+      description: "關係圖功能開發中...",
+      color: Colors.amber,
     );
   }
   

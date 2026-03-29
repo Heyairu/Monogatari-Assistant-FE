@@ -335,6 +335,53 @@ class ProjectManager {
     }
   }
 
+  /// 顯示版本相容性警告對話框
+  static Future<bool> showVersionCompatibilityDialog(
+    BuildContext context, {
+    required String fileVersion,
+    required String supportedVersion,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 12),
+              const Text("版本相容性警告"),
+            ],
+          ),
+          content: Text(
+            "此檔案版本（$fileVersion）高於目前支援版本（$supportedVersion）。\n"
+            "若繼續開啟並儲存，可能遺失部分數據。\n\n"
+            "是否仍要繼續開啟？",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+              child: const Text("繼續開啟"),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
   // Operation Actions (New, Open, Save, Export)
 
   static Future<void> newProject(
@@ -395,6 +442,26 @@ class ProjectManager {
       setLoading(true);
       final projectFile = await FileService.openProject();
       if (projectFile != null) {
+        final openedVersion = FileService.extractProjectVersion(projectFile.content);
+        final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(openedVersion);
+
+        if (hasNewerVersion) {
+          setLoading(false);
+          if (!context.mounted) return;
+
+          final shouldContinue = await showVersionCompatibilityDialog(
+            context,
+            fileVersion: openedVersion ?? "unknown",
+            supportedVersion: FileService.projectVersion,
+          );
+
+          if (!shouldContinue) {
+            onError("已取消開啟較新版本檔案。");
+            return;
+          }
+          setLoading(true);
+        }
+
         final data = await loadProjectFromXML(projectFile);
         onProjectLoaded(projectFile, data);
         onSuccess("專案開啟成功：${projectFile.nameWithoutExtension}");
@@ -1243,7 +1310,41 @@ class FileService {
   static const String projectExtension = ".mnproj"; // MonogatariAssistant 專案檔案
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
-  static const String projectVersion = "1.02"; // 專案結構版本
+  static const String projectVersion = "1.04"; // 專案結構版本
+
+  /// 從專案 XML 取出版本號（<ver>）
+  static String? extractProjectVersion(String xmlContent) {
+    try {
+      final document = xml.XmlDocument.parse(xmlContent);
+      final versionElement = document.findAllElements("ver").firstOrNull;
+      final version = versionElement?.innerText.trim();
+      if (version == null || version.isEmpty) return null;
+      return version;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 判斷檔案版本是否高於目前支援版本
+  static bool isProjectVersionNewerThanSupported(String? fileVersion) {
+    if (fileVersion == null || fileVersion.isEmpty) return false;
+    return _compareVersion(fileVersion, projectVersion) > 0;
+  }
+
+  /// 比較語義版本字串，a > b 回傳 1，a < b 回傳 -1，相等回傳 0
+  static int _compareVersion(String a, String b) {
+    final aParts = a.split(".").map((p) => int.tryParse(p) ?? 0).toList();
+    final bParts = b.split(".").map((p) => int.tryParse(p) ?? 0).toList();
+    final maxLength = aParts.length > bParts.length ? aParts.length : bParts.length;
+
+    for (var i = 0; i < maxLength; i++) {
+      final aValue = i < aParts.length ? aParts[i] : 0;
+      final bValue = i < bParts.length ? bParts[i] : 0;
+      if (aValue > bValue) return 1;
+      if (aValue < bValue) return -1;
+    }
+    return 0;
+  }
 
   // --- 專案生命週期 ---
 

@@ -25,6 +25,35 @@ class ProofReadingView extends StatefulWidget {
 }
 
 class _ProofReadingViewState extends State<ProofReadingView> {
+  // 警語元件
+  Widget _buildWarningCard() {
+    return Card(
+      elevation: 0,
+      color: Colors.redAccent,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_outlined,
+              color: Colors.yellow,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                "本功能正在開發中，使用時可能出現錯誤。",
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
@@ -52,6 +81,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
             ),
             const SizedBox(height: 32),
 
+            // 警語
+            _buildWarningCard(),
+            
             // 校正功能卡片
             Card(
               elevation: 0,
