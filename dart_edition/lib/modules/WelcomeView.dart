@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "../bin/ui_library.dart";
 
 class WelcomeView extends StatefulWidget {
   const WelcomeView(
@@ -32,7 +33,7 @@ class _WelcomeViewState extends State<WelcomeView> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
             Text(
@@ -70,20 +71,9 @@ class _WelcomeViewState extends State<WelcomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.format_list_bulleted,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "Start",
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const SmallTitle(
+                      icon: Icons.format_list_bulleted,
+                      text: "Start",
                     ),
                     const SizedBox(height: 12),
                     TextButton(
@@ -155,46 +145,35 @@ class _WelcomeViewState extends State<WelcomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.folder,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "Recent",
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const SmallTitle(
+                      icon: Icons.folder,
+                      text: "Recent",
                     ),
                     SizedBox(height: 12),
                     TextButton(
                       style: Theme.of(context).textButtonTheme.style,
                       onPressed: () {},
-                      child: const Text("Example/DemoFile1.mga"),
+                      child: const Text("Example/DemoSlot1"),
                     ),
                     TextButton(
                       style: Theme.of(context).textButtonTheme.style,
                       onPressed: () {},
-                      child: const Text("Example/DemoFile2.mga"),
+                      child: const Text("Example/DemoSlot2"),
                     ),
                     TextButton(
                       style: Theme.of(context).textButtonTheme.style,
                       onPressed: () {},
-                      child: const Text("Example/DemoFile3.mga"),
+                      child: const Text("Example/DemoSlot3"),
                     ),
                     TextButton(
                       style: Theme.of(context).textButtonTheme.style,
                       onPressed: () {},
-                      child: const Text("Example/DemoFile4.mga"),
+                      child: const Text("Example/DemoSlot4"),
                     ),
                     TextButton(
                       style: Theme.of(context).textButtonTheme.style,
                       onPressed: () {},
-                      child: const Text("Example/DemoFile5.mga"),
+                      child: const Text("Example/DemoSlot5"),
                     ),
                   ],
                 ),
@@ -252,20 +231,9 @@ class _WelcomeViewState extends State<WelcomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.sync_alt_outlined,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "內容同步",
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const SmallTitle(
+                      icon: Icons.sync_alt_outlined,
+                      text: "內容同步",
                     ),
                   ],
                 ),
@@ -279,20 +247,9 @@ class _WelcomeViewState extends State<WelcomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "姓名產生器",
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const SmallTitle(
+                      icon: Icons.person_outline,
+                      text: "姓名產生器",
                     ),
                   ],
                 ),

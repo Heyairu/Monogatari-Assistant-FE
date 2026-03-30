@@ -38,27 +38,17 @@ class _SettingViewState extends State<SettingView> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
-            Row(
-              children: [
-                Icon(
-                  Icons.settings,
-                  size: widget.settingsManager.fontSize + 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "設定",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: HeadlineLargeTitle(
+                icon: Icons.settings,
+                text: "設定"
+              ),
             ),
             const SizedBox(height: 32),
-
             // 主題設定卡片
             Card(
               elevation: 0,
@@ -69,20 +59,9 @@ class _SettingViewState extends State<SettingView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 主題設定標題
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.palette,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          "外觀設定",
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const LargeTitle(
+                      icon: Icons.palette,
+                      text: "外觀設定",
                     ),
                     const SizedBox(height: 24),
 
@@ -121,20 +100,9 @@ class _SettingViewState extends State<SettingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.tune,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          "其他設定",
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const LargeTitle(
+                      icon: Icons.tune,
+                      text: "其他設定",
                     ),
                     const SizedBox(height: 16),
                     _buildSwitchSetting(

@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "../bin/ui_library.dart";
 
 class GlossaryView extends StatefulWidget {
   const GlossaryView(
@@ -60,24 +61,18 @@ class _GlossaryViewState extends State<GlossaryView> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
-            Row(
-              children: [
-                Icon(
-                  Icons.library_books,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "詞語參考",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: HeadlineLargeTitle(
+                icon: Icons.library_books_outlined,
+                text: "詞語參考",
+              ),
             ),
+
             const SizedBox(height: 32),
 
             // 警語
@@ -92,20 +87,9 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.folder,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "詞語類別",
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const LargeTitle(
+                      icon: Icons.folder,
+                      text: "詞語類別",
                     ),
                   ],
                 ),
@@ -119,20 +103,9 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.format_list_bulleted,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "詞語條目",
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const LargeTitle(
+                      icon: Icons.format_list_bulleted,
+                      text: "詞語條目",
                     ),
                   ],
                 ),
@@ -146,20 +119,9 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.library_books,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          "詞語解釋、例句",
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const LargeTitle(
+                      icon: Icons.library_books,
+                      text: "詞語解釋、例句",
                     ),
                   ],
                 ),

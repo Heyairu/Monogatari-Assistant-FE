@@ -489,17 +489,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
             // Title
             Row(
               children: [
-                Icon(
-                  Icons.public,
-                  size: 32,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "世界設定",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                const HeadlineLargeTitle(
+                  icon: Icons.public,
+                  text: "世界設定"
                 ),
                 const Spacer(),
                 PopupMenuButton<String>(

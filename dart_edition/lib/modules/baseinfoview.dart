@@ -453,27 +453,17 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
-            Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 32,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "基本資訊",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: HeadlineLargeTitle(
+                icon: Icons.info_outline, 
+                text: "基本資訊"
+              ),
             ),
             const SizedBox(height: 32),
-
             // 表單卡片
             Card(
               elevation: 0,
@@ -564,17 +554,9 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        MediumTitle(
+          icon: icon,
+          text: label,
         ),
         const SizedBox(height: 8),
         TextField(
@@ -606,17 +588,9 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(Icons.description, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              "簡介",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        const MediumTitle(
+          icon: Icons.description,
+          text: "簡介",
         ),
         const SizedBox(height: 8),
         TextField(
@@ -643,21 +617,21 @@ class _BaseInfoViewState extends State<BaseInfoView> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.analytics,
+            Theme(
+              data: Theme.of(context).copyWith(
+                iconTheme: Theme.of(context).iconTheme.copyWith(
                   color: Theme.of(context).colorScheme.onTertiaryContainer,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  "統計資訊",
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                textTheme: Theme.of(context).textTheme.copyWith(
+                  titleMedium: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onTertiaryContainer,
                   ),
                 ),
-              ],
+              ),
+              child: const MediumTitle(
+                icon: Icons.analytics,
+                text: "統計資訊",
+              ),
             ),
             const SizedBox(height: 16),
             

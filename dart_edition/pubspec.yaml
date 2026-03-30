@@ -41,6 +41,9 @@ flutter:
     # ICONS
     - assets/icon/Title.png
     - assets/icon/app_icon.png
+
+    # JSON
+    - assets/jsons/didyouknow.json
   
   fonts:
     - family: NotoSans

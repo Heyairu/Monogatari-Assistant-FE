@@ -1074,27 +1074,17 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           controller: _pageScrollController,
           padding: const EdgeInsets.all(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
             // 標題
-            Row(
-              children: [
-                Icon(
-                  Icons.account_tree,
-                  size: 32,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "大綱調整",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: HeadlineLargeTitle(
+                icon: Icons.account_tree,
+                text: "大綱調整",
+              ),
             ),
             const SizedBox(height: 32),
-            
             _buildStorylineSection(),
             const SizedBox(height: 24),
             _buildEventSection(),
@@ -1117,20 +1107,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.library_books,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "大箱（故事線）",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const LargeTitle(
+              icon: Icons.library_books,
+              text: "大箱（故事線）",
             ),
             const SizedBox(height: 16),
             
@@ -1362,20 +1341,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.event_note,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "中箱（事件）",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const LargeTitle(
+              icon: Icons.event_note,
+              text: "中箱（事件）",
             ),
             const SizedBox(height: 16),
             
@@ -1875,20 +1843,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.theater_comedy,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "小箱（場景）",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const LargeTitle(
+              icon: Icons.theater_comedy,
+              text: "小箱（場景）",
             ),
             const SizedBox(height: 16),
             

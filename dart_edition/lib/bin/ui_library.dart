@@ -313,6 +313,119 @@ class AppTheme {
 
 // MARK: - 通用元件
 
+class _TitleWithIcon extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final TextStyle? textStyle;
+
+  const _TitleWithIcon({
+    required this.icon,
+    required this.text,
+    required this.textStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.iconTheme.color ?? theme.colorScheme.primary;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: iconColor),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: textStyle,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
+class HeadlineLargeTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const HeadlineLargeTitle({
+    super.key,
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _TitleWithIcon(
+      icon: icon,
+      text: text,
+      textStyle: Theme.of(context).textTheme.headlineLarge,
+    );
+  }
+}
+
+class LargeTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const LargeTitle({
+    super.key,
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _TitleWithIcon(
+      icon: icon,
+      text: text,
+      textStyle: Theme.of(context).textTheme.titleLarge,
+    );
+  }
+}
+
+class MediumTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const MediumTitle({
+    super.key,
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _TitleWithIcon(
+      icon: icon,
+      text: text,
+      textStyle: Theme.of(context).textTheme.titleMedium,
+    );
+  }
+}
+
+class SmallTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const SmallTitle({
+    super.key,
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _TitleWithIcon(
+      icon: icon,
+      text: text,
+      textStyle: Theme.of(context).textTheme.titleSmall,
+    );
+  }
+}
+
 // 新增項目元件
 class AddItemInput extends StatefulWidget {
   final String title;

@@ -1449,21 +1449,9 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Title
-                Row(
-                  children: [
-                    Icon(
-                      Icons.person_rounded,
-                      size: 32,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      "角色編輯",
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                  ],
+                HeadlineLargeTitle(
+                  icon: Icons.person_rounded,
+                  text: "角色編輯"
                 ),
                 const SizedBox(height: 32),
                 _buildCharacterListSection(),

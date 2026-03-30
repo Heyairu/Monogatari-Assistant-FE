@@ -861,22 +861,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           controller: _pageScrollController,
           padding: const EdgeInsets.all(24.0),
           child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
             Row(
               children: [
-                Icon(
-                  Icons.menu_book,
-                  size: 32,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "章節選擇",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                HeadlineLargeTitle(
+                  icon: Icons.menu_book,
+                  text: "章節選擇"
                 ),
                 const Spacer(),
                 Container(
@@ -970,20 +962,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.folder_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "區段選擇",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const LargeTitle(
+              icon: Icons.folder_outlined,
+              text: "區段選擇",
             ),
             const SizedBox(height: 16),
             
@@ -1072,18 +1053,12 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.article_outlined,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "章節選擇",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+                const Expanded(
+                  child: LargeTitle(
+                    icon: Icons.article_outlined,
+                    text: "章節選擇",
                   ),
                 ),
-                const Spacer(),
                 Tooltip(
                   message: "拖動章節排序 | 長按拖動至其他區段",
                   child: Icon(

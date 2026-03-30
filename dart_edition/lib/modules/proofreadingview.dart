@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "package:monogatari_assistant/bin/ui_library.dart";
 
 class ProofReadingView extends StatefulWidget {
   const ProofReadingView(
@@ -61,26 +62,17 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
-            Row(
-              children: [
-                Icon(
-                  Icons.spellcheck,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  "文本校正",
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: HeadlineLargeTitle(
+                icon: Icons.spellcheck,
+                text: "文本校正",
+              ),
             ),
             const SizedBox(height: 32),
-
             // 警語
             _buildWarningCard(),
             
