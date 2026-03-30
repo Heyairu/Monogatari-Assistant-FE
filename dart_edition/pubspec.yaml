@@ -38,8 +38,34 @@ flutter:
   
   # 添加資源文件
   assets:
+    # ICONS
     - assets/icon/Title.png
     - assets/icon/app_icon.png
+  
+  fonts:
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans-Variable.ttf
+        - asset: assets/fonts/NotoSans-Italic-Variable.ttf
+          style: italic
+    - family: NotoSansHK
+      fonts:
+        - asset: assets/fonts/NotoSansHK-Variable.ttf
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Variable.ttf
+    - family: NotoSansKR
+      fonts:
+        - asset: assets/fonts/NotoSansKR-Variable.ttf
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/NotoSansSC-Variable.ttf
+    - family: NotoSansTC
+      fonts:
+        - asset: assets/fonts/NotoSansTC-Variable.ttf
+    - family: NotoSansThai
+      fonts:
+        - asset: assets/fonts/NotoSansThai-Variable.ttf
 
 # 配置應用圖標
 flutter_launcher_icons:

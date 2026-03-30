@@ -10,6 +10,7 @@
  * Commercial use allowed under conditions described in Section 1;
  */
 
+import "dart:ui" as ui;
 import "package:flutter/material.dart";
 import "package:flutter/scheduler.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -138,6 +139,37 @@ class UILibrary extends ChangeNotifier {
 
 /// 主題配色方案
 class AppTheme {
+  /// 根據當前系統語言決定字體
+  static String get _primaryFontFamily {
+    final locale = ui.PlatformDispatcher.instance.locale;
+    final lang = locale.languageCode;
+    final country = locale.countryCode;
+
+    if (lang == 'zh') {
+      if (country == 'HK') return 'NotoSansHK';
+      if (country == 'TW' || country == 'MO') return 'NotoSansTC';
+      return 'NotoSansSC';
+    } else if (lang == 'ja') {
+      return 'NotoSansJP';
+    } else if (lang == 'ko') {
+      return 'NotoSansKR';
+    } else if (lang == 'th') {
+      return 'NotoSansThai';
+    }
+    return 'NotoSans';
+  }
+
+  /// 字體回退列表 (保證不論選擇哪種字體，其他語言的字元也能顯示)
+  static const List<String> _fontFamilyFallback = [
+    'NotoSans',
+    'NotoSansTC',
+    'NotoSansSC',
+    'NotoSansJP',
+    'NotoSansKR',
+    'NotoSansHK',
+    'NotoSansThai',
+  ];
+
   /// 生成 TextTheme
   static TextTheme _buildTextTheme(double baseSize) {
     return TextTheme(
@@ -202,6 +234,8 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       colorScheme: colorScheme,
+      fontFamily: _primaryFontFamily,
+      fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
       iconTheme: IconThemeData(
         size: baseFontSize + 10,
@@ -255,6 +289,8 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: colorScheme,
+      fontFamily: _primaryFontFamily,
+      fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
       iconTheme: IconThemeData(
         size: baseFontSize + 10,
