@@ -145,29 +145,29 @@ class AppTheme {
     final lang = locale.languageCode;
     final country = locale.countryCode;
 
-    if (lang == 'zh') {
-      if (country == 'HK') return 'NotoSansHK';
-      if (country == 'TW' || country == 'MO') return 'NotoSansTC';
-      return 'NotoSansSC';
-    } else if (lang == 'ja') {
-      return 'NotoSansJP';
-    } else if (lang == 'ko') {
-      return 'NotoSansKR';
-    } else if (lang == 'th') {
-      return 'NotoSansThai';
+    if (lang == "zh") {
+      if (country == "HK") return "NotoSansHK";
+      if (country == "TW" || country == "MO") return "NotoSansTC";
+      return "NotoSansSC";
+    } else if (lang == "ja") {
+      return "NotoSansJP";
+    } else if (lang == "ko") {
+      return "NotoSansKR";
+    } else if (lang == "th") {
+      return "NotoSansThai";
     }
-    return 'NotoSans';
+    return "NotoSans";
   }
 
   /// 字體回退列表 (保證不論選擇哪種字體，其他語言的字元也能顯示)
   static const List<String> _fontFamilyFallback = [
-    'NotoSans',
-    'NotoSansTC',
-    'NotoSansSC',
-    'NotoSansJP',
-    'NotoSansKR',
-    'NotoSansHK',
-    'NotoSansThai',
+    "NotoSans",
+    "NotoSansTC",
+    "NotoSansSC",
+    "NotoSansJP",
+    "NotoSansKR",
+    "NotoSansHK",
+    "NotoSansThai",
   ];
 
   /// 生成 TextTheme
