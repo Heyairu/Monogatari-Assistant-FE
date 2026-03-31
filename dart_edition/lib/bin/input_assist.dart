@@ -16,11 +16,7 @@ class PunctuationPanel extends StatefulWidget {
   final Function(String) onInsert;
   final VoidCallback? onClose;
 
-  const PunctuationPanel({
-    super.key,
-    required this.onInsert,
-    this.onClose,
-  });
+  const PunctuationPanel({super.key, required this.onInsert, this.onClose});
 
   @override
   State<PunctuationPanel> createState() => _PunctuationPanelState();
@@ -32,17 +28,44 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
   // 全形符號列表
   // Note: "　" is full-width space
   final List<String> fullWidthSymbols = [
-    "。", "，", "、", "；", "：", "？", "！", 
-    "「", "」", "『", "』", "（", "）", 
-    "……", "——", 
-    "《", "》", "·", "　"
+    "。",
+    "，",
+    "、",
+    "；",
+    "：",
+    "？",
+    "！",
+    "「",
+    "」",
+    "『",
+    "』",
+    "（",
+    "）",
+    "……",
+    "——",
+    "《",
+    "》",
+    "·",
+    "　",
   ];
 
   // 半形符號列表
   final List<String> halfWidthSymbols = [
-    ".", ",", ";", ":", "?", "!", 
-    "\"", "'", "(", ")",
-    "…", "-", "/", "¿", "¡"
+    ".",
+    ",",
+    ";",
+    ":",
+    "?",
+    "!",
+    "\"",
+    "'",
+    "(",
+    ")",
+    "…",
+    "-",
+    "/",
+    "¿",
+    "¡",
   ];
 
   @override
@@ -92,7 +115,7 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                 showSelectedIcon: false,
               ),
             ),
-            
+
             // 標點符號按鈕列表
             Expanded(
               child: SingleChildScrollView(
@@ -104,11 +127,13 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                     if (symbol == "　") {
                       displayLabel = "␣";
                     }
-                    
+
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Material(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                         child: InkWell(
                           onTap: () => widget.onInsert(symbol),
@@ -116,7 +141,10 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                           borderRadius: BorderRadius.circular(4),
                           child: Container(
                             alignment: Alignment.center,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
                               displayLabel,
@@ -133,7 +161,7 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                 ),
               ),
             ),
-            
+
             const SizedBox(width: 8),
           ],
         ),

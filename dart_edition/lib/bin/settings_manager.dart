@@ -17,6 +17,7 @@ import "package:shared_preferences/shared_preferences.dart";
 enum WordCountMode {
   /// 字元數 (Grapheme Clusters)
   characters,
+
   /// 全形字元數 + 半形單字數
   wordsAndCharacters,
 }
@@ -26,30 +27,36 @@ class SettingsManager extends ChangeNotifier {
   static const String _showExitWarningKey = "show_exit_warning";
   static const String _fontSizeKey = "app_font_size";
   static const String _wordCountModeKey = "word_count_mode";
-  
+  static const double _defaultFontSize = 12.0;
+  static const double _minFontSize = 12.0;
+  static const double _maxFontSize = 20.0;
+
   bool _showExitWarning = true;
-  double _fontSize = 14.0;
+  double _fontSize = _defaultFontSize;
   WordCountMode _wordCountMode = WordCountMode.wordsAndCharacters;
   bool _isInitialized = false;
-  
+
   bool get showExitWarning => _showExitWarning;
   double get fontSize => _fontSize;
   WordCountMode get wordCountMode => _wordCountMode;
   bool get isInitialized => _isInitialized;
-  
+
   /// 初始化設定管理器
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       _showExitWarning = prefs.getBool(_showExitWarningKey) ?? true;
-      _fontSize = prefs.getDouble(_fontSizeKey) ?? 14.0;
-      final modeIndex = prefs.getInt(_wordCountModeKey) ?? WordCountMode.wordsAndCharacters.index;
-      _wordCountMode = WordCountMode.values.length > modeIndex 
-          ? WordCountMode.values[modeIndex] 
+      final savedFontSize = prefs.getDouble(_fontSizeKey) ?? _defaultFontSize;
+      _fontSize = savedFontSize.clamp(_minFontSize, _maxFontSize);
+      final modeIndex =
+          prefs.getInt(_wordCountModeKey) ??
+          WordCountMode.wordsAndCharacters.index;
+      _wordCountMode = WordCountMode.values.length > modeIndex
+          ? WordCountMode.values[modeIndex]
           : WordCountMode.wordsAndCharacters;
     } catch (e) {
       _showExitWarning = true;
-      _fontSize = 14.0;
+      _fontSize = _defaultFontSize;
       _wordCountMode = WordCountMode.wordsAndCharacters;
       debugPrint("Failed to load settings: $e");
     } finally {
@@ -57,13 +64,13 @@ class SettingsManager extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   /// 設定是否顯示退出警告
   Future<void> setShowExitWarning(bool value) async {
     if (_showExitWarning != value) {
       _showExitWarning = value;
       notifyListeners();
-      
+
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_showExitWarningKey, value);
@@ -78,7 +85,7 @@ class SettingsManager extends ChangeNotifier {
     if (_fontSize != value) {
       _fontSize = value;
       notifyListeners();
-      
+
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setDouble(_fontSizeKey, value);
@@ -93,7 +100,7 @@ class SettingsManager extends ChangeNotifier {
     if (_wordCountMode != value) {
       _wordCountMode = value;
       notifyListeners();
-      
+
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt(_wordCountModeKey, value.index);

@@ -1219,7 +1219,6 @@ class _CharacterViewState extends State<CharacterView>
   List<String> proficientToDoList = [];
   List<String> unProficientToDoList = [];
 
-
   // Common Ability Sliders - 生活常用技能
   List<double> commonAbilityValues = List.filled(
     TraitDefinitions.commonAbilities.length,
@@ -1388,7 +1387,7 @@ class _CharacterViewState extends State<CharacterView>
           if (selectedCharacter != null) {
             newIndex = characters.indexOf(selectedCharacter!);
           }
-          
+
           if (newIndex >= 0) {
             selectedCharacterIndex = newIndex;
             // 不需要重新載入資料，因為資料已經更新且編輯器內容應保留或由 _saveCurrentCharacterData 同步
@@ -1449,10 +1448,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                HeadlineLargeTitle(
-                  icon: Icons.person_rounded,
-                  text: "角色編輯"
-                ),
+                LargeTitle(icon: Icons.person_rounded, text: "角色編輯"),
                 const SizedBox(height: 32),
                 _buildCharacterListSection(),
                 const SizedBox(height: 16),
@@ -1472,7 +1468,7 @@ class _CharacterViewState extends State<CharacterView>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text("角色列表", style: Theme.of(context).textTheme.titleLarge),
+            MediumTitle(icon: Icons.group, text: "角色列表"),
             const SizedBox(height: 8),
             // 新增角色輸入框
             AddItemInput(
@@ -1492,54 +1488,62 @@ class _CharacterViewState extends State<CharacterView>
                 itemBuilder: (context, index) {
                   final name = characters[index];
                   final isSelected = selectedCharacterIndex == index;
-                  
+
                   return DraggableCardNode<String>(
-                     key: ValueKey(name),
-                     dragData: name,
-                     nodeId: name,
-                     nodeType: NodeType.item,
-                     isDragging: _isDragging,
-                     isThisDragging: _currentDragData == name,
-                     isSelected: isSelected,
-                     
-                     title: Text(name, style: isSelected ? TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary) : null),
-                     trailing: IconButton(
-                        icon: const Icon(Icons.delete, size: 20),
-                        onPressed: () => _deleteCharacter(index),
-                        tooltip: "刪除",
-                     ),
-                     onClicked: () => _selectCharacter(index),
-                     
-                     onDragStarted: () {
-                        setState(() {
-                           _isDragging = true;
-                           _currentDragData = name;
-                        });
-                     },
-                     onDragEnd: () {
-                        setState(() {
-                           _isDragging = false;
-                           _currentDragData = null;
-                        });
-                     },
-                     getDropZoneSize: (pos) {
-                        if (_currentDragData == null) return 0.0;
-                         // 這裡只支援上下排序，不支援資料夾
-                         return pos == DropPosition.child ? 0.0 : 0.5;
-                     },
-                     onAccept: (data, pos) {
-                         if (pos == DropPosition.child) return;
-                         
-                         int toIndex = index;
-                         if (pos == DropPosition.after) toIndex++;
-                         
-                         int fromIndex = characters.indexOf(data);
-                         if (fromIndex < 0) return;
-                         
-                         if (fromIndex < toIndex) toIndex--;
-                         
-                         _moveCharacter(fromIndex, toIndex);
-                     },
+                    key: ValueKey(name),
+                    dragData: name,
+                    nodeId: name,
+                    nodeType: NodeType.item,
+                    isDragging: _isDragging,
+                    isThisDragging: _currentDragData == name,
+                    isSelected: isSelected,
+
+                    title: Text(
+                      name,
+                      style: isSelected
+                          ? TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, size: 20),
+                      onPressed: () => _deleteCharacter(index),
+                      tooltip: "刪除",
+                    ),
+                    onClicked: () => _selectCharacter(index),
+
+                    onDragStarted: () {
+                      setState(() {
+                        _isDragging = true;
+                        _currentDragData = name;
+                      });
+                    },
+                    onDragEnd: () {
+                      setState(() {
+                        _isDragging = false;
+                        _currentDragData = null;
+                      });
+                    },
+                    getDropZoneSize: (pos) {
+                      if (_currentDragData == null) return 0.0;
+                      // 這裡只支援上下排序，不支援資料夾
+                      return pos == DropPosition.child ? 0.0 : 0.5;
+                    },
+                    onAccept: (data, pos) {
+                      if (pos == DropPosition.child) return;
+
+                      int toIndex = index;
+                      if (pos == DropPosition.after) toIndex++;
+
+                      int fromIndex = characters.indexOf(data);
+                      if (fromIndex < 0) return;
+
+                      if (fromIndex < toIndex) toIndex--;
+
+                      _moveCharacter(fromIndex, toIndex);
+                    },
                   );
                 },
               ),
@@ -1554,16 +1558,18 @@ class _CharacterViewState extends State<CharacterView>
     setState(() {
       final item = characters.removeAt(oldIndex);
       characters.insert(newIndex, item);
-      
+
       // Update Selection
       if (selectedCharacterIndex == oldIndex) {
-         selectedCharacterIndex = newIndex;
+        selectedCharacterIndex = newIndex;
       } else if (selectedCharacterIndex != null) {
-         if (oldIndex < selectedCharacterIndex! && newIndex >= selectedCharacterIndex!) {
-            selectedCharacterIndex = selectedCharacterIndex! - 1;
-         } else if (oldIndex > selectedCharacterIndex! && newIndex <= selectedCharacterIndex!) {
-            selectedCharacterIndex = selectedCharacterIndex! + 1;
-         }
+        if (oldIndex < selectedCharacterIndex! &&
+            newIndex >= selectedCharacterIndex!) {
+          selectedCharacterIndex = selectedCharacterIndex! - 1;
+        } else if (oldIndex > selectedCharacterIndex! &&
+            newIndex <= selectedCharacterIndex!) {
+          selectedCharacterIndex = selectedCharacterIndex! + 1;
+        }
       }
 
       // Reorder Map to match List order
@@ -1575,11 +1581,11 @@ class _CharacterViewState extends State<CharacterView>
       }
       characterData = newMap;
     });
-    
+
     // 這裡直接通知更新而不是透過 _markAsModified，
     // 因為位置變更應該立即生效，不需要等 Debounce (Debounce 是為了保存文字輸入)
     // 當然如果要統一也可以用 _saveCurrentCharacterData
-    
+
     // 但 _saveCurrentCharacterData 會讀取當前控制器的值覆蓋回來，
     // 如果剛好在輸入中這是期望的。
     _markAsModified();
@@ -1644,16 +1650,22 @@ class _CharacterViewState extends State<CharacterView>
       ),
     );
   }
-  
+
   Widget _buildCurrentTab() {
-     switch (_tabController.index) {
-        case 0: return _buildBasicInfoTab();
-        case 1: return _buildPersonalityTab();
-        case 2: return _buildAbilityTab();
-        case 3: return _buildSocialTab();
-        case 4: return _buildOtherTab();
-        default: return Container();
-     }
+    switch (_tabController.index) {
+      case 0:
+        return _buildBasicInfoTab();
+      case 1:
+        return _buildPersonalityTab();
+      case 2:
+        return _buildAbilityTab();
+      case 3:
+        return _buildSocialTab();
+      case 4:
+        return _buildOtherTab();
+      default:
+        return Container();
+    }
   }
 
   // MARK: - 角色基本資訊
@@ -1672,7 +1684,7 @@ class _CharacterViewState extends State<CharacterView>
         _buildTextField("居住地：", _controllers["live"]!),
         _buildTextField("住址：", _controllers["address"]!),
         const Divider(height: 32),
-        Text("外觀", style: Theme.of(context).textTheme.titleMedium),
+        SmallTitle(icon: Icons.face, text: "外觀"),
         const SizedBox(height: 8),
         _buildTextField("身高：", _controllers["height"]!),
         _buildTextField("體重：", _controllers["weight"]!),
@@ -1695,7 +1707,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("故事相關", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.description, text: "故事相關"),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _controllers["intention"]!,
@@ -1705,7 +1717,7 @@ class _CharacterViewState extends State<CharacterView>
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text("阻礙主角的事件？", style: Theme.of(context).textTheme.bodyMedium),
+                SmallTitle(icon: Icons.warning_amber, text: "阻礙主角的事件？"),
                 const SizedBox(height: 8),
                 _buildHinderTable(),
                 const SizedBox(height: 8),
@@ -1784,7 +1796,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("陣營", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.flag, text: "陣營"),
                 const SizedBox(height: 8),
                 _buildAlignmentGrid(),
               ],
@@ -1797,7 +1809,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("性格特質", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.person, text: "性格特質"),
                 const SizedBox(height: 16),
                 _buildTraitsSliders(),
               ],
@@ -1810,7 +1822,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("行事作風", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.directions_run, text: "行事作風"),
                 const SizedBox(height: 16),
                 _buildApproachSliders(),
               ],
@@ -1883,7 +1895,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("生活常用技能", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.school, text: "生活常用技能"),
                 const SizedBox(height: 16),
                 _buildCommonAbilitySliders(),
               ],
@@ -1912,10 +1924,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  "如何表達「喜歡」",
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                SmallTitle(icon: Icons.sentiment_satisfied, text: "如何表達「喜歡」"),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowLove, howToShowLoveLabels),
                 const SizedBox(height: 8),
@@ -1941,7 +1950,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("如何表達好意", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.sentiment_satisfied_alt, text: "如何表達好意"),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowGoodwill, howToShowGoodwillLabels),
                 const SizedBox(height: 8),
@@ -1967,10 +1976,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  "如何應對討厭的人？",
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                SmallTitle(icon: Icons.sentiment_very_dissatisfied, text: "如何應對討厭的人？"),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
@@ -1996,7 +2002,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("戀愛關係", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.favorite, text: "戀愛關係"),
                 const SizedBox(height: 8),
                 _buildRelationshipSection(),
               ],
@@ -2010,7 +2016,7 @@ class _CharacterViewState extends State<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text("社交相關項目", style: Theme.of(context).textTheme.titleMedium),
+                SmallTitle(icon: Icons.group, text: "社交相關項目"),
                 const SizedBox(height: 16),
                 _buildSocialItemSliders(),
               ],
@@ -2097,7 +2103,11 @@ class _CharacterViewState extends State<CharacterView>
   // 多行文字欄位
 
   Widget _buildMultilineField(String label, TextEditingController controller) {
-    return CharacterTextField(label: label, controller: controller, maxLines: 4);
+    return CharacterTextField(
+      label: label,
+      controller: controller,
+      maxLines: 4,
+    );
   }
 
   // 九宮格陣營選擇
@@ -2744,10 +2754,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteLoveToDo(int index) {
-      setState(() {
-        loveToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      loveToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addHateToDo(String value) {
@@ -2760,10 +2770,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteHateToDo(int index) {
-      setState(() {
-        hateToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      hateToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addWantToDo(String value) {
@@ -2776,10 +2786,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteWantToDo(int index) {
-      setState(() {
-        wantToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      wantToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addFearToDo(String value) {
@@ -2792,10 +2802,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteFearToDo(int index) {
-      setState(() {
-        fearToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      fearToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addProficientToDo(String value) {
@@ -2808,10 +2818,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteProficientToDo(int index) {
-      setState(() {
-        proficientToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      proficientToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addUnProficientToDo(String value) {
@@ -2824,10 +2834,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteUnProficientToDo(int index) {
-      setState(() {
-        unProficientToDoList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      unProficientToDoList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addLikeItem(String value) {
@@ -2840,10 +2850,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteLikeItem(int index) {
-      setState(() {
-        likeItemList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      likeItemList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addAdmireItem(String value) {
@@ -2856,10 +2866,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteAdmireItem(int index) {
-      setState(() {
-        admireItemList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      admireItemList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addHateItem(String value) {
@@ -2872,10 +2882,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteHateItem(int index) {
-      setState(() {
-        hateItemList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      hateItemList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addFearItem(String value) {
@@ -2888,10 +2898,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteFearItem(int index) {
-      setState(() {
-        fearItemList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      fearItemList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 
   void _addFamiliarItem(String value) {
@@ -2904,10 +2914,10 @@ class _CharacterViewState extends State<CharacterView>
   }
 
   void _deleteFamiliarItem(int index) {
-      setState(() {
-        familiarItemList.removeAt(index);
-        _saveCurrentCharacterData();
-      });
+    setState(() {
+      familiarItemList.removeAt(index);
+      _saveCurrentCharacterData();
+    });
   }
 }
 
@@ -2945,7 +2955,8 @@ class _CharacterSliderState extends State<CharacterSlider> {
   @override
   void didUpdateWidget(CharacterSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if ((widget.value - _currentValue).abs() > 0.01 && widget.value != oldWidget.value) {
+    if ((widget.value - _currentValue).abs() > 0.01 &&
+        widget.value != oldWidget.value) {
       _currentValue = widget.value;
     }
   }
@@ -2962,7 +2973,10 @@ class _CharacterSliderState extends State<CharacterSlider> {
               width: 60,
               child: Text(
                 widget.title,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -2976,19 +2990,29 @@ class _CharacterSliderState extends State<CharacterSlider> {
                   children: [
                     Text(
                       widget.leftLabel,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                     Text(
                       widget.rightLabel,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                 ),
                 SliderTheme(
                   data: SliderThemeData(
                     showValueIndicator: ShowValueIndicator.always,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 16,
+                    ),
                   ),
                   child: Slider(
                     value: _currentValue,
@@ -3038,11 +3062,12 @@ class CharacterTextField extends StatelessWidget {
           labelText: label,
           hintText: hintText,
           border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
         ),
       ),
     );
   }
 }
-
-

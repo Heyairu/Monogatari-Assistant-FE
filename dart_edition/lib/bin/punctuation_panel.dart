@@ -16,11 +16,7 @@ class PunctuationPanel extends StatefulWidget {
   final Function(String) onInsert;
   final VoidCallback? onClose;
 
-  const PunctuationPanel({
-    super.key,
-    required this.onInsert,
-    this.onClose,
-  });
+  const PunctuationPanel({super.key, required this.onInsert, this.onClose});
 
   @override
   State<PunctuationPanel> createState() => _PunctuationPanelState();
@@ -32,17 +28,44 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
   // 全形符號列表
   // Note: "　" is full-width space
   final List<String> fullWidthSymbols = [
-    "。", "，", "、", "；", "：", "？", "！", 
-    "「", "」", "『", "』", "（", "）", 
-    "……", "——", 
-    "《", "》", "·", "　"
+    "。",
+    "，",
+    "、",
+    "；",
+    "：",
+    "？",
+    "！",
+    "「",
+    "」",
+    "『",
+    "』",
+    "（",
+    "）",
+    "……",
+    "——",
+    "《",
+    "》",
+    "·",
+    "　",
   ];
 
   // 半形符號列表
   final List<String> halfWidthSymbols = [
-    ".", ",", ";", ":", "?", "!", 
-    "\"", "'", "(", ")",
-    "…", "-", "/", "¿", "¡"
+    ".",
+    ",",
+    ";",
+    ":",
+    "?",
+    "!",
+    "\"",
+    "'",
+    "(",
+    ")",
+    "…",
+    "-",
+    "/",
+    "¿",
+    "¡",
   ];
 
   @override
@@ -68,14 +91,20 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
             Container(
               margin: const EdgeInsets.only(right: 8),
               child: SegmentedButton<bool>(
-                segments: const [
+                segments: [
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text("全", style: TextStyle(fontSize: 12)),
+                    label: Text(
+                      "全",
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ),
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text("半", style: TextStyle(fontSize: 12)),
+                    label: Text(
+                      "半",
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ),
                 ],
                 selected: {isFullWidth},
@@ -92,7 +121,7 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                 showSelectedIcon: false,
               ),
             ),
-            
+
             // 標點符號按鈕列表
             Expanded(
               child: SingleChildScrollView(
@@ -104,11 +133,13 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                     if (symbol == "　") {
                       displayLabel = "␣";
                     }
-                    
+
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Material(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                         child: InkWell(
                           onTap: () => widget.onInsert(symbol),
@@ -116,14 +147,19 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                           borderRadius: BorderRadius.circular(4),
                           child: Container(
                             alignment: Alignment.center,
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
                               displayLabel,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
                             ),
                           ),
                         ),
@@ -133,7 +169,7 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                 ),
               ),
             ),
-            
+
             const SizedBox(width: 8),
           ],
         ),

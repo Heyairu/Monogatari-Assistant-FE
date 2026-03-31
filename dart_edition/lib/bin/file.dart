@@ -62,7 +62,9 @@ class _FileIO {
 // MARK: - 2. System Calls (系統調用)
 /// 負責與作業系統交互 (Dialogs, Path Providers, File Info)
 class _SystemBridge {
-  static const platform = MethodChannel("com.heyairu.monogatari_assistant/file");
+  static const platform = MethodChannel(
+    "com.heyairu.monogatari_assistant/file",
+  );
 
   /// 寫入 URI (Android SAF)
   static Future<void> writeToUri(String uri, String content) async {
@@ -77,9 +79,10 @@ class _SystemBridge {
   }
 
   /// 選擇專案檔案並讀取內容 (因為 FilePicker 在某些平台直接給 bytes)
-  static Future<({String name, String? path, String? uri, String content})?> pickProjectFile() async {
+  static Future<({String name, String? path, String? uri, String content})?>
+  pickProjectFile() async {
     FilePickerResult? result;
-    
+
     if (Platform.isAndroid) {
       result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -96,13 +99,21 @@ class _SystemBridge {
     if (result != null && result.files.single.bytes != null) {
       final file = result.files.single;
       final content = utf8.decode(file.bytes!);
-      return (name: file.name, path: file.path, uri: file.identifier, content: content);
+      return (
+        name: file.name,
+        path: file.path,
+        uri: file.identifier,
+        content: content,
+      );
     }
     return null;
   }
 
   /// 顯示儲存專案對話框
-  static Future<String?> saveProjectFileDialog({required String defaultName, required String content}) async {
+  static Future<String?> saveProjectFileDialog({
+    required String defaultName,
+    required String content,
+  }) async {
     if (Platform.isAndroid) {
       return await FilePicker.platform.saveFile(
         dialogTitle: "儲存專案檔案",
@@ -125,7 +136,7 @@ class _SystemBridge {
   static Future<String?> saveExportDialog({
     required String defaultName,
     required String extension,
-    required String content
+    required String content,
   }) async {
     return await FilePicker.platform.saveFile(
       dialogTitle: "匯出文字檔案",
@@ -146,7 +157,7 @@ class _SystemBridge {
   static Future<FileInfo> getFileInfo(String filePath) async {
     final file = File(filePath);
     final stat = await file.stat();
-    
+
     return FileInfo(
       name: path.basename(filePath),
       path: filePath,
@@ -164,14 +175,17 @@ class ProjectManager {
   static bool markAsModified() {
     return true; // 返回新的 hasUnsavedChanges 狀態 (true)
   }
-  
+
   /// 標記內容已儲存 (需配合 setState 使用)
   static bool markAsSaved() {
     return false; // 返回新的 hasUnsavedChanges 狀態 (false)
   }
-  
+
   /// 檢查是否有未儲存的變更
-  static bool hasUnsavedChanges(bool hasUnsavedChanges, ProjectFile? currentProject) {
+  static bool hasUnsavedChanges(
+    bool hasUnsavedChanges,
+    ProjectFile? currentProject,
+  ) {
     if (currentProject == null) return false;
     return hasUnsavedChanges;
   }
@@ -186,13 +200,18 @@ class ProjectManager {
   }) {
     // 防呆檢查
     if (selectedSegID == null || selectedChapID == null) return;
-    
-    final segIndex = segmentsData.indexWhere((seg) => seg.segmentUUID == selectedSegID);
+
+    final segIndex = segmentsData.indexWhere(
+      (seg) => seg.segmentUUID == selectedSegID,
+    );
     if (segIndex != -1) {
-      final chapIndex = segmentsData[segIndex].chapters.indexWhere((chap) => chap.chapterUUID == selectedChapID);
+      final chapIndex = segmentsData[segIndex].chapters.indexWhere(
+        (chap) => chap.chapterUUID == selectedChapID,
+      );
       if (chapIndex != -1) {
         final currentEditorContent = textController.text;
-        segmentsData[segIndex].chapters[chapIndex].chapterContent = currentEditorContent;
+        segmentsData[segIndex].chapters[chapIndex].chapterContent =
+            currentEditorContent;
         updateContentCallback(currentEditorContent);
       }
     }
@@ -222,7 +241,7 @@ class ProjectManager {
     required Function() onSave,
   }) async {
     bool dontShowAgain = false;
-    
+
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -244,7 +263,7 @@ class ProjectManager {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                   Text(message),
+                  Text(message),
                   if (showDontShowAgain) ...[
                     const SizedBox(height: 16),
                     CheckboxListTile(
@@ -289,9 +308,9 @@ class ProjectManager {
                     if (showDontShowAgain && dontShowAgain) {
                       await onDontShowAgainChanged(true);
                     }
-                    
+
                     await onSave();
-                    
+
                     if (context.mounted) {
                       Navigator.of(context).pop(false); // 儲存後繼續
                     }
@@ -317,7 +336,7 @@ class ProjectManager {
     if (!showExitWarning && !hasUnsavedChanges) {
       return true;
     }
-    
+
     final result = await showSaveConfirmDialog(
       context,
       title: "未儲存的變更",
@@ -326,7 +345,7 @@ class ProjectManager {
       onDontShowAgainChanged: onDontShowAgainChanged,
       onSave: onSave,
     );
-    
+
     // null = 取消, true = 不儲存, false = 已儲存
     if (result == null) {
       return false; // 取消退出
@@ -401,10 +420,10 @@ class ProjectManager {
         onDontShowAgainChanged: (_) {},
         onSave: onSave,
       );
-      
+
       if (shouldProceed == null) return;
     }
-    
+
     try {
       setLoading(true);
       final newProject = await FileService.createNewProject();
@@ -437,13 +456,17 @@ class ProjectManager {
       );
       if (shouldProceed == null) return;
     }
-    
+
     try {
       setLoading(true);
       final projectFile = await FileService.openProject();
       if (projectFile != null) {
-        final openedVersion = FileService.extractProjectVersion(projectFile.content);
-        final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(openedVersion);
+        final openedVersion = FileService.extractProjectVersion(
+          projectFile.content,
+        );
+        final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
+          openedVersion,
+        );
 
         if (hasNewerVersion) {
           setLoading(false);
@@ -484,23 +507,23 @@ class ProjectManager {
   }) async {
     try {
       setLoading(true);
-      
+
       if (currentProject == null) {
         await saveProjectAs(
-           context, 
-           currentProject: currentProject, 
-           currentData: currentData, 
-           setLoading: setLoading, 
-           onSuccess: onSuccess, 
-           onError: onError, 
-           onProjectSaved: onProjectSaved
+          context,
+          currentProject: currentProject,
+          currentData: currentData,
+          setLoading: setLoading,
+          onSuccess: onSuccess,
+          onError: onError,
+          onProjectSaved: onProjectSaved,
         );
         return;
       }
-      
+
       final xmlContent = await generateProjectXML(currentData);
       currentProject.content = xmlContent;
-      
+
       final savedProject = await FileService.saveProject(currentProject);
       onProjectSaved(savedProject);
       setLoading(false);
@@ -522,12 +545,13 @@ class ProjectManager {
   }) async {
     try {
       setLoading(true);
-      
-      final projectToSave = currentProject ?? await FileService.createNewProject();
-      
+
+      final projectToSave =
+          currentProject ?? await FileService.createNewProject();
+
       final xmlContent = await generateProjectXML(currentData);
       projectToSave.content = xmlContent;
-      
+
       final savedProject = await FileService.saveProjectAs(projectToSave);
       onProjectSaved(savedProject);
       setLoading(false);
@@ -549,7 +573,7 @@ class ProjectManager {
   }) async {
     try {
       setLoading(true);
-      
+
       final buffer = StringBuffer();
       for (final segment in currentData.segmentsData) {
         buffer.writeln("# ${segment.segmentName}");
@@ -561,13 +585,13 @@ class ProjectManager {
           buffer.writeln();
         }
       }
-      
+
       await FileService.exportText(
         content: buffer.toString(),
         fileName: defaultFileName,
         extension: extension == "txt" ? ".txt" : ".md",
       );
-      
+
       setLoading(false);
       onSuccess("匯出 $extension 檔案成功！");
     } catch (e) {
@@ -589,12 +613,12 @@ class ProjectManager {
     try {
       setLoading(true);
       final buffer = StringBuffer();
-      
+
       if (format == "xml") {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         buffer.writeln("<Project>");
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
-        
+
         if (selectedModules.contains("BaseInfo")) {
           final xml = BaseInfoModule.BaseInfoCodec.saveXML(
             data: currentData.baseInfoData,
@@ -603,14 +627,18 @@ class ProjectManager {
           );
           if (xml != null) buffer.writeln(xml);
         }
-        
+
         if (selectedModules.contains("Chapters")) {
-          final xml = ChapterModule.ChapterSelectionCodec.saveXML(currentData.segmentsData);
+          final xml = ChapterModule.ChapterSelectionCodec.saveXML(
+            currentData.segmentsData,
+          );
           if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("Outline")) {
-          final xml = OutlineModule.OutlineCodec.saveXML(currentData.outlineData);
+          final xml = OutlineModule.OutlineCodec.saveXML(
+            currentData.outlineData,
+          );
           if (xml != null) buffer.writeln(xml);
         }
 
@@ -623,36 +651,51 @@ class ProjectManager {
           final xml = CharacterCodec.saveXML(currentData.characterData);
           if (xml != null) buffer.writeln(xml);
         }
-        
+
         buffer.writeln("</Project>");
       } else {
         // Markdown
         if (selectedModules.contains("BaseInfo")) {
-          buffer.writeln(_ProjectMerger.generateBaseInfoMD(currentData.baseInfoData, currentData.totalWords));
+          buffer.writeln(
+            _ProjectMerger.generateBaseInfoMD(
+              currentData.baseInfoData,
+              currentData.totalWords,
+            ),
+          );
           buffer.writeln("---");
           buffer.writeln();
         }
 
         if (selectedModules.contains("Chapters")) {
-          buffer.writeln(_ProjectMerger.generateChapterMD(currentData.segmentsData));
+          buffer.writeln(
+            _ProjectMerger.generateChapterMD(currentData.segmentsData),
+          );
           buffer.writeln("---");
           buffer.writeln();
         }
 
         if (selectedModules.contains("Outline")) {
-          buffer.writeln(_ProjectMerger.generateOutlineMD(currentData.outlineData));
+          buffer.writeln(
+            _ProjectMerger.generateOutlineMD(currentData.outlineData),
+          );
           buffer.writeln("---");
           buffer.writeln();
         }
 
         if (selectedModules.contains("WorldSettings")) {
-          buffer.writeln(_ProjectMerger.generateWorldSettingsMD(currentData.worldSettingsData));
+          buffer.writeln(
+            _ProjectMerger.generateWorldSettingsMD(
+              currentData.worldSettingsData,
+            ),
+          );
           buffer.writeln("---");
           buffer.writeln();
         }
 
         if (selectedModules.contains("Characters")) {
-          buffer.writeln(_ProjectMerger.generateCharacterMD(currentData.characterData));
+          buffer.writeln(
+            _ProjectMerger.generateCharacterMD(currentData.characterData),
+          );
           buffer.writeln("---");
           buffer.writeln();
         }
@@ -680,14 +723,14 @@ class ProjectData {
   List<OutlineModule.StorylineData> outlineData;
   List<LocationData> worldSettingsData;
   Map<String, Map<String, dynamic>> characterData;
-  
+
   // 狀態變數（需要被保存或重建的）
   int totalWords;
   String contentText;
-  
+
   // 標記數據是否已被修改
   bool isDirty;
-  
+
   ProjectData({
     required this.baseInfoData,
     required this.segmentsData,
@@ -706,16 +749,21 @@ class ProjectData {
       segmentsData: [
         ChapterModule.SegmentData(
           segmentName: "Seg 1",
-          chapters: [ChapterModule.ChapterData(chapterName: "Chapter 1", chapterContent: "")],
-        )
+          chapters: [
+            ChapterModule.ChapterData(
+              chapterName: "Chapter 1",
+              chapterContent: "",
+            ),
+          ],
+        ),
       ],
       outlineData: [
         OutlineModule.StorylineData(
           storylineName: "序章",
           storylineType: "開場",
           scenes: [],
-          memo: ""
-        )
+          memo: "",
+        ),
       ],
       worldSettingsData: [LocationData(localName: "主要場景")],
       characterData: {},
@@ -732,17 +780,17 @@ class ProjectFile {
   String? filePath;
   String? uri;
   String content;
-  
+
   ProjectFile({
     required this.fileName,
     required this.filePath,
     this.uri,
     required this.content,
   });
-  
+
   /// 檢查是否為新檔案（未儲存）
   bool get isNewFile => filePath == null && uri == null;
-  
+
   /// 獲取檔案名稱（不包含副檔名）
   String get nameWithoutExtension {
     if (fileName.contains(".")) {
@@ -750,7 +798,7 @@ class ProjectFile {
     }
     return fileName;
   }
-  
+
   /// 獲取完整檔案名稱（包含副檔名）
   String get fullFileName {
     if (fileName.contains(".")) {
@@ -767,7 +815,7 @@ class FileInfo {
   final int size;
   final DateTime modified;
   final DateTime created;
-  
+
   FileInfo({
     required this.name,
     required this.path,
@@ -775,12 +823,13 @@ class FileInfo {
     required this.modified,
     required this.created,
   });
-  
+
   /// 獲取人類可讀的檔案大小
   String get readableSize {
     if (size < 1024) return "$size B";
     if (size < 1024 * 1024) return "${(size / 1024).toStringAsFixed(1)} KB";
-    if (size < 1024 * 1024 * 1024) return "${(size / (1024 * 1024)).toStringAsFixed(1)} MB";
+    if (size < 1024 * 1024 * 1024)
+      return "${(size / (1024 * 1024)).toStringAsFixed(1)} MB";
     return "${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB";
   }
 }
@@ -788,9 +837,9 @@ class FileInfo {
 /// 檔案操作例外類
 class FileException implements Exception {
   final String message;
-  
+
   FileException(this.message);
-  
+
   @override
   String toString() => "FileException: $message";
 }
@@ -801,51 +850,53 @@ class _ProjectParser {
   static ProjectData parseProjectXML(String xmlContent) {
     // 準備載入的數據 - 使用 ProjectData.empty() 作為預設值
     final defaultData = ProjectData.empty();
-    
+
     BaseInfoModule.BaseInfoData? loadedBaseInfo;
     List<ChapterModule.SegmentData>? loadedSegments;
     List<OutlineModule.StorylineData>? loadedOutline;
     List<LocationData>? loadedWorldSettings;
     Map<String, Map<String, dynamic>>? loadedCharacterData;
-    
+
     // 計算 contentText 和 totalWords
     String contentText = "";
     int totalWords = 0;
-    
+
     try {
       final document = xml.XmlDocument.parse(xmlContent);
-      
+
       // 尋找所有的 Type 區塊
       final typeElements = document.findAllElements("Type");
-      
+
       for (final element in typeElements) {
         // 檢查 Name 標籤確認區塊類型
         final nameElement = element.findElements("Name").firstOrNull;
         if (nameElement == null) continue;
-        
+
         final typeName = nameElement.innerText;
         // 重新序列化為XML字串以供各模組的解析器使用
         final blockXml = element.toXmlString();
-        
+
         try {
           switch (typeName) {
             case "BaseInfo":
               // 避免重複載入，只取第一個遇到的有效區塊
               loadedBaseInfo ??= BaseInfoModule.BaseInfoCodec.loadXML(blockXml);
               break;
-              
+
             case "ChapterSelection":
-              loadedSegments ??= ChapterModule.ChapterSelectionCodec.loadXML(blockXml);
+              loadedSegments ??= ChapterModule.ChapterSelectionCodec.loadXML(
+                blockXml,
+              );
               break;
-              
+
             case "Outline":
               loadedOutline ??= OutlineModule.OutlineCodec.loadXML(blockXml);
               break;
-              
+
             case "WorldSettings":
               loadedWorldSettings ??= WorldSettingsCodec.loadXML(blockXml);
               break;
-              
+
             case "Characters":
               loadedCharacterData ??= CharacterCodec.loadXML(blockXml);
               break;
@@ -859,15 +910,18 @@ class _ProjectParser {
       debugPrint("XML 解析失敗: $e");
       // 如果 XML 格式完全錯誤，將回傳預設的空專案
     }
-    
+
     // 如果有載入章節數據，使用第一個章節的內容
     final targetSegments = loadedSegments ?? defaultData.segmentsData;
     if (targetSegments.isNotEmpty && targetSegments[0].chapters.isNotEmpty) {
       contentText = targetSegments[0].chapters[0].chapterContent;
       // 簡單的字數統計
-      totalWords = contentText.split(RegExp(r"\s+")).where((word) => word.isNotEmpty).length;
+      totalWords = contentText
+          .split(RegExp(r"\s+"))
+          .where((word) => word.isNotEmpty)
+          .length;
     }
-    
+
     return ProjectData(
       baseInfoData: loadedBaseInfo ?? defaultData.baseInfoData,
       segmentsData: loadedSegments ?? defaultData.segmentsData,
@@ -886,11 +940,11 @@ class _ProjectMerger {
   /// 生成專案XML內容
   static String generateProjectXML(ProjectData data) {
     final buffer = StringBuffer();
-    
+
     buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     buffer.writeln("<Project>");
     buffer.writeln("<ver>${FileService.projectVersion}</ver>");
-    
+
     // BaseInfo
     final baseInfoXml = BaseInfoModule.BaseInfoCodec.saveXML(
       data: data.baseInfoData,
@@ -900,35 +954,37 @@ class _ProjectMerger {
     if (baseInfoXml != null) {
       buffer.writeln(baseInfoXml);
     }
-    
+
     // ChapterSelection
-    final chapterXml = ChapterModule.ChapterSelectionCodec.saveXML(data.segmentsData);
+    final chapterXml = ChapterModule.ChapterSelectionCodec.saveXML(
+      data.segmentsData,
+    );
     if (chapterXml != null) {
       buffer.writeln(chapterXml);
     }
-    
+
     // Outline
     final outlineXml = OutlineModule.OutlineCodec.saveXML(data.outlineData);
     if (outlineXml != null) {
       buffer.writeln(outlineXml);
     }
-    
+
     // WorldSettings
     final worldXml = WorldSettingsCodec.saveXML(data.worldSettingsData);
     if (worldXml != null) {
       buffer.writeln();
       buffer.write(worldXml);
     }
-    
+
     // Characters
     final characterXml = CharacterCodec.saveXML(data.characterData);
     if (characterXml != null) {
       buffer.writeln();
       buffer.write(characterXml);
     }
-    
+
     buffer.writeln("</Project>");
-    
+
     return buffer.toString();
   }
 
@@ -937,7 +993,7 @@ class _ProjectMerger {
     // 簡單的Markdown格式化
     final lines = content.split("\n");
     final markdown = StringBuffer();
-    
+
     for (String line in lines) {
       if (line.trim().isEmpty) {
         markdown.writeln();
@@ -945,12 +1001,15 @@ class _ProjectMerger {
         markdown.writeln(line);
       }
     }
-    
+
     return markdown.toString();
   }
 
   /// 生成 BaseInfo Markdown
-  static String generateBaseInfoMD(BaseInfoModule.BaseInfoData data, int totalWords) {
+  static String generateBaseInfoMD(
+    BaseInfoModule.BaseInfoData data,
+    int totalWords,
+  ) {
     final buffer = StringBuffer();
     buffer.writeln("# 故事設定 (Base Info)");
     buffer.writeln();
@@ -983,30 +1042,43 @@ class _ProjectMerger {
   }
 
   /// 生成 Outline Markdown
-  static String generateOutlineMD(List<OutlineModule.StorylineData> storylines) {
+  static String generateOutlineMD(
+    List<OutlineModule.StorylineData> storylines,
+  ) {
     final buffer = StringBuffer();
     buffer.writeln("# 大綱 (Outline)");
     buffer.writeln();
     for (final storyline in storylines) {
-      buffer.writeln("## ${storyline.storylineName} (${storyline.storylineType})");
+      buffer.writeln(
+        "## ${storyline.storylineName} (${storyline.storylineType})",
+      );
       if (storyline.memo.isNotEmpty) buffer.writeln("備註: ${storyline.memo}");
-      if (storyline.conflictPoint.isNotEmpty) buffer.writeln("衝突點: ${storyline.conflictPoint}");
-      if (storyline.people.isNotEmpty) buffer.writeln("人物: ${storyline.people.join(", ")}");
-      if (storyline.item.isNotEmpty) buffer.writeln("物件: ${storyline.item.join(", ")}");
-      
+      if (storyline.conflictPoint.isNotEmpty)
+        buffer.writeln("衝突點: ${storyline.conflictPoint}");
+      if (storyline.people.isNotEmpty)
+        buffer.writeln("人物: ${storyline.people.join(", ")}");
+      if (storyline.item.isNotEmpty)
+        buffer.writeln("物件: ${storyline.item.join(", ")}");
+
       buffer.writeln("### 場景列表:");
       for (final event in storyline.scenes) {
         buffer.writeln("- **${event.storyEvent}**");
         if (event.memo.isNotEmpty) buffer.writeln("  - 備註: ${event.memo}");
-        if (event.conflictPoint.isNotEmpty) buffer.writeln("  - 衝突: ${event.conflictPoint}");
-        if (event.people.isNotEmpty) buffer.writeln("  - 人物: ${event.people.join(", ")}");
-        if (event.item.isNotEmpty) buffer.writeln("  - 物件: ${event.item.join(", ")}");
-        
+        if (event.conflictPoint.isNotEmpty)
+          buffer.writeln("  - 衝突: ${event.conflictPoint}");
+        if (event.people.isNotEmpty)
+          buffer.writeln("  - 人物: ${event.people.join(", ")}");
+        if (event.item.isNotEmpty)
+          buffer.writeln("  - 物件: ${event.item.join(", ")}");
+
         for (final scene in event.scenes) {
           buffer.writeln("  - [場景] ${scene.sceneName}");
-          if (scene.doingThings.isNotEmpty) buffer.writeln("    - 行動: ${scene.doingThings.join(", ")}");
-          if (scene.people.isNotEmpty) buffer.writeln("    - 人物: ${scene.people.join(", ")}");
-          if (scene.item.isNotEmpty) buffer.writeln("    - 物件: ${scene.item.join(", ")}");
+          if (scene.doingThings.isNotEmpty)
+            buffer.writeln("    - 行動: ${scene.doingThings.join(", ")}");
+          if (scene.people.isNotEmpty)
+            buffer.writeln("    - 人物: ${scene.people.join(", ")}");
+          if (scene.item.isNotEmpty)
+            buffer.writeln("    - 物件: ${scene.item.join(", ")}");
         }
       }
       buffer.writeln();
@@ -1019,11 +1091,11 @@ class _ProjectMerger {
     final buffer = StringBuffer();
     buffer.writeln("# 世界設定 (World Settings)");
     buffer.writeln();
-    
+
     void printLocation(LocationData loc, int level) {
       final indent = "  " * level;
       final bullet = "- "; // Markdown list style
-      
+
       // Node Info
       buffer.write("$indent$bullet**${loc.localName}**");
       if (loc.localType.isNotEmpty) buffer.write(" [${loc.localType}]");
@@ -1034,13 +1106,13 @@ class _ProjectMerger {
       if (loc.note.isNotEmpty) {
         buffer.writeln("$indent  備註: ${loc.note.replaceAll("\n", " ")}");
       }
-      
+
       if (loc.customVal.isNotEmpty) {
         for (final kv in loc.customVal) {
           buffer.writeln("$indent  - ${kv.key}: ${kv.val}");
         }
       }
-      
+
       // Recursion
       for (final child in loc.child) {
         printLocation(child, level + 1);
@@ -1050,12 +1122,14 @@ class _ProjectMerger {
     for (final loc in locations) {
       printLocation(loc, 0);
     }
-    
+
     return buffer.toString();
   }
 
   /// 生成 Character Markdown
-  static String generateCharacterMD(Map<String, Map<String, dynamic>> characters) {
+  static String generateCharacterMD(
+    Map<String, Map<String, dynamic>> characters,
+  ) {
     // Mapping keys to UI titles
     final Map<String, String> keyTitleMap = {
       // Basic Info
@@ -1068,7 +1142,7 @@ class _ProjectMerger {
       "native": "出生地",
       "live": "居住地",
       "address": "住址",
-      
+
       // Appearance
       "height": "身高",
       "weight": "體重",
@@ -1087,7 +1161,7 @@ class _ProjectMerger {
 
       // Story
       "intention": "故事中的動機、目標",
-      
+
       // Personality
       "mbti": "MBTI",
       "personality": "個性",
@@ -1152,36 +1226,42 @@ class _ProjectMerger {
 
     characters.forEach((id, charData) {
       buffer.writeln("## ${charData["name"] ?? "未命名"}");
-      
+
       // Helper for simple fields
       void writeSimpleField(String key) {
-        if (charData.containsKey(key) && charData[key] != null && charData[key].toString().isNotEmpty) {
-           buffer.writeln("- **${keyTitleMap[key] ?? key}**: ${charData[key]}");
+        if (charData.containsKey(key) &&
+            charData[key] != null &&
+            charData[key].toString().isNotEmpty) {
+          buffer.writeln("- **${keyTitleMap[key] ?? key}**: ${charData[key]}");
         }
       }
 
       void writeList(String title, String key) {
-         if (charData[key] != null) {
-            final list = charData[key] as List<dynamic>;
-            if (list.isNotEmpty) {
-               buffer.writeln("- **$title**: ${list.join(", ")}");
-            }
-         }
+        if (charData[key] != null) {
+          final list = charData[key] as List<dynamic>;
+          if (list.isNotEmpty) {
+            buffer.writeln("- **$title**: ${list.join(", ")}");
+          }
+        }
       }
 
-      void writeCheckboxMap(String title, String key, Map<String, String> labels) {
-         if (charData[key] != null) {
-           final map = charData[key] as Map<String, dynamic>;
-           final selected = <String>[];
-           map.forEach((k, v) {
-             if (v == true) {
-               selected.add(labels[k] ?? k);
-             }
-           });
-           if (selected.isNotEmpty) {
-             buffer.writeln("- **$title**: ${selected.join(", ")}");
-           }
-         }
+      void writeCheckboxMap(
+        String title,
+        String key,
+        Map<String, String> labels,
+      ) {
+        if (charData[key] != null) {
+          final map = charData[key] as Map<String, dynamic>;
+          final selected = <String>[];
+          map.forEach((k, v) {
+            if (v == true) {
+              selected.add(labels[k] ?? k);
+            }
+          });
+          if (selected.isNotEmpty) {
+            buffer.writeln("- **$title**: ${selected.join(", ")}");
+          }
+        }
       }
 
       void writeSliders(String title, String key, List<TraitDefinition> defs) {
@@ -1192,22 +1272,22 @@ class _ProjectMerger {
             for (int i = 0; i < values.length && i < defs.length; i++) {
               final def = defs[i];
               final rawVal = (values[i] as num).toDouble();
-              
+
               String displayTitle = def.uiTitle;
               String displayValue = "";
-              
+
               if (displayTitle.isNotEmpty) {
-                 displayValue = rawVal.toStringAsFixed(1);
-                 buffer.writeln("  - $displayTitle: $displayValue");
+                displayValue = rawVal.toStringAsFixed(1);
+                buffer.writeln("  - $displayTitle: $displayValue");
               } else {
-                 if (rawVal < 50) {
-                   displayTitle = def.uiLeft;
-                   displayValue = (100 - rawVal).toStringAsFixed(1);
-                 } else {
-                   displayTitle = def.uiRight;
-                   displayValue = rawVal.toStringAsFixed(1);
-                 }
-                 buffer.writeln("  - $displayTitle: $displayValue");
+                if (rawVal < 50) {
+                  displayTitle = def.uiLeft;
+                  displayValue = (100 - rawVal).toStringAsFixed(1);
+                } else {
+                  displayTitle = def.uiRight;
+                  displayValue = rawVal.toStringAsFixed(1);
+                }
+                buffer.writeln("  - $displayTitle: $displayValue");
               }
             }
           }
@@ -1217,34 +1297,76 @@ class _ProjectMerger {
       // --- Output Sections ---
 
       // Basic
-      for (var key in ["name", "nickname", "age", "gender", "occupation", "birthday", "native", "live", "address"]) {
+      for (var key in [
+        "name",
+        "nickname",
+        "age",
+        "gender",
+        "occupation",
+        "birthday",
+        "native",
+        "live",
+        "address",
+      ]) {
         writeSimpleField(key);
       }
-      
+
       // Appearance
       buffer.writeln("\n### 外觀");
-      for (var key in ["height", "weight", "blood", "hair", "eye", "skin", "faceFeatures", "eyeFeatures", "earFeatures", "noseFeatures", "mouthFeatures", "eyebrowFeatures", "body", "dress"]) {
+      for (var key in [
+        "height",
+        "weight",
+        "blood",
+        "hair",
+        "eye",
+        "skin",
+        "faceFeatures",
+        "eyeFeatures",
+        "earFeatures",
+        "noseFeatures",
+        "mouthFeatures",
+        "eyebrowFeatures",
+        "body",
+        "dress",
+      ]) {
         writeSimpleField(key);
       }
 
       // Story
       buffer.writeln("\n### 故事相關");
       writeSimpleField("intention");
-      
+
       if (charData["hinderEvents"] != null) {
         final events = charData["hinderEvents"] as List<dynamic>;
         if (events.isNotEmpty) {
-           buffer.writeln("- **阻礙事件**:");
-           for (var e in events) {
-             final event = e as Map<String, dynamic>;
-             buffer.writeln("  - 事件: ${event["event"] ?? ""}, 解決: ${event["solve"] ?? ""}");
-           }
+          buffer.writeln("- **阻礙事件**:");
+          for (var e in events) {
+            final event = e as Map<String, dynamic>;
+            buffer.writeln(
+              "  - 事件: ${event["event"] ?? ""}, 解決: ${event["solve"] ?? ""}",
+            );
+          }
         }
       }
 
       // Personality
       buffer.writeln("\n### 個性＆價值觀");
-      for (var key in ["mbti", "personality", "language", "interest", "habit", "belief", "limit", "future", "cherish", "disgust", "fear", "curious", "expect", "alignment"]) {
+      for (var key in [
+        "mbti",
+        "personality",
+        "language",
+        "interest",
+        "habit",
+        "belief",
+        "limit",
+        "future",
+        "cherish",
+        "disgust",
+        "fear",
+        "curious",
+        "expect",
+        "alignment",
+      ]) {
         writeSimpleField(key);
       }
       writeSimpleField("otherValues");
@@ -1260,21 +1382,25 @@ class _ProjectMerger {
       writeList("害怕做的事情", "fearToDoList");
       writeList("擅長做的事情", "proficientToDoList");
       writeList("不擅長做的事情", "unProficientToDoList");
-      
-      writeSliders("生活常用技能", "commonAbilityValues", TraitDefinitions.commonAbilities);
+
+      writeSliders(
+        "生活常用技能",
+        "commonAbilityValues",
+        TraitDefinitions.commonAbilities,
+      );
 
       // Social
       buffer.writeln("\n### 社交相關");
       writeSimpleField("impression");
       writeSimpleField("likable");
       writeSimpleField("family");
-      
+
       writeCheckboxMap("如何表達「喜歡」", "howToShowLove", howToShowLoveLabels);
       writeSimpleField("otherShowLove");
 
       writeCheckboxMap("如何表達好意", "howToShowGoodwill", howToShowGoodwillLabels);
       writeSimpleField("otherGoodwill");
-      
+
       writeCheckboxMap("如何應對討厭的人", "handleHatePeople", handleHatePeopleLabels);
       writeSimpleField("otherHatePeople");
 
@@ -1282,7 +1408,7 @@ class _ProjectMerger {
       writeSimpleField("isFindNewLove");
       writeSimpleField("isHarem");
       writeSimpleField("otherRelationship");
-      
+
       writeSliders("社交相關項目", "socialItemValues", TraitDefinitions.socialItems);
 
       // Other
@@ -1335,7 +1461,9 @@ class FileService {
   static int _compareVersion(String a, String b) {
     final aParts = a.split(".").map((p) => int.tryParse(p) ?? 0).toList();
     final bParts = b.split(".").map((p) => int.tryParse(p) ?? 0).toList();
-    final maxLength = aParts.length > bParts.length ? aParts.length : bParts.length;
+    final maxLength = aParts.length > bParts.length
+        ? aParts.length
+        : bParts.length;
 
     for (var i = 0; i < maxLength; i++) {
       final aValue = i < aParts.length ? aParts[i] : 0;
@@ -1429,7 +1557,7 @@ class FileService {
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await _FileIO.write(outputFile, projectFile.content);
       }
-      
+
       return ProjectFile(
         fileName: path.basenameWithoutExtension(outputFile),
         filePath: outputFile,
@@ -1448,7 +1576,7 @@ class FileService {
   }) async {
     try {
       String exportContent = content;
-      
+
       // 如果是 Markdown 格式，進行簡單的格式化
       if (extension == markdownExtension) {
         exportContent = _ProjectMerger.formatAsMarkdown(content);
@@ -1459,9 +1587,9 @@ class FileService {
         extension: extension,
         content: exportContent, // 傳遞內容以供某些平台 direct save
       );
-      
+
       if (outputFile == null) return;
-      
+
       // 在桌面平台上仍需要寫入檔案
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await _FileIO.write(outputFile, exportContent);
@@ -1531,7 +1659,7 @@ class FileService {
   static String generateProjectXML(ProjectData data) {
     return _ProjectMerger.generateProjectXML(data);
   }
-  
+
   /// 解析專案XML內容 (Parser)
   static ProjectData parseProjectXML(String xmlContent) {
     return _ProjectParser.parseProjectXML(xmlContent);

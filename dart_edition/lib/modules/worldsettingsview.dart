@@ -29,11 +29,8 @@ final _log = Logger("WorldSettingsView");
 class LocationDragData {
   final String locationId;
   final String locationName;
-  
-  LocationDragData({
-    required this.locationId,
-    required this.locationName,
-  });
+
+  LocationDragData({required this.locationId, required this.locationName});
 }
 
 // MARK: - 資料結構
@@ -43,18 +40,11 @@ class LocationCustomize {
   String key;
   String val;
 
-  LocationCustomize({
-    String? id,
-    this.key = "",
-    this.val = "",
-  }) : id = id ?? Uuid().v4();
+  LocationCustomize({String? id, this.key = "", this.val = ""})
+    : id = id ?? Uuid().v4();
 
   Map<String, dynamic> toJson() {
-    return {
-      "id": id,
-      "key": key,
-      "val": val,
-    };
+    return {"id": id, "key": key, "val": val};
   }
 
   factory LocationCustomize.fromJson(Map<String, dynamic> json) {
@@ -94,8 +84,8 @@ class LocationData {
     this.note = "",
     List<LocationData>? child,
   }) : id = id ?? Uuid().v4(),
-        customVal = customVal ?? [],
-        child = child ?? [];
+       customVal = customVal ?? [],
+       child = child ?? [];
 
   Map<String, dynamic> toJson() {
     return {
@@ -152,8 +142,8 @@ class LocationData {
 
 class TemplatePreset {
   String id;
-  String name;    // == WorldType
-  String type;    // == WorldType
+  String name; // == WorldType
+  String type; // == WorldType
   List<String> keys;
 
   TemplatePreset({
@@ -162,15 +152,10 @@ class TemplatePreset {
     required this.type,
     List<String>? keys,
   }) : id = id ?? Uuid().v4(),
-        keys = keys ?? [];
+       keys = keys ?? [];
 
   Map<String, dynamic> toJson() {
-    return {
-      "id": id,
-      "name": name,
-      "type": type,
-      "keys": keys,
-    };
+    return {"id": id, "name": name, "type": type, "keys": keys};
   }
 
   factory TemplatePreset.fromJson(Map<String, dynamic> json) {
@@ -178,9 +163,7 @@ class TemplatePreset {
       id: json["id"] as String?,
       name: json["name"] as String? ?? "",
       type: json["type"] as String? ?? "",
-      keys: (json["keys"] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList(),
+      keys: (json["keys"] as List<dynamic>?)?.map((e) => e.toString()).toList(),
     );
   }
 
@@ -210,10 +193,17 @@ class TemplatePreset {
 
 // MARK: - XML Codec（WorldSettings）
 class WorldSettingsCodec {
-  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
-    builder.element(name, nest: () {
-      builder.text(_encodeNewlines(value));
-    });
+  static void _writeTextElement(
+    xml.XmlBuilder builder,
+    String name,
+    String value,
+  ) {
+    builder.element(
+      name,
+      nest: () {
+        builder.text(_encodeNewlines(value));
+      },
+    );
   }
 
   static String _readElementText(xml.XmlElement? element) {
@@ -275,44 +265,54 @@ class WorldSettingsCodec {
     if (locations.isEmpty) return null;
 
     final builder = xml.XmlBuilder();
-    builder.element("Type", nest: () {
-      builder.element("Name", nest: "WorldSettings");
-      for (final loc in locations) {
-        _buildLocation(builder, loc);
-      }
-    });
+    builder.element(
+      "Type",
+      nest: () {
+        builder.element("Name", nest: "WorldSettings");
+        for (final loc in locations) {
+          _buildLocation(builder, loc);
+        }
+      },
+    );
 
     return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
 
   static void _buildLocation(xml.XmlBuilder builder, LocationData loc) {
-    builder.element("Location", nest: () {
-      _writeTextElement(builder, "LocalName", loc.localName);
-      if (loc.localType.isNotEmpty) {
-        _writeTextElement(builder, "LocalType", loc.localType);
-      }
-      if (loc.customVal.isNotEmpty) {
-        for (final kv in loc.customVal) {
-          builder.element("Key", attributes: {"Name": kv.key}, nest: () {
-            builder.text(_encodeNewlines(kv.val));
-          });
+    builder.element(
+      "Location",
+      nest: () {
+        _writeTextElement(builder, "LocalName", loc.localName);
+        if (loc.localType.isNotEmpty) {
+          _writeTextElement(builder, "LocalType", loc.localType);
         }
-      }
-      if (loc.note.isNotEmpty) {
-        _writeTextElement(builder, "Memo", loc.note);
-      }
-      if (loc.child.isNotEmpty) {
-        for (final child in loc.child) {
-          _buildLocation(builder, child);
+        if (loc.customVal.isNotEmpty) {
+          for (final kv in loc.customVal) {
+            builder.element(
+              "Key",
+              attributes: {"Name": kv.key},
+              nest: () {
+                builder.text(_encodeNewlines(kv.val));
+              },
+            );
+          }
         }
-      }
-    });
+        if (loc.note.isNotEmpty) {
+          _writeTextElement(builder, "Memo", loc.note);
+        }
+        if (loc.child.isNotEmpty) {
+          for (final child in loc.child) {
+            _buildLocation(builder, child);
+          }
+        }
+      },
+    );
   }
 
   static List<LocationData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-      
+
       final typeElement = document.findAllElements("Type").firstOrNull;
       if (typeElement == null) return null;
 
@@ -320,14 +320,14 @@ class WorldSettingsCodec {
       if (nameElement?.innerText != "WorldSettings") return null;
 
       final roots = <LocationData>[];
-      
+
       // Type"s direct children that are 'Location" are roots
-      // Using findElements to get only direct children, avoiding infinite recursion issues 
+      // Using findElements to get only direct children, avoiding infinite recursion issues
       // if we were to use findAllElements on the root
       for (final locationNode in typeElement.findElements("Location")) {
         roots.add(_parseLocation(locationNode));
       }
-      
+
       return roots;
     } catch (e) {
       _log.severe("Error parsing WorldSettings XML: $e");
@@ -337,16 +337,20 @@ class WorldSettingsCodec {
 
   static LocationData _parseLocation(xml.XmlElement node) {
     final loc = LocationData();
-    loc.localName = _readElementText(node.findAllElements("LocalName").firstOrNull);
-    loc.localType = _readElementText(node.findAllElements("LocalType").firstOrNull);
+    loc.localName = _readElementText(
+      node.findAllElements("LocalName").firstOrNull,
+    );
+    loc.localType = _readElementText(
+      node.findAllElements("LocalType").firstOrNull,
+    );
     loc.note = _readElementText(node.findAllElements("Memo").firstOrNull);
 
     // Parse custom values (Key)
     // Keys are direct children of Location
     for (final keyNode in node.findElements("Key")) {
-        final key = keyNode.getAttribute("Name") ?? "";
+      final key = keyNode.getAttribute("Name") ?? "";
       final val = _readElementText(keyNode);
-        loc.customVal.add(LocationCustomize(key: key, val: val));
+      loc.customVal.add(LocationCustomize(key: key, val: val));
     }
 
     // Parse children locations
@@ -384,14 +388,14 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   List<TemplatePreset> templatePresets = [];
   String selectedPresetName = "空白";
   String renamePresetText = "";
-  
+
   // 扁平化緩存列表
   List<_FlatNode> _flatList = [];
 
   // 拖動狀態與游標資訊
   bool _isDragging = false;
   String? _draggingLocationId;
-  
+
   // 控制器
   final TextEditingController tempKeyController = TextEditingController();
   final TextEditingController tempValController = TextEditingController();
@@ -405,7 +409,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     _rebuildFlatList();
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
-    
+
     _loadTemplatesFromDisk();
 
     locationNameController.addListener(_onNameChanged);
@@ -429,6 +433,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         flatten(node.child, depth + 1);
       }
     }
+
     flatten(widget.locations, 0);
   }
 
@@ -489,10 +494,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
             // Title
             Row(
               children: [
-                const HeadlineLargeTitle(
-                  icon: Icons.public,
-                  text: "世界設定"
-                ),
+                const LargeTitle(icon: Icons.public, text: "世界設定"),
                 const Spacer(),
                 PopupMenuButton<String>(
                   icon: const Row(
@@ -541,10 +543,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                       child: const Text("匯出全部模板…"),
                     ),
                     const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: "save",
-                      child: Text("儲存預設模板…"),
-                    ),
+                    const PopupMenuItem(value: "save", child: Text("儲存預設模板…")),
                     PopupMenuItem(
                       value: "rename",
                       enabled: _selectedPreset != null,
@@ -552,7 +551,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                     ),
                     PopupMenuItem(
                       value: "delete",
-                      enabled: _selectedPreset != null && _selectedPreset!.name != "空白",
+                      enabled:
+                          _selectedPreset != null &&
+                          _selectedPreset!.name != "空白",
                       child: const Text("刪除選取預設"),
                     ),
                   ],
@@ -570,15 +571,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            const Text(
-                              "地點結構",
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            const Spacer(),
-                          ],
-                        ),
+                        MediumTitle(icon: Icons.map, text: "世界結構"),
                         const SizedBox(height: 8),
                         Expanded(
                           child: GestureDetector(
@@ -591,10 +584,14 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                             child: Container(
                               decoration: BoxDecoration(
                                 border: Border.all(
-                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outline.withOpacity(0.2),
                                 ),
                                 borderRadius: BorderRadius.circular(8),
-                                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerLowest,
                               ),
                               child: Builder(
                                 builder: (context) {
@@ -602,10 +599,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                                     return Center(
                                       child: Text(
                                         "尚無地點，請新增第一個地點",
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          fontSize: 14,
-                                        ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelLarge,
                                       ),
                                     );
                                   }
@@ -615,7 +611,10 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                                     itemCount: _flatList.length,
                                     itemBuilder: (context, index) {
                                       final item = _flatList[index];
-                                      return _buildLocationRow(item.node, item.depth);
+                                      return _buildLocationRow(
+                                        item.node,
+                                        item.depth,
+                                      );
                                     },
                                   );
                                 },
@@ -624,22 +623,19 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                           ),
                         ),
                         // 新增地點輸入框
-                        Expanded(
-                          flex: 0,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: AddItemInput(
-                              title: selectedNodeId != null ? "子地點" : "頂層地點",
-                              onAdd: _addLocation,
-                            ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: AddItemInput(
+                            title: selectedNodeId != null ? "子地點" : "頂層地點",
+                            onAdd: _addLocation,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   // 下方詳情面板
                   Expanded(
                     flex: 1,
@@ -648,17 +644,24 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                       children: [
                         const Text(
                           "地點詳情",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
                               border: Border.all(
-                                color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outline.withOpacity(0.2),
                               ),
                               borderRadius: BorderRadius.circular(8),
-                              color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerLowest,
                             ),
                             padding: const EdgeInsets.all(16),
                             child: _buildDetailPanel(),
@@ -679,7 +682,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   Widget _buildLocationRow(LocationData location, int depth) {
     final isSelected = selectedNodeId == location.id;
     final isEditing = editingNodeId == location.id;
-    
+
     // 標題組件
     Widget titleWidget = isEditing
         ? TextField(
@@ -712,21 +715,22 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
               location.localName.isEmpty ? "（未命名）" : location.localName,
               style: TextStyle(
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected 
-                    ? Theme.of(context).colorScheme.primary 
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).colorScheme.onSurface,
               ),
             ),
           );
 
     return DraggableCardNode<LocationDragData>(
+      key: ValueKey(location.id),
       dragData: LocationDragData(
         locationId: location.id,
         locationName: location.localName,
       ),
       nodeId: location.id,
       nodeType: location.child.isEmpty ? NodeType.item : NodeType.folder,
-      
+
       // 內容
       leading: Icon(
         Icons.location_on_outlined,
@@ -765,7 +769,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           ),
         ],
       ),
-      
+
       // 狀態與回調
       isSelected: isSelected,
       onClicked: () {
@@ -775,12 +779,15 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           _syncDetailControllers();
         });
       },
-      
+
       // 拖放
       isDragging: _isDragging,
       isThisDragging: _draggingLocationId == location.id,
-      isDragForbidden: _isDragging && _draggingLocationId != null && _isDescendant(_draggingLocationId!, location.id),
-      
+      isDragForbidden:
+          _isDragging &&
+          _draggingLocationId != null &&
+          _isDescendant(_draggingLocationId!, location.id),
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
@@ -793,67 +800,70 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           _draggingLocationId = null;
         });
       },
-      
+
       getDropZoneSize: (pos) {
         switch (pos) {
-          case DropPosition.before: return 0.3;
-          case DropPosition.child: return 0.4;
-          case DropPosition.after: return 0.3;
+          case DropPosition.before:
+            return 0.3;
+          case DropPosition.child:
+            return 0.4;
+          case DropPosition.after:
+            return 0.3;
         }
       },
-      
+
       onWillAccept: (data, pos) {
         if (data.locationId == location.id) return false;
         return true;
       },
-      
+
       onAccept: (data, pos) {
         String positionStr;
         String messageKey;
-        
+
         switch (pos) {
-          case DropPosition.before: 
-            positionStr = "before"; 
+          case DropPosition.before:
+            positionStr = "before";
             messageKey = "之前";
             break;
-          case DropPosition.child: 
-            positionStr = "child"; 
+          case DropPosition.child:
+            positionStr = "child";
             messageKey = "的子地點";
             break;
-          case DropPosition.after: 
-            positionStr = "after"; 
+          case DropPosition.after:
+            positionStr = "after";
             messageKey = "之後";
             break;
         }
-        
-        final message = pos == DropPosition.child 
+
+        final message = pos == DropPosition.child
             ? "「${data.locationName}」已成為「${location.localName}」$messageKey"
             : "「${data.locationName}」已移動到「${location.localName}」$messageKey";
-            
+
         _moveLocationTo(data.locationId, location.id, positionStr);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 1)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 1),
+          ),
+        );
       },
-      
+
       indent: depth * 16.0,
     );
   }
 
-
   Widget _buildDetailPanel() {
     // 如果當前沒有選中節點，使用上次選取的節點
     final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
-    
+
     if (displayNodeId == null) {
-      return const Center(
-        child: Text("請選擇一個地點來編輯詳情"),
-      );
+      return const Center(child: Text("請選擇一個地點來編輯詳情"));
     }
 
     final location = _getLocation(displayNodeId, widget.locations);
     if (location == null) {
-      return const Center(
-        child: Text("找不到該地點"),
-      );
+      return const Center(child: Text("找不到該地點"));
     }
 
     return SingleChildScrollView(
@@ -919,7 +929,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           const SizedBox(height: 16),
 
           // 自訂值表
-          const Text("自訂值表:", style: TextStyle(fontWeight: FontWeight.bold)),
+          Text("自訂值表:", style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 8),
           ...location.customVal.asMap().entries.map((entry) {
             final index = entry.key;
@@ -975,19 +985,23 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                 ),
               ),
               IconButton(
-                onPressed: tempCustomKey.isEmpty ? null : () {
-                  setState(() {
-                    location.customVal.add(LocationCustomize(
-                      key: tempCustomKey,
-                      val: tempCustomVal,
-                    ));
-                    tempCustomKey = "";
-                    tempCustomVal = "";
-                    tempKeyController.clear();
-                    tempValController.clear();
-                  });
-                  _notifyChange();
-                },
+                onPressed: tempCustomKey.isEmpty
+                    ? null
+                    : () {
+                        setState(() {
+                          location.customVal.add(
+                            LocationCustomize(
+                              key: tempCustomKey,
+                              val: tempCustomVal,
+                            ),
+                          );
+                          tempCustomKey = "";
+                          tempCustomVal = "";
+                          tempKeyController.clear();
+                          tempValController.clear();
+                        });
+                        _notifyChange();
+                      },
                 icon: Icon(
                   Icons.add_circle,
                   color: tempCustomKey.isEmpty ? Colors.grey : Colors.green,
@@ -1015,14 +1029,18 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   // 模板管理相關方法
   TemplatePreset? get _selectedPreset {
-    return templatePresets.where((p) => p.name == selectedPresetName).firstOrNull;
+    return templatePresets
+        .where((p) => p.name == selectedPresetName)
+        .firstOrNull;
   }
 
   void _applyTemplateTo(LocationData location, TemplatePreset preset) {
     setState(() {
       location.localType = preset.type;
       location.localName = preset.name;
-      location.customVal = preset.keys.map((key) => LocationCustomize(key: key, val: "")).toList();
+      location.customVal = preset.keys
+          .map((key) => LocationCustomize(key: key, val: ""))
+          .toList();
       _syncDetailControllers();
     });
     _notifyChange();
@@ -1032,17 +1050,19 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     if (selectedNodeId == null) return;
     final location = _getLocation(selectedNodeId!, widget.locations);
     if (location == null) return;
-    
+
     final worldType = location.localType.trim();
     if (worldType.isEmpty) return;
-    
+
     final preset = TemplatePreset(
       name: worldType,
       type: worldType,
       keys: location.customVal.map((cv) => cv.key).toList(),
     );
-    
-    final existingIndex = templatePresets.indexWhere((p) => p.name == preset.name);
+
+    final existingIndex = templatePresets.indexWhere(
+      (p) => p.name == preset.name,
+    );
     if (existingIndex != -1) {
       _showOverwritePresetDialog(preset);
     } else {
@@ -1068,7 +1088,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              final index = templatePresets.indexWhere((p) => p.name == preset.name);
+              final index = templatePresets.indexWhere(
+                (p) => p.name == preset.name,
+              );
               setState(() {
                 templatePresets[index] = preset;
                 selectedPresetName = preset.name;
@@ -1113,7 +1135,9 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _renameSelectedPreset(String newName) {
-    final index = templatePresets.indexWhere((p) => p.name == selectedPresetName);
+    final index = templatePresets.indexWhere(
+      (p) => p.name == selectedPresetName,
+    );
     if (index != -1) {
       setState(() {
         templatePresets[index].name = newName;
@@ -1125,11 +1149,15 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _deleteSelectedPreset() {
-    final index = templatePresets.indexWhere((p) => p.name == selectedPresetName && p.name != "空白");
+    final index = templatePresets.indexWhere(
+      (p) => p.name == selectedPresetName && p.name != "空白",
+    );
     if (index != -1) {
       setState(() {
         templatePresets.removeAt(index);
-        selectedPresetName = templatePresets.isNotEmpty ? templatePresets.first.name : "";
+        selectedPresetName = templatePresets.isNotEmpty
+            ? templatePresets.first.name
+            : "";
       });
       _saveTemplatesToDisk();
     }
@@ -1140,20 +1168,22 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       type: FileType.custom,
       allowedExtensions: ["xml", "txt"],
     );
-    
+
     if (result != null && result.files.single.path != null) {
       try {
         final file = File(result.files.single.path!);
         final xml = await file.readAsString();
         final presets = _parseAllTemplatesXML(xml);
-        
+
         if (presets.isEmpty) {
           _showErrorDialog("匯入失敗：檔案中沒有找到任何 <Type> 節點。");
         } else {
           setState(() {
             // 合併：同名覆蓋
             for (final preset in presets) {
-              final index = templatePresets.indexWhere((p) => p.name == preset.name);
+              final index = templatePresets.indexWhere(
+                (p) => p.name == preset.name,
+              );
               if (index != -1) {
                 templatePresets[index] = preset;
               } else {
@@ -1176,7 +1206,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   void _exportSelectedTemplate() async {
     final preset = _selectedPreset;
     if (preset == null) return;
-    
+
     final xml = _toXML(preset);
     await _exportToFile(xml, "${preset.name}.xml");
   }
@@ -1192,7 +1222,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       fileName: fileName,
       bytes: utf8.encode(content),
     );
-    
+
     if (result != null) {
       try {
         // 在桌面平台上仍需要寫入檔案
@@ -1219,18 +1249,27 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   TemplatePreset? _parseTemplateXML(String xml) {
-    final worldTypeMatch = RegExp(r"<WorldType>(.*?)</WorldType>", dotAll: true).firstMatch(xml);
+    final worldTypeMatch = RegExp(
+      r"<WorldType>(.*?)</WorldType>",
+      dotAll: true,
+    ).firstMatch(xml);
     final worldType = worldTypeMatch?.group(1)?.trim() ?? "";
     if (worldType.isEmpty) return null;
 
-    final keyMatches = RegExp(r"<Key>(.*?)</Key>", dotAll: true).allMatches(xml);
+    final keyMatches = RegExp(
+      r"<Key>(.*?)</Key>",
+      dotAll: true,
+    ).allMatches(xml);
     final keys = keyMatches.map((m) => m.group(1)?.trim() ?? "").toList();
 
     return TemplatePreset(name: worldType, type: worldType, keys: keys);
   }
 
   List<TemplatePreset> _parseAllTemplatesXML(String xml) {
-    final typeMatches = RegExp(r"<Type>([\s\S]*?)</Type>", dotAll: true).allMatches(xml);
+    final typeMatches = RegExp(
+      r"<Type>([\s\S]*?)</Type>",
+      dotAll: true,
+    ).allMatches(xml);
     return typeMatches
         .map((match) => _parseTemplateXML("<Type>${match.group(1)}</Type>"))
         .where((preset) => preset != null)
@@ -1268,25 +1307,27 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     try {
       final filePath = await _worldTemplateFilePath;
       final file = File(filePath);
-      
+
       if (!await file.exists()) {
         _ensureBlankPresetExists();
         return;
       }
-      
+
       final xml = await file.readAsString();
       final presets = _parseAllTemplatesXML(xml);
-      
+
       if (presets.isEmpty) {
         _log.info("讀檔成功但解析為空，保留現有預設。");
         _ensureBlankPresetExists();
         return;
       }
-      
+
       setState(() {
         templatePresets = presets;
         _ensureBlankPresetExists();
-        selectedPresetName = templatePresets.isNotEmpty ? templatePresets.first.name : "空白";
+        selectedPresetName = templatePresets.isNotEmpty
+            ? templatePresets.first.name
+            : "空白";
       });
     } catch (e) {
       _log.warning("讀取模板失敗：${e.toString()}");
@@ -1304,7 +1345,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   void _addLocation(String name) {
     name = name.trim();
     if (name.isEmpty) return;
-    
+
     // 根據是否有選中節點來決定添加位置
     if (selectedNodeId != null) {
       // 有選中節點：作為選中節點的子節點添加
@@ -1313,6 +1354,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       // 沒有選中節點：作為頂層節點添加
       setState(() {
         widget.locations.add(LocationData(localName: name));
+        _rebuildFlatList(); // 必須重建扁平化列表，否則視圖不會更新
       });
       _notifyChange();
     }
@@ -1326,7 +1368,11 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     _notifyChange();
   }
 
-  void _addChildRecursive(String parentId, String name, List<LocationData> locations) {
+  void _addChildRecursive(
+    String parentId,
+    String name,
+    List<LocationData> locations,
+  ) {
     for (final location in locations) {
       if (location.id == parentId) {
         location.child.add(LocationData(localName: name));
@@ -1342,7 +1388,11 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     setState(() {});
   }
 
-  void _renameNodeRecursive(String id, String newName, List<LocationData> locations) {
+  void _renameNodeRecursive(
+    String id,
+    String newName,
+    List<LocationData> locations,
+  ) {
     for (final location in locations) {
       if (location.id == id) {
         location.localName = newName;
@@ -1367,13 +1417,13 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       }
       return false;
     }
-    
+
     LocationData? sourceNode = _findLocationById(sourceId);
     if (sourceNode == null) return false;
-    
+
     return checkDescendant(sourceNode);
   }
-  
+
   // 查找節點
   LocationData? _findLocationById(String id) {
     LocationData? search(List<LocationData> nodes) {
@@ -1384,9 +1434,10 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       }
       return null;
     }
+
     return search(widget.locations);
   }
-  
+
   // 移動節點到目標位置
   // position: "before" (排序至該項目上), "child" (設為副目錄), "after" (排序至該項目下)
   void _moveLocationTo(String sourceId, String targetId, String position) {
@@ -1400,11 +1451,11 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       );
       return;
     }
-    
+
     setState(() {
       // 1. 找到並移除源節點
       LocationData? sourceNode;
-      
+
       bool removeFromTree(List<LocationData> nodes) {
         for (int i = 0; i < nodes.length; i++) {
           if (nodes[i].id == sourceId) {
@@ -1418,13 +1469,14 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         }
         return false;
       }
+
       removeFromTree(widget.locations);
-      
+
       if (sourceNode == null) return;
-      
+
       // 2. 根據 position 添加到目標位置
       bool success = false;
-      
+
       if (position == "child") {
         // 作為子節點添加
         bool addAsChild(List<LocationData> nodes) {
@@ -1439,6 +1491,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           }
           return false;
         }
+
         success = addAsChild(widget.locations);
       } else {
         // before 或 after: 在同級列表中插入
@@ -1447,7 +1500,8 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
             if (nodes[i].id == targetId) {
               if (position == "before") {
                 nodes.insert(i, sourceNode!);
-              } else { // after
+              } else {
+                // after
                 nodes.insert(i + 1, sourceNode!);
               }
               return true;
@@ -1458,14 +1512,15 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           }
           return false;
         }
+
         success = insertInList(widget.locations);
       }
-      
+
       if (!success) {
         // 如果沒找到目標，恢復原節點
         widget.locations.add(sourceNode!);
       }
-      
+
       _rebuildFlatList();
       _notifyChange();
     });

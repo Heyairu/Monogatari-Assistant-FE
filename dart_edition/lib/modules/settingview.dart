@@ -19,7 +19,7 @@ import "../bin/settings_manager.dart";
 class SettingView extends StatefulWidget {
   final UILibrary themeManager;
   final SettingsManager settingsManager;
-  
+
   const SettingView({
     super.key,
     required this.themeManager,
@@ -43,10 +43,7 @@ class _SettingViewState extends State<SettingView> {
             // 標題
             const Align(
               alignment: Alignment.centerLeft,
-              child: HeadlineLargeTitle(
-                icon: Icons.settings,
-                text: "設定"
-              ),
+              child: LargeTitle(icon: Icons.settings, text: "設定"),
             ),
             const SizedBox(height: 32),
             // 主題設定卡片
@@ -59,38 +56,35 @@ class _SettingViewState extends State<SettingView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 主題設定標題
-                    const LargeTitle(
-                      icon: Icons.palette,
-                      text: "外觀設定",
-                    ),
+                    const LargeTitle(icon: Icons.palette, text: "外觀設定"),
                     const SizedBox(height: 24),
 
                     // 主題模式選擇
                     _buildThemeModeSetting(),
-                    
+
                     const SizedBox(height: 24),
 
                     // 字體大小設定
                     _buildFontSizeSetting(),
 
                     const SizedBox(height: 24),
-                    
+
                     // 主題顏色設定
                     _buildColorSetting(),
-                    
+
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 16),
-                    
+
                     // 當前主題預覽
                     _buildThemePreview(),
                   ],
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // 其他設定卡片
             Card(
               elevation: 0,
@@ -100,10 +94,7 @@ class _SettingViewState extends State<SettingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const LargeTitle(
-                      icon: Icons.tune,
-                      text: "其他設定",
-                    ),
+                    const LargeTitle(icon: Icons.tune, text: "其他設定"),
                     const SizedBox(height: 16),
                     _buildSwitchSetting(
                       "退出時提示",
@@ -143,19 +134,16 @@ class _SettingViewState extends State<SettingView> {
           child: Row(
             children: [
               Icon(
-                Icons.text_fields, 
-                size: widget.settingsManager.fontSize + 6, 
-                color: Theme.of(context).colorScheme.primary
+                Icons.text_fields,
+                size: widget.settingsManager.fontSize + 6,
+                color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 12),
-              Text(
-                "字體大小調整",
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
+              Text("字體大小調整", style: Theme.of(context).textTheme.labelMedium),
               const Spacer(),
               Text(
                 "${widget.settingsManager.fontSize.toInt()} px",
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.primary,
                 ),
@@ -187,9 +175,9 @@ class _SettingViewState extends State<SettingView> {
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Text(
             "主題顏色",
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 12),
@@ -205,8 +193,9 @@ class _SettingViewState extends State<SettingView> {
           itemCount: UILibrary.supportedColors.length,
           itemBuilder: (context, index) {
             final entry = UILibrary.supportedColors.entries.elementAt(index);
-            final isSelected = widget.themeManager.themeColor.value == entry.value.value;
-            
+            final isSelected =
+                widget.themeManager.themeColor.value == entry.value.value;
+
             return Center(
               child: InkWell(
                 onTap: () {
@@ -242,16 +231,20 @@ class _SettingViewState extends State<SettingView> {
                   child: isSelected
                       ? Icon(
                           Icons.check,
-                          color: entry.value.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                          color: entry.value.computeLuminance() > 0.5
+                              ? Colors.black
+                              : Colors.white,
                           size: 20,
                         )
-                      : entry.key == "Auto" 
-                          ? Icon(
-                              Icons.auto_awesome, 
-                              color: entry.value.computeLuminance() > 0.5 ? Colors.black45 : Colors.white54,
-                              size: 16
-                            ) 
-                          : null,
+                      : entry.key == "Auto"
+                      ? Icon(
+                          Icons.auto_awesome,
+                          color: entry.value.computeLuminance() > 0.5
+                              ? Colors.black45
+                              : Colors.white54,
+                          size: 16,
+                        )
+                      : null,
                 ),
               ),
             );
@@ -268,9 +261,9 @@ class _SettingViewState extends State<SettingView> {
       children: [
         Text(
           "主題模式",
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         SegmentedButton<AppThemeMode>(
@@ -306,11 +299,10 @@ class _SettingViewState extends State<SettingView> {
   Widget _buildThemePreview() {
     final isDark = widget.themeManager.isDarkMode;
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-
         // 當前模式指示
         Container(
           padding: const EdgeInsets.all(12),
@@ -355,17 +347,13 @@ class _SettingViewState extends State<SettingView> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text("字數統計模式", style: Theme.of(context).textTheme.bodySmall),
                   Text(
-                    "字數統計模式",
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  Text(
-                    widget.settingsManager.wordCountMode == WordCountMode.characters
+                    widget.settingsManager.wordCountMode ==
+                            WordCountMode.characters
                         ? "純字元數 (不建議)"
                         : "全形字元 + 半形單字",
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                    style: Theme.of(context).textTheme.bodySmall
                   ),
                 ],
               ),
@@ -412,10 +400,7 @@ class _SettingViewState extends State<SettingView> {
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(
-          title,
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
+        title: Text(title, style: Theme.of(context).textTheme.labelMedium),
         subtitle: subtitle != null
             ? Text(
                 subtitle,
@@ -444,9 +429,7 @@ class _SettingViewState extends State<SettingView> {
           const SizedBox(width: 12),
           Text(
             title,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
+            style: Theme.of(context).textTheme.labelMedium
           ),
           const Spacer(),
           Text(

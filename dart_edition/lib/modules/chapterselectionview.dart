@@ -36,18 +36,11 @@ class DragData {
   final String id;
   final DragType type;
   final int currentIndex;
-  
-  DragData({
-    required this.id,
-    required this.type,
-    required this.currentIndex,
-  });
+
+  DragData({required this.id, required this.type, required this.currentIndex});
 }
 
-enum DragType {
-  segment,
-  chapter,
-}
+enum DragType { segment, chapter }
 
 // MARK: - 資料結構
 
@@ -55,20 +48,21 @@ class ChapterData {
   String chapterName;
   String _chapterContent;
   String chapterUUID;
-  
+
   // Cache for word count to avoid expensive recalculation
   int? _cachedWordCount;
   WordCountMode? _cachedMode;
-  
+
   ChapterData({
     this.chapterName = "",
     String chapterContent = "",
     String? chapterUUID,
   }) : _chapterContent = chapterContent,
-       chapterUUID = chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-  
+       chapterUUID =
+           chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+
   String get chapterContent => _chapterContent;
-  
+
   set chapterContent(String value) {
     if (_chapterContent != value) {
       _chapterContent = value;
@@ -76,18 +70,21 @@ class ChapterData {
       _cachedWordCount = null;
     }
   }
-  
+
   int getWordCount(WordCountMode mode) {
     // Return cached value if available and mode matches
     if (_cachedWordCount != null && _cachedMode == mode) {
       return _cachedWordCount!;
     }
     // Fallback to synchronous calculation if not cached
-    _cachedWordCount = ContentManager.calculateWordCount(_chapterContent, mode: mode);
+    _cachedWordCount = ContentManager.calculateWordCount(
+      _chapterContent,
+      mode: mode,
+    );
     _cachedMode = mode;
     return _cachedWordCount!;
   }
-  
+
   // Method to update cache from async calculation
   void updateCachedWordCount(int count, WordCountMode mode) {
     _cachedWordCount = count;
@@ -95,16 +92,16 @@ class ChapterData {
   }
 
   String get id => chapterUUID;
-  
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is ChapterData &&
-           other.chapterName == chapterName &&
-           other.chapterContent == _chapterContent &&
-           other.chapterUUID == chapterUUID;
+        other.chapterName == chapterName &&
+        other.chapterContent == _chapterContent &&
+        other.chapterUUID == chapterUUID;
   }
-  
+
   @override
   int get hashCode => Object.hash(chapterName, _chapterContent, chapterUUID);
 }
@@ -113,28 +110,29 @@ class SegmentData {
   String segmentName;
   List<ChapterData> chapters;
   String segmentUUID;
-  
+
   SegmentData({
     this.segmentName = "",
     List<ChapterData>? chapters,
     String? segmentUUID,
   }) : chapters = chapters ?? [],
-       segmentUUID = segmentUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-  
+       segmentUUID =
+           segmentUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+
   String get id => segmentUUID;
-  
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is SegmentData &&
-           other.segmentName == segmentName &&
-           _listEquals(other.chapters, chapters) &&
-           other.segmentUUID == segmentUUID;
+        other.segmentName == segmentName &&
+        _listEquals(other.chapters, chapters) &&
+        other.segmentUUID == segmentUUID;
   }
-  
+
   @override
   int get hashCode => Object.hash(segmentName, chapters, segmentUUID);
-  
+
   bool _listEquals<T>(List<T> a, List<T> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
@@ -147,10 +145,17 @@ class SegmentData {
 // MARK: - XML Codec
 
 class ChapterSelectionCodec {
-  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
-    builder.element(name, nest: () {
-      builder.text(_encodeNewlines(value));
-    });
+  static void _writeTextElement(
+    xml.XmlBuilder builder,
+    String name,
+    String value,
+  ) {
+    builder.element(
+      name,
+      nest: () {
+        builder.text(_encodeNewlines(value));
+      },
+    );
   }
 
   static String _readElementText(xml.XmlElement? element) {
@@ -216,27 +221,35 @@ class ChapterSelectionCodec {
 
     // 使用 xml package 構建 XML，自動處理 escaping
     final builder = xml.XmlBuilder();
-    builder.element("Type", nest: () {
-      builder.element("Name", nest: () {
-        builder.text("ChapterSelection");
-      });
-      
-      for (final seg in segments) {
-        builder.element("Segment", attributes: {
-          "Name": seg.segmentName,
-          "UUID": seg.segmentUUID,
-        }, nest: () {
-          for (final ch in seg.chapters) {
-            builder.element("Chapter", attributes: {
-              "Name": ch.chapterName,
-              "UUID": ch.chapterUUID,
-            }, nest: () {
-              _writeTextElement(builder, "Content", ch.chapterContent);
-            });
-          }
-        });
-      }
-    });
+    builder.element(
+      "Type",
+      nest: () {
+        builder.element(
+          "Name",
+          nest: () {
+            builder.text("ChapterSelection");
+          },
+        );
+
+        for (final seg in segments) {
+          builder.element(
+            "Segment",
+            attributes: {"Name": seg.segmentName, "UUID": seg.segmentUUID},
+            nest: () {
+              for (final ch in seg.chapters) {
+                builder.element(
+                  "Chapter",
+                  attributes: {"Name": ch.chapterName, "UUID": ch.chapterUUID},
+                  nest: () {
+                    _writeTextElement(builder, "Content", ch.chapterContent);
+                  },
+                );
+              }
+            },
+          );
+        }
+      },
+    );
 
     return builder.buildDocument().toXmlString(pretty: true);
   }
@@ -246,45 +259,51 @@ class ChapterSelectionCodec {
     try {
       final document = xml.XmlDocument.parse(xmlContent);
       final typeElement = document.findAllElements("Type").firstOrNull;
-      
+
       if (typeElement == null) return null;
-      
+
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement == null || nameElement.innerText != "ChapterSelection") {
         return null;
       }
-      
+
       final segments = <SegmentData>[];
       final segmentElements = typeElement.findAllElements("Segment");
-      
+
       for (final segElement in segmentElements) {
         final segmentName = segElement.getAttribute("Name") ?? "";
         final segmentUUID = segElement.getAttribute("UUID") ?? "";
-        
+
         final chapters = <ChapterData>[];
         final chapterElements = segElement.findAllElements("Chapter");
-        
+
         for (final chElement in chapterElements) {
           final chapterName = chElement.getAttribute("Name") ?? "";
           final chapterUUID = chElement.getAttribute("UUID") ?? "";
-          
-          final contentElement = chElement.findAllElements("Content").firstOrNull;
+
+          final contentElement = chElement
+              .findAllElements("Content")
+              .firstOrNull;
           final chapterContent = _readElementText(contentElement);
-          
-          chapters.add(ChapterData(
-            chapterName: chapterName,
-            chapterContent: chapterContent,
-            chapterUUID: chapterUUID,
-          ));
+
+          chapters.add(
+            ChapterData(
+              chapterName: chapterName,
+              chapterContent: chapterContent,
+              chapterUUID: chapterUUID,
+            ),
+          );
         }
-        
-        segments.add(SegmentData(
-          segmentName: segmentName,
-          chapters: chapters,
-          segmentUUID: segmentUUID,
-        ));
+
+        segments.add(
+          SegmentData(
+            segmentName: segmentName,
+            chapters: chapters,
+            segmentUUID: segmentUUID,
+          ),
+        );
       }
-      
+
       return segments.isNotEmpty ? segments : null;
     } catch (e) {
       debugPrint("ChapterSelection XML Parse Error: $e");
@@ -327,20 +346,20 @@ class ChapterSelectionView extends StatefulWidget {
 
 class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   late List<SegmentData> _segments;
-  
+
   // 編輯名稱（雙擊）狀態
   String? _editingSegmentID;
   String? _editingChapterID;
-  
+
   // 滾動控制器
   final ScrollController _pageScrollController = ScrollController();
   final ScrollController _segmentListScrollController = ScrollController();
   final ScrollController _chapterListScrollController = ScrollController();
-  
+
   // 列表容器的 GlobalKey，用於獲取邊界
   final GlobalKey _segmentListKey = GlobalKey();
   final GlobalKey _chapterListKey = GlobalKey();
-  
+
   // 自動滾動相關
   Timer? _autoScrollTimer;
   ScrollController? _currentScrollController; // 新增：追蹤當前正在滾動的控制器
@@ -349,27 +368,39 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   TextEditingController? _renameController; // 新增：重新命名控制器
 
   static const double _autoScrollSpeed = 10.0; // 每次滾動的像素數
-  static const Duration _autoScrollInterval = Duration(milliseconds: 50); // 滾動間隔
+  static const Duration _autoScrollInterval = Duration(
+    milliseconds: 50,
+  ); // 滾動間隔
   static const double _scrollEdgeThreshold = 100.0; // 頁面邊緣觸發閾值（從頂部/底部算起）
   static const double _listScrollEdgeThreshold = 20.0; // 列表邊緣觸發閾值（修改為 20px）
-  
+
   // MARK: - 計算屬性
-  
+
   int get _totalChaptersCount {
     return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
   }
 
   int get _totalWordCount {
-    return _segments.fold(0, (sum, seg) => sum + seg.chapters.fold(0, (s, c) => s + c.getWordCount(widget.wordCountMode)));
+    return _segments.fold(
+      0,
+      (sum, seg) =>
+          sum +
+          seg.chapters.fold(
+            0,
+            (s, c) => s + c.getWordCount(widget.wordCountMode),
+          ),
+    );
   }
-  
+
   int? get _selectedSegmentIndex {
     if (widget.selectedSegmentID == null) return null;
-    return _segments.indexWhere((seg) => seg.segmentUUID == widget.selectedSegmentID);
+    return _segments.indexWhere(
+      (seg) => seg.segmentUUID == widget.selectedSegmentID,
+    );
   }
-  
+
   // MARK: - 生命週期方法
-  
+
   @override
   void initState() {
     super.initState();
@@ -380,19 +411,27 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   @override
   void didUpdateWidget(ChapterSelectionView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.segments != widget.segments || oldWidget.wordCountMode != widget.wordCountMode) {
+    if (oldWidget.segments != widget.segments ||
+        oldWidget.wordCountMode != widget.wordCountMode) {
       _initializeSegments();
       _initializeIfEmpty();
-      
+
       // 當 segments 更新後，需要觸发「再讀」來同步當前選中章節的內容
-      if (widget.selectedSegmentID != null && widget.selectedChapterID != null) {
-        final segIdx = _segments.indexWhere((seg) => seg.segmentUUID == widget.selectedSegmentID);
+      if (widget.selectedSegmentID != null &&
+          widget.selectedChapterID != null) {
+        final segIdx = _segments.indexWhere(
+          (seg) => seg.segmentUUID == widget.selectedSegmentID,
+        );
         if (segIdx >= 0) {
-          final chapterIdx = _segments[segIdx].chapters.indexWhere((ch) => ch.chapterUUID == widget.selectedChapterID);
+          final chapterIdx = _segments[segIdx].chapters.indexWhere(
+            (ch) => ch.chapterUUID == widget.selectedChapterID,
+          );
           if (chapterIdx >= 0) {
             // 觸發「再讀」：載入更新後的章節內容到編輯器
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              widget.onContentChanged?.call(_segments[segIdx].chapters[chapterIdx].chapterContent);
+              widget.onContentChanged?.call(
+                _segments[segIdx].chapters[chapterIdx].chapterContent,
+              );
             });
           }
         }
@@ -408,52 +447,56 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     _chapterListScrollController.dispose();
     super.dispose();
   }
-  
+
   // MARK: - 自動滾動方法
-  
+
   /// 處理拖動時的自動滾動（頁面級別）
   void _handleDragUpdate(DragUpdateDetails details) {
     // 如果正在拖動，優先檢查列表滾动
     if (_isDragging) {
       // 檢查是否在任一列表的邊緣 20px 內
       bool handledByList = false;
-      
+
       // 檢查區段列表
-      final segmentBox = _segmentListKey.currentContext?.findRenderObject() as RenderBox?;
+      final segmentBox =
+          _segmentListKey.currentContext?.findRenderObject() as RenderBox?;
       if (segmentBox != null) {
         final segmentPosition = segmentBox.localToGlobal(Offset.zero);
         final segmentSize = segmentBox.size;
         final relativeY = details.globalPosition.dy - segmentPosition.dy;
-        
+
         // 在區段列表範圍內
         if (relativeY >= 0 && relativeY <= segmentSize.height) {
           if (relativeY < _listScrollEdgeThreshold) {
             // 接近頂部
             _startAutoScroll(_segmentListScrollController, scrollUp: true);
             handledByList = true;
-          } else if (relativeY > segmentSize.height - _listScrollEdgeThreshold) {
+          } else if (relativeY >
+              segmentSize.height - _listScrollEdgeThreshold) {
             // 接近底部
             _startAutoScroll(_segmentListScrollController, scrollUp: false);
             handledByList = true;
           }
         }
       }
-      
+
       // 如果區段列表沒有處理，檢查章節列表
       if (!handledByList) {
-        final chapterBox = _chapterListKey.currentContext?.findRenderObject() as RenderBox?;
+        final chapterBox =
+            _chapterListKey.currentContext?.findRenderObject() as RenderBox?;
         if (chapterBox != null) {
           final chapterPosition = chapterBox.localToGlobal(Offset.zero);
           final chapterSize = chapterBox.size;
           final relativeY = details.globalPosition.dy - chapterPosition.dy;
-          
+
           // 在章節列表範圍內
           if (relativeY >= 0 && relativeY <= chapterSize.height) {
             if (relativeY < _listScrollEdgeThreshold) {
               // 接近頂部
               _startAutoScroll(_chapterListScrollController, scrollUp: true);
               handledByList = true;
-            } else if (relativeY > chapterSize.height - _listScrollEdgeThreshold) {
+            } else if (relativeY >
+                chapterSize.height - _listScrollEdgeThreshold) {
               // 接近底部
               _startAutoScroll(_chapterListScrollController, scrollUp: false);
               handledByList = true;
@@ -461,65 +504,68 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           }
         }
       }
-      
+
       // 如果列表處理了滾動，就不處理頁面滾動
       if (handledByList) {
         return;
       }
-      
+
       // 如果不在列表邊緣，停止列表滾動
-      if (_currentScrollController == _segmentListScrollController || 
+      if (_currentScrollController == _segmentListScrollController ||
           _currentScrollController == _chapterListScrollController) {
         _stopAutoScroll();
       }
     }
-    
+
     // 頁面級別滾動（作為後備）
     final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
-    
+
     final localPosition = details.localPosition;
     final screenHeight = MediaQuery.of(context).size.height;
-    
+
     if (localPosition.dy < _scrollEdgeThreshold) {
       _startAutoScroll(_pageScrollController, scrollUp: true);
     } else if (localPosition.dy > screenHeight - _scrollEdgeThreshold) {
       _startAutoScroll(_pageScrollController, scrollUp: false);
     } else {
       // 只在不是列表控制器時才停止
-      if (_currentScrollController != _segmentListScrollController && 
+      if (_currentScrollController != _segmentListScrollController &&
           _currentScrollController != _chapterListScrollController) {
         _stopAutoScroll();
       }
     }
   }
-  
+
   /// 開始自動滾動
   void _startAutoScroll(ScrollController controller, {required bool scrollUp}) {
     // 如果已經在滾動同一個控制器和方向，不需要重新啟動
     if (_currentScrollController == controller && _autoScrollTimer != null) {
       return;
     }
-    
+
     // 停止之前的滾動
     _autoScrollTimer?.cancel();
     _currentScrollController = controller;
-    
+
     _autoScrollTimer = Timer.periodic(_autoScrollInterval, (timer) {
       if (!controller.hasClients) {
         timer.cancel();
         _currentScrollController = null;
         return;
       }
-      
+
       final currentOffset = controller.offset;
       final maxScroll = controller.position.maxScrollExtent;
       final minScroll = controller.position.minScrollExtent;
-      
+
       if (scrollUp) {
         // 向上滾動
         if (currentOffset > minScroll) {
-          final newOffset = (currentOffset - _autoScrollSpeed).clamp(minScroll, maxScroll);
+          final newOffset = (currentOffset - _autoScrollSpeed).clamp(
+            minScroll,
+            maxScroll,
+          );
           controller.jumpTo(newOffset);
         } else {
           timer.cancel();
@@ -528,7 +574,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       } else {
         // 向下滾動
         if (currentOffset < maxScroll) {
-          final newOffset = (currentOffset + _autoScrollSpeed).clamp(minScroll, maxScroll);
+          final newOffset = (currentOffset + _autoScrollSpeed).clamp(
+            minScroll,
+            maxScroll,
+          );
           controller.jumpTo(newOffset);
         } else {
           timer.cancel();
@@ -537,58 +586,72 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       }
     });
   }
-  
+
   /// 停止自動滾動
   void _stopAutoScroll() {
     _autoScrollTimer?.cancel();
     _autoScrollTimer = null;
     _currentScrollController = null;
   }
-  
+
   // MARK: - Helper 方法
-  
+
   void _initializeSegments() {
-    _segments = List.from(widget.segments.map((seg) => SegmentData(
-      segmentName: seg.segmentName,
-      chapters: List.from(seg.chapters.map((ch) => ChapterData(
-        chapterName: ch.chapterName,
-        chapterContent: ch.chapterContent,
-        chapterUUID: ch.chapterUUID,
-      ))),
-      segmentUUID: seg.segmentUUID,
-    )));
+    _segments = List.from(
+      widget.segments.map(
+        (seg) => SegmentData(
+          segmentName: seg.segmentName,
+          chapters: List.from(
+            seg.chapters.map(
+              (ch) => ChapterData(
+                chapterName: ch.chapterName,
+                chapterContent: ch.chapterContent,
+                chapterUUID: ch.chapterUUID,
+              ),
+            ),
+          ),
+          segmentUUID: seg.segmentUUID,
+        ),
+      ),
+    );
   }
 
   void _initializeIfEmpty() {
     if (_segments.isEmpty) {
-      _segments.add(SegmentData(
-        segmentName: "Seg 1",
-        chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
-      ));
+      _segments.add(
+        SegmentData(
+          segmentName: "Seg 1",
+          chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
+        ),
+      );
       _notifySegmentsChanged();
     } else if (_totalChaptersCount == 0) {
-      _segments[0].chapters.add(ChapterData(chapterName: "Chapter 1", chapterContent: ""));
+      _segments[0].chapters.add(
+        ChapterData(chapterName: "Chapter 1", chapterContent: ""),
+      );
       _notifySegmentsChanged();
     }
   }
-  
+
   // MARK: - Helper：保存/選取
-  
+
   void _commitCurrentEditorToSelectedChapter() {
     final si = _selectedSegmentIndex;
     final cid = widget.selectedChapterID;
     if (si != null && cid != null) {
-      final ci = _segments[si].chapters.indexWhere((ch) => ch.chapterUUID == cid);
+      final ci = _segments[si].chapters.indexWhere(
+        (ch) => ch.chapterUUID == cid,
+      );
       if (ci >= 0) {
         _segments[si].chapters[ci].chapterContent = widget.contentText;
       }
     }
   }
-  
+
   void _selectSegment(String segID) {
     _commitCurrentEditorToSelectedChapter();
     widget.onSelectedSegmentChanged?.call(segID);
-    
+
     final si = _segments.indexWhere((seg) => seg.segmentUUID == segID);
     if (si >= 0) {
       if (_segments[si].chapters.isNotEmpty) {
@@ -601,82 +664,92 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       }
     }
   }
-  
+
   void _selectChapter(int segIdx, String chapterID) {
     _commitCurrentEditorToSelectedChapter();
     widget.onSelectedSegmentChanged?.call(_segments[segIdx].segmentUUID);
     widget.onSelectedChapterChanged?.call(chapterID);
-    
+
     final chapterIdx = _segments[segIdx].chapters.indexWhere(
       (ch) => ch.chapterUUID == chapterID,
     );
     if (chapterIdx >= 0) {
-      widget.onContentChanged?.call(_segments[segIdx].chapters[chapterIdx].chapterContent);
+      widget.onContentChanged?.call(
+        _segments[segIdx].chapters[chapterIdx].chapterContent,
+      );
     }
   }
 
   void _notifySegmentsChanged() {
     widget.onSegmentsChanged?.call(_segments);
   }
-  
+
   // MARK: - 新增方法
-  
+
   void _addSegment(String name) {
     _commitCurrentEditorToSelectedChapter();
-    
+
     name = name.trim();
     final finalName = name.isEmpty ? "Seg ${_segments.length + 1}" : name;
-    final firstChapter = ChapterData(chapterName: "Chapter 1", chapterContent: "");
+    final firstChapter = ChapterData(
+      chapterName: "Chapter 1",
+      chapterContent: "",
+    );
     final newSegment = SegmentData(
       segmentName: finalName,
       chapters: [firstChapter],
     );
-    
+
     setState(() {
       _segments.add(newSegment);
     });
     _notifySegmentsChanged();
-    
+
     _selectSegment(newSegment.segmentUUID);
   }
 
   void _addChapter(int segIdx, String name) {
     _commitCurrentEditorToSelectedChapter();
-    
+
     name = name.trim();
-    final finalName = name.isEmpty ? "Chapter ${_segments[segIdx].chapters.length + 1}" : name;
+    final finalName = name.isEmpty
+        ? "Chapter ${_segments[segIdx].chapters.length + 1}"
+        : name;
     final newChapter = ChapterData(chapterName: finalName, chapterContent: "");
-    
+
     setState(() {
       _segments[segIdx].chapters.add(newChapter);
     });
     _notifySegmentsChanged();
-    
+
     _selectChapter(segIdx, newChapter.chapterUUID);
   }
 
   // MARK: - 刪除方法
-  
+
   void _deleteSegment(String segmentID) {
     final segIdx = _segments.indexWhere((seg) => seg.segmentUUID == segmentID);
     if (segIdx < 0 || _segments.length <= 1) return;
-    
-    final remainingChapters = _totalChaptersCount - _segments[segIdx].chapters.length;
+
+    final remainingChapters =
+        _totalChaptersCount - _segments[segIdx].chapters.length;
     if (remainingChapters <= 0) return;
-    
+
     // 如果要刪除的是當前選中的區段，先保存編輯器內容
     if (widget.selectedSegmentID == segmentID) {
       _commitCurrentEditorToSelectedChapter();
     }
-    
+
     _segments.removeAt(segIdx);
     _notifySegmentsChanged();
-    
+
     // 選擇第一個可用的區段
     if (_segments.isNotEmpty) {
       final firstSeg = _segments.first;
       widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
-      final firstChapter = firstSeg.chapters.isNotEmpty ? firstSeg.chapters.first : null;
+      final firstChapter = firstSeg.chapters.isNotEmpty
+          ? firstSeg.chapters.first
+          : null;
       if (firstChapter != null) {
         widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
         widget.onContentChanged?.call(firstChapter.chapterContent);
@@ -693,24 +766,24 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   void _deleteChapter(int segIdx, String chapterID) {
     if (segIdx < 0 || segIdx >= _segments.length) return;
-    
+
     final chapterIdx = _segments[segIdx].chapters.indexWhere(
       (ch) => ch.chapterUUID == chapterID,
     );
     if (chapterIdx < 0 || _totalChaptersCount <= 1) return;
-    
+
     // 如果要刪除的是當前選中的章節，先保存編輯器內容
     if (widget.selectedChapterID == chapterID) {
       _commitCurrentEditorToSelectedChapter();
     }
-    
+
     _segments[segIdx].chapters.removeAt(chapterIdx);
     _notifySegmentsChanged();
-    
+
     // 選擇下一個可用章節
     if (_segments[segIdx].chapters.isNotEmpty) {
-      final nextIdx = chapterIdx < _segments[segIdx].chapters.length 
-          ? chapterIdx 
+      final nextIdx = chapterIdx < _segments[segIdx].chapters.length
+          ? chapterIdx
           : _segments[segIdx].chapters.length - 1;
       final nextChapter = _segments[segIdx].chapters[nextIdx];
       widget.onSelectedChapterChanged?.call(nextChapter.chapterUUID);
@@ -718,17 +791,19 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     } else {
       widget.onSelectedChapterChanged?.call(null);
       widget.onContentChanged?.call("");
-      
+
       // 如果區段為空且有多個區段，刪除該區段
       if (_segments.length > 1) {
         final removedSegID = _segments[segIdx].segmentUUID;
         _segments.removeAt(segIdx);
         _notifySegmentsChanged();
-        
+
         if (_segments.isNotEmpty) {
           final firstSeg = _segments.first;
           widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
-          final firstChapter = firstSeg.chapters.isNotEmpty ? firstSeg.chapters.first : null;
+          final firstChapter = firstSeg.chapters.isNotEmpty
+              ? firstSeg.chapters.first
+              : null;
           if (firstChapter != null) {
             widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
             widget.onContentChanged?.call(firstChapter.chapterContent);
@@ -741,12 +816,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           widget.onSelectedChapterChanged?.call(null);
           widget.onContentChanged?.call("");
         }
-        
+
         // 如果刪除的區段是當前選中的區段，重新選擇
         if (widget.selectedSegmentID == removedSegID && _segments.isNotEmpty) {
           final firstSeg = _segments.first;
           widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
-          final firstChapter = firstSeg.chapters.isNotEmpty ? firstSeg.chapters.first : null;
+          final firstChapter = firstSeg.chapters.isNotEmpty
+              ? firstSeg.chapters.first
+              : null;
           if (firstChapter != null) {
             widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
             widget.onContentChanged?.call(firstChapter.chapterContent);
@@ -757,12 +834,12 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   }
 
   // MARK: - 移動/拖放方法
-  
+
   void _moveSegmentByDrag(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
-    
+
     _commitCurrentEditorToSelectedChapter();
-    
+
     final segment = _segments.removeAt(fromIndex);
     _segments.insert(toIndex, segment);
     _notifySegmentsChanged();
@@ -771,9 +848,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   void _moveChapterByDrag(int segIdx, int fromIndex, int toIndex) {
     if (segIdx < 0 || segIdx >= _segments.length) return;
     if (fromIndex == toIndex) return;
-    
+
     _commitCurrentEditorToSelectedChapter();
-    
+
     final chapter = _segments[segIdx].chapters.removeAt(fromIndex);
     _segments[segIdx].chapters.insert(toIndex, chapter);
     _notifySegmentsChanged();
@@ -781,12 +858,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   void _moveChapterToSegment(String chapterUUID, String toSegmentUUID) {
     _commitCurrentEditorToSelectedChapter();
-    
+
     // 找到來源章節
     int? sourceSegIdx;
     int? sourceChapIdx;
     for (int si = 0; si < _segments.length; si++) {
-      final ci = _segments[si].chapters.indexWhere((ch) => ch.chapterUUID == chapterUUID);
+      final ci = _segments[si].chapters.indexWhere(
+        (ch) => ch.chapterUUID == chapterUUID,
+      );
       if (ci >= 0) {
         sourceSegIdx = si;
         sourceChapIdx = ci;
@@ -797,13 +876,17 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     if (sourceSegIdx == null || sourceChapIdx == null) return;
 
     // 找到目標區段
-    final targetSegIdx = _segments.indexWhere((seg) => seg.segmentUUID == toSegmentUUID);
+    final targetSegIdx = _segments.indexWhere(
+      (seg) => seg.segmentUUID == toSegmentUUID,
+    );
     if (targetSegIdx < 0 || targetSegIdx == sourceSegIdx) return;
 
     final sourceSegID = _segments[sourceSegIdx].segmentUUID;
 
     // 執行移動
-    final movingChapter = _segments[sourceSegIdx].chapters.removeAt(sourceChapIdx);
+    final movingChapter = _segments[sourceSegIdx].chapters.removeAt(
+      sourceChapIdx,
+    );
     _segments[targetSegIdx].chapters.add(movingChapter);
 
     // 更新選擇
@@ -814,7 +897,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     // 如果來源區段變空，刪除它（如果有多個區段）
     if (_segments[sourceSegIdx].chapters.isEmpty && _segments.length > 1) {
       _segments.removeAt(sourceSegIdx);
-      
+
       // 如果刪除的區段是當前選中的區段，重新選擇
       if (widget.selectedSegmentID == sourceSegID) {
         final firstSeg = _segments.firstWhere(
@@ -830,8 +913,6 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     _notifySegmentsChanged();
   }
 
-
-
   bool _hasPerformedInitialSetup = false;
 
   // MARK: - UI 介面構建
@@ -845,15 +926,17 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         _hasPerformedInitialSetup = true;
       });
     }
-    
+
     return Scaffold(
       body: Listener(
         onPointerMove: (event) {
           // 全局監聽拖動來處理頁面級別的自動滾動
-          _handleDragUpdate(DragUpdateDetails(
-            globalPosition: event.position,
-            localPosition: event.localPosition,
-          ));
+          _handleDragUpdate(
+            DragUpdateDetails(
+              globalPosition: event.position,
+              localPosition: event.localPosition,
+            ),
+          );
         },
         onPointerUp: (_) => _stopAutoScroll(),
         onPointerCancel: (_) => _stopAutoScroll(),
@@ -861,65 +944,64 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           controller: _pageScrollController,
           padding: const EdgeInsets.all(24.0),
           child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 標題
-            Row(
-              children: [
-                HeadlineLargeTitle(
-                  icon: Icons.menu_book,
-                  text: "章節選擇"
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.onetwothree,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "全書共 $_totalWordCount 字",
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 標題
+              Row(
+                children: [
+                  LargeTitle(icon: Icons.menu_book, text: "章節選擇"),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.onetwothree,
+                          size: 16,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Text(
+                          "全書共 $_totalWordCount 字",
+                          style: Theme.of(context).textTheme.labelSmall
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
+                ],
+              ),
+              const SizedBox(height: 32),
 
-            // 主要內容區域 - 直排佈局
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 上方：區段列表
-                _buildSegmentsList(),
-                const SizedBox(height: 24),
-                
-                // 下方：章節列表
-                _buildChaptersList(),
-              ],
-            ),
-          ],
-        ),
+              // 主要內容區域 - 直排佈局
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 上方：區段列表
+                  _buildSegmentsList(),
+                  const SizedBox(height: 24),
+
+                  // 下方：章節列表
+                  _buildChaptersList(),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-  
+
   // MARK: - 初始化邏輯（類似 SwiftUI 的 onAppear）
-  
+
   void _performInitialSetup() {
     if (_segments.isEmpty) {
       _segments.add(
@@ -929,26 +1011,34 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         ),
       );
     } else if (_totalChaptersCount == 0) {
-      _segments[0].chapters.add(ChapterData(chapterName: "Chapter 1", chapterContent: ""));
+      _segments[0].chapters.add(
+        ChapterData(chapterName: "Chapter 1", chapterContent: ""),
+      );
     }
-    
+
     if (widget.selectedSegmentID == null && _segments.isNotEmpty) {
       widget.onSelectedSegmentChanged?.call(_segments.first.segmentUUID);
     }
-    
+
     if (widget.selectedChapterID == null) {
       final si = _selectedSegmentIndex;
       if (si != null && _segments[si].chapters.isNotEmpty) {
-        widget.onSelectedChapterChanged?.call(_segments[si].chapters.first.chapterUUID);
+        widget.onSelectedChapterChanged?.call(
+          _segments[si].chapters.first.chapterUUID,
+        );
       }
     }
-    
+
     final si = _selectedSegmentIndex;
     final cid = widget.selectedChapterID;
     if (si != null && cid != null) {
-      final ci = _segments[si].chapters.indexWhere((ch) => ch.chapterUUID == cid);
+      final ci = _segments[si].chapters.indexWhere(
+        (ch) => ch.chapterUUID == cid,
+      );
       if (ci >= 0) {
-        widget.onContentChanged?.call(_segments[si].chapters[ci].chapterContent);
+        widget.onContentChanged?.call(
+          _segments[si].chapters[ci].chapterContent,
+        );
       }
     }
   }
@@ -962,12 +1052,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const LargeTitle(
-              icon: Icons.folder_outlined,
-              text: "區段選擇",
-            ),
+            const MediumTitle(icon: Icons.folder_outlined, text: "區段選擇"),
             const SizedBox(height: 16),
-            
+
             // 區段列表 - 使用 DragTarget 包裝以支援排序
             DragTarget<DragData>(
               onWillAcceptWithDetails: (details) {
@@ -985,17 +1072,20 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                   setState(() {
                     final fromIndex = dragData.currentIndex;
                     final toIndex = _segments.length - 1; // 移動到最後
-                    
-                    if (fromIndex >= 0 && fromIndex < _segments.length && fromIndex != toIndex) {
+
+                    if (fromIndex >= 0 &&
+                        fromIndex < _segments.length &&
+                        fromIndex != toIndex) {
                       final movedSegment = _segments.removeAt(fromIndex);
                       _segments.insert(toIndex, movedSegment);
-                      
+
                       // 如果移動的區段是當前選中的，更新選中狀態
-                      if (widget.selectedSegmentID == movedSegment.segmentUUID) {
+                      if (widget.selectedSegmentID ==
+                          movedSegment.segmentUUID) {
                         // selectedSegmentID 不變，因為移動的就是當前選中的區段
                         // 索引會自動通過 getter 重新計算
                       }
-                      
+
                       _notifySegmentsChanged();
                     }
                   });
@@ -1003,7 +1093,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               },
               builder: (context, candidateData, rejectedData) {
                 final isHighlighted = candidateData.isNotEmpty;
-                
+
                 return Container(
                   key: _segmentListKey,
                   height: 250,
@@ -1011,29 +1101,31 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                     border: Border.all(
                       color: isHighlighted
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                          : Theme.of(
+                              context,
+                            ).colorScheme.outline.withOpacity(0.2),
                       width: isHighlighted ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: isHighlighted
-                        ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withOpacity(0.1)
                         : null,
                   ),
                   child: ListView.builder(
                     controller: _segmentListScrollController,
                     itemCount: _segments.length,
-                    itemBuilder: (context, index) => _buildSegmentItem(_segments[index], index),
+                    itemBuilder: (context, index) =>
+                        _buildSegmentItem(_segments[index], index),
                   ),
                 );
               },
             ),
             const SizedBox(height: 16),
-            
+
             // 新增區段
-            AddItemInput(
-              title: "區段",
-              onAdd: _addSegment,
-            ),
+            AddItemInput(title: "區段", onAdd: _addSegment),
           ],
         ),
       ),
@@ -1042,7 +1134,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   Widget _buildChaptersList() {
     final selectedSegIdx = _selectedSegmentIndex;
-    
+
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -1054,10 +1146,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             Row(
               children: [
                 const Expanded(
-                  child: LargeTitle(
-                    icon: Icons.article_outlined,
-                    text: "章節選擇",
-                  ),
+                  child: MediumTitle(icon: Icons.article_outlined, text: "章節選擇"),
                 ),
                 Tooltip(
                   message: "拖動章節排序 | 長按拖動至其他區段",
@@ -1070,7 +1159,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // 章節列表 - 使用 DragTarget 包裝以支援拖放排序
             DragTarget<DragData>(
               onWillAcceptWithDetails: (details) {
@@ -1084,15 +1173,18 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                 _stopAutoScroll(); // 停止自動滾動
                 // 拖放到空白區域時，移動到列表最後
                 final dragData = details.data;
-                if (selectedSegIdx != null && dragData.type == DragType.chapter) {
+                if (selectedSegIdx != null &&
+                    dragData.type == DragType.chapter) {
                   setState(() {
                     // 找到來源章節
                     ChapterData? draggedChapter;
                     int sourceSegIdx = -1;
                     int sourceChapterIdx = -1;
-                    
+
                     for (int i = 0; i < _segments.length; i++) {
-                      final idx = _segments[i].chapters.indexWhere((ch) => ch.chapterUUID == dragData.id);
+                      final idx = _segments[i].chapters.indexWhere(
+                        (ch) => ch.chapterUUID == dragData.id,
+                      );
                       if (idx >= 0) {
                         draggedChapter = _segments[i].chapters[idx];
                         sourceSegIdx = i;
@@ -1100,16 +1192,20 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                         break;
                       }
                     }
-                    
+
                     if (draggedChapter != null) {
                       // 移除來源章節
-                      _segments[sourceSegIdx].chapters.removeAt(sourceChapterIdx);
-                      
+                      _segments[sourceSegIdx].chapters.removeAt(
+                        sourceChapterIdx,
+                      );
+
                       // 添加到目標區段的最後
                       _segments[selectedSegIdx].chapters.add(draggedChapter);
-                      
+
                       // 更新選中章節
-                      widget.onSelectedChapterChanged?.call(draggedChapter.chapterUUID);
+                      widget.onSelectedChapterChanged?.call(
+                        draggedChapter.chapterUUID,
+                      );
                       _notifySegmentsChanged();
                     }
                   });
@@ -1117,7 +1213,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               },
               builder: (context, candidateData, rejectedData) {
                 final isHighlighted = candidateData.isNotEmpty;
-                
+
                 return Container(
                   key: _chapterListKey,
                   height: 250,
@@ -1125,12 +1221,16 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                     border: Border.all(
                       color: isHighlighted
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                          : Theme.of(
+                              context,
+                            ).colorScheme.outline.withOpacity(0.2),
                       width: isHighlighted ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: isHighlighted
-                        ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withOpacity(0.1)
                         : null,
                   ),
                   child: selectedSegIdx != null && selectedSegIdx >= 0
@@ -1146,16 +1246,19 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                       : Center(
                           child: Text(
                             "請先選擇一個區段",
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                           ),
                         ),
                 );
               },
             ),
             const SizedBox(height: 16),
-            
+
             // 新增章節
             AddItemInput(
               title: selectedSegIdx != null ? "章節名稱" : "請先選擇區段",
@@ -1173,7 +1276,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   }
 
   // MARK: - 編輯 Helper 方法
-  
+
   void _startEditingSegment(SegmentData segment) {
     setState(() {
       _editingSegmentID = segment.segmentUUID;
@@ -1185,7 +1288,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   void _submitEditingSegment() {
     if (_editingSegmentID != null && _renameController != null) {
-      final index = _segments.indexWhere((s) => s.segmentUUID == _editingSegmentID);
+      final index = _segments.indexWhere(
+        (s) => s.segmentUUID == _editingSegmentID,
+      );
       if (index >= 0) {
         final value = _renameController!.text.trim();
         _segments[index].segmentName = value.isEmpty ? "(未命名 Seg)" : value;
@@ -1203,17 +1308,21 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       _renameController = TextEditingController(text: chapter.chapterName);
     });
   }
-  
+
   void _submitEditingChapter(int segIdx) {
-     if (_editingChapterID != null && _renameController != null) {
-        final chapterIdx = _segments[segIdx].chapters.indexWhere((c) => c.chapterUUID == _editingChapterID);
-        if (chapterIdx >= 0) {
-           final value = _renameController!.text.trim();
-           _segments[segIdx].chapters[chapterIdx].chapterName = value.isEmpty ? "(未命名 Chapter)" : value;
-           _notifySegmentsChanged();
-        }
-     }
-     _cancelEditing();
+    if (_editingChapterID != null && _renameController != null) {
+      final chapterIdx = _segments[segIdx].chapters.indexWhere(
+        (c) => c.chapterUUID == _editingChapterID,
+      );
+      if (chapterIdx >= 0) {
+        final value = _renameController!.text.trim();
+        _segments[segIdx].chapters[chapterIdx].chapterName = value.isEmpty
+            ? "(未命名 Chapter)"
+            : value;
+        _notifySegmentsChanged();
+      }
+    }
+    _cancelEditing();
   }
 
   void _cancelEditing() {
@@ -1226,11 +1335,11 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   }
 
   // MARK: - Row builders
-  
+
   Widget _buildSegmentItem(SegmentData segment, int index) {
     final isSelected = widget.selectedSegmentID == segment.segmentUUID;
     final isEditing = _editingSegmentID == segment.segmentUUID;
-    
+
     return DraggableCardNode<DragData>(
       key: ValueKey(segment.segmentUUID),
       dragData: DragData(
@@ -1240,18 +1349,21 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       ),
       nodeId: segment.segmentUUID,
       nodeType: NodeType.folder,
-      
+
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == segment.segmentUUID,
       isSelected: isSelected,
-      
+
       title: isEditing
           ? TextField(
               controller: _renameController,
               autofocus: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
               ),
               onSubmitted: (_) => _submitEditingSegment(),
             )
@@ -1291,14 +1403,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: () {
-               if (_segments.length > 1) _deleteSegment(segment.segmentUUID);
+              if (_segments.length > 1) _deleteSegment(segment.segmentUUID);
             },
             tooltip: "刪除此 Seg",
           ),
         ],
       ),
       onClicked: () => _selectSegment(segment.segmentUUID),
-      
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
@@ -1316,10 +1428,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         });
         _stopAutoScroll();
       },
-      
+
       getDropZoneSize: (pos) {
         if (_currentDragData == null) return 0.0;
-        
+
         if (_currentDragData!.type == DragType.segment) {
           // 同層級拖動 (Before/After 50%)
           return pos == DropPosition.child ? 0.0 : 0.5;
@@ -1329,15 +1441,15 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         }
         return 0.0;
       },
-      
+
       onAccept: (data, pos) {
         if (data.type == DragType.segment) {
           int toIndex = index;
           if (pos == DropPosition.after) toIndex++;
-          
+
           final fromIndex = data.currentIndex;
           if (fromIndex < toIndex) toIndex--;
-          
+
           _moveSegmentByDrag(fromIndex, toIndex);
         } else if (data.type == DragType.chapter && pos == DropPosition.child) {
           _moveChapterToSegment(data.id, segment.segmentUUID);
@@ -1352,11 +1464,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     );
   }
 
-
   Widget _buildChapterItem(ChapterData chapter, int segIdx, int chapterIdx) {
     final isSelected = widget.selectedChapterID == chapter.chapterUUID;
     final isEditing = _editingChapterID == chapter.chapterUUID;
-    
+
     return DraggableCardNode<DragData>(
       key: ValueKey(chapter.chapterUUID),
       dragData: DragData(
@@ -1366,25 +1477,30 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       ),
       nodeId: chapter.chapterUUID,
       nodeType: NodeType.item,
-      
+
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == chapter.chapterUUID,
       isSelected: isSelected,
-      
+
       title: isEditing
           ? TextField(
               controller: _renameController,
               autofocus: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
               ),
               onSubmitted: (_) => _submitEditingChapter(segIdx),
             )
           : GestureDetector(
               onDoubleTap: () => _startEditingChapter(chapter),
               child: Text(
-                chapter.chapterName.isEmpty ? "(未命名 Chapter)" : chapter.chapterName,
+                chapter.chapterName.isEmpty
+                    ? "(未命名 Chapter)"
+                    : chapter.chapterName,
                 style: isSelected
                     ? TextStyle(
                         fontWeight: FontWeight.w600,
@@ -1403,8 +1519,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         style: Theme.of(context).textTheme.bodySmall,
       ),
       leading: Icon(
-        Icons.article_outlined, 
-        color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.primary,
+        Icons.article_outlined,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.primary,
         size: 24,
       ),
       trailing: Row(
@@ -1419,14 +1537,15 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
             icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: () {
-               if (_totalChaptersCount > 1) _deleteChapter(segIdx, chapter.chapterUUID);
+              if (_totalChaptersCount > 1)
+                _deleteChapter(segIdx, chapter.chapterUUID);
             },
             tooltip: "刪除此章節",
           ),
         ],
       ),
       onClicked: () => _selectChapter(segIdx, chapter.chapterUUID),
-      
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
@@ -1444,10 +1563,10 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         });
         _stopAutoScroll();
       },
-      
+
       getDropZoneSize: (pos) {
         if (_currentDragData == null) return 0.0;
-        
+
         if (_currentDragData!.type == DragType.chapter) {
           // 同層級拖動 (Before/After 50%)
           return pos == DropPosition.child ? 0.0 : 0.5;
@@ -1455,15 +1574,15 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
         // 爺孫層級不可拖動 (DragType.segment cannot be dropped here)
         return 0.0;
       },
-      
+
       onAccept: (data, pos) {
         if (data.type == DragType.chapter) {
           int toIndex = chapterIdx;
           if (pos == DropPosition.after) toIndex++;
-          
+
           final fromIndex = data.currentIndex;
           if (fromIndex < toIndex) toIndex--;
-          
+
           _moveChapterByDrag(segIdx, fromIndex, toIndex);
         }
       },
@@ -1471,10 +1590,9 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   }
 }
 // End of class methods, removing the slave classes now by not including them in `newString`.
-// Wait, replace_string_in_file needs `oldString` to match exactly. 
+// Wait, replace_string_in_file needs `oldString` to match exactly.
 // I have to replace _buildSegmentItem and _buildChapterItem with the NEW content.
 // AND I have to delete the classes below.
 // I will split this into two calls.
-// First call: Update Helper methods and the build methods. 
+// First call: Update Helper methods and the build methods.
 // Second call: Delete the classes at the bottom of the file.
-

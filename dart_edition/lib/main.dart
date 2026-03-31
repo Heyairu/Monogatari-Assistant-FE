@@ -42,12 +42,13 @@ import "modules/settingview.dart";
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 window_manager
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
-      defaultTargetPlatform == TargetPlatform.linux || 
-      defaultTargetPlatform == TargetPlatform.macOS)) {
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
     await windowManager.ensureInitialized();
   }
-  
+
   runApp(const MainApp());
 }
 
@@ -114,8 +115,14 @@ class _MainAppState extends State<MainApp> {
 
     return MaterialApp(
       title: "物語Assistant",
-      theme: AppTheme.getLightTheme(_settingsManager.fontSize, _themeManager.themeColor),
-      darkTheme: AppTheme.getDarkTheme(_settingsManager.fontSize, _themeManager.themeColor),
+      theme: AppTheme.getLightTheme(
+        _settingsManager.fontSize,
+        _themeManager.themeColor,
+      ),
+      darkTheme: AppTheme.getDarkTheme(
+        _settingsManager.fontSize,
+        _themeManager.themeColor,
+      ),
       themeMode: _convertThemeMode(_themeManager.themeMode),
       home: ContentView(
         themeManager: _themeManager,
@@ -136,26 +143,37 @@ class _MainAppState extends State<MainApp> {
   }
 }
 
-
 // 數據模型類別（BaseInfoData, ChapterData, SegmentData 現在從模組導入）
 
 class SimpleLocation {
   String localName;
   String description;
   String locationUUID;
-  
+
   SimpleLocation({
     required this.localName,
     this.description = "",
     String? locationUUID,
-  }) : locationUUID = locationUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+  }) : locationUUID =
+           locationUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 }
 
 // Intent classes for keyboard shortcuts
-class NewFileIntent extends Intent { const NewFileIntent(); }
-class OpenFileIntent extends Intent { const OpenFileIntent(); }
-class SaveFileIntent extends Intent { const SaveFileIntent(); }
-class FindIntent extends Intent { const FindIntent(); }
+class NewFileIntent extends Intent {
+  const NewFileIntent();
+}
+
+class OpenFileIntent extends Intent {
+  const OpenFileIntent();
+}
+
+class SaveFileIntent extends Intent {
+  const SaveFileIntent();
+}
+
+class FindIntent extends Intent {
+  const FindIntent();
+}
 
 class _ProjectInitialState {
   final String? selectedSegID;
@@ -177,7 +195,7 @@ class _ProjectInitialState {
 class ContentView extends StatefulWidget {
   final UILibrary themeManager;
   final SettingsManager settingsManager;
-  
+
   const ContentView({
     super.key,
     required this.themeManager,
@@ -195,11 +213,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   int slidePageIndexNow = 0;
   int autoSaveTime = 1;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
-  
+
   // 主編輯器文字
   String contentText = "";
-  final HighlightTextEditingController textController = HighlightTextEditingController();
-  
+  final HighlightTextEditingController textController =
+      HighlightTextEditingController();
+
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
   bool showPunctuationPanel = false;
@@ -207,20 +226,22 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   final TextEditingController replaceController = TextEditingController();
   final FindReplaceOptions findReplaceOptions = FindReplaceOptions();
   final FocusNode editorFocusNode = FocusNode();
-  
+
   // 搜尋狀態
   int _currentMatchIndex = -1;
   List<TextSelection> _searchMatches = [];
-  
+
   // 數據狀態
   BaseInfoModule.BaseInfoData baseInfoData = BaseInfoModule.BaseInfoData();
   List<ChapterModule.SegmentData> segmentsData = [
     ChapterModule.SegmentData(
       segmentName: "Seg 1",
-      chapters: [ChapterModule.ChapterData(chapterName: "Chapter 1", chapterContent: "")],
-    )
+      chapters: [
+        ChapterModule.ChapterData(chapterName: "Chapter 1", chapterContent: ""),
+      ],
+    ),
   ];
-  
+
   List<OutlineModule.StorylineData> outlineData = [
     OutlineModule.StorylineData(
       storylineName: "主線 1",
@@ -230,22 +251,22 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           storyEvent: "事件 1",
           scenes: [OutlineModule.SceneData(sceneName: "場景 A")],
           memo: "",
-          conflictPoint: ""
-        )
+          conflictPoint: "",
+        ),
       ],
       memo: "",
-      conflictPoint: ""
-    )
+      conflictPoint: "",
+    ),
   ];
-  
+
   List<LocationData> worldSettingsData = [];
   Map<String, Map<String, dynamic>> characterData = {};
-  
+
   // 選取狀態
   String? selectedSegID;
   String? selectedChapID;
   int totalWords = 0;
-  
+
   // 檔案狀態
   ProjectFile? currentProject;
   bool showingError = false;
@@ -253,7 +274,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   bool isLoading = false;
   bool hasUnsavedChanges = false;
   DateTime? _lastSavedTime; // Track last saved time
-  
+
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
 
@@ -268,40 +289,41 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       }
     }
   }
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     // 註冊視窗監聽器並設置視窗選項
-    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
-        defaultTargetPlatform == TargetPlatform.linux || 
-        defaultTargetPlatform == TargetPlatform.macOS)) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
       windowManager.addListener(this);
       _initWindowManager();
     }
-    
+
     // 初始化選取項目和編輯器內容
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
       selectedSegID = segmentsData[0].segmentUUID;
       selectedChapID = segmentsData[0].chapters[0].chapterUUID;
       contentText = segmentsData[0].chapters[0].chapterContent;
     }
-    
+
     textController.text = contentText;
-    
+
     // 監聽文字變化
     textController.addListener(() {
       // 只有當文字真的改變且不在同步狀態時才更新
       if (!_isSyncing && contentText != textController.text) {
         setState(() {
           contentText = textController.text;
-           // Trigger async incremental update instead of full sync recalculation
+          // Trigger async incremental update instead of full sync recalculation
           _debouncedWordCountUpdate();
-          
+
           // 標記有未儲存的變更
           _markAsModified();
-          
+
           // 當文字內容變化時，清除所有高亮和搜尋狀態
           _searchMatches = [];
           _currentMatchIndex = -1;
@@ -309,27 +331,28 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         });
       }
     });
-    
+
     // 應用程式啟動時自動創建新專案
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _newProject();
     });
-    
+
     // 監聽設定變更
     widget.settingsManager.addListener(_onSettingsChanged);
-    
+
     // 監聽焦點變化
     WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
   }
-  
+
   @override
   void dispose() {
     _wordCountDebounce?.cancel(); // Cancel timer
     widget.settingsManager.removeListener(_onSettingsChanged);
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
-    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || 
-        defaultTargetPlatform == TargetPlatform.linux || 
-        defaultTargetPlatform == TargetPlatform.macOS)) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
       windowManager.removeListener(this);
     }
     textController.dispose();
@@ -338,63 +361,71 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     editorFocusNode.dispose();
     super.dispose();
   }
-  
+
   Timer? _wordCountDebounce;
 
   void _debouncedWordCountUpdate() {
     if (_wordCountDebounce?.isActive ?? false) _wordCountDebounce!.cancel();
     _wordCountDebounce = Timer(const Duration(milliseconds: 500), () {
-       _updateActiveWordCountAsync();
+      _updateActiveWordCountAsync();
     });
   }
 
   Future<void> _updateActiveWordCountAsync() async {
-     if (selectedSegID == null || selectedChapID == null) return;
-     
-     final text = contentText;
-     final mode = widget.settingsManager.wordCountMode;
-     
-     // Use Isolate to calculate word count for active chapter only
-     final count = await ContentManager.calculateWordCountAsync(text, mode: mode);
-     
-     if (!mounted) return;
-     
-     setState(() {
-         // Update cache for the active chapter
-         for (final seg in segmentsData) {
-             if (seg.segmentUUID == selectedSegID) {
-                 for (final chap in seg.chapters) {
-                     if (chap.chapterUUID == selectedChapID) {
-                         // Update the cached value in ChapterData
-                         // Note: We are updating the cache associated with the object which might have stale content string
-                         // but this is the correct "current" count for the UI.
-                         chap.updateCachedWordCount(count, mode);
-                         break;
-                     }
-                 }
-             }
-         }
-         
-         // Re-sum using cached values (Fast)
-         totalWords = _recalculateSumFast();
-     });
+    if (selectedSegID == null || selectedChapID == null) return;
+
+    final text = contentText;
+    final mode = widget.settingsManager.wordCountMode;
+
+    // Use Isolate to calculate word count for active chapter only
+    final count = await ContentManager.calculateWordCountAsync(
+      text,
+      mode: mode,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      // Update cache for the active chapter
+      for (final seg in segmentsData) {
+        if (seg.segmentUUID == selectedSegID) {
+          for (final chap in seg.chapters) {
+            if (chap.chapterUUID == selectedChapID) {
+              // Update the cached value in ChapterData
+              // Note: We are updating the cache associated with the object which might have stale content string
+              // but this is the correct "current" count for the UI.
+              chap.updateCachedWordCount(count, mode);
+              break;
+            }
+          }
+        }
+      }
+
+      // Re-sum using cached values (Fast)
+      totalWords = _recalculateSumFast();
+    });
   }
 
   Future<void> _updateAllWordCounts() async {
     final mode = widget.settingsManager.wordCountMode;
     // Create a list of futures to calculate all in parallel (or batched)
     final List<Future<void>> futures = [];
-    
+
     for (final seg in segmentsData) {
       for (final chap in seg.chapters) {
-         futures.add(ContentManager.calculateWordCountAsync(chap.chapterContent, mode: mode).then((count) {
-             chap.updateCachedWordCount(count, mode);
-         }));
+        futures.add(
+          ContentManager.calculateWordCountAsync(
+            chap.chapterContent,
+            mode: mode,
+          ).then((count) {
+            chap.updateCachedWordCount(count, mode);
+          }),
+        );
       }
     }
-    
+
     await Future.wait(futures);
-    
+
     if (mounted) {
       setState(() {
         totalWords = _recalculateSumFast();
@@ -406,7 +437,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     int sum = 0;
     for (final seg in segmentsData) {
       for (final chap in seg.chapters) {
-        // use getWordCount for reading. It will use cache if available. 
+        // use getWordCount for reading. It will use cache if available.
         // If cache is null (first load and async hasn't finished), it might calc sync.
         // But we try to rely on async updates.
         sum += chap.getWordCount(widget.settingsManager.wordCountMode);
@@ -414,20 +445,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
     return sum;
   }
-  
+
   void _onSettingsChanged() {
     // When settings change (e.g. counting mode), recalculate all
     _updateAllWordCounts();
   }
-  
+
   // WindowListener 實作
-  
+
   /// 初始化視窗管理器
   Future<void> _initWindowManager() async {
     // 設置視窗為可以被攔截關閉
     await windowManager.setPreventClose(true);
   }
-  
+
   @override
   void onWindowClose() async {
     // 處理視窗關閉事件
@@ -436,93 +467,118 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       await windowManager.destroy();
     }
   }
-  
+
   @override
   void onWindowFocus() {
     // 視窗獲得焦點時可以做一些事情（暫時不需要）
   }
-  
+
   @override
   void onWindowBlur() {
     // 視窗失去焦點時可以做一些事情（暫時不需要）
   }
-  
+
   @override
   void onWindowMaximize() {}
-  
+
   @override
   void onWindowUnmaximize() {}
-  
+
   @override
   void onWindowMinimize() {}
-  
+
   @override
   void onWindowRestore() {}
-  
+
   @override
   void onWindowResize() {}
-  
+
   @override
   void onWindowMove() {}
-  
+
   @override
   void onWindowEnterFullScreen() {}
-  
+
   @override
   void onWindowLeaveFullScreen() {}
-  
+
   @override
   void onWindowEvent(String eventName) {}
-  
+
   @override
   void onWindowDocked() {}
-  
+
   @override
   void onWindowUndocked() {}
-  
-
 
   // MARK: 主體建構方法
   @override
   Widget build(BuildContext context) {
     // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
-    final bool isApple = !kIsWeb && (defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS);
+    final bool isApple =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.iOS);
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
-        SingleActivator(LogicalKeyboardKey.keyN, control: !isApple, meta: isApple): const NewFileIntent(),
-        SingleActivator(LogicalKeyboardKey.keyO, control: !isApple, meta: isApple): const OpenFileIntent(),
-        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple): const SaveFileIntent(),
-        SingleActivator(LogicalKeyboardKey.keyF, control: !isApple, meta: isApple): const FindIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyN,
+          control: !isApple,
+          meta: isApple,
+        ): const NewFileIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyO,
+          control: !isApple,
+          meta: isApple,
+        ): const OpenFileIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyS,
+          control: !isApple,
+          meta: isApple,
+        ): const SaveFileIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyF,
+          control: !isApple,
+          meta: isApple,
+        ): const FindIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          NewFileIntent: CallbackAction<NewFileIntent>(onInvoke: (intent) => _newProject()),
-          OpenFileIntent: CallbackAction<OpenFileIntent>(onInvoke: (intent) => _openProject()),
-          SaveFileIntent: CallbackAction<SaveFileIntent>(onInvoke: (intent) => _saveProject()),
-          FindIntent: CallbackAction<FindIntent>(onInvoke: (intent) {
-            setState(() {
-              // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
-              if (slidePageIndexNow < slidePageCounts) {
-                slidePageIndexNow = 114514;
-                showFindReplaceWindow = true;
-              } else {
-                // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
-                if (!showFindReplaceWindow) {
-                  // 打開搜尋窗口時，重置搜尋狀態但保留編輯器的光標位置
-                  _currentMatchIndex = -1;
+          NewFileIntent: CallbackAction<NewFileIntent>(
+            onInvoke: (intent) => _newProject(),
+          ),
+          OpenFileIntent: CallbackAction<OpenFileIntent>(
+            onInvoke: (intent) => _openProject(),
+          ),
+          SaveFileIntent: CallbackAction<SaveFileIntent>(
+            onInvoke: (intent) => _saveProject(),
+          ),
+          FindIntent: CallbackAction<FindIntent>(
+            onInvoke: (intent) {
+              setState(() {
+                // 如果當前不在編輯器頁面，切換到編輯器頁面並顯示浮動視窗
+                if (slidePageIndexNow < slidePageCounts) {
+                  slidePageIndexNow = 114514;
+                  showFindReplaceWindow = true;
+                } else {
+                  // 如果已經在編輯器頁面，切換浮動視窗的顯示狀態
+                  if (!showFindReplaceWindow) {
+                    // 打開搜尋窗口時，重置搜尋狀態但保留編輯器的光標位置
+                    _currentMatchIndex = -1;
+                  }
+                  showFindReplaceWindow = !showFindReplaceWindow;
                 }
-                showFindReplaceWindow = !showFindReplaceWindow;
-              }
-            });
-            return null;
-          }),
+              });
+              return null;
+            },
+          ),
         },
         child: PopScope(
           canPop: false,
           onPopInvokedWithResult: (bool didPop, dynamic result) async {
             if (didPop) return;
-            
+
             final shouldPop = await _handleExit();
             if (shouldPop && context.mounted) {
               Navigator.of(context).pop();
@@ -545,10 +601,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       ),
     );
   }
-  
+
   // AppBar 建構方法
   PreferredSizeWidget _buildAppBar() {
-    final double iconSize = widget.settingsManager.fontSize + 10;
+    final double iconSize = widget.settingsManager.fontSize + 8;
 
     return AppBar(
       leading: Padding(
@@ -577,7 +633,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-            
+
               // 檔案選單
               PopupMenuButton<String>(
                 icon: const Icon(Icons.folder),
@@ -628,7 +684,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   ),
                 ],
               ),
-              
+
               // 編輯工具
               IconButton(
                 iconSize: iconSize,
@@ -654,7 +710,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 onPressed: () => _performEditorAction("paste"),
                 tooltip: "Paste",
               ),
-              
+
               IconButton(
                 iconSize: iconSize,
                 icon: const Icon(Icons.undo),
@@ -677,7 +733,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 child: IconButton(
                   iconSize: iconSize,
                   icon: Icon(
-                    showPunctuationPanel ? Icons.keyboard_hide : Icons.keyboard_alt,
+                    showPunctuationPanel
+                        ? Icons.keyboard_hide
+                        : Icons.keyboard_alt,
                   ),
                   color: showPunctuationPanel
                       ? Theme.of(context).colorScheme.onPrimaryContainer
@@ -726,7 +784,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   tooltip: showFindReplaceWindow ? "關閉搜尋" : "搜尋",
                 ),
               ),
-              
+
               const SizedBox(width: 8),
             ],
           ),
@@ -742,14 +800,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildMobileLayout() {
     // 檢查是否在編輯器頁面（slidePageIndexNow > (slidePageCounts - 1) 表示編輯器）
     bool isEditorMode = slidePageIndexNow > (slidePageCounts - 1);
-    
+
     return Scaffold(
       body: IndexedStack(
-        index: isEditorMode ? 1 : 0,  // 0: 功能頁面, 1: 編輯器
-        children: [
-          _buildMobileFunctionPage(),
-          _buildEditor(),
-        ],
+        index: isEditorMode ? 1 : 0, // 0: 功能頁面, 1: 編輯器
+        children: [_buildMobileFunctionPage(), _buildEditor()],
       ),
       bottomSheet: null,
       bottomNavigationBar: Column(
@@ -761,11 +816,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             onDestinationSelected: (index) {
               // 在切換前同步編輯器內容
               _syncEditorToSelectedChapter();
-              
+
               setState(() {
                 if (index == 0) {
                   // 切換到功能頁面，保持當前的功能選項
-                  if (slidePageIndexNow > (slidePageCounts - 1)) slidePageIndexNow = 0; // 如果在編輯器，切回第一個功能
+                  if (slidePageIndexNow > (slidePageCounts - 1))
+                    slidePageIndexNow = 0; // 如果在編輯器，切回第一個功能
                 } else {
                   // 切換到編輯器
                   slidePageIndexNow = 114514; // 使用 114514 作為編輯器的標識
@@ -773,26 +829,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               });
             },
             destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard),
-                label: "功能",
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.edit_note),
-                label: "編輯器",
-              ),
+              NavigationDestination(icon: Icon(Icons.dashboard), label: "功能"),
+              NavigationDestination(icon: Icon(Icons.edit_note), label: "編輯器"),
             ],
           ),
         ],
       ),
     );
   }
-  
+
   // 手機狀態列 - 顯示專案資訊
   Widget _buildMobileStatusBar() {
     String projectName = currentProject?.nameWithoutExtension ?? "未命名專案";
     if (hasUnsavedChanges) projectName += "*";
-    
+
     String currentPosition = "";
     if (selectedSegID != null && selectedChapID != null) {
       for (final seg in segmentsData) {
@@ -807,24 +857,29 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         }
       }
     }
-    
-    final displayText = currentPosition.isNotEmpty 
-        ? "$projectName | $currentPosition" 
+
+    final displayText = currentPosition.isNotEmpty
+        ? "$projectName | $currentPosition"
         : projectName;
-    
-    String saveTimeStr = _lastSavedTime != null 
-        ? DateFormat("HH:mm").format(_lastSavedTime!) 
+
+    String saveTimeStr = _lastSavedTime != null
+        ? DateFormat("HH:mm").format(_lastSavedTime!)
         : "--:--";
-        
-    final int currentWords = ContentManager.calculateWordCount(contentText, mode: widget.settingsManager.wordCountMode);
-    
+
+    final int currentWords = ContentManager.calculateWordCount(
+      contentText,
+      mode: widget.settingsManager.wordCountMode,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         border: Border(
           top: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withOpacity(0.5),
             width: 1,
           ),
         ),
@@ -835,15 +890,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             child: Row(
               children: [
                 Icon(
-                  Icons.description, 
-                  size: widget.settingsManager.fontSize, 
-                  color: Theme.of(context).colorScheme.primary
+                  Icons.description,
+                  size: widget.settingsManager.fontSize,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: _ScrollingText(
                     text: displayText,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
               ],
@@ -851,15 +906,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           ),
           const SizedBox(width: 8),
           Icon(
-            Icons.access_time, 
-            size: widget.settingsManager.fontSize, 
-            color: Theme.of(context).colorScheme.onSurfaceVariant
+            Icons.access_time,
+            size: widget.settingsManager.fontSize,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 4),
-          Text(
-            saveTimeStr,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text(saveTimeStr, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -879,7 +931,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       ),
     );
   }
-  
+
   // 手機功能頁面（包含功能切換和內容）
   Widget _buildMobileFunctionPage() {
     return Column(
@@ -904,27 +956,25 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < 10; i++)
-                  _buildMobileNavigationChip(i),
+                for (int i = 0; i < slidePageCounts; i++) _buildMobileNavigationChip(i),
               ],
             ),
           ),
         ),
-        
+
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePageIndexNow.clamp(0, (slidePageCounts - 1)), // 確保索引在有效範圍內
+            index: slidePageIndexNow.clamp(0,(slidePageCounts - 1)), // 確保索引在有效範圍內
             children: [
-              for (int i = 0; i < 10; i++)
-                _buildSpecificPageContent(i),
+              for (int i = 0; i < slidePageCounts; i++) _buildSpecificPageContent(i),
             ],
           ),
         ),
       ],
     );
   }
-  
+
   // 手機導航晶片
   Widget _buildMobileNavigationChip(int index) {
     final List<Map<String, dynamic>> functions = [
@@ -942,10 +992,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       {"icon": Icons.settings, "label": "設定"},
       {"icon": Icons.info, "label": "關於"},
     ];
-    
+
     final function = functions[index];
     final isSelected = slidePageIndexNow == index;
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       child: FilterChip(
@@ -954,7 +1004,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           if (selected) {
             // 在切換前同步編輯器內容
             _syncEditorToSelectedChapter();
-            
+
             setState(() {
               slidePageIndexNow = index;
             });
@@ -963,20 +1013,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         avatar: Icon(
           function["icon"],
           size: widget.settingsManager.fontSize + 4,
-          color: isSelected 
-            ? Theme.of(context).colorScheme.onSecondaryContainer
-            : Theme.of(context).colorScheme.onSurface,
+          color: isSelected
+              ? Theme.of(context).colorScheme.onSecondaryContainer
+              : Theme.of(context).colorScheme.onSurface,
         ),
         label: Text(
           function["label"],
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          ),
+          style: Theme.of(context).textTheme.labelSmall
         ),
-        backgroundColor: isSelected 
-          ? Theme.of(context).colorScheme.secondaryContainer
-          : null,
+        backgroundColor: isSelected
+            ? Theme.of(context).colorScheme.secondaryContainer
+            : null,
         selectedColor: Theme.of(context).colorScheme.secondaryContainer,
         checkmarkColor: Theme.of(context).colorScheme.onSecondaryContainer,
       ),
@@ -1032,12 +1079,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     onDestinationSelected: (index) {
                       // 在切換前同步編輯器內容
                       _syncEditorToSelectedChapter();
-                      
+
                       setState(() {
                         slidePageIndexNow = index;
                       });
                     },
                     labelType: NavigationRailLabelType.all,
+                    selectedLabelTextStyle: Theme.of(context).textTheme.displaySmall,
+                    unselectedLabelTextStyle: Theme.of(context).textTheme.displaySmall,
                     backgroundColor: Theme.of(context).colorScheme.surface,
                     destinations: const [
                       NavigationRailDestination(
@@ -1096,25 +1145,26 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   ),
                 ),
               ),
-              
+
               // 垂直分隔線
               const VerticalDivider(thickness: 1, width: 1),
-              
+
               // 主要內容區域
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final double maxWidth = constraints.maxWidth;
-                    // 計算側邊欄寬度，並限制在 360px - 40% 之間
-                    final double minSidebarWidth = max(maxWidth*0.2, 360);
-                    final double maxSidebarWidth = max(maxWidth*0.4, 360);
+                    // 計算側邊欄寬度，並限制在 400px - 40% 之間
+                    final double minSidebarWidth = max(maxWidth * 0.2, 400);
+                    final double maxSidebarWidth = max(maxWidth * 0.4, 400);
                     // 確保最大寬度至少能容納最小寬度
-                    final double effectiveMaxWidth = maxSidebarWidth < minSidebarWidth ? minSidebarWidth : maxSidebarWidth;
-                    
-                    final double sidebarWidth = (maxWidth * _sidebarWidthRatio).clamp(
-                      minSidebarWidth, 
-                      effectiveMaxWidth
-                    );
+                    final double effectiveMaxWidth =
+                        maxSidebarWidth < minSidebarWidth
+                        ? minSidebarWidth
+                        : maxSidebarWidth;
+
+                    final double sidebarWidth = (maxWidth * _sidebarWidthRatio)
+                        .clamp(minSidebarWidth, effectiveMaxWidth);
 
                     return Row(
                       children: [
@@ -1126,7 +1176,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                             child: _buildPageContent(),
                           ),
                         ),
-                        
+
                         // 垂直分隔線 (可拖曳)
                         MouseRegion(
                           cursor: SystemMouseCursors.resizeColumn,
@@ -1136,14 +1186,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                               setState(() {
                                 // 根據像素變化計算新的寬度
                                 double currentWidth = sidebarWidth;
-                                double newWidth = currentWidth + details.delta.dx;
-                                
+                                double newWidth =
+                                    currentWidth + details.delta.dx;
+
                                 // 轉換回比例並限制
                                 double newRatio = newWidth / maxWidth;
                                 double minRatio = minSidebarWidth / maxWidth;
                                 double maxRatio = effectiveMaxWidth / maxWidth;
-                                
-                                _sidebarWidthRatio = newRatio.clamp(minRatio, maxRatio);
+
+                                _sidebarWidthRatio = newRatio.clamp(
+                                  minRatio,
+                                  maxRatio,
+                                );
                               });
                             },
                             child: Container(
@@ -1151,18 +1205,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                               color: Theme.of(context).colorScheme.surface,
                               alignment: Alignment.center,
                               child: VerticalDivider(
-                                thickness: 1, 
+                                thickness: 1,
                                 width: 1,
-                                color: Theme.of(context).colorScheme.outlineVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outlineVariant,
                               ),
                             ),
                           ),
                         ),
-                        
+
                         // 右側編輯器
-                        Expanded(
-                          child: _buildEditor(),
-                        ),
+                        Expanded(child: _buildEditor()),
                       ],
                     );
                   },
@@ -1171,23 +1225,25 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             ],
           ),
         ),
-        
+
         // 桌面狀態列
         _buildDesktopStatusBar(),
       ],
     );
   }
-  
+
   // 桌面狀態列
   Widget _buildDesktopStatusBar() {
     // 復用手機版的狀態列邏輯，但為了程式碼清晰，獨立出一個方法
     // 在未來可以在這裡添加桌面版特有的資訊（如編碼格式、游標位置等）
     return _buildMobileStatusBar();
   }
-  
+
   // 獲取 NavigationRail 的選中索引
   int _getNavigationIndex() {
-    return slidePageIndexNow > (slidePageCounts - 1) ? 0 : slidePageIndexNow.clamp(0, (slidePageCounts - 1));
+    return slidePageIndexNow > (slidePageCounts - 1)
+        ? 0
+        : slidePageIndexNow.clamp(0, (slidePageCounts - 1));
   }
 
   // 頁面內容
@@ -1197,11 +1253,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       child: _buildPageView(),
     );
   }
-  
+
   // 頁面視圖
   Widget _buildPageView() {
     int pageIndex = slidePageIndexNow > (slidePageCounts - 1) ? 0 : slidePageIndexNow; // 如果在編輯器模式，預設顯示第一頁
-    
+
     switch (pageIndex) {
       case 0:
         return _buildWelcomeView();
@@ -1233,7 +1289,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         return Center(child: Text("Page ${pageIndex + 1}"));
     }
   }
-  
+
   // 編輯器
   Widget _buildEditor() {
     return Container(
@@ -1250,14 +1306,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 });
               },
             ),
-            
+
           // 搜尋列（當開啟時）- 放在標點符號列下方
           if (showFindReplaceWindow)
             FindReplaceBar(
               findController: findController,
               replaceController: replaceController,
               options: findReplaceOptions,
-              currentMatchIndex: _searchMatches.isNotEmpty ? _currentMatchIndex : null,
+              currentMatchIndex: _searchMatches.isNotEmpty
+                  ? _currentMatchIndex
+                  : null,
               totalMatches: _searchMatches.length,
               onFindNext: (findText, replaceText, options) async {
                 await performFind(
@@ -1344,9 +1402,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   final text = textController.text;
                   if (text.isNotEmpty) {
                     // Async search
-                    final matches = await findAllMatchesAsync(text, findText, options);
+                    final matches = await findAllMatchesAsync(
+                      text,
+                      findText,
+                      options,
+                    );
                     if (!mounted) return;
-                    
+
                     setState(() {
                       _searchMatches = matches;
                       // 如果當前選中的匹配項仍然有效，保持它
@@ -1380,7 +1442,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               },
             ),
 
-
           // 文本編輯器 - 使用 Expanded 填充剩餘空間
           Expanded(
             child: Container(
@@ -1392,8 +1453,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 expands: true,
                 decoration: InputDecoration(
                   hintText: "在此輸入您的故事內容...",
-                  hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  hintStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.6),
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1404,7 +1467,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.5),
                     ),
                   ),
                   focusedBorder: OutlineInputBorder(
@@ -1415,12 +1480,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                     ),
                   ),
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+                  fillColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerLowest,
                   contentPadding: const EdgeInsets.all(16),
                 ),
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  height: 1.6,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(height: 1.6),
               ),
             ),
           ),
@@ -1432,7 +1499,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Widget _buildWelcomeView() {
     return const WelcomeModule.WelcomeView();
   }
-  
+
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
     return BaseInfoModule.BaseInfoView(
@@ -1448,7 +1515,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
     );
   }
-  
+
   Widget _buildChapterSelectionView() {
     return ChapterModule.ChapterSelectionView(
       segments: segmentsData,
@@ -1459,7 +1526,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onSegmentsChanged: (updatedSegments) {
         // 先存：總是嘗試保存當前編輯器內容（如果有選中的章節）
         _syncEditorToSelectedChapter();
-        
+
         // 建立內容映射表 (UUID -> Content)，確保從 ChapterSelectionView 回傳的結構變更不會覆蓋掉實際的內容
         final Map<String, String> contentMap = {};
         final Map<String, int> countMap = {};
@@ -1471,7 +1538,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             countMap[chap.chapterUUID] = chap.getWordCount(mode);
           }
         }
-        
+
         // 將內容回填到 updatedSegments
         for (final seg in updatedSegments) {
           for (final chap in seg.chapters) {
@@ -1483,15 +1550,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             }
           }
         }
-        
+
         // 然後更新 segmentsData
         setState(() {
           segmentsData = updatedSegments;
           totalWords = _recalculateSumFast();
         });
-        
+
         _markAsModified();
-        
+
         // 再讀：這會透過 onContentChanged 自動發生
       },
       onContentChanged: (newContent) {
@@ -1511,22 +1578,22 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onSelectedSegmentChanged: (segmentID) {
         // 先存：無論如何都先保存當前編輯器內容
         _syncEditorToSelectedChapter();
-        
+
         setState(() {
           selectedSegID = segmentID;
         });
       },
       onSelectedChapterChanged: (chapterID) {
-        // 先存：無論如何都先保存當前編輯器內容  
+        // 先存：無論如何都先保存當前編輯器內容
         _syncEditorToSelectedChapter();
-        
+
         setState(() {
           selectedChapID = chapterID;
         });
       },
     );
   }
-  
+
   Widget _buildOutlineView() {
     return OutlineModule.OutlineAdjustView(
       storylines: outlineData,
@@ -1538,7 +1605,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
     );
   }
-  
+
   Widget _buildWorldSettingsView() {
     return WorldSettingsView(
       locations: worldSettingsData,
@@ -1550,7 +1617,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
     );
   }
-  
+
   Widget _buildCharacterSettingsView() {
     return CharacterView(
       initialData: characterData,
@@ -1580,16 +1647,15 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       color: Colors.amber,
     );
   }
-  
+
   Widget _buildGlossaryView() {
     return const GlossaryModule.GlossaryView();
   }
-  
-  
+
   Widget _buildProofreadingView() {
     return const ProofReadingModule.ProofReadingView();
   }
-  
+
   Widget _buildCopilotView() {
     return _buildPlaceholderPage(
       icon: Icons.auto_awesome,
@@ -1605,11 +1671,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       settingsManager: widget.settingsManager,
     );
   }
-  
+
   Widget _buildAboutView() {
     return const AboutModule.AboutView();
   }
-  
+
   // 通用的佔位頁面
   Widget _buildPlaceholderPage({
     required IconData icon,
@@ -1628,26 +1694,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: Icon(
-                icon,
-                size: 64,
-                color: color,
-              ),
+              child: Icon(icon, size: 64, color: color),
             ),
             const SizedBox(height: 24),
             Text(
               title,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+              style: Theme.of(context).textTheme.titleMedium
             ),
             const SizedBox(height: 12),
             Text(
               description,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-              ),
+              style: Theme.of(context).textTheme.labelLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -1668,7 +1725,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       ),
     );
   }
-  
+
   // 檔案操作處理
   void _handleFileAction(String action) {
     switch (action) {
@@ -1698,10 +1755,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   Future<void> _showExportDialog() async {
     final Set<String> selectedModules = {
-      "BaseInfo", "Chapters", "Outline", "WorldSettings", "Characters"
+      "BaseInfo",
+      "Chapters",
+      "Outline",
+      "WorldSettings",
+      "Characters",
     };
     String selectedFormat = "xml";
-    
+
     await showDialog(
       context: context,
       builder: (context) {
@@ -1714,35 +1775,49 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("選擇匯出格式：", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      "選擇匯出格式：",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     Row(
                       children: [
                         Radio<String>(
                           value: "xml",
                           groupValue: selectedFormat,
-                          onChanged: (val) => setDialogState(() => selectedFormat = val!),
+                          onChanged: (val) =>
+                              setDialogState(() => selectedFormat = val!),
                         ),
                         const Text("XML"),
                         const SizedBox(width: 16),
                         Radio<String>(
                           value: "md",
                           groupValue: selectedFormat,
-                          onChanged: (val) => setDialogState(() => selectedFormat = val!),
+                          onChanged: (val) =>
+                              setDialogState(() => selectedFormat = val!),
                         ),
                         const Text("Markdown"),
                       ],
                     ),
                     const Divider(),
-                    const Text("選擇匯出模組：", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      "選擇匯出模組：",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     // Modules checkboxes
-                    ...["BaseInfo", "Chapters", "Outline", "WorldSettings", "Characters"].map((module) {
+                    ...[
+                      "BaseInfo",
+                      "Chapters",
+                      "Outline",
+                      "WorldSettings",
+                      "Characters",
+                    ].map((module) {
                       final displayNames = {
                         "BaseInfo": "故事設定",
                         "Chapters": "章節內容",
                         "Outline": "大綱",
                         "WorldSettings": "世界設定",
-                        "Characters": "角色設定"
+                        "Characters": "角色設定",
                       };
                       return CheckboxListTile(
                         title: Text(displayNames[module] ?? module),
@@ -1780,7 +1855,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 ),
               ],
             );
-          }
+          },
         );
       },
     );
@@ -1789,8 +1864,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Future<void> _exportSelective(Set<String> modules, String format) async {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
-    final defaultName = currentProject?.nameWithoutExtension ?? "MonogatariExport";
-    
+    final defaultName =
+        currentProject?.nameWithoutExtension ?? "MonogatariExport";
+
     await ProjectManager.exportSelective(
       context,
       currentData: currentData,
@@ -1802,51 +1878,59 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onError: _showError,
     );
   }
-  
+
   // 插入文字到編輯器當前位置 (支援所有輸入框)
   void _insertText(String textToInsert) {
     var targetNode = WidgetsBinding.instance.focusManager.primaryFocus;
     EditableTextState? editable;
-    
+
     // 1. 嘗試獲取當前焦點的 EditableTextState
     if (targetNode != null && targetNode.context != null) {
-      editable = targetNode.context!.findAncestorStateOfType<EditableTextState>();
+      editable = targetNode.context!
+          .findAncestorStateOfType<EditableTextState>();
     }
-    
+
     // 2. 如果當前焦點無效，嘗試使用最後一次的焦點
     if (editable == null) {
-      if (_lastFocusedEditableNode != null && 
-          _lastFocusedEditableNode!.context != null && 
+      if (_lastFocusedEditableNode != null &&
+          _lastFocusedEditableNode!.context != null &&
           _lastFocusedEditableNode!.context!.mounted) {
         targetNode = _lastFocusedEditableNode;
         targetNode!.requestFocus();
-        editable = targetNode.context!.findAncestorStateOfType<EditableTextState>();
+        editable = targetNode.context!
+            .findAncestorStateOfType<EditableTextState>();
       }
     }
-    
+
     // 3. 執行插入
     if (editable != null) {
       final oldValue = editable.textEditingValue;
       final text = oldValue.text;
       final selection = oldValue.selection;
-      
+
       String newText;
       int newSelectionIndex;
-      
+
       if (selection.isValid && selection.start >= 0) {
-        newText = text.replaceRange(selection.start, selection.end, textToInsert);
+        newText = text.replaceRange(
+          selection.start,
+          selection.end,
+          textToInsert,
+        );
         newSelectionIndex = selection.start + textToInsert.length;
       } else {
         newText = text + textToInsert;
         newSelectionIndex = newText.length;
       }
-      
-      editable.updateEditingValue(TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: newSelectionIndex),
-        composing: TextRange.empty,
-      ));
-      
+
+      editable.updateEditingValue(
+        TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newSelectionIndex),
+          composing: TextRange.empty,
+        ),
+      );
+
       // 確保焦點回到該輸入框
       if (targetNode != WidgetsBinding.instance.focusManager.primaryFocus) {
         targetNode!.requestFocus();
@@ -1873,15 +1957,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         break;
       case "cut":
         if (textController.selection.isValid) {
-          final selectedText = textController.selection.textInside(textController.text);
+          final selectedText = textController.selection.textInside(
+            textController.text,
+          );
           Clipboard.setData(ClipboardData(text: selectedText));
-          textController.text = textController.selection.textBefore(textController.text) +
+          textController.text =
+              textController.selection.textBefore(textController.text) +
               textController.selection.textAfter(textController.text);
         }
         break;
       case "copy":
         if (textController.selection.isValid) {
-          final selectedText = textController.selection.textInside(textController.text);
+          final selectedText = textController.selection.textInside(
+            textController.text,
+          );
           Clipboard.setData(ClipboardData(text: selectedText));
         }
         break;
@@ -1890,7 +1979,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           if (value?.text != null) {
             final text = textController.text;
             final selection = textController.selection;
-            final newText = text.replaceRange(selection.start, selection.end, value!.text!);
+            final newText = text.replaceRange(
+              selection.start,
+              selection.end,
+              value!.text!,
+            );
             textController.text = newText;
             textController.selection = TextSelection.collapsed(
               offset: selection.start + value.text!.length,
@@ -1903,16 +1996,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         break;
     }
   }
-  
+
   // MARK: - 檔案操作
 
   // 變更追蹤和退出處理
-  
+
   /// 標記內容已修改
   void _markAsModified() {
     setState(() => hasUnsavedChanges = ProjectManager.markAsModified());
   }
-  
+
   /// 標記內容已儲存
   void _markAsSaved() {
     setState(() {
@@ -1920,28 +2013,29 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       _lastSavedTime = DateTime.now();
     });
   }
-  
+
   /// 檢查是否有未儲存的變更
   bool _hasUnsavedChanges() {
     _syncEditorToSelectedChapter();
     return ProjectManager.hasUnsavedChanges(hasUnsavedChanges, currentProject);
   }
-  
+
   /// 處理退出請求
   Future<bool> _handleExit() async {
     return ProjectManager.handleExit(
       context,
       showExitWarning: widget.settingsManager.showExitWarning,
       hasUnsavedChanges: _hasUnsavedChanges(),
-      onDontShowAgainChanged: (val) async => await widget.settingsManager.setShowExitWarning(!val),
+      onDontShowAgainChanged: (val) async =>
+          await widget.settingsManager.setShowExitWarning(!val),
       onSave: () async {
         await _saveProject();
         // Check if save successful (dirty flag cleared)
         if (_hasUnsavedChanges()) throw Exception("Save cancelled or failed");
-      }
+      },
     );
   }
-  
+
   // 檔案操作方法
   Future<void> _newProject() async {
     await ProjectManager.newProject(
@@ -1953,22 +2047,25 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onProjectLoaded: (newProject, newData) {
         // 在 SetState 之前執行耗時計算
         // 注意：為了性能，這裡不再同步計算總字數，設為 0，稍後異步更新
-        final initialState = _calculateInitialState(newData, widget.settingsManager.wordCountMode);
-        
+        final initialState = _calculateInitialState(
+          newData,
+          widget.settingsManager.wordCountMode,
+        );
+
         setState(() {
           currentProject = newProject;
           _applyProjectData(newData, initialState);
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
-        
+
         // 觸發異步字數更新
         _updateAllWordCounts();
       },
       onSave: _saveProject,
     );
   }
-  
+
   Future<void> _openProject() async {
     await ProjectManager.openProject(
       context,
@@ -1977,8 +2074,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onSuccess: _showMessage,
       onError: _showError,
       onProjectLoaded: (projectFile, data) {
-         // 在 SetState 之前執行耗時計算
-        final initialState = _calculateInitialState(data, widget.settingsManager.wordCountMode);
+        // 在 SetState 之前執行耗時計算
+        final initialState = _calculateInitialState(
+          data,
+          widget.settingsManager.wordCountMode,
+        );
 
         setState(() {
           currentProject = projectFile;
@@ -1986,18 +2086,18 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         });
         _markAsSaved();
         setState(() => _lastSavedTime = null);
-        
+
         // 觸發異步字數更新
         _updateAllWordCounts();
       },
       onSave: _saveProject,
     );
   }
-  
+
   Future<void> _saveProject() async {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
-    
+
     await ProjectManager.saveProject(
       context,
       currentProject: currentProject,
@@ -2011,11 +2111,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
     );
   }
-  
+
   Future<void> _saveProjectAs() async {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
-    
+
     await ProjectManager.saveProjectAs(
       context,
       currentProject: currentProject,
@@ -2029,12 +2129,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
     );
   }
-  
+
   Future<void> _exportAs(String extension) async {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
-    final defaultName = currentProject?.nameWithoutExtension ?? "MonogatariExport";
-    
+    final defaultName =
+        currentProject?.nameWithoutExtension ?? "MonogatariExport";
+
     await ProjectManager.exportAs(
       context,
       extension: extension,
@@ -2045,7 +2146,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onError: _showError,
     );
   }
-  
+
   // 同步編輯器內容到選中的章節（先存的部分）
   void _syncEditorToSelectedChapter() {
     if (_isSyncing) return;
@@ -2058,8 +2159,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       updateContentCallback: (newContent) {
         contentText = newContent;
         // 觸發 segmentsData 更新通知
-        setState(() {}); 
-      }
+        setState(() {});
+      },
     );
     _isSyncing = false;
   }
@@ -2076,7 +2177,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       contentText: contentText,
     );
   }
-  
+
   // 輔助方法：應用專案數據到狀態 (改為接收預先計算的狀態)
   void _applyProjectData(ProjectData data, _ProjectInitialState initialState) {
     baseInfoData = data.baseInfoData;
@@ -2084,12 +2185,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     outlineData = data.outlineData;
     worldSettingsData = data.worldSettingsData;
     characterData = data.characterData;
-    
+
     // 設定初始選擇
     selectedSegID = initialState.selectedSegID;
     selectedChapID = initialState.selectedChapID;
     contentText = initialState.contentText;
-    
+
     if (initialState.hasSelection) {
       _isSyncing = true;
       textController.text = contentText;
@@ -2099,22 +2200,26 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       textController.text = "";
       _isSyncing = false;
     }
-    
+
     totalWords = initialState.totalWords;
-    
+
     // Force rebuild of all modules by using keys or ensuring state update
     // Note: Since we are replacing the data objects, didUpdateWidget in children should trigger
   }
 
   // 輔助類別：專案初始狀態
-  static _ProjectInitialState _calculateInitialState(ProjectData data, WordCountMode mode) {
+  static _ProjectInitialState _calculateInitialState(
+    ProjectData data,
+    WordCountMode mode,
+  ) {
     String? segID;
     String? chapID;
     String content = "";
     int words = 0;
     bool hasSel = false;
 
-    if (data.segmentsData.isNotEmpty && data.segmentsData[0].chapters.isNotEmpty) {
+    if (data.segmentsData.isNotEmpty &&
+        data.segmentsData[0].chapters.isNotEmpty) {
       segID = data.segmentsData[0].segmentUUID;
       chapID = data.segmentsData[0].chapters[0].chapterUUID;
       content = data.segmentsData[0].chapters[0].chapterContent;
@@ -2132,14 +2237,14 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       hasSelection: hasSel,
     );
   }
-  
+
   // 訊息處理
   void _showError(String message) {
     setState(() {
       errorMessage = message;
       showingError = true;
     });
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2157,7 +2262,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       ),
     );
   }
-  
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2173,16 +2278,14 @@ class _ScrollingText extends StatefulWidget {
   final String text;
   final TextStyle? style;
 
-  const _ScrollingText({
-    required this.text,
-    this.style,
-  });
+  const _ScrollingText({required this.text, this.style});
 
   @override
   State<_ScrollingText> createState() => _ScrollingTextState();
 }
 
-class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProviderStateMixin {
+class _ScrollingTextState extends State<_ScrollingText>
+    with SingleTickerProviderStateMixin {
   late ScrollController _scrollController;
   late AnimationController _animationController;
   bool _shouldScroll = false;
@@ -2195,7 +2298,7 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
       vsync: this,
       duration: const Duration(seconds: 10), // Adjust speed here
     );
-    
+
     // Check if scrolling is needed after layout
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkScroll();
@@ -2217,7 +2320,7 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
 
   void _checkScroll() {
     if (!mounted) return;
-    
+
     if (_scrollController.hasClients) {
       final maxScroll = _scrollController.position.maxScrollExtent;
       if (maxScroll > 0 && !_shouldScroll) {
@@ -2236,32 +2339,38 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
 
   void _startScrolling() {
     if (!mounted || !_shouldScroll) return;
-    
+
     // Simple scrolling animation
     // Scroll to end
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: Duration(milliseconds: (widget.text.length * 200).clamp(2000, 30000)),
-      curve: Curves.linear,
-    ).then((_) async {
-      if (!mounted) return;
-      // Wait a bit
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-      // Scroll back
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 1000),
-        curve: Curves.easeOut,
-      ).then((_) async {
-        if (!mounted) return;
-        // Wait a bit
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        // Loop
-        _startScrolling();
-      });
-    });
+    _scrollController
+        .animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: Duration(
+            milliseconds: (widget.text.length * 200).clamp(2000, 30000),
+          ),
+          curve: Curves.linear,
+        )
+        .then((_) async {
+          if (!mounted) return;
+          // Wait a bit
+          await Future.delayed(const Duration(seconds: 1));
+          if (!mounted) return;
+          // Scroll back
+          _scrollController
+              .animateTo(
+                0,
+                duration: const Duration(milliseconds: 1000),
+                curve: Curves.easeOut,
+              )
+              .then((_) async {
+                if (!mounted) return;
+                // Wait a bit
+                await Future.delayed(const Duration(seconds: 2));
+                if (!mounted) return;
+                // Loop
+                _startScrolling();
+              });
+        });
   }
 
   @override
@@ -2287,7 +2396,7 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
 
         // If it fits, just return Text
         if (textPainter.size.width <= constraints.maxWidth) {
-           return Text(
+          return Text(
             widget.text,
             style: widget.style,
             overflow: TextOverflow.visible,
@@ -2298,11 +2407,9 @@ class _ScrollingTextState extends State<_ScrollingText> with SingleTickerProvide
         return SingleChildScrollView(
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
-          physics: const NeverScrollableScrollPhysics(), // Disable user scrolling
-          child: Text(
-            widget.text,
-            style: widget.style,
-          ),
+          physics:
+              const NeverScrollableScrollPhysics(), // Disable user scrolling
+          child: Text(widget.text, style: widget.style),
         );
       },
     );

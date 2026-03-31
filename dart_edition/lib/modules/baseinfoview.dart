@@ -37,31 +37,34 @@ class BaseInfoData {
 
   BaseInfoData();
 
-  void recalcNowWords(String content, {WordCountMode mode = WordCountMode.characters}) {
+  void recalcNowWords(
+    String content, {
+    WordCountMode mode = WordCountMode.characters,
+  }) {
     nowWords = ContentManager.calculateWordCount(content, mode: mode);
   }
 
   bool get isEffectivelyEmpty {
     return bookName.trim().isEmpty &&
-           author.trim().isEmpty &&
-           storyType.trim().isEmpty &&
-           intro.trim().isEmpty &&
-           tags.isEmpty;
+        author.trim().isEmpty &&
+        storyType.trim().isEmpty &&
+        intro.trim().isEmpty &&
+        tags.isEmpty;
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is BaseInfoData &&
-           other.bookName == bookName &&
-           other.author == author &&
-           other.purpose == purpose &&
-           other.toRecap == toRecap &&
-           other.storyType == storyType &&
-           other.intro == intro &&
-           _listEquals(other.tags, tags) &&
-           other.latestSave == latestSave &&
-           other.nowWords == nowWords;
+        other.bookName == bookName &&
+        other.author == author &&
+        other.purpose == purpose &&
+        other.toRecap == toRecap &&
+        other.storyType == storyType &&
+        other.intro == intro &&
+        _listEquals(other.tags, tags) &&
+        other.latestSave == latestSave &&
+        other.nowWords == nowWords;
   }
 
   @override
@@ -88,14 +91,20 @@ class BaseInfoData {
   }
 }
 
-
 // MARK: - XML Codec (compatible with the Qt format)
 
 class BaseInfoCodec {
-  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
-    builder.element(name, nest: () {
-      builder.text(_encodeNewlines(value));
-    });
+  static void _writeTextElement(
+    xml.XmlBuilder builder,
+    String name,
+    String value,
+  ) {
+    builder.element(
+      name,
+      nest: () {
+        builder.text(_encodeNewlines(value));
+      },
+    );
   }
 
   static String _readElementText(xml.XmlElement? element) {
@@ -184,31 +193,43 @@ class BaseInfoCodec {
     final isoSave = snapshot.latestSave?.toIso8601String() ?? "";
 
     final builder = xml.XmlBuilder();
-    builder.element("Type", nest: () {
-      builder.element("Name", nest: "BaseInfo");
-      builder.element("General", nest: () {
-        _writeTextElement(builder, "BookName", snapshot.bookName);
-        _writeTextElement(builder, "Author", snapshot.author);
-        _writeTextElement(builder, "Purpose", snapshot.purpose);
-        _writeTextElement(builder, "ToRecap", snapshot.toRecap);
-        _writeTextElement(builder, "StoryType", snapshot.storyType);
-        _writeTextElement(builder, "Intro", snapshot.intro);
-        if (isoSave.isNotEmpty) {
-          builder.element("LatestSave", nest: isoSave);
-        }
-      });
-      builder.element("Tags", nest: () {
-        for (String tag in snapshot.tags) {
-          final trimmed = tag.trim();
-          if (trimmed.isNotEmpty) {
-            _writeTextElement(builder, "Tag", trimmed);
-          }
-        }
-      });
-      builder.element("Stats", nest: () {
-        // Stats can be added here if needed in the future
-      });
-    });
+    builder.element(
+      "Type",
+      nest: () {
+        builder.element("Name", nest: "BaseInfo");
+        builder.element(
+          "General",
+          nest: () {
+            _writeTextElement(builder, "BookName", snapshot.bookName);
+            _writeTextElement(builder, "Author", snapshot.author);
+            _writeTextElement(builder, "Purpose", snapshot.purpose);
+            _writeTextElement(builder, "ToRecap", snapshot.toRecap);
+            _writeTextElement(builder, "StoryType", snapshot.storyType);
+            _writeTextElement(builder, "Intro", snapshot.intro);
+            if (isoSave.isNotEmpty) {
+              builder.element("LatestSave", nest: isoSave);
+            }
+          },
+        );
+        builder.element(
+          "Tags",
+          nest: () {
+            for (String tag in snapshot.tags) {
+              final trimmed = tag.trim();
+              if (trimmed.isNotEmpty) {
+                _writeTextElement(builder, "Tag", trimmed);
+              }
+            }
+          },
+        );
+        builder.element(
+          "Stats",
+          nest: () {
+            // Stats can be added here if needed in the future
+          },
+        );
+      },
+    );
 
     // Indent formatting, consistent with previous behavior
     return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
@@ -218,7 +239,7 @@ class BaseInfoCodec {
   static BaseInfoData? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-      
+
       // Find the <Type> root element
       final typeElement = document.findAllElements("Type").firstOrNull;
       if (typeElement == null) return null;
@@ -232,14 +253,29 @@ class BaseInfoCodec {
       // <General> parsing
       final general = typeElement.findAllElements("General").firstOrNull;
       if (general != null) {
-        data.bookName = _readElementText(general.findAllElements("BookName").firstOrNull);
-        data.author = _readElementText(general.findAllElements("Author").firstOrNull);
-        data.purpose = _readElementText(general.findAllElements("Purpose").firstOrNull);
-        data.toRecap = _readElementText(general.findAllElements("ToRecap").firstOrNull);
-        data.storyType = _readElementText(general.findAllElements("StoryType").firstOrNull);
-        data.intro = _readElementText(general.findAllElements("Intro").firstOrNull);
+        data.bookName = _readElementText(
+          general.findAllElements("BookName").firstOrNull,
+        );
+        data.author = _readElementText(
+          general.findAllElements("Author").firstOrNull,
+        );
+        data.purpose = _readElementText(
+          general.findAllElements("Purpose").firstOrNull,
+        );
+        data.toRecap = _readElementText(
+          general.findAllElements("ToRecap").firstOrNull,
+        );
+        data.storyType = _readElementText(
+          general.findAllElements("StoryType").firstOrNull,
+        );
+        data.intro = _readElementText(
+          general.findAllElements("Intro").firstOrNull,
+        );
 
-        final latestSaveStr = general.findAllElements("LatestSave").firstOrNull?.innerText;
+        final latestSaveStr = general
+            .findAllElements("LatestSave")
+            .firstOrNull
+            ?.innerText;
         if (latestSaveStr != null && latestSaveStr.isNotEmpty) {
           try {
             data.latestSave = DateTime.parse(latestSaveStr);
@@ -263,7 +299,10 @@ class BaseInfoCodec {
       // <Stats> parsing (e.g. NowWords) - if it exists in the XML
       final statsElement = typeElement.findAllElements("Stats").firstOrNull;
       if (statsElement != null) {
-        final nowWordsStr = statsElement.findAllElements("NowWords").firstOrNull?.innerText;
+        final nowWordsStr = statsElement
+            .findAllElements("NowWords")
+            .firstOrNull
+            ?.innerText;
         if (nowWordsStr != null) {
           data.nowWords = int.tryParse(nowWordsStr) ?? 0;
         }
@@ -303,7 +342,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   late BaseInfoData _data;
   bool _isUpdating = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
-  
+
   // 為每個文字欄位創建專用的 TextEditingController
   late final TextEditingController _bookNameController;
   late final TextEditingController _authorController;
@@ -325,9 +364,9 @@ class _BaseInfoViewState extends State<BaseInfoView> {
       ..tags = List.from(widget.data.tags)
       ..latestSave = widget.data.latestSave
       ..nowWords = widget.data.nowWords;
-    
+
     _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
-    
+
     // 初始化各個文字欄位的 controller
     _bookNameController = TextEditingController(text: _data.bookName);
     _authorController = TextEditingController(text: _data.author);
@@ -335,38 +374,38 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     _toRecapController = TextEditingController(text: _data.toRecap);
     _storyTypeController = TextEditingController(text: _data.storyType);
     _introController = TextEditingController(text: _data.intro);
-    
+
     // 添加監聽器
     _bookNameController.addListener(() {
       if (_isUpdating) return;
       _data.bookName = _bookNameController.text;
       _notifyDataChanged();
     });
-    
+
     _authorController.addListener(() {
       if (_isUpdating) return;
       _data.author = _authorController.text;
       _notifyDataChanged();
     });
-    
+
     _purposeController.addListener(() {
       if (_isUpdating) return;
       _data.purpose = _purposeController.text;
       _notifyDataChanged();
     });
-    
+
     _toRecapController.addListener(() {
       if (_isUpdating) return;
       _data.toRecap = _toRecapController.text;
       _notifyDataChanged();
     });
-    
+
     _storyTypeController.addListener(() {
       if (_isUpdating) return;
       _data.storyType = _storyTypeController.text;
       _notifyDataChanged();
     });
-    
+
     _introController.addListener(() {
       if (_isUpdating) return;
       _data.intro = _introController.text;
@@ -377,9 +416,10 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   @override
   void didUpdateWidget(BaseInfoView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // 檢查 data 是否變化（新建或開啟檔案時）
-    if (oldWidget.data != widget.data || oldWidget.wordCountMode != widget.wordCountMode) {
+    if (oldWidget.data != widget.data ||
+        oldWidget.wordCountMode != widget.wordCountMode) {
       setState(() {
         // 更新內部數據
         _data = BaseInfoData()
@@ -392,9 +432,9 @@ class _BaseInfoViewState extends State<BaseInfoView> {
           ..tags = List.from(widget.data.tags)
           ..latestSave = widget.data.latestSave
           ..nowWords = widget.data.nowWords;
-        
+
         _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
-        
+
         // 更新所有 TextEditingController，使用 _isUpdating 標記防止循環通知
         _isUpdating = true;
         _bookNameController.text = _data.bookName;
@@ -458,10 +498,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
             // 標題
             const Align(
               alignment: Alignment.centerLeft,
-              child: HeadlineLargeTitle(
-                icon: Icons.info_outline, 
-                text: "基本資訊"
-              ),
+              child: LargeTitle(icon: Icons.info_outline, text: "基本資訊"),
             ),
             const SizedBox(height: 32),
             // 表單卡片
@@ -554,18 +591,13 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MediumTitle(
-          icon: icon,
-          text: label,
-        ),
+        SmallTitle(icon: icon, text: label),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           decoration: InputDecoration(
             hintText: hint,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
             fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
           ),
@@ -588,18 +620,13 @@ class _BaseInfoViewState extends State<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const MediumTitle(
-          icon: Icons.description,
-          text: "簡介",
-        ),
+        const SmallTitle(icon: Icons.description, text: "簡介"),
         const SizedBox(height: 8),
         TextField(
           controller: _introController,
           decoration: InputDecoration(
             hintText: "輸入作品簡介",
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
             fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
           ),
@@ -623,29 +650,29 @@ class _BaseInfoViewState extends State<BaseInfoView> {
                   color: Theme.of(context).colorScheme.onTertiaryContainer,
                 ),
                 textTheme: Theme.of(context).textTheme.copyWith(
-                  titleMedium: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onTertiaryContainer,
-                  ),
+                  titleSmall: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onTertiaryContainer,
+                      ),
                 ),
               ),
-              child: const MediumTitle(
-                icon: Icons.analytics,
-                text: "統計資訊",
-              ),
+              child: const SmallTitle(icon: Icons.analytics, text: "統計資訊"),
             ),
             const SizedBox(height: 16),
-            
+
             // 最後儲存時間
             _buildStatRow(
               "最後儲存時間",
               _data.latestSave != null
-                ? _dateFormatter.format(_data.latestSave!)
-                : "--:--:--",
+                  ? _dateFormatter.format(_data.latestSave!)
+                  : "--:--:--",
               Icons.access_time,
             ),
-            
+
             const Divider(height: 16),
-            
+
             // 總字數
             _buildStatRow(
               "總字數",
@@ -653,13 +680,9 @@ class _BaseInfoViewState extends State<BaseInfoView> {
               Icons.format_list_numbered,
             ),
             const Divider(height: 16),
-            
+
             // 本章字數
-            _buildStatRow(
-              "本章字數",
-              "${_data.nowWords} 字",
-              Icons.article,
-            ),
+            _buildStatRow("本章字數", "${_data.nowWords} 字", Icons.article),
           ],
         ),
       ),
@@ -674,13 +697,15 @@ class _BaseInfoViewState extends State<BaseInfoView> {
           children: [
             Icon(
               icon,
-              color: Theme.of(context).colorScheme.onTertiaryContainer.withOpacity(0.7),
+              color: Theme.of(
+                context,
+              ).colorScheme.onTertiaryContainer.withOpacity(0.7),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: Theme.of(context).colorScheme.onTertiaryContainer,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -690,14 +715,13 @@ class _BaseInfoViewState extends State<BaseInfoView> {
         ),
         Padding(
           padding: const EdgeInsets.only(left: 36, top: 4),
-          child:
-            Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
-              ),
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
             ),
+          ),
         ),
       ],
     );

@@ -16,11 +16,7 @@ import "package:flutter/material.dart";
 import "../bin/ui_library.dart";
 
 class GlossaryView extends StatefulWidget {
-  const GlossaryView(
-    {
-      super.key,
-    }
-  );
+  const GlossaryView({super.key});
   @override
   State<GlossaryView> createState() => _GlossaryViewState();
 }
@@ -34,10 +30,7 @@ class _GlossaryViewState extends State<GlossaryView> {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            const Icon(
-              Icons.warning_amber_outlined,
-              color: Colors.yellow,
-            ),
+            const Icon(Icons.warning_amber_outlined, color: Colors.yellow),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -64,13 +57,9 @@ class _GlossaryViewState extends State<GlossaryView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 標題
-
             const Align(
               alignment: Alignment.centerLeft,
-              child: HeadlineLargeTitle(
-                icon: Icons.library_books_outlined,
-                text: "詞語參考",
-              ),
+              child: LargeTitle(icon: Icons.library_books_outlined, text: "詞語參考"),
             ),
 
             const SizedBox(height: 32),
@@ -87,10 +76,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const LargeTitle(
-                      icon: Icons.folder,
-                      text: "詞語類別",
-                    ),
+                    const MediumTitle(icon: Icons.folder, text: "詞語類別"),
                   ],
                 ),
               ),
@@ -103,10 +89,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const LargeTitle(
-                      icon: Icons.format_list_bulleted,
-                      text: "詞語條目",
-                    ),
+                    const MediumTitle(icon: Icons.format_list_bulleted, text: "詞語條目"),
                   ],
                 ),
               ),
@@ -119,10 +102,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const LargeTitle(
-                      icon: Icons.library_books,
-                      text: "詞語解釋、例句",
-                    ),
+                    const MediumTitle(icon: Icons.library_books, text: "詞語解釋、例句"),
                   ],
                 ),
               ),

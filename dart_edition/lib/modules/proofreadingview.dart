@@ -16,11 +16,7 @@ import "package:flutter/material.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
 class ProofReadingView extends StatefulWidget {
-  const ProofReadingView(
-    {
-      super.key,
-    }
-  );
+  const ProofReadingView({super.key});
   @override
   State<ProofReadingView> createState() => _ProofReadingViewState();
 }
@@ -35,10 +31,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            const Icon(
-              Icons.warning_amber_outlined,
-              color: Colors.yellow,
-            ),
+            const Icon(Icons.warning_amber_outlined, color: Colors.yellow),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -67,15 +60,12 @@ class _ProofReadingViewState extends State<ProofReadingView> {
             // 標題
             const Align(
               alignment: Alignment.centerLeft,
-              child: HeadlineLargeTitle(
-                icon: Icons.spellcheck,
-                text: "文本校正",
-              ),
+              child: LargeTitle(icon: Icons.spellcheck, text: "文本校正"),
             ),
             const SizedBox(height: 32),
             // 警語
             _buildWarningCard(),
-            
+
             // 校正功能卡片
             Card(
               elevation: 0,
@@ -85,7 +75,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPlaceholderSetting("引號、括號閉合檢查", Icons.data_array_rounded),
+                    _buildPlaceholderSetting(
+                      "引號、括號閉合檢查",
+                      Icons.data_array_rounded,
+                    ),
                     _buildPlaceholderSetting("標點符號格式統一", Icons.edit_note),
                   ],
                 ),
@@ -100,8 +93,14 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildPlaceholderSetting("贅字檢查", Icons.grading),
-                    _buildPlaceholderSetting("形容詞標記", Icons.comment_bank_rounded),
-                    _buildPlaceholderSetting("常用字詞統計", Icons.track_changes_outlined),
+                    _buildPlaceholderSetting(
+                      "形容詞標記",
+                      Icons.comment_bank_rounded,
+                    ),
+                    _buildPlaceholderSetting(
+                      "常用字詞統計",
+                      Icons.track_changes_outlined,
+                    ),
                   ],
                 ),
               ),
@@ -122,7 +121,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
           const SizedBox(width: 12),
           Text(
             title,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             ),
           ),

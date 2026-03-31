@@ -30,6 +30,7 @@
 		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant - Tips"},
 		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant - Tips"},
 		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant - Tips"},
+		{"content": "我恨蛸壺屋。","source": "Heyairu"},
 
 		{"content": "其實這個軟體的原型是用QT-C++開發的，叫做「Novel Assistant」。","source": "Monogatari Assistant - History"},
 
@@ -40,6 +41,13 @@
 		{"content": "我提倡白話文，\n不是讓你寫作出一堆垃圾來！","source": "胡適（1891-1962）並沒有說過這句話"},
 		{"content": "實驗是檢驗真理的唯一試金石。","source":"胡適（1891-1962）"},
 		{"content": "生於憂患，死於空難","source":"徐志摩（1897-1931）並沒有說過這句話"},
-		{"content": "悄悄的我走了，正如我悄悄的來；我揮一揮衣袖，不帶走一片雲彩。","source":"徐志摩（1897-1931）"}
+		{"content": "悄悄的我走了，正如我悄悄的來；我揮一揮衣袖，不帶走一片雲彩。","source":"徐志摩（1897-1931）"},
+
+		{"content": "忠就是真誠。勤就是勤勞奮進。\n宏就是包容寬大。毅就是堅忍卓絕。","source":"板橋高中"},
+		{"content": "看　古今中外　有志者畢竟成功。","source":"板橋高中"},
+
+		{"content": "我能吞下玻璃而不傷身體。","source": "Ethan Mollick"},
+		{"content": "The quick brown fox jumps over the lazy dog.","source": "The Boston Journal"},
+		{"content": "微風迎客，軟語伴茶。","source": "Microsoft"}
 	]
 }

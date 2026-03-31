@@ -110,6 +110,14 @@ class _WelcomeViewState extends State<WelcomeView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    final ButtonStyle TextButtonStyle =
+        (Theme.of(context).textButtonTheme.style ?? const ButtonStyle())
+            .copyWith(
+              textStyle: WidgetStatePropertyAll<TextStyle?>(
+                Theme.of(context).textTheme.labelSmall,
+              ),
+            );
+
     return Scaffold(
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -119,7 +127,7 @@ class _WelcomeViewState extends State<WelcomeView> {
             // 標題
             Text(
               "Welcome to",
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w400,
               ),
@@ -135,7 +143,7 @@ class _WelcomeViewState extends State<WelcomeView> {
               alignment: Alignment.centerRight,
               child: Text(
                 "—— For Refined Editing. Powered by Heyairu.",
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.w400,
                 ),
@@ -158,7 +166,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     ),
                     const SizedBox(height: 12),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: Row(
                         children: const [
@@ -169,7 +177,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                       ),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: Row(
                         children: const [
@@ -180,7 +188,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                       ),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: Row(
                         children: const [
@@ -191,7 +199,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                       ),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: Row(
                         children: const [
@@ -202,7 +210,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                       ),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: Row(
                         children: const [
@@ -229,27 +237,27 @@ class _WelcomeViewState extends State<WelcomeView> {
                     const SmallTitle(icon: Icons.folder, text: "Recent"),
                     SizedBox(height: 12),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: const Text("Example/DemoSlot1"),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: const Text("Example/DemoSlot2"),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: const Text("Example/DemoSlot3"),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: const Text("Example/DemoSlot4"),
                     ),
                     TextButton(
-                      style: Theme.of(context).textButtonTheme.style,
+                      style: TextButtonStyle,
                       onPressed: () {},
                       child: const Text("Example/DemoSlot5"),
                     ),
@@ -270,19 +278,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            "Did you know?",
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                        ],
-                      ),
+                      SmallTitle(icon: Icons.info_outline, text: "Did you know?"),
                       const SizedBox(height: 12),
                       FutureBuilder<_DidYouKnowData>(
                         future: _didYouKnowFuture,
@@ -295,11 +291,11 @@ class _WelcomeViewState extends State<WelcomeView> {
                             children: [
                               Text(
                                 didYouKnowData.content, //Content
-                                style: Theme.of(context).textTheme.titleSmall,
+                                style: Theme.of(context).textTheme.labelLarge
                               ),
                               Text(
                                 "——" + didYouKnowData.source, //Source
-                                style: Theme.of(context).textTheme.bodyMedium
+                                style: Theme.of(context).textTheme.labelMedium
                                     ?.copyWith(
                                       color: Theme.of(
                                         context,

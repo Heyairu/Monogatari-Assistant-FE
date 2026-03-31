@@ -32,7 +32,6 @@ class FindReplaceOptions {
   });
 }
 
-
 // ==================== 自定義 UI Controller ====================
 
 // 自定義 TextEditingController，支持高亮顯示
@@ -54,22 +53,24 @@ class HighlightTextEditingController extends TextEditingController {
 
     final List<TextSpan> spans = [];
     int lastEnd = 0;
-    
+
     // 獲取主題顏色設定
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     // 定義高亮顏色 - 使用高對比度顏色
     // 當前選中項：使用 Tertiary Container 作為背景，這是 Material 3 推薦的對比色用法
-    final Color activeBgColor = currentHighlightColor ?? colorScheme.tertiaryContainer;
-            
+    final Color activeBgColor =
+        currentHighlightColor ?? colorScheme.tertiaryContainer;
+
     // 當前選中項文字顏色：使用對應的 On Color 以確保最大可讀性
-    final Color? activeFgColor = currentHighlightColor != null 
-        ? null 
+    final Color? activeFgColor = currentHighlightColor != null
+        ? null
         : colorScheme.onTertiaryContainer;
 
     // 其他匹配項：使用 Secondary Container，較柔和但仍清晰可見
-    final Color inactiveBgColor = highlightColor ?? colorScheme.secondaryContainer;
-    
+    final Color inactiveBgColor =
+        highlightColor ?? colorScheme.secondaryContainer;
+
     // 其他匹配項文字顏色
     final Color? inactiveFgColor = highlightColor != null
         ? null
@@ -77,37 +78,35 @@ class HighlightTextEditingController extends TextEditingController {
 
     for (int i = 0; i < searchMatches.length; i++) {
       final match = searchMatches[i];
-      
+
       // 添加匹配項之前的普通文本
       if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: style,
-        ));
+        spans.add(
+          TextSpan(text: text.substring(lastEnd, match.start), style: style),
+        );
       }
 
       // 添加高亮的匹配項
       final isCurrentMatch = i == currentMatchIndex;
-      
-      spans.add(TextSpan(
-        text: text.substring(match.start, match.end),
-        style: style?.copyWith(
-          backgroundColor: isCurrentMatch ? activeBgColor : inactiveBgColor,
-          color: isCurrentMatch 
-              ? (activeFgColor ?? style.color) 
-              : (inactiveFgColor ?? style.color),
+
+      spans.add(
+        TextSpan(
+          text: text.substring(match.start, match.end),
+          style: style?.copyWith(
+            backgroundColor: isCurrentMatch ? activeBgColor : inactiveBgColor,
+            color: isCurrentMatch
+                ? (activeFgColor ?? style.color)
+                : (inactiveFgColor ?? style.color),
+          ),
         ),
-      ));
+      );
 
       lastEnd = match.end;
     }
 
     // 添加最後一個匹配項之後的文本
     if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: style,
-      ));
+      spans.add(TextSpan(text: text.substring(lastEnd), style: style));
     }
 
     return TextSpan(children: spans, style: style);
@@ -163,41 +162,42 @@ Future<void> performFind(
   if (findText.isEmpty) {
     return;
   }
-  
+
   final text = textController.text;
   if (text.isEmpty) {
     return;
   }
-  
+
   // 找出所有匹配項 (使用 compute)
   final searchMatches = await findAllMatchesAsync(text, findText, options);
-  
+
   if (searchMatches.isEmpty) {
-    textController.updateHighlights(
-      matches: [],
-      currentIndex: -1,
-    );
+    textController.updateHighlights(matches: [], currentIndex: -1);
     onStateUpdate([], -1); // 更新 UI 以顯示 0 個匹配
     return;
   }
-  
+
   // 取得當前光標位置
   final currentOffset = textController.selection.baseOffset;
-  
+
   int newMatchIndex = currentMatchIndex;
 
   // 如果是第一次搜尋（currentMatchIndex == -1），從當前光標位置開始搜尋
   if (newMatchIndex == -1 || currentMatches.isEmpty) {
     if (forward) {
       // 向下搜尋：找到第一個在光標位置之後的匹配項
-      newMatchIndex = searchMatches.indexWhere((match) => match.start >= currentOffset);
+      newMatchIndex = searchMatches.indexWhere(
+        (match) => match.start >= currentOffset,
+      );
       // 如果沒找到，從頭開始
       if (newMatchIndex == -1) {
         newMatchIndex = 0;
       }
     } else {
       // 向上搜尋：找到最後一個在光標位置之前的匹配項
-      newMatchIndex = searchMatches.lastIndexWhere((match) => match.end <= currentOffset);
+      newMatchIndex = searchMatches.lastIndexWhere(
+        (match) => match.end <= currentOffset,
+      );
       // 如果沒找到，從最後一個開始
       if (newMatchIndex == -1) {
         newMatchIndex = searchMatches.length - 1;
@@ -208,25 +208,26 @@ Future<void> performFind(
     if (forward) {
       newMatchIndex = (newMatchIndex + 1) % searchMatches.length;
     } else {
-      newMatchIndex = (newMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+      newMatchIndex =
+          (newMatchIndex - 1 + searchMatches.length) % searchMatches.length;
     }
   }
-  
+
   // 更新高亮顯示
   textController.updateHighlights(
     matches: searchMatches,
     currentIndex: newMatchIndex,
   );
-  
+
   // 選中當前匹配項
   if (newMatchIndex >= 0 && newMatchIndex < searchMatches.length) {
     final match = searchMatches[newMatchIndex];
     textController.selection = match;
   }
-  
+
   // 請求焦點以顯示選取效果
   editorFocusNode.requestFocus();
-  
+
   onStateUpdate(searchMatches, newMatchIndex); // 更新 UI 以顯示當前匹配數
 }
 
@@ -246,31 +247,32 @@ Future<void> performReplace(
   if (findText.isEmpty) {
     return;
   }
-  
+
   final selection = textController.selection;
   if (!selection.isValid || selection.isCollapsed) {
     // 如果沒有選取，先搜尋
     await performFind(
-      textController, 
-      findText, 
-      options, 
-      editorFocusNode, 
-      currentMatches, 
-      currentMatchIndex, 
-      onStateUpdate, 
-      forward: true
+      textController,
+      findText,
+      options,
+      editorFocusNode,
+      currentMatches,
+      currentMatchIndex,
+      onStateUpdate,
+      forward: true,
     );
     return;
   }
-  
+
   // 檢查當前選取是否對應當前匹配項
   if (currentMatchIndex >= 0 && currentMatchIndex < currentMatches.length) {
     final currentMatch = currentMatches[currentMatchIndex];
-    
+
     // 確認選取範圍與當前匹配項一致
-    if (selection.start == currentMatch.start && selection.end == currentMatch.end) {
+    if (selection.start == currentMatch.start &&
+        selection.end == currentMatch.end) {
       String actualReplaceText = replaceText;
-      
+
       // 如果是正則表達式模式，處理捕獲組
       if (options.useRegexp) {
         try {
@@ -279,73 +281,79 @@ Future<void> performReplace(
           final text = textController.text;
           final matchText = text.substring(selection.start, selection.end);
           final regexMatch = regex.firstMatch(matchText);
-          
+
           if (regexMatch != null) {
             actualReplaceText = replaceText;
             // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
             for (int i = 0; i <= regexMatch.groupCount; i++) {
               final groupValue = regexMatch.group(i) ?? "";
               // 支援 $0, $1, $2, ... 語法
-              actualReplaceText = actualReplaceText.replaceAll("\$$i", groupValue);
+              actualReplaceText = actualReplaceText.replaceAll(
+                "\$$i",
+                groupValue,
+              );
               // 支援 \0, \1, \2, ... 反向引用語法
-              actualReplaceText = actualReplaceText.replaceAll("\\$i", groupValue);
+              actualReplaceText = actualReplaceText.replaceAll(
+                "\\$i",
+                groupValue,
+              );
             }
           }
         } catch (e) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("正則表達式錯誤: $e")),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text("正則表達式錯誤: $e")));
           }
           return;
         }
       }
-      
+
       // 執行取代
       final newText = textController.text.replaceRange(
         selection.start,
         selection.end,
         actualReplaceText,
       );
-      
+
       textController.text = newText;
       textController.selection = TextSelection.collapsed(
         offset: selection.start + actualReplaceText.length,
       );
-      
+
       // 清除搜尋狀態，因為文本已改變
       textController.clearHighlights();
-      
+
       // 通知外部文本更新和狀態重置
       onTextUpdate(newText);
       onStateUpdate([], -1);
-      
+
       // 自動尋找下一個
       // 這裡需要用新的空狀態來調用，因為我們剛剛清除了狀態
       await performFind(
-        textController, 
-        findText, 
-        options, 
-        editorFocusNode, 
-        [], 
-        -1, 
-        onStateUpdate, 
-        forward: true
+        textController,
+        findText,
+        options,
+        editorFocusNode,
+        [],
+        -1,
+        onStateUpdate,
+        forward: true,
       );
       return;
     }
   }
-  
+
   // 如果不匹配，嘗試先搜尋
   await performFind(
-    textController, 
-    findText, 
-    options, 
-    editorFocusNode, 
-    currentMatches, 
-    currentMatchIndex, 
-    onStateUpdate, 
-    forward: true
+    textController,
+    findText,
+    options,
+    editorFocusNode,
+    currentMatches,
+    currentMatchIndex,
+    onStateUpdate,
+    forward: true,
   );
 }
 
@@ -362,21 +370,21 @@ Future<void> performReplaceAll(
   if (findText.isEmpty) {
     return;
   }
-  
+
   final text = textController.text;
   if (text.isEmpty) {
     return;
   }
-  
+
   // 找出所有匹配項 (Async)
   final matches = await findAllMatchesAsync(text, findText, options);
-  
+
   if (matches.isEmpty) {
     return;
   }
-  
+
   String newText = text;
-  
+
   // 如果是正則表達式模式，使用正則表達式替換來支援捕獲組
   if (options.useRegexp) {
     try {
@@ -397,9 +405,9 @@ Future<void> performReplaceAll(
       });
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("正則表達式錯誤: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("正則表達式錯誤: $e")));
       }
       return;
     }
@@ -408,7 +416,7 @@ Future<void> performReplaceAll(
     // matches 必須是按順序排列的 (findAllMatchesSync 返回順序)
     StringBuffer buffer = StringBuffer();
     int lastEnd = 0;
-    
+
     for (final match in matches) {
       // 添加匹配項之前的文字
       if (match.start > lastEnd) {
@@ -419,19 +427,19 @@ Future<void> performReplaceAll(
       // 更新最後處理位置
       lastEnd = match.end;
     }
-    
+
     // 添加最後剩餘的文字
     if (lastEnd < text.length) {
       buffer.write(text.substring(lastEnd));
     }
-    
+
     newText = buffer.toString();
   }
-  
+
   textController.text = newText;
   textController.selection = TextSelection.collapsed(offset: 0);
   textController.clearHighlights();
-  
+
   onTextUpdate(newText);
   onStateUpdate([], -1);
 }
@@ -439,39 +447,49 @@ Future<void> performReplaceAll(
 // ==================== 搜尋功能函數 ====================
 
 /// 找出所有匹配項 (Async)
-Future<List<TextSelection>> findAllMatchesAsync(String text, String findText, FindReplaceOptions options) async {
+Future<List<TextSelection>> findAllMatchesAsync(
+  String text,
+  String findText,
+  FindReplaceOptions options,
+) async {
   if (text.isEmpty || findText.isEmpty) return [];
   // 使用 compute 在背景 isolate 執行計算，避免阻塞 UI
-  return await compute(_findAllMatchesTask, _FindParams(text, findText, options));
+  return await compute(
+    _findAllMatchesTask,
+    _FindParams(text, findText, options),
+  );
 }
 
 /// 找出所有匹配項 (Sync)
-List<TextSelection> findAllMatchesSync(String text, String findText, FindReplaceOptions options) {
+List<TextSelection> findAllMatchesSync(
+  String text,
+  String findText,
+  FindReplaceOptions options,
+) {
   final matches = <TextSelection>[];
-  
+
   if (findText.isEmpty) return matches;
-  
+
   // 如果使用正則表達式
   if (options.useRegexp) {
     try {
       // 正則表達式模式固定啟用大小寫和全半形相符
       final regex = RegExp(findText, caseSensitive: true);
       final regexMatches = regex.allMatches(text);
-      
+
       for (final match in regexMatches) {
-        matches.add(TextSelection(
-          baseOffset: match.start,
-          extentOffset: match.end,
-        ));
+        matches.add(
+          TextSelection(baseOffset: match.start, extentOffset: match.end),
+        );
       }
-      
+
       return matches;
     } catch (e) {
       // 如果正則表達式無效，返回空列表
       return matches;
     }
   }
-  
+
   // 一般搜尋模式：支持略過標點符號和空白字元
   int i = 0;
   while (i < text.length) {
@@ -479,44 +497,44 @@ List<TextSelection> findAllMatchesSync(String text, String findText, FindReplace
     int textIndex = i;
     int patternIndex = 0;
     int matchStart = i;
-    
+
     while (patternIndex < findText.length && textIndex < text.length) {
       final textChar = text[textIndex];
       final patternChar = findText[patternIndex];
-      
+
       // 如果需要略過標點符號，跳過文本中的標點符號
       if (options.ignorePunctuation && isPunctuation(textChar)) {
         textIndex++;
         continue;
       }
-      
+
       // 如果需要略過空白字元，跳過文本中的空白字元
       if (options.ignoreWhitespace && isWhitespace(textChar)) {
         textIndex++;
         continue;
       }
-      
+
       // 如果需要略過標點符號，跳過模式中的標點符號
       if (options.ignorePunctuation && isPunctuation(patternChar)) {
         patternIndex++;
         continue;
       }
-      
+
       // 如果需要略過空白字元，跳過模式中的空白字元
       if (options.ignoreWhitespace && isWhitespace(patternChar)) {
         patternIndex++;
         continue;
       }
-      
+
       // 檢查字元是否匹配
       if (!charsMatch(textChar, patternChar, options)) {
         break;
       }
-      
+
       textIndex++;
       patternIndex++;
     }
-    
+
     // 處理模式結尾可能剩餘的標點符號或空白字元
     while (patternIndex < findText.length) {
       final patternChar = findText[patternIndex];
@@ -528,7 +546,7 @@ List<TextSelection> findAllMatchesSync(String text, String findText, FindReplace
         break;
       }
     }
-    
+
     // 如果所有字元都匹配
     if (patternIndex == findText.length) {
       // 檢查全字匹配
@@ -550,12 +568,11 @@ List<TextSelection> findAllMatchesSync(String text, String findText, FindReplace
           }
         }
       }
-      
-      matches.add(TextSelection(
-        baseOffset: matchStart,
-        extentOffset: textIndex,
-      ));
-      
+
+      matches.add(
+        TextSelection(baseOffset: matchStart, extentOffset: textIndex),
+      );
+
       // 跳過已匹配的範圍，避免重疊匹配
       i = textIndex;
     } else {
@@ -563,7 +580,7 @@ List<TextSelection> findAllMatchesSync(String text, String findText, FindReplace
       i++;
     }
   }
-  
+
   return matches;
 }
 
@@ -573,16 +590,18 @@ bool isWordChar(String char) {
   final code = char.codeUnitAt(0);
   // 字母和數字
   return (code >= 0x0030 && code <= 0x0039) || // 0-9
-         (code >= 0x0041 && code <= 0x005A) || // A-Z
-         (code >= 0x0061 && code <= 0x007A) || // a-z
-         (code >= 0x00C0 && code <= 0x00FF) || // 擴展拉丁字母
-         (code == 0x005F);                      // 底線
+      (code >= 0x0041 && code <= 0x005A) || // A-Z
+      (code >= 0x0061 && code <= 0x007A) || // a-z
+      (code >= 0x00C0 && code <= 0x00FF) || // 擴展拉丁字母
+      (code == 0x005F); // 底線
 }
 
 /// 判斷字元是否為標點符號
 bool isPunctuation(String char) {
   if (char.isEmpty) return false;
-  final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
+  final punctuation = RegExp(
+    r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
+  );
   return punctuation.hasMatch(char);
 }
 
@@ -596,19 +615,19 @@ bool isWhitespace(String char) {
 bool charsMatch(String char1, String char2, FindReplaceOptions options) {
   String c1 = char1;
   String c2 = char2;
-  
+
   // 大小寫正規化
   if (!options.matchCase) {
     c1 = normalizeCase(c1);
     c2 = normalizeCase(c2);
   }
-  
+
   // 全半形正規化
   if (!options.matchWidth) {
     c1 = normalizeWidth(c1);
     c2 = normalizeWidth(c2);
   }
-  
+
   return c1 == c2;
 }
 
@@ -616,53 +635,55 @@ bool charsMatch(String char1, String char2, FindReplaceOptions options) {
 bool textMatches(String text, String pattern, FindReplaceOptions options) {
   String processedText = text;
   String processedPattern = pattern;
-  
+
   if (options.ignoreWhitespace) {
     processedText = processedText.replaceAll(RegExp(r"""\s+"""), "");
     processedPattern = processedPattern.replaceAll(RegExp(r"""\s+"""), "");
   }
-  
+
   if (options.ignorePunctuation) {
-    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
+    final punctuation = RegExp(
+      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
+    );
     processedText = processedText.replaceAll(punctuation, "");
     processedPattern = processedPattern.replaceAll(punctuation, "");
   }
-  
+
   if (!options.matchCase) {
     processedText = normalizeCase(processedText);
     processedPattern = normalizeCase(processedPattern);
   }
-  
+
   // 全半形正規化（當不需要嚴格匹配時）
   if (!options.matchWidth) {
     processedText = normalizeWidth(processedText);
     processedPattern = normalizeWidth(processedPattern);
   }
-  
+
   // 如果需要嚴格匹配全半形，額外檢查
   if (options.matchWidth && !checkWidthMatch(text, pattern)) {
     return false;
   }
-  
+
   return processedText == processedPattern;
 }
 
 /// 檢查全半形是否匹配
 bool checkWidthMatch(String text, String pattern) {
   if (text.length != pattern.length) return false;
-  
+
   for (int i = 0; i < text.length; i++) {
     final textChar = text[i];
     final patternChar = pattern[i];
-    
+
     final textIsFullWidth = isFullWidth(textChar);
     final patternIsFullWidth = isFullWidth(patternChar);
-    
+
     if (textIsFullWidth != patternIsFullWidth) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -672,21 +693,22 @@ bool isFullWidth(String char) {
   final code = char.codeUnitAt(0);
   // 全形字元範圍：0xFF00-0xFFEF (全形ASCII)
   // CJK字元範圍：0x4E00-0x9FFF
-  return (code >= 0xFF00 && code <= 0xFFEF) || (code >= 0x4E00 && code <= 0x9FFF);
+  return (code >= 0xFF00 && code <= 0xFFEF) ||
+      (code >= 0x4E00 && code <= 0x9FFF);
 }
 
 /// 正規化文字大小寫（支援多語言）
 /// 支援：拉丁字母、全形字母、希臘語、西里爾字母等
 String normalizeCase(String text) {
   if (text.isEmpty) return text;
-  
+
   final buffer = StringBuffer();
-  
+
   for (int i = 0; i < text.length; i++) {
     final char = text[i];
     final code = char.codeUnitAt(0);
     String normalized = char;
-    
+
     // 1. 基本拉丁字母大寫 A-Z (U+0041-U+005A) -> 小寫 a-z
     if (code >= 0x0041 && code <= 0x005A) {
       normalized = String.fromCharCode(code + 32);
@@ -703,14 +725,11 @@ String normalizeCase(String text) {
     // 4. 希臘字母帶重音符號大寫 (U+0386, U+0388-U+038F)
     else if (code == 0x0386) {
       normalized = "\u03AC"; // Ά -> ά
-    }
-    else if (code >= 0x0388 && code <= 0x038A) {
+    } else if (code >= 0x0388 && code <= 0x038A) {
       normalized = String.fromCharCode(code + 37); // Έ-Ί -> έ-ί
-    }
-    else if (code == 0x038C) {
+    } else if (code == 0x038C) {
       normalized = "\u03CC"; // Ό -> ό
-    }
-    else if (code >= 0x038E && code <= 0x038F) {
+    } else if (code >= 0x038E && code <= 0x038F) {
       normalized = String.fromCharCode(code + 63); // Ύ-Ώ -> ύ-ώ
     }
     // 5. 西里爾字母大寫 А-Я (U+0410-U+042F) -> 小寫 а-я
@@ -730,17 +749,19 @@ String normalizeCase(String text) {
       }
     }
     // 8. 土耳其語特殊字母
-    else if (code == 0x0130) { // İ -> i
+    else if (code == 0x0130) {
+      // İ -> i
       normalized = "i";
-    }
-    else if (code == 0x0049 && i + 1 < text.length && text.codeUnitAt(i + 1) == 0x0307) {
+    } else if (code == 0x0049 &&
+        i + 1 < text.length &&
+        text.codeUnitAt(i + 1) == 0x0307) {
       // I with dot above -> i
       normalized = "i";
     }
-    
+
     buffer.write(normalized);
   }
-  
+
   return buffer.toString();
 }
 
@@ -748,14 +769,14 @@ String normalizeCase(String text) {
 /// 支援：全形ASCII、全形標點、全形假名、半形假名
 String normalizeWidth(String text) {
   if (text.isEmpty) return text;
-  
+
   final buffer = StringBuffer();
-  
+
   for (int i = 0; i < text.length; i++) {
     final char = text[i];
     final code = char.codeUnitAt(0);
     String normalized = char;
-    
+
     // 1. 全形ASCII字元 (U+FF01-U+FF5E) -> 半形 (U+0021-U+007E)
     // 包含：！"＃＄％＆'（）＊＋，－．／０-９：；＜＝＞？＠Ａ-Ｚ［＼］＾＿｀ａ-ｚ｛｜｝～
     if (code >= 0xFF01 && code <= 0xFF5E) {
@@ -783,63 +804,134 @@ String normalizeWidth(String text) {
       normalized = convertFullKatakanaToHalf(katakana, text, i);
     }
     // 6. 全形中文標點符號轉換
-    else if (code == 0x3001) { // 、-> ,
+    else if (code == 0x3001) {
+      // 、-> ,
       normalized = ",";
-    }
-    else if (code == 0x3002) { // 。-> .
+    } else if (code == 0x3002) {
+      // 。-> .
       normalized = ".";
-    }
-    else if (code == 0x300C) { // 「-> "
+    } else if (code == 0x300C) {
+      // 「-> "
       normalized = "\"";
-    }
-    else if (code == 0x300D) { // 」-> "
+    } else if (code == 0x300D) {
+      // 」-> "
       normalized = "\"";
-    }
-    else if (code == 0x300E) { // 『-> '
+    } else if (code == 0x300E) {
+      // 『-> '
       normalized = "'";
-    }
-    else if (code == 0x300F) { // 』-> '
+    } else if (code == 0x300F) {
+      // 』-> '
       normalized = "'";
-    }
-    else if (code == 0x3014) { // 〔-> [
+    } else if (code == 0x3014) {
+      // 〔-> [
       normalized = "[";
-    }
-    else if (code == 0x3015) { // 〕-> ]
+    } else if (code == 0x3015) {
+      // 〕-> ]
       normalized = "]";
     }
-    
+
     buffer.write(normalized);
   }
-  
+
   return buffer.toString();
 }
 
 /// 將全形片假名轉為半形片假名
 String convertFullKatakanaToHalf(String char, String text, int index) {
   final code = char.codeUnitAt(0);
-  
+
   // 全形片假名 -> 半形片假名映射表
   final Map<int, String> fullToHalfKatakana = {
-    0x30A1: "ｧ", 0x30A2: "ｱ", 0x30A3: "ｨ", 0x30A4: "ｲ", 0x30A5: "ｩ",
-    0x30A6: "ｳ", 0x30A7: "ｪ", 0x30A8: "ｴ", 0x30A9: "ｫ", 0x30AA: "ｵ",
-    0x30AB: "ｶ", 0x30AC: "ｶﾞ", 0x30AD: "ｷ", 0x30AE: "ｷﾞ", 0x30AF: "ｸ",
-    0x30B0: "ｸﾞ", 0x30B1: "ｹ", 0x30B2: "ｹﾞ", 0x30B3: "ｺ", 0x30B4: "ｺﾞ",
-    0x30B5: "ｻ", 0x30B6: "ｻﾞ", 0x30B7: "ｼ", 0x30B8: "ｼﾞ", 0x30B9: "ｽ",
-    0x30BA: "ｽﾞ", 0x30BB: "ｾ", 0x30BC: "ｾﾞ", 0x30BD: "ｿ", 0x30BE: "ｿﾞ",
-    0x30BF: "ﾀ", 0x30C0: "ﾀﾞ", 0x30C1: "ﾁ", 0x30C2: "ﾁﾞ", 0x30C3: "ｯ",
-    0x30C4: "ﾂ", 0x30C5: "ﾂﾞ", 0x30C6: "ﾃ", 0x30C7: "ﾃﾞ", 0x30C8: "ﾄ",
-    0x30C9: "ﾄﾞ", 0x30CA: "ﾅ", 0x30CB: "ﾆ", 0x30CC: "ﾇ", 0x30CD: "ﾈ",
-    0x30CE: "ﾉ", 0x30CF: "ﾊ", 0x30D0: "ﾊﾞ", 0x30D1: "ﾊﾟ", 0x30D2: "ﾋ",
-    0x30D3: "ﾋﾞ", 0x30D4: "ﾋﾟ", 0x30D5: "ﾌ", 0x30D6: "ﾌﾞ", 0x30D7: "ﾌﾟ",
-    0x30D8: "ﾍ", 0x30D9: "ﾍﾞ", 0x30DA: "ﾍﾟ", 0x30DB: "ﾎ", 0x30DC: "ﾎﾞ",
-    0x30DD: "ﾎﾟ", 0x30DE: "ﾏ", 0x30DF: "ﾐ", 0x30E0: "ﾑ", 0x30E1: "ﾒ",
-    0x30E2: "ﾓ", 0x30E3: "ｬ", 0x30E4: "ﾔ", 0x30E5: "ｭ", 0x30E6: "ﾕ",
-    0x30E7: "ｮ", 0x30E8: "ﾖ", 0x30E9: "ﾗ", 0x30EA: "ﾘ", 0x30EB: "ﾙ",
-    0x30EC: "ﾚ", 0x30ED: "ﾛ", 0x30EE: "ﾜ", 0x30EF: "ﾜ", 0x30F0: "ｲ",
-    0x30F1: "ｴ", 0x30F2: "ｦ", 0x30F3: "ﾝ", 0x30F4: "ｳﾞ", 0x30F5: "ｶ",
-    0x30F6: "ｹ", 0x30FB: "･", 0x30FC: "ｰ",
+    0x30A1: "ｧ",
+    0x30A2: "ｱ",
+    0x30A3: "ｨ",
+    0x30A4: "ｲ",
+    0x30A5: "ｩ",
+    0x30A6: "ｳ",
+    0x30A7: "ｪ",
+    0x30A8: "ｴ",
+    0x30A9: "ｫ",
+    0x30AA: "ｵ",
+    0x30AB: "ｶ",
+    0x30AC: "ｶﾞ",
+    0x30AD: "ｷ",
+    0x30AE: "ｷﾞ",
+    0x30AF: "ｸ",
+    0x30B0: "ｸﾞ",
+    0x30B1: "ｹ",
+    0x30B2: "ｹﾞ",
+    0x30B3: "ｺ",
+    0x30B4: "ｺﾞ",
+    0x30B5: "ｻ",
+    0x30B6: "ｻﾞ",
+    0x30B7: "ｼ",
+    0x30B8: "ｼﾞ",
+    0x30B9: "ｽ",
+    0x30BA: "ｽﾞ",
+    0x30BB: "ｾ",
+    0x30BC: "ｾﾞ",
+    0x30BD: "ｿ",
+    0x30BE: "ｿﾞ",
+    0x30BF: "ﾀ",
+    0x30C0: "ﾀﾞ",
+    0x30C1: "ﾁ",
+    0x30C2: "ﾁﾞ",
+    0x30C3: "ｯ",
+    0x30C4: "ﾂ",
+    0x30C5: "ﾂﾞ",
+    0x30C6: "ﾃ",
+    0x30C7: "ﾃﾞ",
+    0x30C8: "ﾄ",
+    0x30C9: "ﾄﾞ",
+    0x30CA: "ﾅ",
+    0x30CB: "ﾆ",
+    0x30CC: "ﾇ",
+    0x30CD: "ﾈ",
+    0x30CE: "ﾉ",
+    0x30CF: "ﾊ",
+    0x30D0: "ﾊﾞ",
+    0x30D1: "ﾊﾟ",
+    0x30D2: "ﾋ",
+    0x30D3: "ﾋﾞ",
+    0x30D4: "ﾋﾟ",
+    0x30D5: "ﾌ",
+    0x30D6: "ﾌﾞ",
+    0x30D7: "ﾌﾟ",
+    0x30D8: "ﾍ",
+    0x30D9: "ﾍﾞ",
+    0x30DA: "ﾍﾟ",
+    0x30DB: "ﾎ",
+    0x30DC: "ﾎﾞ",
+    0x30DD: "ﾎﾟ",
+    0x30DE: "ﾏ",
+    0x30DF: "ﾐ",
+    0x30E0: "ﾑ",
+    0x30E1: "ﾒ",
+    0x30E2: "ﾓ",
+    0x30E3: "ｬ",
+    0x30E4: "ﾔ",
+    0x30E5: "ｭ",
+    0x30E6: "ﾕ",
+    0x30E7: "ｮ",
+    0x30E8: "ﾖ",
+    0x30E9: "ﾗ",
+    0x30EA: "ﾘ",
+    0x30EB: "ﾙ",
+    0x30EC: "ﾚ",
+    0x30ED: "ﾛ",
+    0x30EE: "ﾜ",
+    0x30EF: "ﾜ",
+    0x30F0: "ｲ",
+    0x30F1: "ｴ",
+    0x30F2: "ｦ",
+    0x30F3: "ﾝ",
+    0x30F4: "ｳﾞ",
+    0x30F5: "ｶ",
+    0x30F6: "ｹ",
+    0x30FB: "･",
+    0x30FC: "ｰ",
   };
-  
+
   return fullToHalfKatakana[code] ?? char;
 }
 
@@ -851,10 +943,14 @@ void showFindReplaceWindow(
   TextEditingController? findController,
   TextEditingController? replaceController,
   FindReplaceOptions? options,
-  Function(String findText, String replaceText, FindReplaceOptions options)? onFindNext,
-  Function(String findText, String replaceText, FindReplaceOptions options)? onFindPrevious,
-  Function(String findText, String replaceText, FindReplaceOptions options)? onReplace,
-  Function(String findText, String replaceText, FindReplaceOptions options)? onReplaceAll,
+  Function(String findText, String replaceText, FindReplaceOptions options)?
+  onFindNext,
+  Function(String findText, String replaceText, FindReplaceOptions options)?
+  onFindPrevious,
+  Function(String findText, String replaceText, FindReplaceOptions options)?
+  onReplace,
+  Function(String findText, String replaceText, FindReplaceOptions options)?
+  onReplaceAll,
   Function(String findText, FindReplaceOptions options)? onSearchChanged,
   int? currentMatchIndex,
   int? totalMatches,
@@ -888,10 +984,30 @@ class FindReplaceBar extends StatefulWidget {
   final TextEditingController findController;
   final TextEditingController replaceController;
   final FindReplaceOptions options;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindNext;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindPrevious;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplace;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplaceAll;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onFindNext;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onFindPrevious;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onReplace;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onReplaceAll;
   final Function(String findText, FindReplaceOptions options)? onSearchChanged;
   final int? currentMatchIndex;
   final int? totalMatches;
@@ -938,17 +1054,17 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
     final findText = widget.findController.text;
     final hasFullWidth = _containsFullWidth(findText);
     final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
-    
+
     // 如果包含全形字元、標點符號或空格，自動禁用全字拼寫選項
     if ((hasFullWidth || hasPunctuationOrSpace) && widget.options.wholeWord) {
       setState(() {
         widget.options.wholeWord = false;
       });
     }
-    
+
     // 通知搜尋內容變化，讓主視窗更新高亮顯示
     widget.onSearchChanged?.call(findText, widget.options);
-    
+
     // 強制刷新 UI
     if (mounted) {
       setState(() {});
@@ -963,7 +1079,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   // 檢查文字中是否包含全形字元
   bool _containsFullWidth(String text) {
     if (text.isEmpty) return false;
-    
+
     for (int i = 0; i < text.length; i++) {
       int code = text.codeUnitAt(i);
       if ((code >= 0xFF00 && code <= 0xFFEF) ||
@@ -978,12 +1094,14 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   // 檢查文字中是否包含標點符號或空格
   bool _containsPunctuationOrSpace(String text) {
     if (text.isEmpty) return false;
-    
+
     if (RegExp(r"\s").hasMatch(text)) {
       return true;
     }
-    
-    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
+
+    final punctuation = RegExp(
+      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
+    );
     return punctuation.hasMatch(text);
   }
 
@@ -1009,9 +1127,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
             Row(
               children: [
                 // 尋找輸入框
-                Container(
-                  child: Text("搜尋："),
-                ),
+                Container(child: Text("搜尋：")),
                 Expanded(
                   flex: 3,
                   child: SizedBox(
@@ -1021,37 +1137,44 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       decoration: InputDecoration(
                         // labelText: "尋找",
                         border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         isDense: true,
                         filled: true,
-                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                       ),
-                      style: const TextStyle(fontSize: 14),
+                      style: Theme.of(context).textTheme.labelMedium,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                
+
                 // 匹配數量顯示
                 if (widget.totalMatches != null && widget.totalMatches! > 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
                   ),
-                
+
                 const SizedBox(width: 2),
-                
+
                 // 導航按鈕組
                 IconButton(
                   icon: const Icon(Icons.arrow_upward, size: 16),
@@ -1065,7 +1188,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                   color: Theme.of(context).colorScheme.onSurface,
                   tooltip: "上一個",
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_downward, size: 16),
@@ -1079,9 +1205,12 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                   color: Theme.of(context).colorScheme.onSurface,
                   tooltip: "下一個",
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
-                
+
                 // 展開/收合取代欄
                 IconButton(
                   icon: Icon(
@@ -1096,9 +1225,12 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                   color: Theme.of(context).colorScheme.onSurface,
                   tooltip: _isExpanded ? "收合" : "展開取代",
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
-                
+
                 // 選項按鈕
                 IconButton(
                   icon: const Icon(Icons.tune, size: 16),
@@ -1107,24 +1239,25 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       _showOptions = !_showOptions;
                     });
                   },
-                  color: _showOptions 
-                      ? Theme.of(context).colorScheme.primary 
+                  color: _showOptions
+                      ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).colorScheme.onSurface,
                   tooltip: "搜尋選項",
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
               ],
             ),
-            
+
             // 取代列（可展開）
             if (_isExpanded) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Container(
-                    child: Text("取代："),
-                  ),
+                  Container(child: Text("取代：")),
                   // 取代輸入框
                   Expanded(
                     flex: 3,
@@ -1135,17 +1268,22 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                         decoration: InputDecoration(
                           // labelText: "取代為",
                           border: const OutlineInputBorder(),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           isDense: true,
                           filled: true,
-                          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          fillColor: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
                         ),
-                        style: const TextStyle(fontSize: 14),
+                        style: Theme.of(context).textTheme.labelMedium,
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  
+
                   // 取代按鈕
                   ElevatedButton.icon(
                     onPressed: () {
@@ -1156,16 +1294,23 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       );
                     },
                     icon: const Icon(Icons.find_replace, size: 16),
-                    label: const Text("取代", style: TextStyle(fontSize: 12)),
+                    label: Text(
+                      "取代",
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(0, 36),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                      foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.secondaryContainer,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSecondaryContainer,
                     ),
                   ),
                   const SizedBox(width: 4),
-                  
+
                   // 全部取代按鈕
                   ElevatedButton.icon(
                     onPressed: () {
@@ -1176,18 +1321,25 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       );
                     },
                     icon: const Icon(Icons.library_add_check, size: 16),
-                    label: const Text("全部", style: TextStyle(fontSize: 12)),
+                    label: Text(
+                      "全部",
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(0, 36),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-                      foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.tertiaryContainer,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onTertiaryContainer,
                     ),
                   ),
                 ],
               ),
             ],
-            
+
             // 選項區域（可展開）
             if (_showOptions) ...[
               const SizedBox(height: 8),
@@ -1197,13 +1349,16 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                 builder: (context) {
                   final findText = widget.findController.text;
                   final hasFullWidth = _containsFullWidth(findText);
-                  final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
+                  final hasPunctuationOrSpace = _containsPunctuationOrSpace(
+                    findText,
+                  );
                   final useRegexp = widget.options.useRegexp;
-                  
-                  final disableWholeWord = hasFullWidth || hasPunctuationOrSpace || useRegexp;
+
+                  final disableWholeWord =
+                      hasFullWidth || hasPunctuationOrSpace || useRegexp;
                   final disableMatchCase = useRegexp;
                   final disableMatchWidth = useRegexp;
-                  
+
                   return Wrap(
                     spacing: 6,
                     runSpacing: 4,
@@ -1292,7 +1447,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       ),
     );
   }
-  
+
   Widget _buildOptionChip({
     required String label,
     String? tooltip,
@@ -1303,8 +1458,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
     final chip = FilterChip(
       label: Text(
         label,
-        style: TextStyle(
-          fontSize: 11,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: enabled ? null : Theme.of(context).disabledColor,
         ),
@@ -1315,12 +1469,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       labelPadding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
     );
-    
+
     if (tooltip != null) {
-      return Tooltip(
-        message: tooltip,
-        child: chip,
-      );
+      return Tooltip(message: tooltip, child: chip);
     }
     return chip;
   }
@@ -1331,10 +1482,30 @@ class FindReplaceFloatingWindow extends StatefulWidget {
   final TextEditingController findController;
   final TextEditingController replaceController;
   final FindReplaceOptions options;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindNext;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onFindPrevious;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplace;
-  final Function(String findText, String replaceText, FindReplaceOptions options)? onReplaceAll;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onFindNext;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onFindPrevious;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onReplace;
+  final Function(
+    String findText,
+    String replaceText,
+    FindReplaceOptions options,
+  )?
+  onReplaceAll;
   final Function(String findText, FindReplaceOptions options)? onSearchChanged;
   final int? currentMatchIndex;
   final int? totalMatches;
@@ -1356,7 +1527,8 @@ class FindReplaceFloatingWindow extends StatefulWidget {
   });
 
   @override
-  State<FindReplaceFloatingWindow> createState() => _FindReplaceFloatingWindowState();
+  State<FindReplaceFloatingWindow> createState() =>
+      _FindReplaceFloatingWindowState();
 }
 
 class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
@@ -1381,17 +1553,17 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     final findText = widget.findController.text;
     final hasFullWidth = _containsFullWidth(findText);
     final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
-    
+
     // 如果包含全形字元、標點符號或空格，自動禁用全字拼寫選項
     if ((hasFullWidth || hasPunctuationOrSpace) && widget.options.wholeWord) {
       setState(() {
         widget.options.wholeWord = false;
       });
     }
-    
+
     // 通知搜尋內容變化，讓主視窗更新高亮顯示
     widget.onSearchChanged?.call(findText, widget.options);
-    
+
     // 強制刷新 UI
     if (mounted) {
       setState(() {});
@@ -1406,7 +1578,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
   // 檢查文字中是否包含全形字元
   bool _containsFullWidth(String text) {
     if (text.isEmpty) return false;
-    
+
     for (int i = 0; i < text.length; i++) {
       int code = text.codeUnitAt(i);
       // 全形字元的 Unicode 範圍
@@ -1425,14 +1597,16 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
   // 檢查文字中是否包含標點符號或空格
   bool _containsPunctuationOrSpace(String text) {
     if (text.isEmpty) return false;
-    
+
     // 檢查是否包含空白字元
     if (RegExp(r"\s").hasMatch(text)) {
       return true;
     }
-    
+
     // 檢查是否包含標點符號（半形和全形）
-    final punctuation = RegExp(r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""");
+    final punctuation = RegExp(
+      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
+    );
     return punctuation.hasMatch(text);
   }
 
@@ -1461,10 +1635,10 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         width: 80,
                         child: Text(
                           "尋找內容:",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                         ),
                       ),
                       Expanded(
@@ -1474,31 +1648,44 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             controller: widget.findController,
                             decoration: InputDecoration(
                               border: const OutlineInputBorder(),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
                               isDense: true,
                               filled: true,
-                              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              fillColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: Theme.of(context).textTheme.labelSmall,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       // 顯示匹配數量
-                      if (widget.totalMatches != null && widget.totalMatches! > 0)
+                      if (widget.totalMatches != null &&
+                          widget.totalMatches! > 0)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primaryContainer,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
-                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimaryContainer,
+                                ),
                           ),
                         ),
                       const SizedBox(width: 8),
@@ -1576,14 +1763,11 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               _showOptions = !_showOptions;
                             });
                           },
-                          color: _showOptions 
-                              ? Theme.of(context).colorScheme.primary 
+                          color: _showOptions
+                              ? Theme.of(context).colorScheme.primary
                               : Theme.of(context).colorScheme.onSurface,
                           padding: EdgeInsets.zero,
-                          icon: Icon(
-                            Icons.tune,
-                            size: 18,
-                          ),
+                          icon: Icon(Icons.tune, size: 18),
                           tooltip: "搜尋選項",
                         ),
                       ),
@@ -1594,18 +1778,20 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         height: 32,
                         child: IconButton(
                           icon: const Icon(Icons.close, size: 18),
-                          onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
+                          onPressed:
+                              widget.onClose ??
+                              () => Navigator.of(context).pop(),
                           color: Theme.of(context).colorScheme.onSurface,
                           padding: EdgeInsets.zero,
                         ),
                       ),
                     ],
                   ),
-                  
+
                   // 可折疊的取代區域
                   if (_isExpanded) ...[
                     const SizedBox(height: 12),
-                    
+
                     // 取代為列
                     Row(
                       children: [
@@ -1613,10 +1799,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                           width: 80,
                           child: Text(
                             "取代為:",
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
                           ),
                         ),
                         Expanded(
@@ -1626,12 +1814,17 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               controller: widget.replaceController,
                               decoration: InputDecoration(
                                 border: const OutlineInputBorder(),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
                                 isDense: true,
                                 filled: true,
-                                fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                fillColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                               ),
-                              style: const TextStyle(fontSize: 13),
+                              style: Theme.of(context).textTheme.labelSmall,
                             ),
                           ),
                         ),
@@ -1653,8 +1846,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.secondaryContainer,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSecondaryContainer,
                             ),
                             child: Tooltip(
                               message: "取代",
@@ -1680,19 +1877,26 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.tertiaryContainer,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onTertiaryContainer,
                             ),
                             child: Tooltip(
                               message: "全部取代",
-                              child: const Icon(Icons.library_add_check, size: 16),
+                              child: const Icon(
+                                Icons.library_add_check,
+                                size: 16,
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
                   ],
-                  
+
                   // 搜尋選項區域
                   if (_showOptions) ...[
                     const SizedBox(height: 12),
@@ -1703,21 +1907,25 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         // 檢查搜尋框內容
                         final findText = widget.findController.text;
                         final hasFullWidth = _containsFullWidth(findText);
-                        final hasPunctuationOrSpace = _containsPunctuationOrSpace(findText);
+                        final hasPunctuationOrSpace =
+                            _containsPunctuationOrSpace(findText);
                         final useRegexp = widget.options.useRegexp;
-                        
+
                         // 計算禁用狀態
-                        final disableWholeWord = hasFullWidth || hasPunctuationOrSpace || useRegexp;
+                        final disableWholeWord =
+                            hasFullWidth || hasPunctuationOrSpace || useRegexp;
                         final disableMatchCase = useRegexp;
                         final disableMatchWidth = useRegexp;
-                        
+
                         return Wrap(
                           spacing: 8,
                           runSpacing: 4,
                           children: [
                             _buildOptionChip(
                               label: "大小寫需相同",
-                              value: useRegexp ? true : widget.options.matchCase,
+                              value: useRegexp
+                                  ? true
+                                  : widget.options.matchCase,
                               enabled: !disableMatchCase,
                               onChanged: (value) {
                                 setState(() {
@@ -1755,7 +1963,9 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             ),
                             _buildOptionChip(
                               label: "全半形須相符",
-                              value: useRegexp ? true : widget.options.matchWidth,
+                              value: useRegexp
+                                  ? true
+                                  : widget.options.matchWidth,
                               enabled: !disableMatchWidth,
                               onChanged: (value) {
                                 setState(() {
@@ -1797,7 +2007,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
       ],
     );
   }
-  
+
   Widget _buildOptionChip({
     required String label,
     required bool value,
@@ -1807,8 +2017,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     return FilterChip(
       label: Text(
         label,
-        style: TextStyle(
-          fontSize: 11,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: enabled ? null : Theme.of(context).disabledColor,
         ),
       ),

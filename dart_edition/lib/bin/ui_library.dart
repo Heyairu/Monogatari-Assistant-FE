@@ -16,21 +16,17 @@ import "package:flutter/scheduler.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 /// 主題模式枚舉
-enum AppThemeMode {
-  light,
-  dark,
-  system,
-}
+enum AppThemeMode { light, dark, system }
 
 /// 主題管理器 - 管理應用的主題狀態
 class UILibrary extends ChangeNotifier {
   static const String _themePreferenceKey = "app_theme_mode";
   static const String _colorPreferenceKey = "app_theme_color";
-  
+
   AppThemeMode _themeMode = AppThemeMode.system;
   Color _themeColor = Colors.lightBlue; // Default color
   bool _isInitialized = false;
-  
+
   AppThemeMode get themeMode => _themeMode;
   Color get themeColor => _themeColor;
   bool get isInitialized => _isInitialized;
@@ -48,15 +44,17 @@ class UILibrary extends ChangeNotifier {
     "Purple": Colors.purple,
     "Pink": Colors.pink,
   };
-  
+
   /// 初始化主題管理器 - 從儲存中載入主題設定
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+
       // Load Theme Mode
       final savedThemeIndex = prefs.getInt(_themePreferenceKey);
-      if (savedThemeIndex != null && savedThemeIndex >= 0 && savedThemeIndex < AppThemeMode.values.length) {
+      if (savedThemeIndex != null &&
+          savedThemeIndex >= 0 &&
+          savedThemeIndex < AppThemeMode.values.length) {
         _themeMode = AppThemeMode.values[savedThemeIndex];
       }
 
@@ -65,7 +63,6 @@ class UILibrary extends ChangeNotifier {
       if (savedColorValue != null) {
         _themeColor = Color(savedColorValue);
       }
-
     } catch (e) {
       // 如果載入失敗，使用預設值
       _themeMode = AppThemeMode.system;
@@ -75,26 +72,27 @@ class UILibrary extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   /// 獲取實際使用的亮度（考慮系統主題）
   Brightness get effectiveBrightness {
     if (_themeMode == AppThemeMode.system) {
       // 獲取系統主題
-      final brightness = SchedulerBinding.instance.platformDispatcher.platformBrightness;
+      final brightness =
+          SchedulerBinding.instance.platformDispatcher.platformBrightness;
       return brightness;
     }
     return _themeMode == AppThemeMode.dark ? Brightness.dark : Brightness.light;
   }
-  
+
   /// 是否為暗色模式
   bool get isDarkMode => effectiveBrightness == Brightness.dark;
-  
+
   /// 設置主題模式並儲存
   Future<void> setThemeMode(AppThemeMode mode) async {
     if (_themeMode != mode) {
       _themeMode = mode;
       notifyListeners();
-      
+
       // 儲存到 SharedPreferences
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -111,7 +109,7 @@ class UILibrary extends ChangeNotifier {
     if (_themeColor != color) {
       _themeColor = color;
       notifyListeners();
-      
+
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt(_colorPreferenceKey, color.value);
@@ -120,7 +118,7 @@ class UILibrary extends ChangeNotifier {
       }
     }
   }
-  
+
   /// 切換主題
   Future<void> toggleTheme() async {
     switch (_themeMode) {
@@ -173,37 +171,60 @@ class AppTheme {
   /// 生成 TextTheme
   static TextTheme _buildTextTheme(double baseSize) {
     return TextTheme(
-      // L1 +12px
-      displayLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
-      displayMedium: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
-      displaySmall: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
-      headlineLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
-      
-      // L2 +8px
-      headlineMedium: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
-      headlineSmall: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
-      titleLarge: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
-      
-      // L3 +4px
-      titleMedium: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w600),
-      titleSmall: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w600),
-      
-      // Body (base)
-      bodyLarge: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
-      bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
-      
-      // Subtitle/Status -4px
-      bodySmall: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
-      labelLarge: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
-      labelMedium: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
-      labelSmall: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
+      // H1
+      titleLarge: TextStyle(
+        fontSize: baseSize + 12,
+        fontWeight: FontWeight.w900,
+      ),
+      // H2
+      titleMedium: TextStyle(
+        fontSize: baseSize + 8,
+        fontWeight: FontWeight.w800,
+      ),
+      // H3
+      titleSmall: TextStyle(
+        fontSize: baseSize + 4,
+        fontWeight: FontWeight.w700,
+      ),
+      // Large Text
+      labelLarge: TextStyle(
+        fontSize: baseSize + 2,
+        fontWeight: FontWeight.w600,
+      ),
+      bodyLarge: TextStyle(
+        fontSize: baseSize + 2,
+        fontWeight: FontWeight.w600,
+      ),
+      // Medium Text
+      labelMedium: TextStyle(
+        fontSize: baseSize,
+        fontWeight: FontWeight.w600,
+      ),
+      bodyMedium: TextStyle(
+        fontSize: baseSize,
+        fontWeight: FontWeight.w600,
+      ),
+      // Small Text
+      labelSmall: TextStyle(
+        fontSize: baseSize - 2,
+        fontWeight: FontWeight.w600,
+      ),
+      bodySmall: TextStyle(
+        fontSize: baseSize - 2,
+        fontWeight: FontWeight.w600,
+      ),
+      // Nano Text
+        displaySmall: TextStyle(
+          fontSize: baseSize - 4,
+          fontWeight: FontWeight.w600,
+        ),
     );
   }
 
   /// 獲取淺色主題
   static ThemeData getLightTheme(double baseFontSize, Color seedColor) {
     ColorScheme colorScheme;
-    
+
     // 特殊處理灰色：手動構建灰階 ColorScheme
     if (seedColor.value == Colors.grey.value) {
       colorScheme = const ColorScheme.light(
@@ -229,7 +250,7 @@ class AppTheme {
         brightness: Brightness.light,
       );
     }
-    
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -237,9 +258,7 @@ class AppTheme {
       fontFamily: _primaryFontFamily,
       fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
-      iconTheme: IconThemeData(
-        size: baseFontSize + 10,
-      ),
+      iconTheme: IconThemeData(size: baseFontSize + 10),
       cardTheme: const CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -254,11 +273,11 @@ class AppTheme {
       ),
     );
   }
-  
+
   /// 獲取深色主題
   static ThemeData getDarkTheme(double baseFontSize, Color seedColor) {
     ColorScheme colorScheme;
-    
+
     // 特殊處理灰色：手動構建灰階 ColorScheme
     if (seedColor.value == Colors.grey.value) {
       colorScheme = const ColorScheme.dark(
@@ -284,7 +303,7 @@ class AppTheme {
         brightness: Brightness.dark,
       );
     }
-    
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -292,9 +311,7 @@ class AppTheme {
       fontFamily: _primaryFontFamily,
       fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
-      iconTheme: IconThemeData(
-        size: baseFontSize + 10,
-      ),
+      iconTheme: IconThemeData(size: baseFontSize + 10),
       cardTheme: const CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -346,35 +363,11 @@ class _TitleWithIcon extends StatelessWidget {
   }
 }
 
-class HeadlineLargeTitle extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const HeadlineLargeTitle({
-    super.key,
-    required this.icon,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _TitleWithIcon(
-      icon: icon,
-      text: text,
-      textStyle: Theme.of(context).textTheme.headlineLarge,
-    );
-  }
-}
-
 class LargeTitle extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const LargeTitle({
-    super.key,
-    required this.icon,
-    required this.text,
-  });
+  const LargeTitle({super.key, required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -390,11 +383,7 @@ class MediumTitle extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const MediumTitle({
-    super.key,
-    required this.icon,
-    required this.text,
-  });
+  const MediumTitle({super.key, required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -410,11 +399,7 @@ class SmallTitle extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const SmallTitle({
-    super.key,
-    required this.icon,
-    required this.text,
-  });
+  const SmallTitle({super.key, required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -492,9 +477,10 @@ class _AddItemInputState extends State<AddItemInput> {
               isDense: true,
             ),
             onSubmitted: (value) {
-               if (widget.enabled && (widget.allowEmpty || value.trim().isNotEmpty)) {
-                 _handleAdd();
-               }
+              if (widget.enabled &&
+                  (widget.allowEmpty || value.trim().isNotEmpty)) {
+                _handleAdd();
+              }
             },
           ),
         ),
@@ -503,8 +489,9 @@ class _AddItemInputState extends State<AddItemInput> {
           valueListenable: _controller,
           builder: (context, value, child) {
             final text = value.text.trim();
-            final bool canAdd = widget.enabled && (widget.allowEmpty || text.isNotEmpty);
-            
+            final bool canAdd =
+                widget.enabled && (widget.allowEmpty || text.isNotEmpty);
+
             return IconButton(
               onPressed: canAdd ? _handleAdd : null,
               icon: Icon(
@@ -548,9 +535,9 @@ class CardList extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall,
             ),
           ],
         ),
@@ -568,7 +555,9 @@ class CardList extends StatelessWidget {
                 label: Text(item),
                 deleteIcon: const Icon(Icons.close, size: 18),
                 onDeleted: () => onRemove(index),
-                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.secondaryContainer,
               );
             }).toList(),
           ),
@@ -576,10 +565,7 @@ class CardList extends StatelessWidget {
         ],
 
         // 新增項目
-        AddItemInput(
-           title: title,
-           onAdd: onAdd,
-        ),
+        AddItemInput(title: title, onAdd: onAdd),
       ],
     );
   }
@@ -587,45 +573,35 @@ class CardList extends StatelessWidget {
 
 // MARK: - 可拖曳卡片節點
 
-enum DropPosition {
-  before,
-  child,
-  after,
-}
+enum DropPosition { before, child, after }
 
-enum NodeType {
-  root,
-  folder,
-  item,
-  leaf,
-  unknown,
-}
+enum NodeType { root, folder, item, leaf, unknown }
 
 class DraggableCardNode<T extends Object> extends StatelessWidget {
   final T dragData;
   final String nodeId;
   final NodeType nodeType;
-  
+
   // 狀態
   final bool isDragging;
   final bool isThisDragging;
   final bool isDragForbidden;
   final bool isSelected;
-  
+
   // 內容與回調
   final Widget title;
   final Widget? subtitle;
   final Widget? leading;
   final Widget? trailing;
   final VoidCallback? onClicked;
-  
+
   // 拖放回調
   final VoidCallback? onDragStarted;
   final VoidCallback? onDragEnd;
   final bool Function(T data, DropPosition pos)? onWillAccept;
   final void Function(T data, DropPosition pos)? onAccept;
   final double Function(DropPosition pos) getDropZoneSize;
-  
+
   // 樣式
   final double indent;
   final Color? selectedColor;
@@ -641,18 +617,18 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
     this.leading,
     this.trailing,
     this.onClicked,
-    
+
     this.isDragging = false,
     this.isThisDragging = false,
     this.isDragForbidden = false,
     this.isSelected = false,
-    
+
     this.onDragStarted,
     this.onDragEnd,
     this.onWillAccept,
     this.onAccept,
     required this.getDropZoneSize,
-    
+
     this.indent = 0.0,
     this.selectedColor,
     this.baseColor,
@@ -664,13 +640,19 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
     Widget cardContent = Card(
       elevation: 0,
       margin: EdgeInsets.all(0),
-      color: isSelected 
-          ? (selectedColor ?? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3))
+      color: isSelected
+          ? (selectedColor ??
+                Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.3))
           : (baseColor ?? Theme.of(context).colorScheme.surfaceContainerLowest),
       child: ListTile(
         dense: true,
         // ListTile 預設 padding 可能導致對齊問題，這裡根據需求微調
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 0.0),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12.0,
+          vertical: 0.0,
+        ),
         leading: leading,
         title: title,
         subtitle: subtitle,
@@ -716,10 +698,7 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
           ),
         ),
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: cardContent,
-      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: cardContent),
       child: cardContent,
     );
 
@@ -754,7 +733,8 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
     return Expanded(
       flex: (size * 100).toInt(),
       child: DragTarget<T>(
-        onWillAcceptWithDetails: (details) => onWillAccept?.call(details.data, pos) ?? true,
+        onWillAcceptWithDetails: (details) =>
+            onWillAccept?.call(details.data, pos) ?? true,
         onAcceptWithDetails: (details) {
           onAccept?.call(details.data, pos);
         },
@@ -762,7 +742,7 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
           if (candidates.isEmpty) {
             return Container(color: Colors.transparent);
           }
-          
+
           Color color;
           IconData icon;
           if (pos == DropPosition.before) {
@@ -775,16 +755,20 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
             color = Theme.of(context).colorScheme.primary;
             icon = Icons.subdirectory_arrow_right;
           }
-          
+
           return Container(
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.2),
-              border: pos == DropPosition.child 
+              border: pos == DropPosition.child
                   ? Border.all(color: color, width: 2)
                   : Border(
-                      top: pos == DropPosition.before ? BorderSide(color: color, width: 3) : BorderSide.none,
-                      bottom: pos == DropPosition.after ? BorderSide(color: color, width: 3) : BorderSide.none,
-                    )
+                      top: pos == DropPosition.before
+                          ? BorderSide(color: color, width: 3)
+                          : BorderSide.none,
+                      bottom: pos == DropPosition.after
+                          ? BorderSide(color: color, width: 3)
+                          : BorderSide.none,
+                    ),
             ),
             child: Center(child: Icon(icon, color: color)),
           );
@@ -793,6 +777,3 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
     );
   }
 }
-
-
-

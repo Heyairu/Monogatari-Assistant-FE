@@ -26,7 +26,7 @@ class OutlineDragData {
   final String id;
   final OutlineDragType type;
   final int currentIndex;
-  
+
   OutlineDragData({
     required this.id,
     required this.type,
@@ -34,11 +34,7 @@ class OutlineDragData {
   });
 }
 
-enum OutlineDragType {
-  storyline,
-  event,
-  scene,
-}
+enum OutlineDragType { storyline, event, scene }
 
 // MARK: - 資料結構
 
@@ -50,7 +46,7 @@ class StorylineData {
   String memo;
   String conflictPoint; // 衝突點
   List<String> people; // 人物
-  List<String> item;   // 物件
+  List<String> item; // 物件
   String chapterUUID;
 
   StorylineData({
@@ -65,7 +61,8 @@ class StorylineData {
   }) : scenes = scenes ?? [],
        people = people ?? [],
        item = item ?? [],
-       chapterUUID = chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+       chapterUUID =
+           chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
   bool operator ==(Object other) =>
@@ -85,7 +82,7 @@ class StoryEventData {
   String memo;
   String conflictPoint; // 衝突點
   List<String> people; // 人物
-  List<String> item;   // 物件
+  List<String> item; // 物件
   String storyEventUUID;
 
   StoryEventData({
@@ -99,7 +96,8 @@ class StoryEventData {
   }) : scenes = scenes ?? [],
        people = people ?? [],
        item = item ?? [],
-       storyEventUUID = storyEventUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+       storyEventUUID =
+           storyEventUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
   bool operator ==(Object other) =>
@@ -139,7 +137,8 @@ class SceneData {
   }) : people = people ?? [],
        item = item ?? [],
        doingThings = doingThings ?? [],
-       sceneUUID = sceneUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+       sceneUUID =
+           sceneUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
   bool operator ==(Object other) =>
@@ -156,17 +155,24 @@ class SceneData {
 class DragPayload {
   static const String eventPrefix = "EVENT:";
   static const String scenePrefix = "SCENE:";
-  
+
   static String eventString(String id) => eventPrefix + id;
   static String sceneString(String id) => scenePrefix + id;
 }
 
 // MARK: - XML Codec for Outline
 class OutlineCodec {
-  static void _writeTextElement(xml.XmlBuilder builder, String name, String value) {
-    builder.element(name, nest: () {
-      builder.text(_encodeNewlines(value));
-    });
+  static void _writeTextElement(
+    xml.XmlBuilder builder,
+    String name,
+    String value,
+  ) {
+    builder.element(
+      name,
+      nest: () {
+        builder.text(_encodeNewlines(value));
+      },
+    );
   }
 
   static String _readElementText(xml.XmlElement? element) {
@@ -226,112 +232,160 @@ class OutlineCodec {
 
   static String? saveXML(List<StorylineData> storylines) {
     if (storylines.isEmpty) return null;
-    
+
     final builder = xml.XmlBuilder();
-    builder.element("Type", nest: () {
-      builder.element("Name", nest: "Outline");
-      
-      for (final sl in storylines) {
-        builder.element("Storyline", attributes: {
-          "Name": sl.storylineName,
-          "Type": sl.storylineType,
-          "UUID": sl.chapterUUID,
-        }, nest: () {
-          if (sl.memo.isNotEmpty) {
-            _writeTextElement(builder, "Memo", sl.memo);
-          }
-          if (sl.conflictPoint.isNotEmpty) {
-            _writeTextElement(builder, "ConflictPoint", sl.conflictPoint);
-          }
-          if (sl.people.isNotEmpty) {
-            builder.element("People", nest: () {
-              for (final p in sl.people) {
-                _writeTextElement(builder, "Person", p);
+    builder.element(
+      "Type",
+      nest: () {
+        builder.element("Name", nest: "Outline");
+
+        for (final sl in storylines) {
+          builder.element(
+            "Storyline",
+            attributes: {
+              "Name": sl.storylineName,
+              "Type": sl.storylineType,
+              "UUID": sl.chapterUUID,
+            },
+            nest: () {
+              if (sl.memo.isNotEmpty) {
+                _writeTextElement(builder, "Memo", sl.memo);
               }
-            });
-          }
-          if (sl.item.isNotEmpty) {
-            builder.element("Items", nest: () {
-              for (final it in sl.item) {
-                _writeTextElement(builder, "Item", it);
+              if (sl.conflictPoint.isNotEmpty) {
+                _writeTextElement(builder, "ConflictPoint", sl.conflictPoint);
               }
-            });
-          }
-          
-          for (final ev in sl.scenes) {
-            builder.element("Event", attributes: {
-              "Name": ev.storyEvent,
-              "UUID": ev.storyEventUUID,
-            }, nest: () {
-              if (ev.memo.isNotEmpty) {
-                _writeTextElement(builder, "Memo", ev.memo);
+              if (sl.people.isNotEmpty) {
+                builder.element(
+                  "People",
+                  nest: () {
+                    for (final p in sl.people) {
+                      _writeTextElement(builder, "Person", p);
+                    }
+                  },
+                );
               }
-              if (ev.conflictPoint.isNotEmpty) {
-                _writeTextElement(builder, "ConflictPoint", ev.conflictPoint);
+              if (sl.item.isNotEmpty) {
+                builder.element(
+                  "Items",
+                  nest: () {
+                    for (final it in sl.item) {
+                      _writeTextElement(builder, "Item", it);
+                    }
+                  },
+                );
               }
-              if (ev.people.isNotEmpty) {
-                builder.element("People", nest: () {
-                  for (final p in ev.people) {
-                    _writeTextElement(builder, "Person", p);
-                  }
-                });
+
+              for (final ev in sl.scenes) {
+                builder.element(
+                  "Event",
+                  attributes: {
+                    "Name": ev.storyEvent,
+                    "UUID": ev.storyEventUUID,
+                  },
+                  nest: () {
+                    if (ev.memo.isNotEmpty) {
+                      _writeTextElement(builder, "Memo", ev.memo);
+                    }
+                    if (ev.conflictPoint.isNotEmpty) {
+                      _writeTextElement(
+                        builder,
+                        "ConflictPoint",
+                        ev.conflictPoint,
+                      );
+                    }
+                    if (ev.people.isNotEmpty) {
+                      builder.element(
+                        "People",
+                        nest: () {
+                          for (final p in ev.people) {
+                            _writeTextElement(builder, "Person", p);
+                          }
+                        },
+                      );
+                    }
+                    if (ev.item.isNotEmpty) {
+                      builder.element(
+                        "Items",
+                        nest: () {
+                          for (final it in ev.item) {
+                            _writeTextElement(builder, "Item", it);
+                          }
+                        },
+                      );
+                    }
+
+                    for (final sc in ev.scenes) {
+                      builder.element(
+                        "Scene",
+                        attributes: {
+                          "Name": sc.sceneName,
+                          "UUID": sc.sceneUUID,
+                        },
+                        nest: () {
+                          if (sc.time.isNotEmpty) {
+                            _writeTextElement(builder, "Time", sc.time);
+                          }
+                          if (sc.location.isNotEmpty) {
+                            _writeTextElement(builder, "Location", sc.location);
+                          }
+                          if (sc.focusPoint.isNotEmpty) {
+                            _writeTextElement(
+                              builder,
+                              "FocusPoint",
+                              sc.focusPoint,
+                            );
+                          }
+                          if (sc.conflictPoint.isNotEmpty) {
+                            _writeTextElement(
+                              builder,
+                              "ConflictPoint",
+                              sc.conflictPoint,
+                            );
+                          }
+                          if (sc.people.isNotEmpty) {
+                            builder.element(
+                              "People",
+                              nest: () {
+                                for (final p in sc.people) {
+                                  _writeTextElement(builder, "Person", p);
+                                }
+                              },
+                            );
+                          }
+                          if (sc.item.isNotEmpty) {
+                            builder.element(
+                              "Items",
+                              nest: () {
+                                for (final it in sc.item) {
+                                  _writeTextElement(builder, "Item", it);
+                                }
+                              },
+                            );
+                          }
+                          if (sc.doingThings.isNotEmpty) {
+                            builder.element(
+                              "Doings",
+                              nest: () {
+                                for (final d in sc.doingThings) {
+                                  _writeTextElement(builder, "Doing", d);
+                                }
+                              },
+                            );
+                          }
+                          if (sc.memo.isNotEmpty) {
+                            _writeTextElement(builder, "Memo", sc.memo);
+                          }
+                        },
+                      );
+                    }
+                  },
+                );
               }
-              if (ev.item.isNotEmpty) {
-                builder.element("Items", nest: () {
-                  for (final it in ev.item) {
-                    _writeTextElement(builder, "Item", it);
-                  }
-                });
-              }
-              
-              for (final sc in ev.scenes) {
-                builder.element("Scene", attributes: {
-                  "Name": sc.sceneName,
-                  "UUID": sc.sceneUUID,
-                }, nest: () {
-                  if (sc.time.isNotEmpty) {
-                    _writeTextElement(builder, "Time", sc.time);
-                  }
-                  if (sc.location.isNotEmpty) {
-                    _writeTextElement(builder, "Location", sc.location);
-                  }
-                  if (sc.focusPoint.isNotEmpty) {
-                    _writeTextElement(builder, "FocusPoint", sc.focusPoint);
-                  }
-                  if (sc.conflictPoint.isNotEmpty) {
-                    _writeTextElement(builder, "ConflictPoint", sc.conflictPoint);
-                  }
-                  if (sc.people.isNotEmpty) {
-                    builder.element("People", nest: () {
-                      for (final p in sc.people) {
-                        _writeTextElement(builder, "Person", p);
-                      }
-                    });
-                  }
-                  if (sc.item.isNotEmpty) {
-                    builder.element("Items", nest: () {
-                      for (final it in sc.item) {
-                        _writeTextElement(builder, "Item", it);
-                      }
-                    });
-                  }
-                  if (sc.doingThings.isNotEmpty) {
-                    builder.element("Doings", nest: () {
-                      for (final d in sc.doingThings) {
-                        _writeTextElement(builder, "Doing", d);
-                      }
-                    });
-                  }
-                  if (sc.memo.isNotEmpty) {
-                    _writeTextElement(builder, "Memo", sc.memo);
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-    });
+            },
+          );
+        }
+      },
+    );
 
     return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
   }
@@ -339,20 +393,22 @@ class OutlineCodec {
   static List<StorylineData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-      
+
       final typeElement = document.findAllElements("Type").firstOrNull;
       if (typeElement == null) return null;
 
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "Outline") return null;
-      
+
       final storylines = <StorylineData>[];
-      
+
       for (final storylineNode in typeElement.findAllElements("Storyline")) {
         final storylineName = storylineNode.getAttribute("Name") ?? "";
         final storylineType = storylineNode.getAttribute("Type") ?? "";
-        final storylineUUID = storylineNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
-        
+        final storylineUUID =
+            storylineNode.getAttribute("UUID") ??
+            DateTime.now().millisecondsSinceEpoch.toString();
+
         final storyline = StorylineData(
           storylineName: storylineName,
           storylineType: storylineType,
@@ -363,13 +419,17 @@ class OutlineCodec {
           memo: "",
           conflictPoint: "",
         );
-        
+
         // Parse Memo
-        storyline.memo = _readElementText(storylineNode.findAllElements("Memo").firstOrNull);
-        
+        storyline.memo = _readElementText(
+          storylineNode.findAllElements("Memo").firstOrNull,
+        );
+
         // Parse ConflictPoint
-        storyline.conflictPoint = _readElementText(storylineNode.findAllElements("ConflictPoint").firstOrNull);
-        
+        storyline.conflictPoint = _readElementText(
+          storylineNode.findAllElements("ConflictPoint").firstOrNull,
+        );
+
         // Parse People
         final peopleNode = storylineNode.findAllElements("People").firstOrNull;
         if (peopleNode != null) {
@@ -378,7 +438,7 @@ class OutlineCodec {
             if (person.isNotEmpty) storyline.people.add(person);
           }
         }
-        
+
         // Parse Items
         final itemsNode = storylineNode.findAllElements("Items").firstOrNull;
         if (itemsNode != null) {
@@ -387,22 +447,24 @@ class OutlineCodec {
             if (item.isNotEmpty) storyline.item.add(item);
           }
         }
-        
+
         // Parse Events (direct children with name "Event")
         // We use .children instead of .findAllElements to detect direct structure if hierarchy matters
         // But here simpler find works as Event is inside Storyline
-        
+
         // Be careful not to find nested Events if they existed (not in this schema)
         // findAllElements finds descendants. We should use .findElements for direct children if appropriate.
         // In the builder structure: Type -> Storyline -> Event -> Scene
         // So safe to use findAllElements inside storylineNode but "Event" is also a common word.
         // It is safer to use direct child iteration or ensure scope.
         // storylineNode.findElements("Event") is safer.
-        
+
         for (final eventNode in storylineNode.findElements("Event")) {
           final eventName = eventNode.getAttribute("Name") ?? "";
-          final eventUUID = eventNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
-          
+          final eventUUID =
+              eventNode.getAttribute("UUID") ??
+              DateTime.now().millisecondsSinceEpoch.toString();
+
           final event = StoryEventData(
             storyEvent: eventName,
             storyEventUUID: eventUUID,
@@ -412,18 +474,24 @@ class OutlineCodec {
             memo: "",
             conflictPoint: "",
           );
-          
-          event.memo = _readElementText(eventNode.findAllElements("Memo").firstOrNull);
-          event.conflictPoint = _readElementText(eventNode.findAllElements("ConflictPoint").firstOrNull);
-          
-          final eventPeopleNode = eventNode.findAllElements("People").firstOrNull;
+
+          event.memo = _readElementText(
+            eventNode.findAllElements("Memo").firstOrNull,
+          );
+          event.conflictPoint = _readElementText(
+            eventNode.findAllElements("ConflictPoint").firstOrNull,
+          );
+
+          final eventPeopleNode = eventNode
+              .findAllElements("People")
+              .firstOrNull;
           if (eventPeopleNode != null) {
             for (final p in eventPeopleNode.findAllElements("Person")) {
               final person = _readElementText(p).trim();
               if (person.isNotEmpty) event.people.add(person);
             }
           }
-          
+
           final eventItemsNode = eventNode.findAllElements("Items").firstOrNull;
           if (eventItemsNode != null) {
             for (final it in eventItemsNode.findAllElements("Item")) {
@@ -431,12 +499,14 @@ class OutlineCodec {
               if (item.isNotEmpty) event.item.add(item);
             }
           }
-          
+
           // Parse Scenes
           for (final sceneNode in eventNode.findElements("Scene")) {
             final sceneName = sceneNode.getAttribute("Name") ?? "";
-            final sceneUUID = sceneNode.getAttribute("UUID") ?? DateTime.now().millisecondsSinceEpoch.toString();
-            
+            final sceneUUID =
+                sceneNode.getAttribute("UUID") ??
+                DateTime.now().millisecondsSinceEpoch.toString();
+
             final scene = SceneData(
               sceneName: sceneName,
               sceneUUID: sceneUUID,
@@ -449,29 +519,43 @@ class OutlineCodec {
               conflictPoint: "",
               memo: "",
             );
-            
-            scene.time = _readElementText(sceneNode.findAllElements("Time").firstOrNull);
-            scene.location = _readElementText(sceneNode.findAllElements("Location").firstOrNull);
-            scene.focusPoint = _readElementText(sceneNode.findAllElements("FocusPoint").firstOrNull);
-            scene.conflictPoint = _readElementText(sceneNode.findAllElements("ConflictPoint").firstOrNull);
-            scene.memo = _readElementText(sceneNode.findAllElements("Memo").firstOrNull);
-            
-            final scenePeopleNode = sceneNode.findAllElements("People").firstOrNull;
+
+            scene.time = _readElementText(
+              sceneNode.findAllElements("Time").firstOrNull,
+            );
+            scene.location = _readElementText(
+              sceneNode.findAllElements("Location").firstOrNull,
+            );
+            scene.focusPoint = _readElementText(
+              sceneNode.findAllElements("FocusPoint").firstOrNull,
+            );
+            scene.conflictPoint = _readElementText(
+              sceneNode.findAllElements("ConflictPoint").firstOrNull,
+            );
+            scene.memo = _readElementText(
+              sceneNode.findAllElements("Memo").firstOrNull,
+            );
+
+            final scenePeopleNode = sceneNode
+                .findAllElements("People")
+                .firstOrNull;
             if (scenePeopleNode != null) {
               for (final p in scenePeopleNode.findAllElements("Person")) {
                 final person = _readElementText(p).trim();
                 if (person.isNotEmpty) scene.people.add(person);
               }
             }
-            
-            final sceneItemsNode = sceneNode.findAllElements("Items").firstOrNull;
+
+            final sceneItemsNode = sceneNode
+                .findAllElements("Items")
+                .firstOrNull;
             if (sceneItemsNode != null) {
               for (final it in sceneItemsNode.findAllElements("Item")) {
                 final item = _readElementText(it).trim();
                 if (item.isNotEmpty) scene.item.add(item);
               }
             }
-            
+
             final doingsNode = sceneNode.findAllElements("Doings").firstOrNull;
             if (doingsNode != null) {
               for (final d in doingsNode.findAllElements("Doing")) {
@@ -479,16 +563,16 @@ class OutlineCodec {
                 if (doing.isNotEmpty) scene.doingThings.add(doing);
               }
             }
-            
+
             event.scenes.add(scene);
           }
-          
+
           storyline.scenes.add(event);
         }
-        
+
         storylines.add(storyline);
       }
-      
+
       return storylines.isEmpty ? null : storylines;
     } catch (e) {
       _log.severe("Error parsing Outline XML: $e");
@@ -524,21 +608,22 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   final TextEditingController newStorylineController = TextEditingController();
   final TextEditingController newEventController = TextEditingController();
   final TextEditingController newSceneController = TextEditingController();
-  
+
   // 備註欄位控制器
   final TextEditingController storylineMemoController = TextEditingController();
   final TextEditingController eventMemoController = TextEditingController();
   final TextEditingController sceneMemoController = TextEditingController();
-  
+
   // 故事線細節編輯控制器
   final TextEditingController storylineNameController = TextEditingController();
   final TextEditingController storylineTypeController = TextEditingController();
-  final TextEditingController storylineConflictController = TextEditingController();
-  
+  final TextEditingController storylineConflictController =
+      TextEditingController();
+
   // 事件細節編輯控制器
   final TextEditingController eventNameController = TextEditingController();
   final TextEditingController eventConflictController = TextEditingController();
-  
+
   // 場景細節編輯控制器
   final TextEditingController sceneNameController = TextEditingController();
   final TextEditingController sceneTimeController = TextEditingController();
@@ -556,12 +641,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   final ScrollController _storylineListScrollController = ScrollController();
   final ScrollController _eventListScrollController = ScrollController();
   final ScrollController _sceneListScrollController = ScrollController();
-  
+
   // 列表容器的 GlobalKey
   final GlobalKey _storylineListKey = GlobalKey();
   final GlobalKey _eventListKey = GlobalKey();
   final GlobalKey _sceneListKey = GlobalKey();
-  
+
   // 自動滾動相關常數
   static const double _autoScrollSpeed = 10.0;
   static const Duration _autoScrollInterval = Duration(milliseconds: 50);
@@ -578,31 +663,35 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   int? get selectedEventIndex {
     final si = selectedStorylineIndex;
     if (si == null || selectedEventID == null) return null;
-    return storylines[si].scenes.indexWhere((ev) => ev.storyEventUUID == selectedEventID);
+    return storylines[si].scenes.indexWhere(
+      (ev) => ev.storyEventUUID == selectedEventID,
+    );
   }
 
   int? get selectedSceneIndex {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si == null || ei == null || selectedSceneID == null) return null;
-    return storylines[si].scenes[ei].scenes.indexWhere((sc) => sc.sceneUUID == selectedSceneID);
+    return storylines[si].scenes[ei].scenes.indexWhere(
+      (sc) => sc.sceneUUID == selectedSceneID,
+    );
   }
 
   @override
   void initState() {
     super.initState();
     _initializeSelection();
-    
+
     // Add listeners
     storylineNameController.addListener(_onStorylineNameChanged);
     storylineTypeController.addListener(_onStorylineTypeChanged);
     storylineConflictController.addListener(_onStorylineConflictChanged);
     storylineMemoController.addListener(_onStorylineMemoChanged);
-    
+
     eventNameController.addListener(_onEventNameChanged);
     eventConflictController.addListener(_onEventConflictChanged);
     eventMemoController.addListener(_onEventMemoChanged);
-    
+
     sceneNameController.addListener(_onSceneNameChanged);
     sceneTimeController.addListener(_onSceneTimeChanged);
     sceneLocationController.addListener(_onSceneLocationChanged);
@@ -610,7 +699,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     sceneConflictController.addListener(_onSceneConflictChanged);
     sceneMemoController.addListener(_onSceneMemoChanged);
   }
-  
+
   void _onStorylineNameChanged() {
     final si = selectedStorylineIndex;
     if (si != null && si >= 0 && si < storylines.length) {
@@ -670,7 +759,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
-      if (storylines[si].scenes[ei].conflictPoint != eventConflictController.text) {
+      if (storylines[si].scenes[ei].conflictPoint !=
+          eventConflictController.text) {
         storylines[si].scenes[ei].conflictPoint = eventConflictController.text;
         _notifyChange();
       }
@@ -707,7 +797,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
     if (si != null && ei != null && ci != null) {
-      if (storylines[si].scenes[ei].scenes[ci].time != sceneTimeController.text) {
+      if (storylines[si].scenes[ei].scenes[ci].time !=
+          sceneTimeController.text) {
         storylines[si].scenes[ei].scenes[ci].time = sceneTimeController.text;
         _notifyChange();
       }
@@ -719,8 +810,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
     if (si != null && ei != null && ci != null) {
-      if (storylines[si].scenes[ei].scenes[ci].location != sceneLocationController.text) {
-        storylines[si].scenes[ei].scenes[ci].location = sceneLocationController.text;
+      if (storylines[si].scenes[ei].scenes[ci].location !=
+          sceneLocationController.text) {
+        storylines[si].scenes[ei].scenes[ci].location =
+            sceneLocationController.text;
         _notifyChange();
       }
     }
@@ -731,8 +824,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
     if (si != null && ei != null && ci != null) {
-      if (storylines[si].scenes[ei].scenes[ci].focusPoint != sceneFocusController.text) {
-        storylines[si].scenes[ei].scenes[ci].focusPoint = sceneFocusController.text;
+      if (storylines[si].scenes[ei].scenes[ci].focusPoint !=
+          sceneFocusController.text) {
+        storylines[si].scenes[ei].scenes[ci].focusPoint =
+            sceneFocusController.text;
         _notifyChange();
       }
     }
@@ -743,8 +838,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
     if (si != null && ei != null && ci != null) {
-      if (storylines[si].scenes[ei].scenes[ci].conflictPoint != sceneConflictController.text) {
-        storylines[si].scenes[ei].scenes[ci].conflictPoint = sceneConflictController.text;
+      if (storylines[si].scenes[ei].scenes[ci].conflictPoint !=
+          sceneConflictController.text) {
+        storylines[si].scenes[ei].scenes[ci].conflictPoint =
+            sceneConflictController.text;
         _notifyChange();
       }
     }
@@ -755,7 +852,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
     if (si != null && ei != null && ci != null) {
-      if (storylines[si].scenes[ei].scenes[ci].memo != sceneMemoController.text) {
+      if (storylines[si].scenes[ei].scenes[ci].memo !=
+          sceneMemoController.text) {
         storylines[si].scenes[ei].scenes[ci].memo = sceneMemoController.text;
         _notifyChange();
       }
@@ -803,7 +901,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     sceneLocationController.dispose();
     sceneFocusController.dispose();
     sceneConflictController.dispose();
-    
+
     // 釋放拖動相關控制器
     _autoScrollTimer?.cancel();
     _pageScrollController.dispose();
@@ -822,27 +920,38 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       _syncAllControllers();
       return;
     }
-    
+
     // 如果當前選擇的故事線不存在，選擇第一個
-    if (selectedStorylineID == null || !storylines.any((sl) => sl.chapterUUID == selectedStorylineID)) {
+    if (selectedStorylineID == null ||
+        !storylines.any((sl) => sl.chapterUUID == selectedStorylineID)) {
       selectedStorylineID = storylines.first.chapterUUID;
       selectedEventID = null;
       selectedSceneID = null;
     }
-    
+
     final si = selectedStorylineIndex;
     if (si != null && si >= 0 && si < storylines.length) {
       // 檢查選擇的事件是否還存在
-      if (selectedEventID == null || !storylines[si].scenes.any((ev) => ev.storyEventUUID == selectedEventID)) {
-        selectedEventID = storylines[si].scenes.isNotEmpty ? storylines[si].scenes.first.storyEventUUID : null;
+      if (selectedEventID == null ||
+          !storylines[si].scenes.any(
+            (ev) => ev.storyEventUUID == selectedEventID,
+          )) {
+        selectedEventID = storylines[si].scenes.isNotEmpty
+            ? storylines[si].scenes.first.storyEventUUID
+            : null;
         selectedSceneID = null;
       }
-      
+
       final ei = selectedEventIndex;
       if (ei != null && ei >= 0 && ei < storylines[si].scenes.length) {
         // 檢查選擇的場景是否還存在
-        if (selectedSceneID == null || !storylines[si].scenes[ei].scenes.any((sc) => sc.sceneUUID == selectedSceneID)) {
-          selectedSceneID = storylines[si].scenes[ei].scenes.isNotEmpty ? storylines[si].scenes[ei].scenes.first.sceneUUID : null;
+        if (selectedSceneID == null ||
+            !storylines[si].scenes[ei].scenes.any(
+              (sc) => sc.sceneUUID == selectedSceneID,
+            )) {
+          selectedSceneID = storylines[si].scenes[ei].scenes.isNotEmpty
+              ? storylines[si].scenes[ei].scenes.first.sceneUUID
+              : null;
         }
       } else {
         selectedSceneID = null;
@@ -851,10 +960,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       selectedEventID = null;
       selectedSceneID = null;
     }
-    
+
     _syncAllControllers();
   }
-  
+
   void _syncAllControllers() {
     final si = selectedStorylineIndex;
     if (si != null && si >= 0 && si < storylines.length) {
@@ -863,16 +972,18 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       storylineNameController.text = storyline.storylineName;
       storylineTypeController.text = storyline.storylineType;
       storylineConflictController.text = storyline.conflictPoint;
-      
+
       final ei = selectedEventIndex;
       if (ei != null && ei >= 0 && ei < storylines[si].scenes.length) {
         final event = storylines[si].scenes[ei];
         eventMemoController.text = event.memo;
         eventNameController.text = event.storyEvent;
         eventConflictController.text = event.conflictPoint;
-        
+
         final ci = selectedSceneIndex;
-        if (ci != null && ci >= 0 && ci < storylines[si].scenes[ei].scenes.length) {
+        if (ci != null &&
+            ci >= 0 &&
+            ci < storylines[si].scenes[ei].scenes.length) {
           final scene = storylines[si].scenes[ei].scenes[ci];
           sceneMemoController.text = scene.memo;
           sceneNameController.text = scene.sceneName;
@@ -921,119 +1032,128 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   // MARK: - 自動滾動方法
-  
+
   void _handleDragUpdate(DragUpdateDetails details) {
     if (_isDragging) {
       bool handledByList = false;
-      
+
       // 檢查故事線列表
-      final storylineBox = _storylineListKey.currentContext?.findRenderObject() as RenderBox?;
+      final storylineBox =
+          _storylineListKey.currentContext?.findRenderObject() as RenderBox?;
       if (storylineBox != null) {
         final storylinePosition = storylineBox.localToGlobal(Offset.zero);
         final storylineSize = storylineBox.size;
         final relativeY = details.globalPosition.dy - storylinePosition.dy;
-        
+
         if (relativeY >= 0 && relativeY <= storylineSize.height) {
           if (relativeY < _listScrollEdgeThreshold) {
             _startAutoScroll(_storylineListScrollController, scrollUp: true);
             handledByList = true;
-          } else if (relativeY > storylineSize.height - _listScrollEdgeThreshold) {
+          } else if (relativeY >
+              storylineSize.height - _listScrollEdgeThreshold) {
             _startAutoScroll(_storylineListScrollController, scrollUp: false);
             handledByList = true;
           }
         }
       }
-      
+
       // 檢查事件列表
       if (!handledByList) {
-        final eventBox = _eventListKey.currentContext?.findRenderObject() as RenderBox?;
+        final eventBox =
+            _eventListKey.currentContext?.findRenderObject() as RenderBox?;
         if (eventBox != null) {
           final eventPosition = eventBox.localToGlobal(Offset.zero);
           final eventSize = eventBox.size;
           final relativeY = details.globalPosition.dy - eventPosition.dy;
-          
+
           if (relativeY >= 0 && relativeY <= eventSize.height) {
             if (relativeY < _listScrollEdgeThreshold) {
               _startAutoScroll(_eventListScrollController, scrollUp: true);
               handledByList = true;
-            } else if (relativeY > eventSize.height - _listScrollEdgeThreshold) {
+            } else if (relativeY >
+                eventSize.height - _listScrollEdgeThreshold) {
               _startAutoScroll(_eventListScrollController, scrollUp: false);
               handledByList = true;
             }
           }
         }
       }
-      
+
       // 檢查場景列表
       if (!handledByList) {
-        final sceneBox = _sceneListKey.currentContext?.findRenderObject() as RenderBox?;
+        final sceneBox =
+            _sceneListKey.currentContext?.findRenderObject() as RenderBox?;
         if (sceneBox != null) {
           final scenePosition = sceneBox.localToGlobal(Offset.zero);
           final sceneSize = sceneBox.size;
           final relativeY = details.globalPosition.dy - scenePosition.dy;
-          
+
           if (relativeY >= 0 && relativeY <= sceneSize.height) {
             if (relativeY < _listScrollEdgeThreshold) {
               _startAutoScroll(_sceneListScrollController, scrollUp: true);
               handledByList = true;
-            } else if (relativeY > sceneSize.height - _listScrollEdgeThreshold) {
+            } else if (relativeY >
+                sceneSize.height - _listScrollEdgeThreshold) {
               _startAutoScroll(_sceneListScrollController, scrollUp: false);
               handledByList = true;
             }
           }
         }
       }
-      
+
       if (handledByList) return;
-      
-      if (_currentScrollController == _storylineListScrollController || 
+
+      if (_currentScrollController == _storylineListScrollController ||
           _currentScrollController == _eventListScrollController ||
           _currentScrollController == _sceneListScrollController) {
         _stopAutoScroll();
       }
     }
-    
+
     final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
-    
+
     final localPosition = details.localPosition;
     final screenHeight = MediaQuery.of(context).size.height;
-    
+
     if (localPosition.dy < _scrollEdgeThreshold) {
       _startAutoScroll(_pageScrollController, scrollUp: true);
     } else if (localPosition.dy > screenHeight - _scrollEdgeThreshold) {
       _startAutoScroll(_pageScrollController, scrollUp: false);
     } else {
-      if (_currentScrollController != _storylineListScrollController && 
+      if (_currentScrollController != _storylineListScrollController &&
           _currentScrollController != _eventListScrollController &&
           _currentScrollController != _sceneListScrollController) {
         _stopAutoScroll();
       }
     }
   }
-  
+
   void _startAutoScroll(ScrollController controller, {required bool scrollUp}) {
     if (_currentScrollController == controller && _autoScrollTimer != null) {
       return;
     }
-    
+
     _autoScrollTimer?.cancel();
     _currentScrollController = controller;
-    
+
     _autoScrollTimer = Timer.periodic(_autoScrollInterval, (timer) {
       if (!controller.hasClients) {
         timer.cancel();
         _currentScrollController = null;
         return;
       }
-      
+
       final currentOffset = controller.offset;
       final maxScroll = controller.position.maxScrollExtent;
       final minScroll = controller.position.minScrollExtent;
-      
+
       if (scrollUp) {
         if (currentOffset > minScroll) {
-          final newOffset = (currentOffset - _autoScrollSpeed).clamp(minScroll, maxScroll);
+          final newOffset = (currentOffset - _autoScrollSpeed).clamp(
+            minScroll,
+            maxScroll,
+          );
           controller.jumpTo(newOffset);
         } else {
           timer.cancel();
@@ -1041,7 +1161,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         }
       } else {
         if (currentOffset < maxScroll) {
-          final newOffset = (currentOffset + _autoScrollSpeed).clamp(minScroll, maxScroll);
+          final newOffset = (currentOffset + _autoScrollSpeed).clamp(
+            minScroll,
+            maxScroll,
+          );
           controller.jumpTo(newOffset);
         } else {
           timer.cancel();
@@ -1050,7 +1173,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       }
     });
   }
-  
+
   void _stopAutoScroll() {
     _autoScrollTimer?.cancel();
     _autoScrollTimer = null;
@@ -1063,10 +1186,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     return Scaffold(
       body: Listener(
         onPointerMove: (event) {
-          _handleDragUpdate(DragUpdateDetails(
-            globalPosition: event.position,
-            localPosition: event.localPosition,
-          ));
+          _handleDragUpdate(
+            DragUpdateDetails(
+              globalPosition: event.position,
+              localPosition: event.localPosition,
+            ),
+          );
         },
         onPointerUp: (_) => _stopAutoScroll(),
         onPointerCancel: (_) => _stopAutoScroll(),
@@ -1076,22 +1201,19 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            // 標題
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: HeadlineLargeTitle(
-                icon: Icons.account_tree,
-                text: "大綱調整",
+              // 標題
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: LargeTitle(icon: Icons.account_tree, text: "大綱調整"),
               ),
-            ),
-            const SizedBox(height: 32),
-            _buildStorylineSection(),
-            const SizedBox(height: 24),
-            _buildEventSection(),
-            const SizedBox(height: 24),
-            _buildSceneSection(),
-          ],
-        ),
+              const SizedBox(height: 32),
+              _buildStorylineSection(),
+              const SizedBox(height: 24),
+              _buildEventSection(),
+              const SizedBox(height: 24),
+              _buildSceneSection(),
+            ],
+          ),
         ),
       ),
     );
@@ -1107,12 +1229,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const LargeTitle(
-              icon: Icons.library_books,
-              text: "大箱（故事線）",
-            ),
+            const MediumTitle(icon: Icons.library_books, text: "大箱（故事線）"),
             const SizedBox(height: 16),
-            
+
             // 故事線列表
             DragTarget<OutlineDragData>(
               onWillAcceptWithDetails: (details) {
@@ -1128,8 +1247,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                   setState(() {
                     final fromIndex = dragData.currentIndex;
                     final toIndex = storylines.length - 1;
-                    
-                    if (fromIndex >= 0 && fromIndex < storylines.length && fromIndex != toIndex) {
+
+                    if (fromIndex >= 0 &&
+                        fromIndex < storylines.length &&
+                        fromIndex != toIndex) {
                       final movedStoryline = storylines.removeAt(fromIndex);
                       storylines.insert(toIndex, movedStoryline);
                       _notifyChange();
@@ -1139,7 +1260,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               },
               builder: (context, candidateData, rejectedData) {
                 final isHighlighted = candidateData.isNotEmpty;
-                
+
                 return Container(
                   key: _storylineListKey,
                   height: 250,
@@ -1147,34 +1268,39 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     border: Border.all(
                       color: isHighlighted
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                          : Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.2),
                       width: isHighlighted ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(8),
                     color: isHighlighted
-                        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withValues(alpha: 0.1)
                         : null,
                   ),
                   child: storylines.isEmpty
                       ? Center(
                           child: Text(
                             "暫無故事線",
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         )
                       : ListView.builder(
                           controller: _storylineListScrollController,
                           itemCount: storylines.length,
-                          itemBuilder: (context, index) => _buildStorylineRow(storylines[index], index),
+                          itemBuilder: (context, index) =>
+                              _buildStorylineRow(storylines[index], index),
                         ),
                 );
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // 新增故事線
             AddItemInput(
               title: "故事線名稱",
@@ -1182,18 +1308,20 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
               onAdd: (_) => _addStoryline(),
               allowEmpty: true,
             ),
-            
+
             // 故事線詳細編輯
             if (selectedStorylineIndex != null) ...[
               const SizedBox(height: 16),
               _buildStorylineDetails(),
             ],
-            
+
             const SizedBox(height: 12),
             Text(
               "大箱：故事的大致走向。標記可以使用「三幕劇」、「起承轉合」、「故事七步驟」等結構",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -1215,12 +1343,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   void _submitRenamingStoryline(int index) {
-      if (editingStorylineID != null && _renameListController != null) {
-          final val = _renameListController!.text.trim();
-          storylines[index].storylineName = val.isEmpty ? "(未命名故事線)" : val;
-          _notifyChange();
-      }
-      _cancelRenaming();
+    if (editingStorylineID != null && _renameListController != null) {
+      final val = _renameListController!.text.trim();
+      storylines[index].storylineName = val.isEmpty ? "(未命名故事線)" : val;
+      _notifyChange();
+    }
+    _cancelRenaming();
   }
 
   void _startRenamingEvent(StoryEventData data) {
@@ -1234,14 +1362,16 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   void _submitRenamingEvent(int slIdx, int evIdx) {
-      if (editingEventID != null && _renameListController != null) {
-          final val = _renameListController!.text.trim();
-          storylines[slIdx].scenes[evIdx].storyEvent = val.isEmpty ? "(未命名事件)" : val;
-          _notifyChange();
-      }
-      _cancelRenaming();
+    if (editingEventID != null && _renameListController != null) {
+      final val = _renameListController!.text.trim();
+      storylines[slIdx].scenes[evIdx].storyEvent = val.isEmpty
+          ? "(未命名事件)"
+          : val;
+      _notifyChange();
+    }
+    _cancelRenaming();
   }
-  
+
   void _startRenamingScene(SceneData data) {
     setState(() {
       editingSceneID = data.sceneUUID;
@@ -1253,28 +1383,31 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   void _submitRenamingScene(int slIdx, int evIdx, int scIdx) {
-      if (editingSceneID != null && _renameListController != null) {
-          final val = _renameListController!.text.trim();
-          storylines[slIdx].scenes[evIdx].scenes[scIdx].sceneName = val.isEmpty ? "(未命名場景)" : val;
-          _notifyChange();
-      }
-      _cancelRenaming();
+    if (editingSceneID != null && _renameListController != null) {
+      final val = _renameListController!.text.trim();
+      storylines[slIdx].scenes[evIdx].scenes[scIdx].sceneName = val.isEmpty
+          ? "(未命名場景)"
+          : val;
+      _notifyChange();
+    }
+    _cancelRenaming();
   }
 
   void _cancelRenaming() {
-      setState(() {
-          editingStorylineID = null;
-          editingEventID = null;
-          editingSceneID = null;
-          _renameListController?.dispose();
-          _renameListController = null;
-      });
+    setState(() {
+      editingStorylineID = null;
+      editingEventID = null;
+      editingSceneID = null;
+      _renameListController?.dispose();
+      _renameListController = null;
+    });
   }
 
   Widget _buildStorylineDetails() {
     final si = selectedStorylineIndex;
-    if (si == null || si < 0 || si >= storylines.length) return const SizedBox.shrink();
-    
+    if (si == null || si < 0 || si >= storylines.length)
+      return const SizedBox.shrink();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1283,14 +1416,14 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           children: [
             Text(
               "大箱內容（故事線細節）",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: storylineNameController,
-               decoration: const InputDecoration(
+              decoration: const InputDecoration(
                 labelText: "故事線名稱",
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -1298,8 +1431,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             ),
             const SizedBox(height: 12),
             TextField(
-               controller: storylineTypeController,
-               decoration: const InputDecoration(
+              controller: storylineTypeController,
+              decoration: const InputDecoration(
                 labelText: "類型 (如：懸疑、愛情)",
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -1307,8 +1440,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             ),
             const SizedBox(height: 12),
             TextField(
-               controller: storylineConflictController,
-               decoration: const InputDecoration(
+              controller: storylineConflictController,
+              decoration: const InputDecoration(
                 labelText: "主要衝突",
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -1341,12 +1474,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const LargeTitle(
-              icon: Icons.event_note,
-              text: "中箱（事件）",
-            ),
+            const MediumTitle(icon: Icons.event_note, text: "中箱（事件）"),
             const SizedBox(height: 16),
-            
+
             if (selectedStorylineIndex != null) ...[
               DragTarget<OutlineDragData>(
                 onWillAcceptWithDetails: (details) {
@@ -1362,7 +1492,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                   final isHighlighted = candidateData.isNotEmpty;
                   final si = selectedStorylineIndex!;
                   final events = storylines[si].scenes;
-                  
+
                   return Container(
                     key: _eventListKey,
                     height: 250,
@@ -1370,19 +1500,22 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                       border: Border.all(
                         color: isHighlighted
                             ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                            : Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.2),
                         width: isHighlighted ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(8),
                       color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
+                          ? Theme.of(context).colorScheme.primaryContainer
+                                .withValues(alpha: 0.1)
                           : null,
                     ),
                     child: events.isEmpty
                         ? Center(
                             child: Text(
                               "此故事線暫無事件",
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
@@ -1390,49 +1523,56 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                         : ListView.builder(
                             controller: _eventListScrollController,
                             itemCount: events.length,
-                            itemBuilder: (context, index) => _buildEventRow(events[index], index),
+                            itemBuilder: (context, index) =>
+                                _buildEventRow(events[index], index),
                           ),
                   );
                 },
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               AddItemInput(
                 title: "事件名稱",
                 controller: newEventController,
                 onAdd: (_) => _addEvent(),
                 allowEmpty: true,
               ),
-              
+
               if (selectedEventIndex != null) ...[
                 const SizedBox(height: 16),
                 _buildEventDetails(),
               ],
             ] else ...[
-               Container(
-                  height: 250,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
-                    borderRadius: BorderRadius.circular(8),
+              Container(
+                height: 250,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.2),
                   ),
-                  child: Center(
-                    child: Text(
-                      "請先選擇故事線",
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                         color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    "請先選擇故事線",
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-               ),
+                ),
+              ),
             ],
-            
+
             const SizedBox(height: 12),
             Text(
               "中箱：具體發生的事件。",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -1445,7 +1585,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   Widget _buildStorylineRow(StorylineData storyline, int index) {
     final isSelected = storyline.chapterUUID == selectedStorylineID;
     final isEditing = storyline.chapterUUID == editingStorylineID;
-    
+
     return DraggableCardNode<OutlineDragData>(
       key: ValueKey(storyline.chapterUUID),
       dragData: OutlineDragData(
@@ -1455,25 +1595,30 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       nodeId: storyline.chapterUUID,
       nodeType: NodeType.folder,
-      
+
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == storyline.chapterUUID,
       isSelected: isSelected,
-      
+
       title: isEditing
           ? TextField(
               controller: _renameListController,
               autofocus: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
               ),
               onSubmitted: (_) => _submitRenamingStoryline(index),
             )
           : GestureDetector(
               onDoubleTap: () => _startRenamingStoryline(storyline),
               child: Text(
-                storyline.storylineName.isEmpty ? "(未命名故事線)" : storyline.storylineName,
+                storyline.storylineName.isEmpty
+                    ? "(未命名故事線)"
+                    : storyline.storylineName,
                 style: isSelected
                     ? TextStyle(
                         fontWeight: FontWeight.w600,
@@ -1502,30 +1647,34 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             tooltip: "重新命名",
           ),
           IconButton(
-            onPressed: storylines.length > 1 ? () => _deleteStoryline(storyline.chapterUUID) : null,
+            onPressed: storylines.length > 1
+                ? () => _deleteStoryline(storyline.chapterUUID)
+                : null,
             icon: Icon(
               Icons.delete,
               size: 20,
-              color: storylines.length > 1 ? Theme.of(context).colorScheme.error : null,
+              color: storylines.length > 1
+                  ? Theme.of(context).colorScheme.error
+                  : null,
             ),
             tooltip: "刪除故事線",
           ),
         ],
       ),
       onClicked: () {
-            setState(() {
-              selectedStorylineID = storyline.chapterUUID;
-              _updateSelectionAfterStorylineChange();
-            });
+        setState(() {
+          selectedStorylineID = storyline.chapterUUID;
+          _updateSelectionAfterStorylineChange();
+        });
       },
-      
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
           _currentDragData = OutlineDragData(
-             id: storyline.chapterUUID,
-             type: OutlineDragType.storyline,
-             currentIndex: index
+            id: storyline.chapterUUID,
+            type: OutlineDragType.storyline,
+            currentIndex: index,
           );
         });
       },
@@ -1536,38 +1685,39 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         });
         _stopAutoScroll();
       },
-      
+
       getDropZoneSize: (pos) {
-         if (_currentDragData == null) return 0.0;
-         
-         if (_currentDragData!.type == OutlineDragType.storyline) {
-             // Reorder Storyline (Same level)
-             return pos == DropPosition.child ? 0.0 : 0.5;
-         } else if (_currentDragData!.type == OutlineDragType.event) {
-             // Drop Event into Storyline (Child to Parent)
-             return pos == DropPosition.child ? 1.0 : 0.0;
-         }
-         return 0.0;
+        if (_currentDragData == null) return 0.0;
+
+        if (_currentDragData!.type == OutlineDragType.storyline) {
+          // Reorder Storyline (Same level)
+          return pos == DropPosition.child ? 0.0 : 0.5;
+        } else if (_currentDragData!.type == OutlineDragType.event) {
+          // Drop Event into Storyline (Child to Parent)
+          return pos == DropPosition.child ? 1.0 : 0.0;
+        }
+        return 0.0;
       },
-      
+
       onAccept: (data, pos) {
-          if (data.type == OutlineDragType.storyline) {
-             int toIndex = index;
-             if (pos == DropPosition.after) toIndex++;
-             
-             final fromIndex = data.currentIndex;
-             if (fromIndex < toIndex) toIndex--;
-             
-             _moveStorylineByDrag(fromIndex, toIndex);
-          } else if (data.type == OutlineDragType.event && pos == DropPosition.child) {
-             _moveEventToStoryline(data.id, storyline.chapterUUID);
-             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("事件已移動到「${storyline.storylineName}」"),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
+        if (data.type == OutlineDragType.storyline) {
+          int toIndex = index;
+          if (pos == DropPosition.after) toIndex++;
+
+          final fromIndex = data.currentIndex;
+          if (fromIndex < toIndex) toIndex--;
+
+          _moveStorylineByDrag(fromIndex, toIndex);
+        } else if (data.type == OutlineDragType.event &&
+            pos == DropPosition.child) {
+          _moveEventToStoryline(data.id, storyline.chapterUUID);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("事件已移動到「${storyline.storylineName}」"),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       },
     );
   }
@@ -1577,7 +1727,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final isSelected = event.storyEventUUID == selectedEventID;
     final isEditing = event.storyEventUUID == editingEventID;
     final slIdx = selectedStorylineIndex!;
-    
+
     return DraggableCardNode<OutlineDragData>(
       key: ValueKey(event.storyEventUUID),
       dragData: OutlineDragData(
@@ -1587,18 +1737,21 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       nodeId: event.storyEventUUID,
       nodeType: NodeType.folder,
-      
+
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == event.storyEventUUID,
       isSelected: isSelected,
-      
+
       title: isEditing
           ? TextField(
               controller: _renameListController,
               autofocus: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
               ),
               onSubmitted: (_) => _submitRenamingEvent(slIdx, index),
             )
@@ -1636,28 +1789,28 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           IconButton(
             onPressed: () => _deleteEvent(event.storyEventUUID, slIdx),
             icon: Icon(
-               Icons.delete,
-               size: 20,
-               color: Theme.of(context).colorScheme.error,
+              Icons.delete,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
             ),
             tooltip: "刪除事件",
           ),
         ],
       ),
       onClicked: () {
-            setState(() {
-              selectedEventID = event.storyEventUUID;
-              _updateSelectionAfterEventChange();
-            });
+        setState(() {
+          selectedEventID = event.storyEventUUID;
+          _updateSelectionAfterEventChange();
+        });
       },
-      
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
           _currentDragData = OutlineDragData(
-             id: event.storyEventUUID,
-             type: OutlineDragType.event,
-             currentIndex: index
+            id: event.storyEventUUID,
+            type: OutlineDragType.event,
+            currentIndex: index,
           );
         });
       },
@@ -1668,48 +1821,52 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         });
         _stopAutoScroll();
       },
-      
+
       getDropZoneSize: (pos) {
-         if (_currentDragData == null) return 0.0;
-         
-         if (_currentDragData!.type == OutlineDragType.event) {
-             // Reorder Event (Same level)
-             return pos == DropPosition.child ? 0.0 : 0.5;
-         } else if (_currentDragData!.type == OutlineDragType.scene) {
-             // Drop Scene into Event (Child to Parent)
-             return pos == DropPosition.child ? 1.0 : 0.0;
-         }
-         return 0.0;
+        if (_currentDragData == null) return 0.0;
+
+        if (_currentDragData!.type == OutlineDragType.event) {
+          // Reorder Event (Same level)
+          return pos == DropPosition.child ? 0.0 : 0.5;
+        } else if (_currentDragData!.type == OutlineDragType.scene) {
+          // Drop Scene into Event (Child to Parent)
+          return pos == DropPosition.child ? 1.0 : 0.0;
+        }
+        return 0.0;
       },
-      
+
       onAccept: (data, pos) {
-         if (data.type == OutlineDragType.event) {
-             int toIndex = index;
-             if (pos == DropPosition.after) toIndex++;
-             
-             final fromIndex = data.currentIndex;
-             if (fromIndex < toIndex) toIndex--;
-             
-             _moveEventByDrag(slIdx, fromIndex, toIndex);
-         } else if (data.type == OutlineDragType.scene && pos == DropPosition.child) {
-             // Need original indices of Scene. 
-             // _moveSceneToEvent uses sceneId to find it.
-             _moveSceneToEvent(data.id, slIdx, index);
-         }
+        if (data.type == OutlineDragType.event) {
+          int toIndex = index;
+          if (pos == DropPosition.after) toIndex++;
+
+          final fromIndex = data.currentIndex;
+          if (fromIndex < toIndex) toIndex--;
+
+          _moveEventByDrag(slIdx, fromIndex, toIndex);
+        } else if (data.type == OutlineDragType.scene &&
+            pos == DropPosition.child) {
+          // Need original indices of Scene.
+          // _moveSceneToEvent uses sceneId to find it.
+          _moveSceneToEvent(data.id, slIdx, index);
+        }
       },
     );
   }
 
-
   Widget _buildEventDetails() {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
-    if (si == null || ei == null || si < 0 || ei < 0 || 
-        si >= storylines.length || ei >= storylines[si].scenes.length) {
+    if (si == null ||
+        ei == null ||
+        si < 0 ||
+        ei < 0 ||
+        si >= storylines.length ||
+        ei >= storylines[si].scenes.length) {
       return const SizedBox.shrink();
     }
     final event = storylines[si].scenes[ei];
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1718,12 +1875,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           children: [
             Text(
               "中箱內容（事件細節）",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            
+
             Builder(
               builder: (context) {
                 if (eventNameController.text != event.storyEvent) {
@@ -1741,9 +1898,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 );
               },
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             Builder(
               builder: (context) {
                 if (eventConflictController.text != event.conflictPoint) {
@@ -1761,9 +1918,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 );
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             CardList(
               title: "預設人物",
               icon: Icons.person,
@@ -1781,9 +1938,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             CardList(
               title: "預設物件",
               icon: Icons.category,
@@ -1801,13 +1958,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
-            Text(
-              "備註",
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+
+            Text("備註", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Builder(
               builder: (context) {
@@ -1843,13 +1997,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const LargeTitle(
-              icon: Icons.theater_comedy,
-              text: "小箱（場景）",
-            ),
+            const MediumTitle(icon: Icons.theater_comedy, text: "小箱（場景）"),
             const SizedBox(height: 16),
-            
-            if (selectedStorylineIndex != null && selectedEventIndex != null) ...[
+
+            if (selectedStorylineIndex != null &&
+                selectedEventIndex != null) ...[
               DragTarget<OutlineDragData>(
                 onWillAcceptWithDetails: (details) {
                   return details.data.type == OutlineDragType.scene;
@@ -1860,13 +2012,19 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                   });
                   _stopAutoScroll();
                   final dragData = details.data;
-                  if (selectedStorylineIndex != null && selectedEventIndex != null && dragData.type == OutlineDragType.scene) {
-                    _moveSceneToEvent(dragData.id, selectedStorylineIndex!, selectedEventIndex!);
+                  if (selectedStorylineIndex != null &&
+                      selectedEventIndex != null &&
+                      dragData.type == OutlineDragType.scene) {
+                    _moveSceneToEvent(
+                      dragData.id,
+                      selectedStorylineIndex!,
+                      selectedEventIndex!,
+                    );
                   }
                 },
                 builder: (context, candidateData, rejectedData) {
                   final isHighlighted = candidateData.isNotEmpty;
-                  
+
                   return Container(
                     key: _sceneListKey,
                     height: 250,
@@ -1874,41 +2032,56 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                       border: Border.all(
                         color: isHighlighted
                             ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                            : Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.2),
                         width: isHighlighted ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(8),
                       color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1)
+                          ? Theme.of(context).colorScheme.primaryContainer
+                                .withValues(alpha: 0.1)
                           : null,
                     ),
-                    child: storylines[selectedStorylineIndex!].scenes[selectedEventIndex!].scenes.isEmpty
+                    child:
+                        storylines[selectedStorylineIndex!]
+                            .scenes[selectedEventIndex!]
+                            .scenes
+                            .isEmpty
                         ? Center(
                             child: Text(
                               "暫無場景",
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           )
                         : ListView.builder(
                             controller: _sceneListScrollController,
-                            itemCount: storylines[selectedStorylineIndex!].scenes[selectedEventIndex!].scenes.length,
-                            itemBuilder: (context, index) => _buildSceneRow(storylines[selectedStorylineIndex!].scenes[selectedEventIndex!].scenes[index], index),
+                            itemCount: storylines[selectedStorylineIndex!]
+                                .scenes[selectedEventIndex!]
+                                .scenes
+                                .length,
+                            itemBuilder: (context, index) => _buildSceneRow(
+                              storylines[selectedStorylineIndex!]
+                                  .scenes[selectedEventIndex!]
+                                  .scenes[index],
+                              index,
+                            ),
                           ),
                   );
                 },
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               AddItemInput(
                 title: "場景名稱",
                 controller: newSceneController,
                 onAdd: (_) => _addScene(),
                 allowEmpty: true,
               ),
-              
+
               if (selectedSceneIndex != null) ...[
                 const SizedBox(height: 16),
                 _buildSceneDetails(),
@@ -1918,26 +2091,30 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 height: 250,
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.2),
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Center(
                   child: Text(
                     "請先選擇一個事件",
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
               ),
             ],
-            
+
             const SizedBox(height: 12),
             Text(
               "小箱：事件的詳細場景。",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -1949,7 +2126,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   Widget _buildSceneRow(SceneData scene, int index) {
     final isSelected = scene.sceneUUID == selectedSceneID;
     final isEditing = scene.sceneUUID == editingSceneID;
-    
+
     return DraggableCardNode<OutlineDragData>(
       key: ValueKey(scene.sceneUUID),
       dragData: OutlineDragData(
@@ -1959,20 +2136,27 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       ),
       nodeId: scene.sceneUUID,
       nodeType: NodeType.leaf,
-      
+
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == scene.sceneUUID,
       isSelected: isSelected,
-      
+
       title: isEditing
           ? TextField(
               controller: _renameListController,
               autofocus: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
               ),
-              onSubmitted: (_) => _submitRenamingScene(selectedStorylineIndex!, selectedEventIndex!, index),
+              onSubmitted: (_) => _submitRenamingScene(
+                selectedStorylineIndex!,
+                selectedEventIndex!,
+                index,
+              ),
             )
           : GestureDetector(
               onDoubleTap: () => _startRenamingScene(scene),
@@ -1986,22 +2170,38 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                     : null,
               ),
             ),
-      subtitle: (scene.time.isNotEmpty || scene.location.isNotEmpty) ? Row(
-        children: [
-          if (scene.time.isNotEmpty) ...[
-            Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(scene.time, style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (scene.time.isNotEmpty && scene.location.isNotEmpty) 
-            Text(" • ", style: Theme.of(context).textTheme.bodySmall),
-          if (scene.location.isNotEmpty) ...[
-            Icon(Icons.location_on, size: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(scene.location, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ],
-      ) : null,
+      subtitle: (scene.time.isNotEmpty || scene.location.isNotEmpty)
+          ? Row(
+              children: [
+                if (scene.time.isNotEmpty) ...[
+                  Icon(
+                    Icons.access_time,
+                    size: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    scene.time,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (scene.time.isNotEmpty && scene.location.isNotEmpty)
+                  Text(" • ", style: Theme.of(context).textTheme.bodySmall),
+                if (scene.location.isNotEmpty) ...[
+                  Icon(
+                    Icons.location_on,
+                    size: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    scene.location,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            )
+          : null,
       leading: Icon(
         Icons.theater_comedy,
         color: isSelected
@@ -2018,30 +2218,34 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
             tooltip: "重新命名",
           ),
           IconButton(
-            onPressed: () => _deleteScene(scene.sceneUUID, selectedStorylineIndex!, selectedEventIndex!),
+            onPressed: () => _deleteScene(
+              scene.sceneUUID,
+              selectedStorylineIndex!,
+              selectedEventIndex!,
+            ),
             icon: Icon(
-               Icons.delete,
-               size: 20,
-               color: Theme.of(context).colorScheme.error,
+              Icons.delete,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
             ),
             tooltip: "刪除場景",
           ),
         ],
       ),
       onClicked: () {
-            setState(() {
-              selectedSceneID = scene.sceneUUID;
-              _syncAllControllers();
-            });
+        setState(() {
+          selectedSceneID = scene.sceneUUID;
+          _syncAllControllers();
+        });
       },
-      
+
       onDragStarted: () {
         setState(() {
           _isDragging = true;
           _currentDragData = OutlineDragData(
-             id: scene.sceneUUID,
-             type: OutlineDragType.scene,
-             currentIndex: index
+            id: scene.sceneUUID,
+            type: OutlineDragType.scene,
+            currentIndex: index,
           );
         });
       },
@@ -2052,31 +2256,31 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
         });
         _stopAutoScroll();
       },
-      
+
       getDropZoneSize: (pos) {
-         if (_currentDragData == null) return 0.0;
-         
-         if (_currentDragData!.type == OutlineDragType.scene) {
-             // Reorder Scene (Same level)
-             return pos == DropPosition.child ? 0.0 : 0.5;
-         }
-         return 0.0;
+        if (_currentDragData == null) return 0.0;
+
+        if (_currentDragData!.type == OutlineDragType.scene) {
+          // Reorder Scene (Same level)
+          return pos == DropPosition.child ? 0.0 : 0.5;
+        }
+        return 0.0;
       },
-      
+
       onAccept: (data, pos) {
-         if (data.type == OutlineDragType.scene) {
-             final slIdx = selectedStorylineIndex;
-             final evIdx = selectedEventIndex;
-             if (slIdx != null && evIdx != null) {
-                int toIndex = index;
-                if (pos == DropPosition.after) toIndex++;
-                
-                final fromIndex = data.currentIndex;
-                if (fromIndex < toIndex) toIndex--;
-                
-                _moveSceneByDrag(slIdx, evIdx, fromIndex, toIndex);
-             }
-         }
+        if (data.type == OutlineDragType.scene) {
+          final slIdx = selectedStorylineIndex;
+          final evIdx = selectedEventIndex;
+          if (slIdx != null && evIdx != null) {
+            int toIndex = index;
+            if (pos == DropPosition.after) toIndex++;
+
+            final fromIndex = data.currentIndex;
+            if (fromIndex < toIndex) toIndex--;
+
+            _moveSceneByDrag(slIdx, evIdx, fromIndex, toIndex);
+          }
+        }
       },
     );
   }
@@ -2085,13 +2289,19 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
-    if (si == null || ei == null || ci == null || si < 0 || ei < 0 || ci < 0 ||
-        si >= storylines.length || ei >= storylines[si].scenes.length || 
+    if (si == null ||
+        ei == null ||
+        ci == null ||
+        si < 0 ||
+        ei < 0 ||
+        ci < 0 ||
+        si >= storylines.length ||
+        ei >= storylines[si].scenes.length ||
         ci >= storylines[si].scenes[ei].scenes.length) {
       return const SizedBox.shrink();
     }
     final scene = storylines[si].scenes[ei].scenes[ci];
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2100,12 +2310,12 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
           children: [
             Text(
               "小箱內容（場景細節）",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            
+
             Builder(
               builder: (context) {
                 if (sceneNameController.text != scene.sceneName) {
@@ -2123,9 +2333,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 );
               },
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             Row(
               children: [
                 Expanded(
@@ -2169,9 +2379,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             Row(
               children: [
                 Expanded(
@@ -2215,9 +2425,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             CardList(
               title: "人物",
               icon: Icons.person,
@@ -2235,9 +2445,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             CardList(
               title: "物件",
               icon: Icons.category,
@@ -2255,9 +2465,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             CardList(
               title: "行動",
               icon: Icons.directions_run,
@@ -2275,13 +2485,10 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
-            Text(
-              "備註",
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+
+            Text("備註", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Builder(
               builder: (context) {
@@ -2311,7 +2518,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   void _addStoryline() {
     final name = newStorylineController.text.trim();
     final finalName = name.isEmpty ? "故事線 ${storylines.length + 1}" : name;
-    
+
     final newStoryline = StorylineData(
       storylineName: finalName,
       storylineType: "",
@@ -2321,7 +2528,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       people: [],
       item: [],
     );
-    
+
     setState(() {
       storylines.add(newStoryline);
       selectedStorylineID = newStoryline.chapterUUID;
@@ -2329,26 +2536,28 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       selectedSceneID = null;
       newStorylineController.clear();
     });
-    
+
     _notifyChange();
   }
 
   void _addEvent() {
     final si = selectedStorylineIndex;
     if (si == null) return;
-    
+
     final name = newEventController.text.trim();
-    final finalName = name.isEmpty ? "事件 ${storylines[si].scenes.length + 1}" : name;
-    
+    final finalName = name.isEmpty
+        ? "事件 ${storylines[si].scenes.length + 1}"
+        : name;
+
     final newEvent = StoryEventData(
       storyEvent: finalName,
       scenes: [],
       memo: "",
       conflictPoint: "",
       people: List.from(storylines[si].people), // 繼承大箱
-      item: List.from(storylines[si].item),     // 繼承大箱
+      item: List.from(storylines[si].item), // 繼承大箱
     );
-    
+
     setState(() {
       storylines[si].scenes.add(newEvent);
       selectedStorylineID = storylines[si].chapterUUID;
@@ -2356,7 +2565,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       selectedSceneID = null;
       newEventController.clear();
     });
-    
+
     _notifyChange();
   }
 
@@ -2364,18 +2573,20 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si == null || ei == null) return;
-    
+
     final name = newSceneController.text.trim();
-    final finalName = name.isEmpty ? "場景 ${storylines[si].scenes[ei].scenes.length + 1}" : name;
-    
+    final finalName = name.isEmpty
+        ? "場景 ${storylines[si].scenes[ei].scenes.length + 1}"
+        : name;
+
     final newScene = SceneData(
       sceneName: finalName,
       focusPoint: "",
       conflictPoint: "",
       people: List.from(storylines[si].scenes[ei].people), // 繼承中箱
-      item: List.from(storylines[si].scenes[ei].item),     // 繼承中箱
+      item: List.from(storylines[si].scenes[ei].item), // 繼承中箱
     );
-    
+
     setState(() {
       storylines[si].scenes[ei].scenes.add(newScene);
       selectedStorylineID = storylines[si].chapterUUID;
@@ -2383,7 +2594,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       selectedSceneID = newScene.sceneUUID;
       newSceneController.clear();
     });
-    
+
     _notifyChange();
   }
 
@@ -2391,67 +2602,76 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   void _deleteStoryline(String id) {
     final index = storylines.indexWhere((sl) => sl.chapterUUID == id);
     if (index == -1) return;
-    
+
     setState(() {
       storylines.removeAt(index);
-      selectedStorylineID = storylines.isNotEmpty ? storylines.first.chapterUUID : null;
+      selectedStorylineID = storylines.isNotEmpty
+          ? storylines.first.chapterUUID
+          : null;
       _updateSelectionAfterStorylineChange();
     });
-    
+
     _notifyChange();
   }
 
   void _deleteEvent(String id, int storylineIndex) {
-    final eventIndex = storylines[storylineIndex].scenes.indexWhere((ev) => ev.storyEventUUID == id);
+    final eventIndex = storylines[storylineIndex].scenes.indexWhere(
+      (ev) => ev.storyEventUUID == id,
+    );
     if (eventIndex == -1) return;
-    
+
     setState(() {
       storylines[storylineIndex].scenes.removeAt(eventIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
-      selectedEventID = storylines[storylineIndex].scenes.isNotEmpty 
-        ? storylines[storylineIndex].scenes.first.storyEventUUID 
-        : null;
+      selectedEventID = storylines[storylineIndex].scenes.isNotEmpty
+          ? storylines[storylineIndex].scenes.first.storyEventUUID
+          : null;
       _updateSelectionAfterEventChange();
     });
-    
+
     _notifyChange();
   }
 
   void _deleteScene(String id, int storylineIndex, int eventIndex) {
-    final sceneIndex = storylines[storylineIndex].scenes[eventIndex].scenes.indexWhere((sc) => sc.sceneUUID == id);
+    final sceneIndex = storylines[storylineIndex].scenes[eventIndex].scenes
+        .indexWhere((sc) => sc.sceneUUID == id);
     if (sceneIndex == -1) return;
-    
+
     setState(() {
       storylines[storylineIndex].scenes[eventIndex].scenes.removeAt(sceneIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
-      selectedEventID = storylines[storylineIndex].scenes[eventIndex].storyEventUUID;
-      selectedSceneID = storylines[storylineIndex].scenes[eventIndex].scenes.isNotEmpty
-        ? storylines[storylineIndex].scenes[eventIndex].scenes.first.sceneUUID
-        : null;
+      selectedEventID =
+          storylines[storylineIndex].scenes[eventIndex].storyEventUUID;
+      selectedSceneID =
+          storylines[storylineIndex].scenes[eventIndex].scenes.isNotEmpty
+          ? storylines[storylineIndex].scenes[eventIndex].scenes.first.sceneUUID
+          : null;
     });
-    
+
     _notifyChange();
   }
 
   // MARK: - 拖動處理方法
-  
+
   void _moveStorylineByDrag(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
-    
+
     setState(() {
       final storyline = storylines.removeAt(fromIndex);
       storylines.insert(toIndex, storyline);
     });
-    
+
     _notifyChange();
   }
-  
+
   void _moveEventToStoryline(String eventId, String toStorylineId) {
     // 找到來源事件
     int? sourceStorylineIdx;
     int? sourceEventIdx;
     for (int si = 0; si < storylines.length; si++) {
-      final ei = storylines[si].scenes.indexWhere((ev) => ev.storyEventUUID == eventId);
+      final ei = storylines[si].scenes.indexWhere(
+        (ev) => ev.storyEventUUID == eventId,
+      );
       if (ei >= 0) {
         sourceStorylineIdx = si;
         sourceEventIdx = ei;
@@ -2462,31 +2682,44 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     if (sourceStorylineIdx == null || sourceEventIdx == null) return;
 
     // 找到目標故事線
-    final targetStorylineIdx = storylines.indexWhere((sl) => sl.chapterUUID == toStorylineId);
-    if (targetStorylineIdx < 0 || targetStorylineIdx == sourceStorylineIdx) return;
+    final targetStorylineIdx = storylines.indexWhere(
+      (sl) => sl.chapterUUID == toStorylineId,
+    );
+    if (targetStorylineIdx < 0 || targetStorylineIdx == sourceStorylineIdx)
+      return;
 
     // 執行移動
-    final movingEvent = storylines[sourceStorylineIdx].scenes.removeAt(sourceEventIdx);
+    final movingEvent = storylines[sourceStorylineIdx].scenes.removeAt(
+      sourceEventIdx,
+    );
     storylines[targetStorylineIdx].scenes.add(movingEvent);
 
     // 更新選擇
     setState(() {
       selectedStorylineID = storylines[targetStorylineIdx].chapterUUID;
       selectedEventID = movingEvent.storyEventUUID;
-      selectedSceneID = movingEvent.scenes.isNotEmpty ? movingEvent.scenes.first.sceneUUID : null;
+      selectedSceneID = movingEvent.scenes.isNotEmpty
+          ? movingEvent.scenes.first.sceneUUID
+          : null;
     });
 
     _notifyChange();
   }
-  
-  void _moveSceneToEvent(String sceneId, int targetStorylineIdx, int targetEventIdx) {
+
+  void _moveSceneToEvent(
+    String sceneId,
+    int targetStorylineIdx,
+    int targetEventIdx,
+  ) {
     // 找到來源場景
     int? sourceStorylineIdx;
-    int? sourceEventIdx; 
+    int? sourceEventIdx;
     int? sourceSceneIdx;
     for (int si = 0; si < storylines.length; si++) {
       for (int ei = 0; ei < storylines[si].scenes.length; ei++) {
-        final ci = storylines[si].scenes[ei].scenes.indexWhere((sc) => sc.sceneUUID == sceneId);
+        final ci = storylines[si].scenes[ei].scenes.indexWhere(
+          (sc) => sc.sceneUUID == sceneId,
+        );
         if (ci >= 0) {
           sourceStorylineIdx = si;
           sourceEventIdx = ei;
@@ -2497,42 +2730,62 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
       if (sourceSceneIdx != null) break;
     }
 
-    if (sourceStorylineIdx == null || sourceEventIdx == null || sourceSceneIdx == null) return;
-    if (sourceStorylineIdx == targetStorylineIdx && sourceEventIdx == targetEventIdx) return;
+    if (sourceStorylineIdx == null ||
+        sourceEventIdx == null ||
+        sourceSceneIdx == null)
+      return;
+    if (sourceStorylineIdx == targetStorylineIdx &&
+        sourceEventIdx == targetEventIdx)
+      return;
 
     // 執行移動
-    final movingScene = storylines[sourceStorylineIdx].scenes[sourceEventIdx].scenes.removeAt(sourceSceneIdx);
-    storylines[targetStorylineIdx].scenes[targetEventIdx].scenes.add(movingScene);
+    final movingScene = storylines[sourceStorylineIdx]
+        .scenes[sourceEventIdx]
+        .scenes
+        .removeAt(sourceSceneIdx);
+    storylines[targetStorylineIdx].scenes[targetEventIdx].scenes.add(
+      movingScene,
+    );
 
     // 更新選擇
     setState(() {
       selectedStorylineID = storylines[targetStorylineIdx].chapterUUID;
-      selectedEventID = storylines[targetStorylineIdx].scenes[targetEventIdx].storyEventUUID;
+      selectedEventID =
+          storylines[targetStorylineIdx].scenes[targetEventIdx].storyEventUUID;
       selectedSceneID = movingScene.sceneUUID;
     });
 
     _notifyChange();
   }
-  
+
   void _moveEventByDrag(int storylineIndex, int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
-    
+
     setState(() {
       final event = storylines[storylineIndex].scenes.removeAt(fromIndex);
       storylines[storylineIndex].scenes.insert(toIndex, event);
     });
-    
+
     _notifyChange();
   }
-  
-  void _moveSceneByDrag(int storylineIndex, int eventIndex, int fromIndex, int toIndex) {
+
+  void _moveSceneByDrag(
+    int storylineIndex,
+    int eventIndex,
+    int fromIndex,
+    int toIndex,
+  ) {
     if (fromIndex == toIndex) return;
-    
+
     setState(() {
-      final scene = storylines[storylineIndex].scenes[eventIndex].scenes.removeAt(fromIndex);
-      storylines[storylineIndex].scenes[eventIndex].scenes.insert(toIndex, scene);
+      final scene = storylines[storylineIndex].scenes[eventIndex].scenes
+          .removeAt(fromIndex);
+      storylines[storylineIndex].scenes[eventIndex].scenes.insert(
+        toIndex,
+        scene,
+      );
     });
-    
+
     _notifyChange();
   }
 
@@ -2540,9 +2793,9 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   void _updateSelectionAfterStorylineChange() {
     final si = selectedStorylineIndex;
     if (si != null) {
-      selectedEventID = storylines[si].scenes.isNotEmpty 
-        ? storylines[si].scenes.first.storyEventUUID 
-        : null;
+      selectedEventID = storylines[si].scenes.isNotEmpty
+          ? storylines[si].scenes.first.storyEventUUID
+          : null;
       _updateSelectionAfterEventChange();
     } else {
       selectedEventID = null;
@@ -2556,12 +2809,11 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
       selectedSceneID = storylines[si].scenes[ei].scenes.isNotEmpty
-        ? storylines[si].scenes[ei].scenes.first.sceneUUID
-        : null;
+          ? storylines[si].scenes[ei].scenes.first.sceneUUID
+          : null;
     } else {
       selectedSceneID = null;
     }
     _syncAllControllers();
   }
 }
-
