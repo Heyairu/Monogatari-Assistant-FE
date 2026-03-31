@@ -174,29 +174,29 @@ class AppTheme {
   static TextTheme _buildTextTheme(double baseSize) {
     return TextTheme(
       // L1 +12px
-      displayLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
-      displayMedium: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
-      displaySmall: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
-      headlineLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.bold),
+      displayLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
+      displayMedium: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
+      displaySmall: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
+      headlineLarge: TextStyle(fontSize: baseSize + 12, fontWeight: FontWeight.w900),
       
       // L2 +8px
-      headlineMedium: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
-      headlineSmall: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
-      titleLarge: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w600),
+      headlineMedium: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
+      headlineSmall: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
+      titleLarge: TextStyle(fontSize: baseSize + 8, fontWeight: FontWeight.w800),
       
       // L3 +4px
-      titleMedium: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w500),
-      titleSmall: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w500),
+      titleMedium: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w600),
+      titleSmall: TextStyle(fontSize: baseSize + 4, fontWeight: FontWeight.w600),
       
       // Body (base)
-      bodyLarge: TextStyle(fontSize: baseSize),
-      bodyMedium: TextStyle(fontSize: baseSize),
+      bodyLarge: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
+      bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
       
       // Subtitle/Status -4px
-      bodySmall: TextStyle(fontSize: baseSize - 4),
-      labelLarge: TextStyle(fontSize: baseSize - 4),
-      labelMedium: TextStyle(fontSize: baseSize - 4),
-      labelSmall: TextStyle(fontSize: baseSize - 4),
+      bodySmall: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
+      labelLarge: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
+      labelMedium: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
+      labelSmall: TextStyle(fontSize: baseSize - 4, fontWeight: FontWeight.w600),
     );
   }
 

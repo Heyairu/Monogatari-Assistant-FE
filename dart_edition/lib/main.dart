@@ -843,9 +843,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 Expanded(
                   child: _ScrollingText(
                     text: displayText,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
               ],
@@ -1107,9 +1105,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final double maxWidth = constraints.maxWidth;
-                    // 計算側邊欄寬度，並限制在 320px - 40% 之間
-                    final double minSidebarWidth = max(maxWidth*0.2, 320);
-                    final double maxSidebarWidth = max(maxWidth*0.4, 320);
+                    // 計算側邊欄寬度，並限制在 360px - 40% 之間
+                    final double minSidebarWidth = max(maxWidth*0.2, 360);
+                    final double maxSidebarWidth = max(maxWidth*0.4, 360);
                     // 確保最大寬度至少能容納最小寬度
                     final double effectiveMaxWidth = maxSidebarWidth < minSidebarWidth ? minSidebarWidth : maxSidebarWidth;
                     

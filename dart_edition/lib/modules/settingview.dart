@@ -331,7 +331,7 @@ class _SettingViewState extends State<SettingView> {
                 "目前使用：${isDark ? "深色" : "淺色"}模式",
                 style: TextStyle(
                   color: colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

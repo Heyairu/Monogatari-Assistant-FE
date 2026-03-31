@@ -1044,7 +1044,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
@@ -1305,7 +1305,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
         label,
         style: TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
           color: enabled ? null : Theme.of(context).disabledColor,
         ),
       ),
@@ -1496,7 +1496,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                               color: Theme.of(context).colorScheme.onPrimaryContainer,
                             ),
                           ),

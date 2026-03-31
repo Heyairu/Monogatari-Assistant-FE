@@ -711,7 +711,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
             child: Text(
               location.localName.isEmpty ? "（未命名）" : location.localName,
               style: TextStyle(
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 color: isSelected 
                     ? Theme.of(context).colorScheme.primary 
                     : Theme.of(context).colorScheme.onSurface,
