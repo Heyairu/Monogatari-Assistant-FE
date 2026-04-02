@@ -24,18 +24,18 @@
 
 		{"content": "欸嘿啾咪～","source": "《緋染天空》茅森月歌"},
 
-		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "Monogatari Assistant - Tips"},
-		{"content": "外觀可以在設定頁面修改。","source": "Monogatari Assistant - Tips"},
-		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "Monogatari Assistant - Tips"},
-		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant - Tips"},
-		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant - Tips"},
-		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant - Tips"},
+		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "Monogatari Assistant"},
+		{"content": "外觀可以在設定頁面修改。","source": "Monogatari Assistant"},
+		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "Monogatari Assistant"},
+		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant"},
+		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant"},
+		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant"},
+		{"content": "你知道用Ctrl+S可以存檔嗎？","source": "Monogatari Assistant"},
 		{"content": "我恨蛸壺屋。","source": "Heyairu"},
-
-		{"content": "其實這個軟體的原型是用QT-C++開發的，叫做「Novel Assistant」。","source": "Monogatari Assistant - History"},
 
 		{"content": "嚴厲斥責 你發瘋啦\n不可以不可以不可以\n什麼東西啦 拜託冷靜一點好不好\n到底在講什麼 那會被告的好嗎","source": "超負荷"},
 		{"content": "羅傑說你是2486。","source": "某不知名網友"},
+		{"content": "Never gonna give you up,\nNever gonna let you down,\nNever gonna run around and desert you.","source":"Rick Astley"},
 
 		{"content": "中國最偉大、最永久的藝術，就是男人扮女人。","source": "魯迅（1881-1936）"},
 		{"content": "我提倡白話文，\n不是讓你寫作出一堆垃圾來！","source": "胡適（1891-1962）並沒有說過這句話"},
