@@ -11,6 +11,7 @@
  */
 
 import "dart:ui" as ui;
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter/scheduler.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -170,55 +171,107 @@ class AppTheme {
 
   /// 生成 TextTheme
   static TextTheme _buildTextTheme(double baseSize) {
-    return TextTheme(
-      // H1
-      titleLarge: TextStyle(
-        fontSize: baseSize + 12,
-        fontWeight: FontWeight.w900,
-      ),
-      // H2
-      titleMedium: TextStyle(
-        fontSize: baseSize + 8,
-        fontWeight: FontWeight.w800,
-      ),
-      // H3
-      titleSmall: TextStyle(
-        fontSize: baseSize + 4,
-        fontWeight: FontWeight.w700,
-      ),
-      // Large Text
-      labelLarge: TextStyle(
-        fontSize: baseSize + 2,
-        fontWeight: FontWeight.w600,
-      ),
-      bodyLarge: TextStyle(
-        fontSize: baseSize + 2,
-        fontWeight: FontWeight.w600,
-      ),
-      // Medium Text
-      labelMedium: TextStyle(
-        fontSize: baseSize,
-        fontWeight: FontWeight.w600,
-      ),
-      bodyMedium: TextStyle(
-        fontSize: baseSize,
-        fontWeight: FontWeight.w600,
-      ),
-      // Small Text
-      labelSmall: TextStyle(
-        fontSize: baseSize - 2,
-        fontWeight: FontWeight.w600,
-      ),
-      bodySmall: TextStyle(
-        fontSize: baseSize - 2,
-        fontWeight: FontWeight.w600,
-      ),
-      // Nano Text
-        displaySmall: TextStyle(
-          fontSize: baseSize - 4,
+    if (defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS) {
+      return TextTheme(
+        // H1
+        titleLarge: TextStyle(
+          fontSize: baseSize + 12,
+          fontWeight: FontWeight.w800,
+        ),
+        // H2
+        titleMedium: TextStyle(
+          fontSize: baseSize + 8,
+          fontWeight: FontWeight.w700,
+        ),
+        // H3
+        titleSmall: TextStyle(
+          fontSize: baseSize + 4,
           fontWeight: FontWeight.w600,
         ),
-    );
+        // Large Text
+        labelLarge: TextStyle(
+          fontSize: baseSize + 2,
+          fontWeight: FontWeight.w500,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: baseSize + 2,
+          fontWeight: FontWeight.w400,
+        ),
+        // Medium Text
+        labelMedium: TextStyle(
+          fontSize: baseSize,
+          fontWeight: FontWeight.w400,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: baseSize,
+          fontWeight: FontWeight.w400,
+        ),
+        // Small Text
+        labelSmall: TextStyle(
+          fontSize: baseSize - 2,
+          fontWeight: FontWeight.w400,
+        ),
+        bodySmall: TextStyle(
+          fontSize: baseSize - 2,
+          fontWeight: FontWeight.w400,
+        ),
+        // Nano Text
+          displaySmall: TextStyle(
+            fontSize: baseSize - 4,
+            fontWeight: FontWeight.w400,
+          ),
+      );
+    }else{
+        return TextTheme(
+          // H1
+          titleLarge: TextStyle(
+            fontSize: baseSize + 12,
+            fontWeight: FontWeight.w900,
+          ),
+          // H2
+          titleMedium: TextStyle(
+            fontSize: baseSize + 8,
+            fontWeight: FontWeight.w800,
+          ),
+          // H3
+          titleSmall: TextStyle(
+            fontSize: baseSize + 4,
+            fontWeight: FontWeight.w700,
+          ),
+          // Large Text
+          labelLarge: TextStyle(
+            fontSize: baseSize + 2,
+            fontWeight: FontWeight.w600,
+          ),
+          bodyLarge: TextStyle(
+            fontSize: baseSize + 2,
+            fontWeight: FontWeight.w600,
+          ),
+          // Medium Text
+          labelMedium: TextStyle(
+            fontSize: baseSize,
+            fontWeight: FontWeight.w600,
+          ),
+          bodyMedium: TextStyle(
+            fontSize: baseSize,
+            fontWeight: FontWeight.w600,
+          ),
+          // Small Text
+          labelSmall: TextStyle(
+            fontSize: baseSize - 2,
+            fontWeight: FontWeight.w600,
+          ),
+          bodySmall: TextStyle(
+            fontSize: baseSize - 2,
+            fontWeight: FontWeight.w600,
+          ),
+          // Nano Text
+            displaySmall: TextStyle(
+              fontSize: baseSize - 4,
+              fontWeight: FontWeight.w600,
+            ),
+        );
+    }
   }
 
   /// 獲取淺色主題

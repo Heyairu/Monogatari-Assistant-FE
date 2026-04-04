@@ -642,13 +642,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          "地點詳情",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        MediumTitle(icon: Icons.info_outline, text: "地點詳情"),
                         const SizedBox(height: 8),
                         Expanded(
                           child: Container(

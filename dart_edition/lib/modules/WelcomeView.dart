@@ -19,16 +19,23 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:url_launcher/url_launcher.dart";
 import "../bin/ui_library.dart";
+import "../bin/settings_manager.dart";
 
 class WelcomeView extends StatefulWidget {
   const WelcomeView({
     super.key,
     this.onNewProject,
     this.onOpenProject,
+    this.recentProjects = const [],
+    this.onOpenRecentProject,
+    this.onDeleteRecentProject,
   });
 
   final Future<void> Function()? onNewProject;
   final Future<void> Function()? onOpenProject;
+  final List<RecentProjectEntry> recentProjects;
+  final Future<void> Function(RecentProjectEntry entry)? onOpenRecentProject;
+  final Future<void> Function(RecentProjectEntry entry)? onDeleteRecentProject;
 
   @override
   State<WelcomeView> createState() => _WelcomeViewState();
@@ -45,7 +52,9 @@ class _WelcomeViewState extends State<WelcomeView> {
   static final Uri _projectRepoUri = Uri.parse(
     "https://github.com/heyairu/Monogatari-Assistant-FE",
   );
-  static final Uri _KadoURL = Uri.parse("https://www.kadokado.com.tw/user/167702");
+  static final Uri _KadoURL = Uri.parse(
+    "https://www.kadokado.com.tw/user/167702",
+  );
   static final Uri _KoFiURL = Uri.parse("https://ko-fi.com/heyairu");
   static final Random _random = Random();
 
@@ -308,6 +317,26 @@ class _WelcomeViewState extends State<WelcomeView> {
     await onOpenProject();
   }
 
+  Future<void> _handleOpenRecentProject(RecentProjectEntry entry) async {
+    final onOpenRecentProject = widget.onOpenRecentProject;
+    if (onOpenRecentProject == null) {
+      _showMessage("目前尚未連接最近檔案功能");
+      return;
+    }
+
+    await onOpenRecentProject(entry);
+  }
+
+  Future<void> _handleDeleteRecentProject(RecentProjectEntry entry) async {
+    final onDeleteRecentProject = widget.onDeleteRecentProject;
+    if (onDeleteRecentProject == null) {
+      _showMessage("目前尚未連接刪除最近檔案功能");
+      return;
+    }
+
+    await onDeleteRecentProject(entry);
+  }
+
   Future<void> _openExternalLink(Uri uri) async {
     try {
       final bool didLaunch = await launchUrl(
@@ -330,7 +359,9 @@ class _WelcomeViewState extends State<WelcomeView> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   // MARK: - UI 介面建構
@@ -520,32 +551,65 @@ class _WelcomeViewState extends State<WelcomeView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SmallTitle(icon: Icons.folder, text: "Recent"),
-                    SizedBox(height: 12),
-                    TextButton(
-                      style: TextButtonStyle,
-                      onPressed: () {},
-                      child: const Text("Example/DemoSlot1"),
-                    ),
-                    TextButton(
-                      style: TextButtonStyle,
-                      onPressed: () {},
-                      child: const Text("Example/DemoSlot2"),
-                    ),
-                    TextButton(
-                      style: TextButtonStyle,
-                      onPressed: () {},
-                      child: const Text("Example/DemoSlot3"),
-                    ),
-                    TextButton(
-                      style: TextButtonStyle,
-                      onPressed: () {},
-                      child: const Text("Example/DemoSlot4"),
-                    ),
-                    TextButton(
-                      style: TextButtonStyle,
-                      onPressed: () {},
-                      child: const Text("Example/DemoSlot5"),
-                    ),
+                    const SizedBox(height: 12),
+                    if (widget.recentProjects.isEmpty)
+                      Text(
+                        "尚無最近開啟檔案",
+                        style: Theme.of(context).textTheme.labelMedium,
+                      )
+                    else
+                      ...widget.recentProjects.take(5).map((entry) {
+                        final subtitle = entry.filePath ?? entry.uri ?? "無可用路徑";
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                style: TextButtonStyle,
+                                onPressed: () =>
+                                    _handleOpenRecentProject(entry),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.history, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            entry.fileName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            subtitle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: "從最近清單移除",
+                              onPressed: () =>
+                                  _handleDeleteRecentProject(entry),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        );
+                      }),
                   ],
                 ),
               ),

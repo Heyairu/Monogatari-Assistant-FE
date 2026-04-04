@@ -1513,6 +1513,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     return WelcomeModule.WelcomeView(
       onNewProject: _newProject,
       onOpenProject: _openProject,
+      recentProjects: widget.settingsManager.recentProjects,
+      onOpenRecentProject: _openRecentProject,
+      onDeleteRecentProject: _deleteRecentProject,
     );
   }
 
@@ -2100,11 +2103,57 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         _markAsSaved();
         setState(() => _lastSavedTime = null);
 
+        unawaited(_recordRecentProject(projectFile));
+
         // 觸發異步字數更新
         _updateAllWordCounts();
       },
       onSave: _saveProject,
     );
+  }
+
+  Future<void> _openRecentProject(RecentProjectEntry entry) async {
+    if (!entry.canReopen || entry.filePath == null) {
+      _showError("此最近檔案沒有可用的本機路徑，請改用一般「開啟檔案」。");
+      return;
+    }
+
+    await ProjectManager.openProjectFromPath(
+      context,
+      filePath: entry.filePath!,
+      hasUnsavedChanges: _hasUnsavedChanges(),
+      setLoading: (loading) => setState(() => isLoading = loading),
+      onSuccess: _showMessage,
+      onError: (message) {
+        _showError(message);
+        if (message.contains("檔案不存在")) {
+          unawaited(widget.settingsManager.removeRecentProject(entry));
+        }
+      },
+      onProjectLoaded: (projectFile, data) {
+        final initialState = _calculateInitialState(
+          data,
+          widget.settingsManager.wordCountMode,
+        );
+
+        setState(() {
+          currentProject = projectFile;
+          _applyProjectData(data, initialState);
+        });
+        _markAsSaved();
+        setState(() => _lastSavedTime = null);
+
+        unawaited(_recordRecentProject(projectFile));
+
+        _updateAllWordCounts();
+      },
+      onSave: _saveProject,
+    );
+  }
+
+  Future<void> _deleteRecentProject(RecentProjectEntry entry) async {
+    await widget.settingsManager.removeRecentProject(entry);
+    _showMessage("已從最近清單移除：${entry.fileName}");
   }
 
   Future<void> _saveProject() async {
@@ -2121,6 +2170,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onProjectSaved: (savedProject) {
         setState(() => currentProject = savedProject);
         _markAsSaved();
+        unawaited(_recordRecentProject(savedProject));
       },
     );
   }
@@ -2139,7 +2189,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       onProjectSaved: (savedProject) {
         setState(() => currentProject = savedProject);
         _markAsSaved();
+        unawaited(_recordRecentProject(savedProject));
       },
+    );
+  }
+
+  Future<void> _recordRecentProject(ProjectFile projectFile) async {
+    await widget.settingsManager.addRecentProject(
+      fileName: projectFile.fullFileName,
+      filePath: projectFile.filePath,
+      uri: projectFile.uri,
     );
   }
 

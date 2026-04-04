@@ -496,6 +496,64 @@ class ProjectManager {
     }
   }
 
+  static Future<void> openProjectFromPath(
+    BuildContext context, {
+    required String filePath,
+    required bool hasUnsavedChanges,
+    required Function(bool) setLoading,
+    required Function(String) onSuccess,
+    required Function(String) onError,
+    required Function(ProjectFile, ProjectData) onProjectLoaded,
+    required Function() onSave,
+  }) async {
+    if (hasUnsavedChanges) {
+      final shouldProceed = await showSaveConfirmDialog(
+        context,
+        title: "開啟最近專案",
+        message: "您有未儲存的變更，是否要在開啟最近專案前儲存？",
+        onDontShowAgainChanged: (_) {},
+        onSave: onSave,
+      );
+      if (shouldProceed == null) return;
+    }
+
+    try {
+      setLoading(true);
+      final projectFile = await FileService.openProjectFromPath(filePath);
+      final openedVersion = FileService.extractProjectVersion(
+        projectFile.content,
+      );
+      final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
+        openedVersion,
+      );
+
+      if (hasNewerVersion) {
+        setLoading(false);
+        if (!context.mounted) return;
+
+        final shouldContinue = await showVersionCompatibilityDialog(
+          context,
+          fileVersion: openedVersion ?? "unknown",
+          supportedVersion: FileService.projectVersion,
+        );
+
+        if (!shouldContinue) {
+          onError("已取消開啟較新版本檔案。");
+          return;
+        }
+        setLoading(true);
+      }
+
+      final data = await loadProjectFromXML(projectFile);
+      onProjectLoaded(projectFile, data);
+      onSuccess("專案開啟成功：${projectFile.nameWithoutExtension}");
+    } catch (e) {
+      onError("開啟最近專案失敗：${e.toString()}");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   static Future<void> saveProject(
     BuildContext context, {
     required ProjectFile? currentProject,
@@ -1501,6 +1559,33 @@ class FileService {
       throw FileException("開啟檔案失敗: ${e.toString()}");
     }
     return null;
+  }
+
+  /// 依照完整路徑開啟專案檔案
+  static Future<ProjectFile> openProjectFromPath(String filePath) async {
+    final normalizedPath = filePath.trim();
+    if (normalizedPath.isEmpty) {
+      throw FileException("檔案路徑不可為空");
+    }
+
+    try {
+      final exists = await _FileIO.exists(normalizedPath);
+      if (!exists) {
+        throw FileException("檔案不存在：$normalizedPath");
+      }
+
+      final content = await _FileIO.read(normalizedPath);
+      return ProjectFile(
+        fileName: path.basename(normalizedPath),
+        filePath: normalizedPath,
+        content: content,
+      );
+    } catch (e) {
+      if (e is FileException) {
+        rethrow;
+      }
+      throw FileException("開啟最近檔案失敗: ${e.toString()}");
+    }
   }
 
   /// 儲存專案檔案
