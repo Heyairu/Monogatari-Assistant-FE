@@ -44,6 +44,7 @@ flutter:
 
     # JSON
     - assets/jsons/didyouknow.json
+    - assets/jsons/name_eastAsia.json
   
   fonts:
     - family: NotoSans

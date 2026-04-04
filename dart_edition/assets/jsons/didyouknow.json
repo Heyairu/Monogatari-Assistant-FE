@@ -10,6 +10,7 @@
 		{"content": "沒辦法，去找一些梓的把柄……","source": "《K-ON!》田井中律"},
 		{"content": "各……各位，和樂融融地來練習吧……","source": "《K-ON!》中野梓"},
 		{"content": "能跟大家一起演奏，我非常幸福。","source": "《K-ON!!》中野梓"},
+		{"content": "請你們不要畢業……不用再整理社辦了……一直喝茶我也不會生氣……你們不要畢業啦……","source": "《K-ON!!》中野梓"},
 		{"content": "喝杯茶吧？","source": "《K-ON!!》琴吹紬"},
 		{"content": "London Bridge, Thames River, London Tower & London Eye!","source": "《映画 けいおん！》〈ごはんはおかず〉"},
 		{"content": "唯在整部K-ON總共喊了224次梓喵。","source": "k_on_htt_concert on Threads"},
@@ -30,7 +31,10 @@
 		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant"},
 		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant"},
 		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant"},
-		{"content": "你知道用Ctrl+S可以存檔嗎？","source": "Monogatari Assistant"},
+		{"content": 
+			"每種語言姓名生成器的結果高達12000個，日式更高達14400個。\n（然後生成出「琴吹紬」的概率並非為0就是了，大概1/14400）\n（如果你不知道她是誰，重抽就對了）\n（如果你知道她是誰，請跟我重複一遍輕音少女可愛，然後重抽）",
+			"source": "Monogatari Assistant"
+		},
 		{"content": "我恨蛸壺屋。","source": "Heyairu"},
 
 		{"content": "嚴厲斥責 你發瘋啦\n不可以不可以不可以\n什麼東西啦 拜託冷靜一點好不好\n到底在講什麼 那會被告的好嗎","source": "超負荷"},
