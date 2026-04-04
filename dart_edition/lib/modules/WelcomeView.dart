@@ -133,8 +133,9 @@ class _WelcomeViewState extends State<WelcomeView> {
       return const [];
     }
 
-    if (languageCode == "ZH") {
-      final dynamic raw = _eastAsiaNameData!["Surname_ZH"];
+    if (languageCode == "ZH" || languageCode == "KR") {
+      final String key = languageCode == "ZH" ? "Surname_ZH" : "Surname_KR";
+      final dynamic raw = _eastAsiaNameData![key];
       if (raw is List) {
         return raw.whereType<String>().where((s) => s.isNotEmpty).toList();
       }
@@ -162,41 +163,53 @@ class _WelcomeViewState extends State<WelcomeView> {
     return const [];
   }
 
-  List<String> _extractGivenNamePool(String languageCode) {
+  List<String> _extractGivenNamePool(String languageCode, String genderCode) {
     if (_eastAsiaNameData == null) {
       return const [];
     }
 
-    // Current product rule: only lady name pool is enabled.
-    final dynamic rawLady = _eastAsiaNameData!["Name_Lady"];
-    if (rawLady is! List ||
-        rawLady.isEmpty ||
-        rawLady.first is! Map<String, dynamic>) {
-      return const [];
-    }
-
-    final Map<String, dynamic> grouped = rawLady.first as Map<String, dynamic>;
-    final List<String> pool = [];
-
-    for (final dynamic value in grouped.values) {
-      if (value is! List ||
-          value.isEmpty ||
-          value.first is! Map<String, dynamic>) {
-        continue;
+    List<String> collectPoolByRootKey(String rootKey) {
+      final dynamic raw = _eastAsiaNameData![rootKey];
+      if (raw is! List || raw.isEmpty || raw.first is! Map<String, dynamic>) {
+        return const [];
       }
 
-      final Map<String, dynamic> namesByLanguage =
-          value.first as Map<String, dynamic>;
-      for (final MapEntry<String, dynamic> entry in namesByLanguage.entries) {
-        final dynamic languages = entry.value;
-        if (languages is List &&
-            languages.whereType<String>().contains(languageCode)) {
-          pool.add(entry.key);
+      final Map<String, dynamic> grouped = raw.first as Map<String, dynamic>;
+      final List<String> pool = [];
+
+      for (final dynamic value in grouped.values) {
+        if (value is! List ||
+            value.isEmpty ||
+            value.first is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final Map<String, dynamic> namesByLanguage =
+            value.first as Map<String, dynamic>;
+        for (final MapEntry<String, dynamic> entry in namesByLanguage.entries) {
+          final dynamic languages = entry.value;
+          if (languages is List &&
+              languages.whereType<String>().contains(languageCode)) {
+            pool.add(entry.key);
+          }
         }
       }
+
+      return pool;
     }
 
-    return pool;
+    if (genderCode == "male") {
+      return collectPoolByRootKey("Name_Man");
+    }
+
+    if (genderCode == "all" || genderCode == "neutral") {
+      return <String>{
+        ...collectPoolByRootKey("Name_Lady"),
+        ...collectPoolByRootKey("Name_Man"),
+      }.toList();
+    }
+
+    return collectPoolByRootKey("Name_Lady");
   }
 
   Future<void> _generateNames() async {
@@ -210,6 +223,7 @@ class _WelcomeViewState extends State<WelcomeView> {
       final List<String> surnamePool = _extractSurnamePool(_selectedLanguage);
       final List<String> givenNamePool = _extractGivenNamePool(
         _selectedLanguage,
+        _selectedGender,
       );
       if (surnamePool.isEmpty || givenNamePool.isEmpty) {
         throw const FormatException("Name data pool is empty");
@@ -519,12 +533,11 @@ class _WelcomeViewState extends State<WelcomeView> {
                                 ),
                                 DropdownMenuItem<String>(
                                   value: "KR",
-                                  enabled: false,
-                                  child: Text("韓式（目前不可用）"),
+                                  child: Text("韓式"),
                                 ),
                               ],
                               onChanged: (String? value) {
-                                if (value == null || value == "KR") {
+                                if (value == null) {
                                   return;
                                 }
                                 setState(() {
@@ -559,8 +572,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                                 ),
                                 DropdownMenuItem<String>(
                                   value: "male",
-                                  enabled: false,
-                                  child: Text("男性（目前不可用）"),
+                                  child: Text("男性"),
                                 ),
                                 DropdownMenuItem<String>(
                                   value: "neutral",
@@ -573,7 +585,9 @@ class _WelcomeViewState extends State<WelcomeView> {
                                 ),
                               ],
                               onChanged: (String? value) {
-                                if (value == null || value != "female") {
+                                if (value == null ||
+                                    value == "all" ||
+                                    value == "neutral") {
                                   return;
                                 }
                                 setState(() {
@@ -627,8 +641,8 @@ class _WelcomeViewState extends State<WelcomeView> {
                             children: [
                               MediumTitle(icon: Icons.east, text: "生成"),
                               const Spacer(),
-                            ]
-                          )
+                            ],
+                          ),
                         ),
                       ],
                     ),
