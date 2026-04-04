@@ -956,7 +956,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                for (int i = 0; i < slidePageCounts; i++) _buildMobileNavigationChip(i),
+                for (int i = 0; i < slidePageCounts; i++)
+                  _buildMobileNavigationChip(i),
               ],
             ),
           ),
@@ -965,9 +966,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // 功能頁面內容 - 使用 IndexedStack 保持狀態
         Expanded(
           child: IndexedStack(
-            index: slidePageIndexNow.clamp(0,(slidePageCounts - 1)), // 確保索引在有效範圍內
+            index: slidePageIndexNow.clamp(
+              0,
+              (slidePageCounts - 1),
+            ), // 確保索引在有效範圍內
             children: [
-              for (int i = 0; i < slidePageCounts; i++) _buildSpecificPageContent(i),
+              for (int i = 0; i < slidePageCounts; i++)
+                _buildSpecificPageContent(i),
             ],
           ),
         ),
@@ -1019,7 +1024,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         ),
         label: Text(
           function["label"],
-          style: Theme.of(context).textTheme.labelSmall
+          style: Theme.of(context).textTheme.labelSmall,
         ),
         backgroundColor: isSelected
             ? Theme.of(context).colorScheme.secondaryContainer
@@ -1085,8 +1090,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       });
                     },
                     labelType: NavigationRailLabelType.all,
-                    selectedLabelTextStyle: Theme.of(context).textTheme.displaySmall,
-                    unselectedLabelTextStyle: Theme.of(context).textTheme.displaySmall,
+                    selectedLabelTextStyle: Theme.of(
+                      context,
+                    ).textTheme.displaySmall,
+                    unselectedLabelTextStyle: Theme.of(
+                      context,
+                    ).textTheme.displaySmall,
                     backgroundColor: Theme.of(context).colorScheme.surface,
                     destinations: const [
                       NavigationRailDestination(
@@ -1172,7 +1181,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                         SizedBox(
                           width: sidebarWidth,
                           child: Container(
-                            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLowest,
                             child: _buildPageContent(),
                           ),
                         ),
@@ -1256,7 +1267,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 頁面視圖
   Widget _buildPageView() {
-    int pageIndex = slidePageIndexNow > (slidePageCounts - 1) ? 0 : slidePageIndexNow; // 如果在編輯器模式，預設顯示第一頁
+    int pageIndex = slidePageIndexNow > (slidePageCounts - 1)
+        ? 0
+        : slidePageIndexNow; // 如果在編輯器模式，預設顯示第一頁
 
     switch (pageIndex) {
       case 0:
@@ -1497,7 +1510,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Widget _buildWelcomeView() {
-    return const WelcomeModule.WelcomeView();
+    return WelcomeModule.WelcomeView(
+      onNewProject: _newProject,
+      onOpenProject: _openProject,
+    );
   }
 
   // 各個頁面的建構方法（符合 Material Design）
@@ -1697,10 +1713,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
               child: Icon(icon, size: 64, color: color),
             ),
             const SizedBox(height: 24),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             Text(
               description,

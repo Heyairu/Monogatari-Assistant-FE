@@ -17,10 +17,19 @@ import "dart:math";
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:url_launcher/url_launcher.dart";
 import "../bin/ui_library.dart";
 
 class WelcomeView extends StatefulWidget {
-  const WelcomeView({super.key});
+  const WelcomeView({
+    super.key,
+    this.onNewProject,
+    this.onOpenProject,
+  });
+
+  final Future<void> Function()? onNewProject;
+  final Future<void> Function()? onOpenProject;
+
   @override
   State<WelcomeView> createState() => _WelcomeViewState();
 }
@@ -33,6 +42,11 @@ class _WelcomeViewState extends State<WelcomeView> {
     content: "中國最偉大、最永久的藝術，就是男人扮女人",
     source: "—— 魯迅（1881-1936）",
   );
+  static final Uri _projectRepoUri = Uri.parse(
+    "https://github.com/heyairu/Monogatari-Assistant-FE",
+  );
+  static final Uri _KadoURL = Uri.parse("https://www.kadokado.com.tw/user/167702");
+  static final Uri _KoFiURL = Uri.parse("https://ko-fi.com/heyairu");
   static final Random _random = Random();
 
   late Future<_DidYouKnowData> _didYouKnowFuture;
@@ -274,6 +288,51 @@ class _WelcomeViewState extends State<WelcomeView> {
     ).showSnackBar(const SnackBar(content: Text("已複製姓名結果")));
   }
 
+  Future<void> _handleNewProject() async {
+    final onNewProject = widget.onNewProject;
+    if (onNewProject == null) {
+      _showMessage("目前尚未連接新建專案功能");
+      return;
+    }
+
+    await onNewProject();
+  }
+
+  Future<void> _handleOpenProject() async {
+    final onOpenProject = widget.onOpenProject;
+    if (onOpenProject == null) {
+      _showMessage("目前尚未連接開啟檔案功能");
+      return;
+    }
+
+    await onOpenProject();
+  }
+
+  Future<void> _openExternalLink(Uri uri) async {
+    try {
+      final bool didLaunch = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!didLaunch) {
+        throw const FormatException("Unable to launch external link");
+      }
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: uri.toString()));
+      if (!mounted) {
+        return;
+      }
+      _showMessage("無法直接開啟連結，已複製到剪貼簿");
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
@@ -346,7 +405,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     const SizedBox(height: 12),
                     TextButton(
                       style: TextButtonStyle,
-                      onPressed: () {},
+                      onPressed: _handleNewProject,
                       child: Row(
                         children: const [
                           Icon(Icons.create_outlined, size: 18),
@@ -357,7 +416,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     ),
                     TextButton(
                       style: TextButtonStyle,
-                      onPressed: () {},
+                      onPressed: _handleOpenProject,
                       child: Row(
                         children: const [
                           Icon(Icons.folder_open, size: 18),
@@ -368,7 +427,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     ),
                     TextButton(
                       style: TextButtonStyle,
-                      onPressed: () {},
+                      onPressed: () => _openExternalLink(_projectRepoUri),
                       child: Row(
                         children: const [
                           Icon(Icons.code, size: 18),
@@ -379,7 +438,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     ),
                     TextButton(
                       style: TextButtonStyle,
-                      onPressed: () {},
+                      onPressed: () => _openExternalLink(_KadoURL),
                       child: Row(
                         children: const [
                           Icon(Icons.person_pin, size: 18),
@@ -390,7 +449,7 @@ class _WelcomeViewState extends State<WelcomeView> {
                     ),
                     TextButton(
                       style: TextButtonStyle,
-                      onPressed: () {},
+                      onPressed: () => _openExternalLink(_KoFiURL),
                       child: Row(
                         children: const [
                           Icon(Icons.coffee, size: 18),
