@@ -59,7 +59,7 @@ class AboutView extends StatelessWidget {
 
             // 版本狀態
             Text(
-              "Beta 4",
+              "Beta 5",
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.onSurface,
@@ -68,7 +68,7 @@ class AboutView extends StatelessWidget {
 
             // 版本號
             Text(
-              "版本 0.6.70",
+              "版本 0.7.80",
               style: Theme.of(context).textTheme.titleSmall
             ),
 

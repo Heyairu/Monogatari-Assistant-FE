@@ -171,7 +171,8 @@ class AppTheme {
 
   /// 生成 TextTheme
   static TextTheme _buildTextTheme(double baseSize) {
-    if (defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS) {
+    if (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
       return TextTheme(
         // H1
         titleLarge: TextStyle(
@@ -198,14 +199,8 @@ class AppTheme {
           fontWeight: FontWeight.w400,
         ),
         // Medium Text
-        labelMedium: TextStyle(
-          fontSize: baseSize,
-          fontWeight: FontWeight.w400,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: baseSize,
-          fontWeight: FontWeight.w400,
-        ),
+        labelMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w400),
+        bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w400),
         // Small Text
         labelSmall: TextStyle(
           fontSize: baseSize - 2,
@@ -216,61 +211,55 @@ class AppTheme {
           fontWeight: FontWeight.w400,
         ),
         // Nano Text
-          displaySmall: TextStyle(
-            fontSize: baseSize - 4,
-            fontWeight: FontWeight.w400,
-          ),
+        displaySmall: TextStyle(
+          fontSize: baseSize - 4,
+          fontWeight: FontWeight.w400,
+        ),
       );
-    }else{
-        return TextTheme(
-          // H1
-          titleLarge: TextStyle(
-            fontSize: baseSize + 12,
-            fontWeight: FontWeight.w900,
-          ),
-          // H2
-          titleMedium: TextStyle(
-            fontSize: baseSize + 8,
-            fontWeight: FontWeight.w800,
-          ),
-          // H3
-          titleSmall: TextStyle(
-            fontSize: baseSize + 4,
-            fontWeight: FontWeight.w700,
-          ),
-          // Large Text
-          labelLarge: TextStyle(
-            fontSize: baseSize + 2,
-            fontWeight: FontWeight.w600,
-          ),
-          bodyLarge: TextStyle(
-            fontSize: baseSize + 2,
-            fontWeight: FontWeight.w600,
-          ),
-          // Medium Text
-          labelMedium: TextStyle(
-            fontSize: baseSize,
-            fontWeight: FontWeight.w600,
-          ),
-          bodyMedium: TextStyle(
-            fontSize: baseSize,
-            fontWeight: FontWeight.w600,
-          ),
-          // Small Text
-          labelSmall: TextStyle(
-            fontSize: baseSize - 2,
-            fontWeight: FontWeight.w600,
-          ),
-          bodySmall: TextStyle(
-            fontSize: baseSize - 2,
-            fontWeight: FontWeight.w600,
-          ),
-          // Nano Text
-            displaySmall: TextStyle(
-              fontSize: baseSize - 4,
-              fontWeight: FontWeight.w600,
-            ),
-        );
+    } else {
+      return TextTheme(
+        // H1
+        titleLarge: TextStyle(
+          fontSize: baseSize + 12,
+          fontWeight: FontWeight.w900,
+        ),
+        // H2
+        titleMedium: TextStyle(
+          fontSize: baseSize + 8,
+          fontWeight: FontWeight.w800,
+        ),
+        // H3
+        titleSmall: TextStyle(
+          fontSize: baseSize + 4,
+          fontWeight: FontWeight.w700,
+        ),
+        // Large Text
+        labelLarge: TextStyle(
+          fontSize: baseSize + 2,
+          fontWeight: FontWeight.w600,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: baseSize + 2,
+          fontWeight: FontWeight.w600,
+        ),
+        // Medium Text
+        labelMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
+        bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
+        // Small Text
+        labelSmall: TextStyle(
+          fontSize: baseSize - 2,
+          fontWeight: FontWeight.w600,
+        ),
+        bodySmall: TextStyle(
+          fontSize: baseSize - 2,
+          fontWeight: FontWeight.w600,
+        ),
+        // Nano Text
+        displaySmall: TextStyle(
+          fontSize: baseSize - 4,
+          fontWeight: FontWeight.w600,
+        ),
+      );
     }
   }
 
@@ -560,6 +549,88 @@ class _AddItemInputState extends State<AddItemInput> {
   }
 }
 
+class DropdownOption<T> {
+  final T value;
+  final String label;
+  final bool enabled;
+
+  const DropdownOption({
+    required this.value,
+    required this.label,
+    this.enabled = true,
+  });
+}
+
+class AppDropdownField<T> extends StatelessWidget {
+  final T? value;
+  final List<DropdownOption<T>> options;
+  final ValueChanged<T?>? onChanged;
+  final String? labelText;
+  final String? hintText;
+  final bool isExpanded;
+  final bool isDense;
+  final double menuMaxHeight;
+  final TextStyle? textStyle;
+  final EdgeInsetsGeometry? contentPadding;
+
+  const AppDropdownField({
+    super.key,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.labelText,
+    this.hintText,
+    this.isExpanded = true,
+    this.isDense = true,
+    this.menuMaxHeight = 320,
+    this.textStyle,
+    this.contentPadding,
+  });
+
+  TextStyle _normalizeStyle(BuildContext context) {
+    final base =
+        textStyle ??
+        Theme.of(context).textTheme.bodyMedium ??
+        const TextStyle(fontSize: 14);
+    final baseSize = base.fontSize ?? 14;
+    final normalizedSize = baseSize.clamp(12.0, 16.0);
+    return base.copyWith(fontSize: normalizedSize, height: 1.2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveStyle = _normalizeStyle(context);
+
+    return DropdownButtonFormField<T>(
+      value: value,
+      isExpanded: isExpanded,
+      isDense: isDense,
+      menuMaxHeight: menuMaxHeight,
+      style: effectiveStyle,
+      iconSize: 18,
+      decoration: InputDecoration(
+        labelText: labelText,
+        hintText: hintText,
+        border: const OutlineInputBorder(),
+        isDense: isDense,
+        contentPadding: contentPadding,
+      ),
+      items: options.map((option) {
+        return DropdownMenuItem<T>(
+          value: option.value,
+          enabled: option.enabled,
+          child: Text(
+            option.label,
+            overflow: TextOverflow.ellipsis,
+            style: effectiveStyle,
+          ),
+        );
+      }).toList(),
+      onChanged: onChanged,
+    );
+  }
+}
+
 // Chip 元件
 class CardList extends StatelessWidget {
   final String title;
@@ -586,12 +657,7 @@ class CardList extends StatelessWidget {
           children: [
             Icon(icon, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
-            Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall,
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
           ],
         ),
         const SizedBox(height: 12),

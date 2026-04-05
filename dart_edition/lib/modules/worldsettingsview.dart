@@ -33,6 +33,68 @@ class LocationDragData {
   LocationDragData({required this.locationId, required this.locationName});
 }
 
+enum WorldNodeType { location, organization, rule, item }
+
+extension WorldNodeTypeX on WorldNodeType {
+  String get xmlValue {
+    switch (this) {
+      case WorldNodeType.location:
+        return "location";
+      case WorldNodeType.organization:
+        return "organization";
+      case WorldNodeType.rule:
+        return "rule";
+      case WorldNodeType.item:
+        return "item";
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case WorldNodeType.location:
+        return "地點";
+      case WorldNodeType.organization:
+        return "組織";
+      case WorldNodeType.rule:
+        return "規則";
+      case WorldNodeType.item:
+        return "物品";
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case WorldNodeType.location:
+        return Icons.location_on_outlined;
+      case WorldNodeType.organization:
+        return Icons.groups_outlined;
+      case WorldNodeType.rule:
+        return Icons.gavel_outlined;
+      case WorldNodeType.item:
+        return Icons.inventory_2_outlined;
+    }
+  }
+}
+
+WorldNodeType parseWorldNodeType(String? raw) {
+  switch ((raw ?? "").trim().toLowerCase()) {
+    case "organization":
+    case "組織":
+      return WorldNodeType.organization;
+    case "rule":
+    case "規則":
+      return WorldNodeType.rule;
+    case "item":
+    case "物品":
+      return WorldNodeType.item;
+    case "location":
+    case "地點":
+    default:
+      // 舊版檔案沒有 NodeType 時，預設視為地點。
+      return WorldNodeType.location;
+  }
+}
+
 // MARK: - 資料結構
 
 class LocationCustomize {
@@ -72,6 +134,7 @@ class LocationData {
   String id;
   String localName;
   String localType;
+  WorldNodeType nodeType;
   List<LocationCustomize> customVal;
   String note;
   List<LocationData> child;
@@ -80,6 +143,7 @@ class LocationData {
     String? id,
     this.localName = "",
     this.localType = "",
+    this.nodeType = WorldNodeType.location,
     List<LocationCustomize>? customVal,
     this.note = "",
     List<LocationData>? child,
@@ -92,6 +156,7 @@ class LocationData {
       "id": id,
       "localName": localName,
       "localType": localType,
+      "nodeType": nodeType.xmlValue,
       "customVal": customVal.map((e) => e.toJson()).toList(),
       "note": note,
       "child": child.map((e) => e.toJson()).toList(),
@@ -103,6 +168,7 @@ class LocationData {
       id: json["id"] as String?,
       localName: json["localName"] as String? ?? "",
       localType: json["localType"] as String? ?? "",
+      nodeType: parseWorldNodeType(json["nodeType"]?.toString()),
       customVal: (json["customVal"] as List<dynamic>?)
           ?.map((e) => LocationCustomize.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -126,6 +192,7 @@ class LocationData {
   bool isContentEqual(LocationData other) {
     return other.localName == localName &&
         other.localType == localType &&
+        other.nodeType == nodeType &&
         _listEquals(other.customVal, customVal) &&
         other.note == note &&
         _listEquals(other.child, child);
@@ -283,6 +350,7 @@ class WorldSettingsCodec {
       "Location",
       nest: () {
         _writeTextElement(builder, "LocalName", loc.localName);
+        _writeTextElement(builder, "NodeType", loc.nodeType.xmlValue);
         if (loc.localType.isNotEmpty) {
           _writeTextElement(builder, "LocalType", loc.localType);
         }
@@ -339,6 +407,9 @@ class WorldSettingsCodec {
     final loc = LocationData();
     loc.localName = _readElementText(
       node.findAllElements("LocalName").firstOrNull,
+    );
+    loc.nodeType = parseWorldNodeType(
+      _readElementText(node.findAllElements("NodeType").firstOrNull),
     );
     loc.localType = _readElementText(
       node.findAllElements("LocalType").firstOrNull,
@@ -642,7 +713,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        MediumTitle(icon: Icons.info_outline, text: "地點詳情"),
+                        MediumTitle(icon: Icons.info_outline, text: "節點詳情"),
                         const SizedBox(height: 8),
                         Expanded(
                           child: Container(
@@ -727,13 +798,13 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
       // 內容
       leading: Icon(
-        Icons.location_on_outlined,
+        location.nodeType.icon,
         size: 20,
         color: Theme.of(context).colorScheme.primary,
       ),
       title: titleWidget,
       subtitle: Text(
-        "${location.child.length} 個子節點",
+        "${location.nodeType.label} • ${location.child.length} 個子節點",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       trailing: Row(
@@ -869,15 +940,17 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
             children: [
               const Text("應用模板: "),
               Expanded(
-                child: DropdownButton<String>(
+                child: AppDropdownField<String>(
                   value: selectedPresetName,
-                  isExpanded: true,
-                  items: templatePresets.map((preset) {
-                    return DropdownMenuItem<String>(
-                      value: preset.name,
-                      child: Text(preset.name),
-                    );
-                  }).toList(),
+                  options: templatePresets
+                      .map(
+                        (preset) => DropdownOption<String>(
+                          value: preset.name,
+                          label: preset.name,
+                        ),
+                      )
+                      .toList(),
+                  hintText: "選擇模板",
                   onChanged: (value) {
                     setState(() {
                       selectedPresetName = value ?? "空白";
@@ -919,6 +992,28 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
+          ),
+          const SizedBox(height: 16),
+
+          AppDropdownField<WorldNodeType>(
+            value: location.nodeType,
+            labelText: "節點類別",
+            options: WorldNodeType.values
+                .map(
+                  (type) => DropdownOption<WorldNodeType>(
+                    value: type,
+                    label: type.label,
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null || value == location.nodeType) return;
+              setState(() {
+                location.nodeType = value;
+                _rebuildFlatList();
+              });
+              _notifyChange();
+            },
           ),
           const SizedBox(height: 16),
 

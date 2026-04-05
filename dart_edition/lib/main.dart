@@ -33,6 +33,7 @@ import "modules/chapterselectionview.dart" as ChapterModule;
 import "modules/AboutView.dart" as AboutModule;
 import "modules/glossaryview.dart" as GlossaryModule;
 import "modules/outlineview.dart" as OutlineModule;
+import "modules/planview.dart" as PlanModule;
 import "modules/proofreadingview.dart" as ProofReadingModule;
 import "modules/WelcomeView.dart" as WelcomeModule;
 import "modules/worldsettingsview.dart";
@@ -208,7 +209,7 @@ class ContentView extends StatefulWidget {
 
 class _ContentViewState extends State<ContentView> with WindowListener {
   // 狀態變數
-  int slidePageCounts = 13;
+  int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
   int autoSaveTime = 1;
@@ -991,6 +992,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       {"icon": Icons.person, "label": "角色設定"},
       {"icon": Icons.view_timeline_outlined, "label": "時間軸"},
       {"icon": Icons.group, "label": "關係設定"},
+      {"icon": Icons.assessment, "label": "計畫規劃"},
       {"icon": Icons.library_books, "label": "詞語參考"},
       {"icon": Icons.spellcheck, "label": "文本校正"},
       {"icon": Icons.auto_awesome, "label": "Copilot"},
@@ -1055,14 +1057,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       case 7:
         return _buildRelationView();
       case 8:
-        return _buildGlossaryView();
+        return _buildPlanView();
       case 9:
-        return _buildProofreadingView();
+        return _buildGlossaryView();
       case 10:
-        return _buildCopilotView();
+        return _buildProofreadingView();
       case 11:
-        return _buildSettingView();
+        return _buildCopilotView();
       case 12:
+        return _buildSettingView();
+      case 13:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -1129,6 +1133,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
                       NavigationRailDestination(
                         icon: Icon(Icons.group),
                         label: Text("關係設定"),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.assessment),
+                        label: Text("計畫規劃"),
                       ),
                       NavigationRailDestination(
                         icon: Icon(Icons.library_books),
@@ -1289,14 +1297,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       case 7:
         return _buildRelationView();
       case 8:
-        return _buildGlossaryView();
+        return _buildPlanView();
       case 9:
-        return _buildProofreadingView();
+        return _buildGlossaryView();
       case 10:
-        return _buildCopilotView();
+        return _buildProofreadingView();
       case 11:
-        return _buildSettingView();
+        return _buildCopilotView();
       case 12:
+        return _buildSettingView();
+      case 13:
         return _buildAboutView();
       default:
         return Center(child: Text("Page ${pageIndex + 1}"));
@@ -1665,6 +1675,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       description: "關係圖功能開發中...",
       color: Colors.amber,
     );
+  }
+
+  Widget _buildPlanView() {
+    return const PlanModule.PlanView();
   }
 
   Widget _buildGlossaryView() {
