@@ -51,6 +51,18 @@ class UpdatePlanItem {
   }) : id = id ?? const Uuid().v4();
 }
 
+class _ForeshadowDragData {
+  final String id;
+
+  const _ForeshadowDragData({required this.id});
+}
+
+class _UpdatePlanDragData {
+  final String id;
+
+  const _UpdatePlanDragData({required this.id});
+}
+
 class InspirationFolder {
   String id;
   String name;
@@ -378,6 +390,10 @@ class _PlanViewState extends State<PlanView> {
   final Set<String> collapsedFolderIds = <String>{};
   bool _isInspirationDragging = false;
   String? _draggingInspirationNodeKey;
+  bool _isForeshadowDragging = false;
+  String? _draggingForeshadowId;
+  bool _isUpdatePlanDragging = false;
+  String? _draggingUpdatePlanId;
   bool _showRootDirectory = false;
   List<String> _rootLayerOrder = [];
 
@@ -671,6 +687,51 @@ class _PlanViewState extends State<PlanView> {
     _notifyProjectChanged();
   }
 
+  bool _canAcceptForeshadowDrop(
+    _ForeshadowDragData data,
+    ForeshadowItem target,
+    DropPosition pos,
+  ) {
+    if (data.id == target.id) return false;
+    return pos != DropPosition.child;
+  }
+
+  void _reorderForeshadowItems(
+    String draggedId,
+    String targetId,
+    bool isBefore,
+  ) {
+    final draggedIndex = widget.foreshadowItems.indexWhere(
+      (e) => e.id == draggedId,
+    );
+    final targetIndex = widget.foreshadowItems.indexWhere(
+      (e) => e.id == targetId,
+    );
+    if (draggedIndex == -1 || targetIndex == -1) return;
+
+    final draggedItem = widget.foreshadowItems.removeAt(draggedIndex);
+    var adjustedTarget = targetIndex;
+    if (draggedIndex < targetIndex) {
+      adjustedTarget -= 1;
+    }
+    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
+    widget.foreshadowItems.insert(insertIndex, draggedItem);
+  }
+
+  void _handleForeshadowDrop(
+    _ForeshadowDragData data,
+    ForeshadowItem target,
+    DropPosition pos,
+  ) {
+    if (!_canAcceptForeshadowDrop(data, target, pos)) return;
+
+    setState(() {
+      _reorderForeshadowItems(data.id, target.id, pos == DropPosition.before);
+      selectedForeshadowId = data.id;
+    });
+    _notifyProjectChanged();
+  }
+
   void _addUpdatePlan(String title) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return;
@@ -699,6 +760,51 @@ class _PlanViewState extends State<PlanView> {
   void _toggleUpdatePlanDone(UpdatePlanItem item, bool value) {
     setState(() {
       item.isDone = value;
+    });
+    _notifyProjectChanged();
+  }
+
+  bool _canAcceptUpdatePlanDrop(
+    _UpdatePlanDragData data,
+    UpdatePlanItem target,
+    DropPosition pos,
+  ) {
+    if (data.id == target.id) return false;
+    return pos != DropPosition.child;
+  }
+
+  void _reorderUpdatePlanItems(
+    String draggedId,
+    String targetId,
+    bool isBefore,
+  ) {
+    final draggedIndex = widget.updatePlanItems.indexWhere(
+      (e) => e.id == draggedId,
+    );
+    final targetIndex = widget.updatePlanItems.indexWhere(
+      (e) => e.id == targetId,
+    );
+    if (draggedIndex == -1 || targetIndex == -1) return;
+
+    final draggedItem = widget.updatePlanItems.removeAt(draggedIndex);
+    var adjustedTarget = targetIndex;
+    if (draggedIndex < targetIndex) {
+      adjustedTarget -= 1;
+    }
+    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
+    widget.updatePlanItems.insert(insertIndex, draggedItem);
+  }
+
+  void _handleUpdatePlanDrop(
+    _UpdatePlanDragData data,
+    UpdatePlanItem target,
+    DropPosition pos,
+  ) {
+    if (!_canAcceptUpdatePlanDrop(data, target, pos)) return;
+
+    setState(() {
+      _reorderUpdatePlanItems(data.id, target.id, pos == DropPosition.before);
+      selectedUpdatePlanId = data.id;
     });
     _notifyProjectChanged();
   }
@@ -1116,12 +1222,17 @@ class _PlanViewState extends State<PlanView> {
                       itemBuilder: (context, index) {
                         final item = widget.foreshadowItems[index];
                         final isSelected = item.id == selectedForeshadowId;
-                        return ListTile(
-                          selected: isSelected,
+                        return DraggableCardNode<_ForeshadowDragData>(
+                          key: ValueKey("foreshadow:${item.id}"),
+                          dragData: _ForeshadowDragData(id: item.id),
+                          nodeId: "foreshadow:${item.id}",
+                          nodeType: NodeType.item,
                           leading: Icon(
                             item.isRevealed
                                 ? Icons.visibility
                                 : Icons.visibility_off_outlined,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           title: Text(
                             item.title.isEmpty ? "（未命名）" : item.title,
@@ -1159,11 +1270,37 @@ class _PlanViewState extends State<PlanView> {
                               ),
                             ],
                           ),
-                          onTap: () {
+                          isSelected: isSelected,
+                          onClicked: () {
                             setState(() {
                               selectedForeshadowId = item.id;
                               _syncForeshadowControllers();
                             });
+                          },
+                          isDragging: _isForeshadowDragging,
+                          isThisDragging: _draggingForeshadowId == item.id,
+                          isDragForbidden: false,
+                          onDragStarted: () {
+                            setState(() {
+                              _isForeshadowDragging = true;
+                              _draggingForeshadowId = item.id;
+                            });
+                          },
+                          onDragEnd: () {
+                            setState(() {
+                              _isForeshadowDragging = false;
+                              _draggingForeshadowId = null;
+                            });
+                          },
+                          getDropZoneSize: (pos) {
+                            if (pos == DropPosition.child) return 0.0;
+                            return 0.5;
+                          },
+                          onWillAccept: (data, pos) {
+                            return _canAcceptForeshadowDrop(data, item, pos);
+                          },
+                          onAccept: (data, pos) {
+                            _handleForeshadowDrop(data, item, pos);
                           },
                         );
                       },
@@ -1242,12 +1379,17 @@ class _PlanViewState extends State<PlanView> {
                       itemBuilder: (context, index) {
                         final item = widget.updatePlanItems[index];
                         final isSelected = item.id == selectedUpdatePlanId;
-                        return ListTile(
-                          selected: isSelected,
+                        return DraggableCardNode<_UpdatePlanDragData>(
+                          key: ValueKey("update-plan:${item.id}"),
+                          dragData: _UpdatePlanDragData(id: item.id),
+                          nodeId: "update-plan:${item.id}",
+                          nodeType: NodeType.item,
                           leading: Icon(
                             item.isDone
                                 ? Icons.task_alt_outlined
                                 : Icons.pending_actions_outlined,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           title: Text(
                             item.title.isEmpty ? "（未命名）" : item.title,
@@ -1282,11 +1424,37 @@ class _PlanViewState extends State<PlanView> {
                               ),
                             ],
                           ),
-                          onTap: () {
+                          isSelected: isSelected,
+                          onClicked: () {
                             setState(() {
                               selectedUpdatePlanId = item.id;
                               _syncUpdatePlanControllers();
                             });
+                          },
+                          isDragging: _isUpdatePlanDragging,
+                          isThisDragging: _draggingUpdatePlanId == item.id,
+                          isDragForbidden: false,
+                          onDragStarted: () {
+                            setState(() {
+                              _isUpdatePlanDragging = true;
+                              _draggingUpdatePlanId = item.id;
+                            });
+                          },
+                          onDragEnd: () {
+                            setState(() {
+                              _isUpdatePlanDragging = false;
+                              _draggingUpdatePlanId = null;
+                            });
+                          },
+                          getDropZoneSize: (pos) {
+                            if (pos == DropPosition.child) return 0.0;
+                            return 0.5;
+                          },
+                          onWillAccept: (data, pos) {
+                            return _canAcceptUpdatePlanDrop(data, item, pos);
+                          },
+                          onAccept: (data, pos) {
+                            _handleUpdatePlanDrop(data, item, pos);
                           },
                         );
                       },
