@@ -262,6 +262,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   List<LocationData> worldSettingsData = [];
   Map<String, Map<String, dynamic>> characterData = {};
+  List<PlanModule.ForeshadowItem> foreshadowData = [];
+  List<PlanModule.UpdatePlanItem> updatePlanData = [];
 
   // 選取狀態
   String? selectedSegID;
@@ -1678,7 +1680,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Widget _buildPlanView() {
-    return const PlanModule.PlanView();
+    return PlanModule.PlanView(
+      foreshadowItems: foreshadowData,
+      updatePlanItems: updatePlanData,
+      onChanged: (newForeshadows, newUpdatePlans) {
+        setState(() {
+          foreshadowData = newForeshadows;
+          updatePlanData = newUpdatePlans;
+        });
+        _markAsModified();
+      },
+    );
   }
 
   Widget _buildGlossaryView() {
@@ -2268,6 +2280,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       baseInfoData: baseInfoData,
       segmentsData: segmentsData,
       outlineData: outlineData,
+      foreshadowData: foreshadowData,
+      updatePlanData: updatePlanData,
       worldSettingsData: worldSettingsData,
       characterData: characterData,
       totalWords: totalWords,
@@ -2280,6 +2294,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     baseInfoData = data.baseInfoData;
     segmentsData = data.segmentsData;
     outlineData = data.outlineData;
+    foreshadowData = data.foreshadowData;
+    updatePlanData = data.updatePlanData;
     worldSettingsData = data.worldSettingsData;
     characterData = data.characterData;
 

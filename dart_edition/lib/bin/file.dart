@@ -23,6 +23,7 @@ import "package:xml/xml.dart" as xml;
 import "../modules/baseinfoview.dart" as BaseInfoModule;
 import "../modules/chapterselectionview.dart" as ChapterModule;
 import "../modules/outlineview.dart" as OutlineModule;
+import "../modules/planview.dart" as PlanModule;
 import "../modules/worldsettingsview.dart";
 import "../modules/characterview.dart";
 
@@ -85,9 +86,10 @@ class _SystemBridge {
     }
 
     try {
-      return await platform.invokeMethod<String>("createSecurityScopedBookmark", {
-        "path": filePath,
-      });
+      return await platform.invokeMethod<String>(
+        "createSecurityScopedBookmark",
+        {"path": filePath},
+      );
     } on PlatformException catch (e) {
       debugPrint("Create macOS bookmark failed: ${e.message}");
       return null;
@@ -116,7 +118,9 @@ class _SystemBridge {
       final rawUri = rawResult["uri"];
       final rawContent = rawResult["content"];
 
-      if (rawName is! String || rawName.trim().isEmpty || rawContent is! String) {
+      if (rawName is! String ||
+          rawName.trim().isEmpty ||
+          rawContent is! String) {
         return null;
       }
 
@@ -840,6 +844,8 @@ class ProjectData {
   BaseInfoModule.BaseInfoData baseInfoData;
   List<ChapterModule.SegmentData> segmentsData;
   List<OutlineModule.StorylineData> outlineData;
+  List<PlanModule.ForeshadowItem> foreshadowData;
+  List<PlanModule.UpdatePlanItem> updatePlanData;
   List<LocationData> worldSettingsData;
   Map<String, Map<String, dynamic>> characterData;
 
@@ -854,6 +860,8 @@ class ProjectData {
     required this.baseInfoData,
     required this.segmentsData,
     required this.outlineData,
+    required this.foreshadowData,
+    required this.updatePlanData,
     required this.worldSettingsData,
     required this.characterData,
     this.totalWords = 0,
@@ -884,6 +892,8 @@ class ProjectData {
           memo: "",
         ),
       ],
+      foreshadowData: [],
+      updatePlanData: [],
       worldSettingsData: [LocationData(localName: "主要場景")],
       characterData: {},
       totalWords: 0,
@@ -973,6 +983,8 @@ class _ProjectParser {
     BaseInfoModule.BaseInfoData? loadedBaseInfo;
     List<ChapterModule.SegmentData>? loadedSegments;
     List<OutlineModule.StorylineData>? loadedOutline;
+    List<PlanModule.ForeshadowItem>? loadedForeshadow;
+    List<PlanModule.UpdatePlanItem>? loadedUpdatePlans;
     List<LocationData>? loadedWorldSettings;
     Map<String, Map<String, dynamic>>? loadedCharacterData;
 
@@ -1012,6 +1024,14 @@ class _ProjectParser {
               loadedOutline ??= OutlineModule.OutlineCodec.loadXML(blockXml);
               break;
 
+            case "PlanSettings":
+              final planData = PlanModule.PlanCodec.loadXML(blockXml);
+              if (planData != null) {
+                loadedForeshadow ??= planData.foreshadows;
+                loadedUpdatePlans ??= planData.updatePlans;
+              }
+              break;
+
             case "WorldSettings":
               loadedWorldSettings ??= WorldSettingsCodec.loadXML(blockXml);
               break;
@@ -1045,6 +1065,8 @@ class _ProjectParser {
       baseInfoData: loadedBaseInfo ?? defaultData.baseInfoData,
       segmentsData: loadedSegments ?? defaultData.segmentsData,
       outlineData: loadedOutline ?? defaultData.outlineData,
+      foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
+      updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
       worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
       characterData: loadedCharacterData ?? defaultData.characterData,
       totalWords: totalWords,
@@ -1086,6 +1108,16 @@ class _ProjectMerger {
     final outlineXml = OutlineModule.OutlineCodec.saveXML(data.outlineData);
     if (outlineXml != null) {
       buffer.writeln(outlineXml);
+    }
+
+    // PlanSettings
+    final planXml = PlanModule.PlanCodec.saveXML(
+      data.foreshadowData,
+      data.updatePlanData,
+    );
+    if (planXml != null) {
+      buffer.writeln();
+      buffer.write(planXml);
     }
 
     // WorldSettings
@@ -1555,7 +1587,7 @@ class FileService {
   static const String projectExtension = ".mnproj"; // MonogatariAssistant 專案檔案
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
-  static const String projectVersion = "1.04"; // 專案結構版本
+  static const String projectVersion = "1.06"; // 專案結構版本
 
   /// 從專案 XML 取出版本號（<ver>）
   static String? extractProjectVersion(String xmlContent) {
@@ -1675,8 +1707,10 @@ class FileService {
       if (Platform.isMacOS && _isPermissionDeniedError(e)) {
         if (normalizedToken != null && normalizedToken.isNotEmpty) {
           try {
-            final reopened = await _SystemBridge
-                .openProjectFromSecurityScopedBookmark(normalizedToken);
+            final reopened =
+                await _SystemBridge.openProjectFromSecurityScopedBookmark(
+                  normalizedToken,
+                );
             if (reopened != null) {
               return ProjectFile(
                 fileName: reopened.name,
