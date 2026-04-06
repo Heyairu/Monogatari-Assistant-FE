@@ -465,16 +465,6 @@ class _PlanViewState extends State<PlanView> {
     return null;
   }
 
-  String get _currentInspirationTargetLabel {
-    if (selectedFolderId == null) return "根目錄";
-    for (final folder in inspirationFolders) {
-      if (folder.id == selectedFolderId) {
-        return folder.name.isEmpty ? "（未命名資料夾）" : folder.name;
-      }
-    }
-    return "根目錄";
-  }
-
   String _folderRootKey(String folderId) => "F:$folderId";
 
   String _noteRootKey(String noteId) => "N:$noteId";
@@ -1507,14 +1497,6 @@ class _PlanViewState extends State<PlanView> {
     if (selected == null) {
       return const Text("請選擇一則靈感進行編輯");
     }
-
-    final folderName = selected.folderId == null
-        ? "根目錄"
-        : inspirationFolders
-                  .where((f) => f.id == selected.folderId)
-                  .map((f) => f.name.isEmpty ? "（未命名）" : f.name)
-                  .firstOrNull ??
-              "根目錄";
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
