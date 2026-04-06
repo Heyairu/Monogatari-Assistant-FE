@@ -16,6 +16,7 @@ import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 import "dart:io";
 import "dart:convert";
+import "dart:math" as math;
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
 import "package:xml/xml.dart" as xml;
@@ -556,190 +557,184 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    const listMinHeight = 320.0;
+    final listHeight = math.max(viewportHeight * 0.4, listMinHeight);
+
     return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            Row(
-              children: [
-                const LargeTitle(icon: Icons.public, text: "世界設定"),
-                const Spacer(),
-                PopupMenuButton<String>(
-                  icon: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.grid_view),
-                      SizedBox(width: 4),
-                      Text("模板管理"),
-                    ],
-                  ),
-                  onSelected: (value) {
-                    switch (value) {
-                      case "import":
-                        _importTemplate();
-                        break;
-                      case "exportSelected":
-                        _exportSelectedTemplate();
-                        break;
-                      case "exportAll":
-                        _exportAllTemplates();
-                        break;
-                      case "save":
-                        _saveCurrentAsPreset();
-                        break;
-                      case "rename":
-                        _showRenamePresetDialog();
-                        break;
-                      case "delete":
-                        _deleteSelectedPreset();
-                        break;
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: "import",
-                      child: Text("匯入模板檔案…"),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title
+                    Row(
+                      children: [
+                        const LargeTitle(icon: Icons.public, text: "世界設定"),
+                        const Spacer(),
+                        PopupMenuButton<String>(
+                          icon: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.grid_view),
+                              SizedBox(width: 4),
+                              Text("模板管理"),
+                            ],
+                          ),
+                          onSelected: (value) {
+                            switch (value) {
+                              case "import":
+                                _importTemplate();
+                                break;
+                              case "exportSelected":
+                                _exportSelectedTemplate();
+                                break;
+                              case "exportAll":
+                                _exportAllTemplates();
+                                break;
+                              case "save":
+                                _saveCurrentAsPreset();
+                                break;
+                              case "rename":
+                                _showRenamePresetDialog();
+                                break;
+                              case "delete":
+                                _deleteSelectedPreset();
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: "import",
+                              child: Text("匯入模板檔案…"),
+                            ),
+                            PopupMenuItem(
+                              value: "exportSelected",
+                              enabled: _selectedPreset != null,
+                              child: const Text("匯出選取模板…"),
+                            ),
+                            PopupMenuItem(
+                              value: "exportAll",
+                              enabled: templatePresets.isNotEmpty,
+                              child: const Text("匯出全部模板…"),
+                            ),
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                              value: "save",
+                              child: Text("儲存預設模板…"),
+                            ),
+                            PopupMenuItem(
+                              value: "rename",
+                              enabled: _selectedPreset != null,
+                              child: const Text("更改預設名稱…"),
+                            ),
+                            PopupMenuItem(
+                              value: "delete",
+                              enabled:
+                                  _selectedPreset != null &&
+                                  _selectedPreset!.name != "空白",
+                              child: const Text("刪除選取預設"),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    PopupMenuItem(
-                      value: "exportSelected",
-                      enabled: _selectedPreset != null,
-                      child: const Text("匯出選取模板…"),
+                    const SizedBox(height: 32),
+
+                    // 上方樹狀列表區域
+                    MediumTitle(icon: Icons.map, text: "世界結構"),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: listHeight,
+                      child: GestureDetector(
+                        onTap: () {
+                          // 點擊容器空白區域時取消選取
+                          setState(() {
+                            selectedNodeId = null;
+                          });
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outline.withOpacity(0.2),
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLowest,
+                          ),
+                          child: Builder(
+                            builder: (context) {
+                              if (widget.locations.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    "尚無地點，請新增第一個地點",
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelLarge,
+                                  ),
+                                );
+                              }
+
+                              return ListView.builder(
+                                padding: const EdgeInsets.all(8),
+                                itemCount: _flatList.length,
+                                itemBuilder: (context, index) {
+                                  final item = _flatList[index];
+                                  return _buildLocationRow(
+                                    item.node,
+                                    item.depth,
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ),
-                    PopupMenuItem(
-                      value: "exportAll",
-                      enabled: templatePresets.isNotEmpty,
-                      child: const Text("匯出全部模板…"),
+                    // 新增地點輸入框
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: AddItemInput(
+                        title: selectedNodeId != null ? "子地點" : "頂層地點",
+                        onAdd: _addLocation,
+                      ),
                     ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(value: "save", child: Text("儲存預設模板…")),
-                    PopupMenuItem(
-                      value: "rename",
-                      enabled: _selectedPreset != null,
-                      child: const Text("更改預設名稱…"),
-                    ),
-                    PopupMenuItem(
-                      value: "delete",
-                      enabled:
-                          _selectedPreset != null &&
-                          _selectedPreset!.name != "空白",
-                      child: const Text("刪除選取預設"),
+
+                    const SizedBox(height: 8),
+
+                    // 下方詳情面板
+                    MediumTitle(icon: Icons.info_outline, text: "節點詳情"),
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(minHeight: 320),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outline.withOpacity(0.2),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest,
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: _buildDetailPanel(),
                     ),
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 上方樹狀列表區域
-                  Expanded(
-                    flex: 1,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        MediumTitle(icon: Icons.map, text: "世界結構"),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              // 點擊容器空白區域時取消選取
-                              setState(() {
-                                selectedNodeId = null;
-                              });
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outline.withOpacity(0.2),
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerLowest,
-                              ),
-                              child: Builder(
-                                builder: (context) {
-                                  if (widget.locations.isEmpty) {
-                                    return Center(
-                                      child: Text(
-                                        "尚無地點，請新增第一個地點",
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelLarge,
-                                      ),
-                                    );
-                                  }
-
-                                  return ListView.builder(
-                                    padding: const EdgeInsets.all(8),
-                                    itemCount: _flatList.length,
-                                    itemBuilder: (context, index) {
-                                      final item = _flatList[index];
-                                      return _buildLocationRow(
-                                        item.node,
-                                        item.depth,
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                        // 新增地點輸入框
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: AddItemInput(
-                            title: selectedNodeId != null ? "子地點" : "頂層地點",
-                            onAdd: _addLocation,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // 下方詳情面板
-                  Expanded(
-                    flex: 1,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        MediumTitle(icon: Icons.info_outline, text: "節點詳情"),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outline.withOpacity(0.2),
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerLowest,
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: _buildDetailPanel(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

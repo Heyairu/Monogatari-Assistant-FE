@@ -78,6 +78,63 @@ class _SystemBridge {
     }
   }
 
+  /// 建立 macOS security-scoped bookmark
+  static Future<String?> createSecurityScopedBookmark(String filePath) async {
+    if (!Platform.isMacOS || filePath.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      return await platform.invokeMethod<String>("createSecurityScopedBookmark", {
+        "path": filePath,
+      });
+    } on PlatformException catch (e) {
+      debugPrint("Create macOS bookmark failed: ${e.message}");
+      return null;
+    }
+  }
+
+  /// 透過 macOS security-scoped bookmark 開啟檔案
+  static Future<({String name, String? path, String? uri, String content})?>
+  openProjectFromSecurityScopedBookmark(String bookmark) async {
+    if (!Platform.isMacOS || bookmark.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      final dynamic rawResult = await platform.invokeMethod<dynamic>(
+        "openProjectFromSecurityScopedBookmark",
+        {"bookmark": bookmark},
+      );
+
+      if (rawResult is! Map) {
+        return null;
+      }
+
+      final rawName = rawResult["name"];
+      final rawPath = rawResult["path"];
+      final rawUri = rawResult["uri"];
+      final rawContent = rawResult["content"];
+
+      if (rawName is! String || rawName.trim().isEmpty || rawContent is! String) {
+        return null;
+      }
+
+      return (
+        name: rawName,
+        path: rawPath is String && rawPath.trim().isNotEmpty
+            ? rawPath.trim()
+            : null,
+        uri: rawUri is String && rawUri.trim().isNotEmpty
+            ? rawUri.trim()
+            : bookmark,
+        content: rawContent,
+      );
+    } on PlatformException catch (e) {
+      throw FileException("無法以持久授權開啟檔案: ${e.message ?? e.code}");
+    }
+  }
+
   /// 選擇專案檔案並讀取內容 (因為 FilePicker 在某些平台直接給 bytes)
   static Future<({String name, String? path, String? uri, String content})?>
   pickProjectFile() async {
@@ -499,6 +556,7 @@ class ProjectManager {
   static Future<void> openProjectFromPath(
     BuildContext context, {
     required String filePath,
+    String? accessToken,
     required bool hasUnsavedChanges,
     required Function(bool) setLoading,
     required Function(String) onSuccess,
@@ -519,7 +577,10 @@ class ProjectManager {
 
     try {
       setLoading(true);
-      final projectFile = await FileService.openProjectFromPath(filePath);
+      final projectFile = await FileService.openProjectFromPath(
+        filePath,
+        accessToken: accessToken,
+      );
       final openedVersion = FileService.extractProjectVersion(
         projectFile.content,
       );
@@ -1532,6 +1593,25 @@ class FileService {
     return 0;
   }
 
+  static bool _isPermissionDeniedError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains("permission denied") ||
+        message.contains("operation not permitted") ||
+        message.contains("access denied") ||
+        message.contains("errno = 13");
+  }
+
+  /// 建立平台持久化存取 token（目前 macOS 會回傳 security-scoped bookmark）
+  static Future<String?> createPersistentAccessToken(String? filePath) async {
+    if (filePath == null || filePath.trim().isEmpty) {
+      return null;
+    }
+    if (!Platform.isMacOS) {
+      return null;
+    }
+    return await _SystemBridge.createSecurityScopedBookmark(filePath.trim());
+  }
+
   // --- 專案生命週期 ---
 
   /// 創建新專案
@@ -1562,7 +1642,10 @@ class FileService {
   }
 
   /// 依照完整路徑開啟專案檔案
-  static Future<ProjectFile> openProjectFromPath(String filePath) async {
+  static Future<ProjectFile> openProjectFromPath(
+    String filePath, {
+    String? accessToken,
+  }) async {
     final normalizedPath = filePath.trim();
     if (normalizedPath.isEmpty) {
       throw FileException("檔案路徑不可為空");
@@ -1584,6 +1667,41 @@ class FileService {
       if (e is FileException) {
         rethrow;
       }
+
+      final normalizedToken = accessToken?.trim();
+
+      // On macOS, reopening a path from Recent may fail if file permission
+      // tokens expire; try bookmark-based access first, then re-authorize.
+      if (Platform.isMacOS && _isPermissionDeniedError(e)) {
+        if (normalizedToken != null && normalizedToken.isNotEmpty) {
+          try {
+            final reopened = await _SystemBridge
+                .openProjectFromSecurityScopedBookmark(normalizedToken);
+            if (reopened != null) {
+              return ProjectFile(
+                fileName: reopened.name,
+                filePath: reopened.path ?? normalizedPath,
+                uri: reopened.uri,
+                content: reopened.content,
+              );
+            }
+          } catch (_) {
+            // Fall through to picker-based re-authorization.
+          }
+        }
+
+        final picked = await _SystemBridge.pickProjectFile();
+        if (picked != null) {
+          return ProjectFile(
+            fileName: picked.name,
+            filePath: picked.path,
+            uri: picked.uri,
+            content: picked.content,
+          );
+        }
+        throw FileException("最近檔案權限已失效，請重新選取檔案。");
+      }
+
       throw FileException("開啟最近檔案失敗: ${e.toString()}");
     }
   }

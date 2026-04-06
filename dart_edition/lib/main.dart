@@ -2135,6 +2135,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     await ProjectManager.openProjectFromPath(
       context,
       filePath: entry.filePath!,
+      accessToken: entry.uri,
       hasUnsavedChanges: _hasUnsavedChanges(),
       setLoading: (loading) => setState(() => isLoading = loading),
       onSuccess: _showMessage,
@@ -2209,10 +2210,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Future<void> _recordRecentProject(ProjectFile projectFile) async {
+    var persistedAccessToken = projectFile.uri;
+    if (projectFile.filePath != null) {
+      final generatedToken = await FileService.createPersistentAccessToken(
+        projectFile.filePath,
+      );
+      if (generatedToken != null && generatedToken.trim().isNotEmpty) {
+        persistedAccessToken = generatedToken;
+      }
+    }
+
     await widget.settingsManager.addRecentProject(
       fileName: projectFile.fullFileName,
       filePath: projectFile.filePath,
-      uri: projectFile.uri,
+      uri: persistedAccessToken,
     );
   }
 
