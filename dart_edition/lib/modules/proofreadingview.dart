@@ -67,11 +67,35 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "}": "｝",
   };
 
+  static const Map<String, String> _consecutiveSymbolCategory =
+      <String, String>{
+        ",": "逗號",
+        "，": "逗號",
+        ".": "句號",
+        "。": "句號",
+        "、": "頓號",
+        "…": "刪節號",
+        "「": "同類引號",
+        "」": "同類引號",
+        "『": "同類引號",
+        "』": "同類引號",
+        "“": "同類引號",
+        "”": "同類引號",
+        "‘": "同類引號",
+        "’": "同類引號",
+        "\"": "同類引號",
+        "'": "同類引號",
+      };
+
   List<String> _fillerWords = const <String>[];
   String? _loadingError;
   bool _isLoadingFillerWords = true;
 
   List<_PairIssue> _pairIssues = const <_PairIssue>[];
+  List<_ConsecutiveSymbolIssue> _SymbolIssues =
+      const <_ConsecutiveSymbolIssue>[];
+    List<_SameTypeQuoteIssue> _sameTypeQuoteIssues =
+      const <_SameTypeQuoteIssue>[];
   _PunctuationNormalizationResult? _punctuationResult;
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
   Timer? _scheduledAutoCheckTimer;
@@ -172,15 +196,214 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   void _runProofreading() {
     final String text = widget.textController.text;
     final List<_PairIssue> pairIssues = _checkPairClosures(text);
+    final List<_ConsecutiveSymbolIssue> SymbolIssues =
+        _detectConsecutiveSymbols(text);
+    final List<_SameTypeQuoteIssue> sameTypeQuoteIssues =
+        _detectSameTypeQuoteNesting(text);
     final _PunctuationNormalizationResult punctuationResult =
         _normalizePunctuation(text);
     final _FillerWordAnalysis fillerWordAnalysis = _analyzeFillerWords(text);
 
     setState(() {
       _pairIssues = pairIssues;
+      _SymbolIssues = SymbolIssues;
+      _sameTypeQuoteIssues = sameTypeQuoteIssues;
       _punctuationResult = punctuationResult;
       _fillerWordAnalysis = fillerWordAnalysis;
     });
+  }
+
+  List<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
+    final List<_SameTypeQuoteIssue> issues = <_SameTypeQuoteIssue>[];
+    final List<String> lines = text.split("\n");
+    int lineStartOffset = 0;
+
+    for (final String line in lines) {
+      final _SameTypeQuoteIssue? asciiIssue = _detectAsciiQuoteIssueInLine(
+        line,
+        lineStartOffset,
+      );
+      if (asciiIssue != null) {
+        issues.add(asciiIssue);
+      }
+
+      final _SameTypeQuoteIssue? cjkIssue = _detectCjkQuoteIssueInLine(
+        line,
+        lineStartOffset,
+      );
+      if (cjkIssue != null) {
+        issues.add(cjkIssue);
+      }
+
+      lineStartOffset += line.length + 1;
+    }
+
+    return issues;
+  }
+
+  _SameTypeQuoteIssue? _detectAsciiQuoteIssueInLine(
+    String line,
+    int lineStartOffset,
+  ) {
+    final RegExp runPattern = RegExp('"{2,}|\'{2,}');
+    if (!runPattern.hasMatch(line)) {
+      return null;
+    }
+
+    final List<int> quotePositions = <int>[];
+    for (int i = 0; i < line.length; i++) {
+      final String ch = line[i];
+      if (ch == '"' || ch == "'") {
+        quotePositions.add(i);
+      }
+    }
+
+    if (quotePositions.length < 4 || quotePositions.length.isOdd) {
+      return null;
+    }
+
+    final String outer = line[quotePositions.first];
+    final String inner = outer == '"' ? "'" : '"';
+    final List<String> chars = line.split("");
+    int depth = 0;
+
+    for (int k = 0; k < quotePositions.length; k++) {
+      final int pos = quotePositions[k];
+      final int remaining = quotePositions.length - k;
+
+      final bool isOpen;
+      if (depth == 0) {
+        isOpen = true;
+      } else if (remaining == depth) {
+        isOpen = false;
+      } else {
+        isOpen = remaining > depth + 1;
+      }
+
+      if (isOpen) {
+        final int level = depth + 1;
+        chars[pos] = level.isOdd ? outer : inner;
+        depth = level;
+      } else {
+        final int level = depth;
+        chars[pos] = level.isOdd ? outer : inner;
+        depth = depth > 0 ? depth - 1 : 0;
+      }
+    }
+
+    final String suggested = chars.join();
+    if (suggested == line) {
+      return null;
+    }
+
+    return _SameTypeQuoteIssue(
+      index: lineStartOffset + quotePositions.first,
+      message: "偵測到連續使用同種引號，建議交錯使用不同層級引號。",
+      suggestion: suggested,
+    );
+  }
+
+  _SameTypeQuoteIssue? _detectCjkQuoteIssueInLine(
+    String line,
+    int lineStartOffset,
+  ) {
+    if (line.contains("『") || line.contains("』")) {
+      return null;
+    }
+
+    if (!line.contains("「") && !line.contains("」")) {
+      return null;
+    }
+
+    int depth = 0;
+    int maxDepth = 0;
+    final List<int> positions = <int>[];
+
+    for (int i = 0; i < line.length; i++) {
+      final String ch = line[i];
+      if (ch == "「") {
+        depth++;
+        if (depth > maxDepth) {
+          maxDepth = depth;
+        }
+        positions.add(i);
+      } else if (ch == "」") {
+        positions.add(i);
+        depth = depth > 0 ? depth - 1 : 0;
+      }
+    }
+
+    if (maxDepth < 2 || positions.length < 4) {
+      return null;
+    }
+
+    final List<String> chars = line.split("");
+    depth = 0;
+    for (final int pos in positions) {
+      final String ch = line[pos];
+      if (ch == "「") {
+        depth++;
+        chars[pos] = depth.isOdd ? "「" : "『";
+      } else {
+        chars[pos] = depth.isOdd ? "」" : "』";
+        depth = depth > 0 ? depth - 1 : 0;
+      }
+    }
+
+    final String suggested = chars.join();
+    if (suggested == line) {
+      return null;
+    }
+
+    return _SameTypeQuoteIssue(
+      index: lineStartOffset + positions.first,
+      message: "偵測到「『』層級未交錯，建議巢狀層改用『』。",
+      suggestion: suggested,
+    );
+  }
+
+  List<_ConsecutiveSymbolIssue> _detectConsecutiveSymbols(String text) {
+    final List<_ConsecutiveSymbolIssue> issues = <_ConsecutiveSymbolIssue>[];
+    int i = 0;
+
+    while (i < text.length) {
+      final String symbol = text[i];
+      int j = i + 1;
+      while (j < text.length && text[j] == symbol) {
+        j++;
+      }
+
+      final int count = j - i;
+      final String? category = _consecutiveSymbolCategory[symbol];
+      if (_shouldFlagConsecutiveSymbol(symbol, count) && category != null) {
+        final String sequence = text.substring(i, j);
+        final String message = symbol == "…"
+            ? "刪節號建議使用「……」，目前為「$sequence」。"
+            : "連續$count個$category「$sequence」。";
+        issues.add(
+          _ConsecutiveSymbolIssue(
+            index: i,
+            symbol: symbol,
+            count: count,
+            category: category,
+            sequence: sequence,
+            message: message,
+          ),
+        );
+      }
+
+      i = j;
+    }
+
+    return issues;
+  }
+
+  bool _shouldFlagConsecutiveSymbol(String symbol, int count) {
+    if (symbol == "…") {
+      return count != 2;
+    }
+
+    return count >= 2;
   }
 
   void _applyPunctuationNormalization() {
@@ -275,7 +498,12 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     bool useLeftSingleQuote = true;
 
     for (int i = 0; i < text.length; i++) {
-      if (text.startsWith("...", i)) {
+      if (text.startsWith("......", i)) {
+        buffer.write("……");
+        changes.add(_PunctuationChange(index: i, from: "......", to: "……"));
+        i += 5;
+        continue;
+      } else if (text.startsWith("...", i)) {
         buffer.write("……");
         changes.add(_PunctuationChange(index: i, from: "...", to: "……"));
         i += 2;
@@ -558,6 +786,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     const SizedBox(height: 8),
                     _buildPairCheckResult(sourceText),
                     const Divider(height: 24),
+                    SmallTitle(icon: Icons.warning_amber_rounded, text: "標點異常檢測"),
+                    const SizedBox(height: 8),
+                    _buildConsecutiveSymbolResult(sourceText),
+                    const Divider(height: 24),
                     SmallTitle(icon: Icons.edit_note, text: "標點符號格式統一"),
                     const SizedBox(height: 8),
                     _buildPunctuationResult(punctuationResult),
@@ -700,6 +932,94 @@ class _ProofReadingViewState extends State<ProofReadingView> {
           onPressed: _applyPunctuationNormalization,
           child: const SmallTitle(icon: Icons.auto_fix_high, text: "套用標點統一"),
         ),
+      ],
+    );
+  }
+
+  Widget _buildConsecutiveSymbolResult(String sourceText) {
+    if (sourceText.trim().isEmpty) {
+      return Text(
+        "請先輸入文本。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    if (_SymbolIssues.isEmpty && _sameTypeQuoteIssues.isEmpty) {
+      return Text(
+        "未發現標點符號異常。",
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Colors.green,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ..._SymbolIssues.map((final _ConsecutiveSymbolIssue issue) {
+          final ({int line, int column}) position = _lineColumnAt(
+            sourceText,
+            issue.index,
+          );
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _jumpToOffset(issue.index),
+              icon: const Icon(Icons.my_location, size: 16),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                alignment: Alignment.centerLeft,
+              ),
+              label: Text(
+                "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          );
+        }),
+        ..._sameTypeQuoteIssues.map((final _SameTypeQuoteIssue issue) {
+          final ({int line, int column}) position = _lineColumnAt(
+            sourceText,
+            issue.index,
+          );
+          return Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _jumpToOffset(issue.index),
+                    icon: const Icon(Icons.my_location, size: 16),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      alignment: Alignment.centerLeft,
+                    ),
+                    label: Text(
+                      "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "建議：${issue.suggestion}",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -851,6 +1171,36 @@ class _PairIssue {
   final int index;
   final String symbol;
   final String message;
+}
+
+class _ConsecutiveSymbolIssue {
+  const _ConsecutiveSymbolIssue({
+    required this.index,
+    required this.symbol,
+    required this.count,
+    required this.category,
+    required this.sequence,
+    required this.message,
+  });
+
+  final int index;
+  final String symbol;
+  final int count;
+  final String category;
+  final String sequence;
+  final String message;
+}
+
+class _SameTypeQuoteIssue {
+  const _SameTypeQuoteIssue({
+    required this.index,
+    required this.message,
+    required this.suggestion,
+  });
+
+  final int index;
+  final String message;
+  final String suggestion;
 }
 
 class _PunctuationChange {
