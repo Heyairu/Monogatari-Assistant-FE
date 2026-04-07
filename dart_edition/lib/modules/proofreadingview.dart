@@ -860,7 +860,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
               foregroundColor: Theme.of(context).colorScheme.onSurface,
             ),
             label: Text(
-              "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+              " ${position.line}:${position.column} ｜ ${issue.message}",
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -915,7 +915,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 alignment: Alignment.centerLeft,
               ),
               label: Text(
-                "第 ${position.line} 行，第 ${position.column} 字：${change.from} -> ${change.to}",
+                " ${position.line}:${position.column} ｜ ${change.from} → ${change.to}",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -975,7 +975,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 alignment: Alignment.centerLeft,
               ),
               label: Text(
-                "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+                " ${position.line}:${position.column} ｜ ${issue.message}",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -1006,7 +1006,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                       alignment: Alignment.centerLeft,
                     ),
                     label: Text(
-                      "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+                      " ${position.line}:${position.column} ｜ ${issue.message}",
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
