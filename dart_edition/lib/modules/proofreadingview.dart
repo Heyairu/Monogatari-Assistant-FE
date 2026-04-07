@@ -12,16 +12,438 @@
  * and repackaging without permission are prohibited.
  */
 
+import "dart:async";
+import "dart:convert";
+
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
 class ProofReadingView extends StatefulWidget {
-  const ProofReadingView({super.key});
+  const ProofReadingView({
+    super.key,
+    required this.textController,
+    this.onRequestFocusEditor,
+  });
+
+  final TextEditingController textController;
+  final VoidCallback? onRequestFocusEditor;
+
   @override
   State<ProofReadingView> createState() => _ProofReadingViewState();
 }
 
 class _ProofReadingViewState extends State<ProofReadingView> {
+  static const String _fillerWordAssetPath = "assets/jsons/fillerwords.json";
+
+  static const Map<String, String> _openingToClosing = <String, String>{
+    "(": ")",
+    "[": "]",
+    "{": "}",
+    "（": "）",
+    "［": "］",
+    "｛": "｝",
+    "「": "」",
+    "『": "』",
+    "【": "】",
+    "《": "》",
+    "〈": "〉",
+    "“": "”",
+    "\"": "\"",
+    "‘": "’",
+  };
+
+  static const Map<String, String> _asciiPunctuationMap = <String, String>{
+    ",": "，",
+    ":": "：",
+    ";": "；",
+    "?": "？",
+    "!": "！",
+    "(": "（",
+    ")": "）",
+    "[": "［",
+    "]": "］",
+    "{": "｛",
+    "}": "｝",
+  };
+
+  List<String> _fillerWords = const <String>[];
+  String? _loadingError;
+  bool _isLoadingFillerWords = true;
+
+  List<_PairIssue> _pairIssues = const <_PairIssue>[];
+  _PunctuationNormalizationResult? _punctuationResult;
+  _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
+  Timer? _scheduledAutoCheckTimer;
+  late String _lastObservedText;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastObservedText = widget.textController.text;
+    widget.textController.addListener(_onSharedTextChanged);
+    _loadFillerWords();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProofReadingView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.textController != widget.textController) {
+      oldWidget.textController.removeListener(_onSharedTextChanged);
+      widget.textController.addListener(_onSharedTextChanged);
+      _lastObservedText = widget.textController.text;
+      _scheduledAutoCheckTimer?.cancel();
+      _scheduledAutoCheckTimer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.textController.removeListener(_onSharedTextChanged);
+    _scheduledAutoCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onSharedTextChanged() {
+    final String currentText = widget.textController.text;
+    if (currentText == _lastObservedText) {
+      return;
+    }
+
+    _lastObservedText = currentText;
+    _scheduleBackgroundProofreading();
+  }
+
+  void _scheduleBackgroundProofreading() {
+    if (_scheduledAutoCheckTimer?.isActive ?? false) {
+      return;
+    }
+
+    _scheduledAutoCheckTimer = Timer(const Duration(seconds: 1), () {
+      _scheduledAutoCheckTimer = null;
+      if (!mounted) {
+        return;
+      }
+      _runProofreading();
+    });
+  }
+
+  Future<void> _loadFillerWords() async {
+    setState(() {
+      _isLoadingFillerWords = true;
+      _loadingError = null;
+    });
+
+    try {
+      final String raw = await rootBundle.loadString(_fillerWordAssetPath);
+      final dynamic decoded = jsonDecode(raw);
+
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException("贅字詞庫格式錯誤：根節點必須是物件");
+      }
+
+      final dynamic zhList = decoded["ZH"];
+      if (zhList is! List) {
+        throw const FormatException("贅字詞庫缺少 ZH 陣列");
+      }
+
+      final List<String> words = zhList
+          .whereType<String>()
+          .map((String e) => e.trim())
+          .where((String e) => e.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort((String a, String b) => b.length.compareTo(a.length));
+
+      setState(() {
+        _fillerWords = words;
+      });
+    } catch (error) {
+      setState(() {
+        _loadingError = "無法載入贅字詞庫：$error";
+      });
+    } finally {
+      setState(() {
+        _isLoadingFillerWords = false;
+      });
+    }
+  }
+
+  void _runProofreading() {
+    final String text = widget.textController.text;
+    final List<_PairIssue> pairIssues = _checkPairClosures(text);
+    final _PunctuationNormalizationResult punctuationResult =
+        _normalizePunctuation(text);
+    final _FillerWordAnalysis fillerWordAnalysis = _analyzeFillerWords(text);
+
+    setState(() {
+      _pairIssues = pairIssues;
+      _punctuationResult = punctuationResult;
+      _fillerWordAnalysis = fillerWordAnalysis;
+    });
+  }
+
+  void _applyPunctuationNormalization() {
+    final _PunctuationNormalizationResult? result = _punctuationResult;
+    if (result == null) {
+      return;
+    }
+
+    final String normalized = result.normalizedText;
+    widget.textController.value = TextEditingValue(
+      text: normalized,
+      selection: TextSelection.collapsed(offset: normalized.length),
+    );
+    widget.onRequestFocusEditor?.call();
+    _runProofreading();
+  }
+
+  void _jumpToOffset(int index) {
+    final String text = widget.textController.text;
+    final int safeIndex = index.clamp(0, text.length);
+    widget.textController.selection = TextSelection.collapsed(
+      offset: safeIndex,
+    );
+    widget.onRequestFocusEditor?.call();
+  }
+
+  List<_PairIssue> _checkPairClosures(String text) {
+    final Map<String, String> closingToOpening = <String, String>{
+      for (final MapEntry<String, String> entry in _openingToClosing.entries)
+        entry.value: entry.key,
+    };
+
+    final List<_StackToken> stack = <_StackToken>[];
+    final List<_PairIssue> issues = <_PairIssue>[];
+
+    for (int i = 0; i < text.length; i++) {
+      final String char = text[i];
+
+      if (_openingToClosing.containsKey(char)) {
+        stack.add(_StackToken(symbol: char, index: i));
+        continue;
+      }
+
+      if (!closingToOpening.containsKey(char)) {
+        continue;
+      }
+
+      if (stack.isEmpty) {
+        issues.add(
+          _PairIssue(
+            index: i,
+            symbol: char,
+            message: "出現未配對的右符號「$char」。",
+          ),
+        );
+        continue;
+      }
+
+      final _StackToken top = stack.removeLast();
+      final String expected = _openingToClosing[top.symbol] ?? "";
+      if (char != expected) {
+        issues.add(
+          _PairIssue(
+            index: i,
+            symbol: char,
+            message: "右符號「$char」與左符號「${top.symbol}」不匹配，預期為「$expected」。",
+          ),
+        );
+      }
+    }
+
+    for (final _StackToken token in stack.reversed) {
+      final String expected = _openingToClosing[token.symbol] ?? "";
+      issues.add(
+        _PairIssue(
+          index: token.index,
+          symbol: token.symbol,
+          message: "左符號「${token.symbol}」未閉合，缺少「$expected」。",
+        ),
+      );
+    }
+
+    issues.sort((a, b) => a.index.compareTo(b.index));
+    return issues;
+  }
+
+  _PunctuationNormalizationResult _normalizePunctuation(String text) {
+    final StringBuffer buffer = StringBuffer();
+    final List<_PunctuationChange> changes = <_PunctuationChange>[];
+
+    bool useLeftDoubleQuote = true;
+    bool useLeftSingleQuote = true;
+
+    for (int i = 0; i < text.length; i++) {
+      if (text.startsWith("...", i)) {
+        buffer.write("……");
+        changes.add(_PunctuationChange(index: i, from: "...", to: "……"));
+        i += 2;
+        continue;
+      }
+
+      final String current = text[i];
+      String? replacement;
+
+      if (current == "." && _shouldConvertPeriod(text, i)) {
+        replacement = "。";
+      } else if (current == "\"") {
+        replacement = useLeftDoubleQuote ? "「" : "」";
+        useLeftDoubleQuote = !useLeftDoubleQuote;
+      } else if (current == "'" && _shouldConvertSingleQuote(text, i)) {
+        replacement = useLeftSingleQuote ? "『" : "』";
+        useLeftSingleQuote = !useLeftSingleQuote;
+      } else {
+        replacement = _asciiPunctuationMap[current];
+      }
+
+      if (replacement != null) {
+        buffer.write(replacement);
+        changes.add(
+          _PunctuationChange(index: i, from: current, to: replacement),
+        );
+      } else {
+        buffer.write(current);
+      }
+    }
+
+    final String normalizedText = buffer.toString();
+    return _PunctuationNormalizationResult(
+      normalizedText: normalizedText,
+      changes: changes,
+    );
+  }
+
+  bool _shouldConvertPeriod(String text, int index) {
+    final bool hasPrev = index > 0;
+    final bool hasNext = index < text.length - 1;
+    if (!hasPrev) {
+      return false;
+    }
+
+    final String prev = text[index - 1];
+    final String next = hasNext ? text[index + 1] : "";
+
+    final bool isDecimal = hasNext && _isAsciiDigit(prev) && _isAsciiDigit(next);
+    if (isDecimal) {
+      return false;
+    }
+
+    final bool cjkBefore = _isCjkCharacter(prev);
+    final bool cjkOrBoundaryAfter = !hasNext || _isCjkCharacter(next) || _isWhitespace(next);
+    return cjkBefore && cjkOrBoundaryAfter;
+  }
+
+  bool _shouldConvertSingleQuote(String text, int index) {
+    final bool hasPrev = index > 0;
+    final bool hasNext = index < text.length - 1;
+    if (!hasPrev || !hasNext) {
+      return false;
+    }
+
+    final String prev = text[index - 1];
+    final String next = text[index + 1];
+    final bool isWordApostrophe = _isAsciiLetter(prev) && _isAsciiLetter(next);
+    return !isWordApostrophe;
+  }
+
+  bool _isAsciiDigit(String char) {
+    if (char.isEmpty) {
+      return false;
+    }
+    final int code = char.codeUnitAt(0);
+    return code >= 48 && code <= 57;
+  }
+
+  bool _isAsciiLetter(String char) {
+    if (char.isEmpty) {
+      return false;
+    }
+    final int code = char.codeUnitAt(0);
+    final bool lower = code >= 97 && code <= 122;
+    final bool upper = code >= 65 && code <= 90;
+    return lower || upper;
+  }
+
+  bool _isWhitespace(String char) {
+    return char.trim().isEmpty;
+  }
+
+  bool _isCjkCharacter(String char) {
+    if (char.isEmpty) {
+      return false;
+    }
+    final int code = char.codeUnitAt(0);
+    return (code >= 0x3400 && code <= 0x4DBF) ||
+        (code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0xF900 && code <= 0xFAFF);
+  }
+
+  _FillerWordAnalysis _analyzeFillerWords(String text) {
+    if (text.trim().isEmpty || _fillerWords.isEmpty) {
+      return _FillerWordAnalysis.empty();
+    }
+
+    final List<_FillerWordHit> hits = <_FillerWordHit>[];
+    int totalMatches = 0;
+
+    for (final String word in _fillerWords) {
+      final RegExp pattern = RegExp(RegExp.escape(word));
+      final List<int> positions = pattern
+          .allMatches(text)
+          .map((Match match) => match.start)
+          .toList();
+      final int count = positions.length;
+      if (count > 0) {
+        hits.add(
+          _FillerWordHit(word: word, count: count, positions: positions),
+        );
+        totalMatches += count;
+      }
+    }
+
+    hits.sort((a, b) => b.count.compareTo(a.count));
+    final int effectiveChars = _countEffectiveChars(text);
+    final double ratio =
+        effectiveChars == 0 ? 0 : totalMatches / effectiveChars.toDouble();
+
+    return _FillerWordAnalysis(
+      totalMatches: totalMatches,
+      effectiveChars: effectiveChars,
+      ratio: ratio,
+      hits: hits,
+    );
+  }
+
+  int _countEffectiveChars(String text) {
+    int count = 0;
+    for (int i = 0; i < text.length; i++) {
+      final String char = text[i];
+      if (_isCjkCharacter(char) || _isAsciiDigit(char) || _isAsciiLetter(char)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  ({int line, int column}) _lineColumnAt(String text, int index) {
+    int line = 1;
+    int column = 1;
+
+    final int safeIndex = index.clamp(0, text.length);
+    for (int i = 0; i < safeIndex; i++) {
+      final String current = text[i];
+      if (current == "\n") {
+        line++;
+        column = 1;
+      } else {
+        column++;
+      }
+    }
+
+    return (line: line, column: column);
+  }
+
   // 警語元件
   Widget _buildWarningCard() {
     return Card(
@@ -51,6 +473,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    final String sourceText = widget.textController.text;
+    final _PunctuationNormalizationResult? punctuationResult =
+        _punctuationResult;
+
     return Scaffold(
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -65,8 +491,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
             const SizedBox(height: 32),
             // 警語
             _buildWarningCard(),
+            const SizedBox(height: 16),
 
-            // 校正功能卡片
             Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -75,15 +501,51 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPlaceholderSetting(
-                      "引號、括號閉合檢查",
-                      Icons.data_array_rounded,
+                    Text(
+                      "已連動主編輯器文本",
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    _buildPlaceholderSetting("標點符號格式統一", Icons.edit_note),
+                    const SizedBox(height: 8),
+                    Text(
+                      "請在主程式編輯器輸入內容後，回到此處執行檢查。",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "當前文本長度：${sourceText.length} 字元",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        if (_isLoadingFillerWords)
+                          const Chip(
+                            avatar: SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            label: Text("載入贅字詞庫中"),
+                          )
+                        else if (_loadingError != null)
+                          Chip(
+                            avatar: const Icon(Icons.error_outline),
+                            label: Text(_loadingError!),
+                          )
+                        else
+                          Chip(label: Text("詞庫已載入 ${_fillerWords.length} 筆")),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
             Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -92,15 +554,24 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPlaceholderSetting("贅字檢查", Icons.grading),
-                    _buildPlaceholderSetting(
-                      "形容詞標記",
-                      Icons.comment_bank_rounded,
+                    SmallTitle(icon: Icons.data_array_rounded, text: "引號、括號閉合檢查"),
+                    const SizedBox(height: 8),
+                    _buildPairCheckResult(sourceText),
+                    const Divider(height: 24),
+                    SmallTitle(icon: Icons.edit_note, text: "標點符號格式統一"),
+                    const SizedBox(height: 8),
+                    _buildPunctuationResult(punctuationResult),
+                    const Divider(height: 24),
+                    _buildSectionTitle(icon: Icons.grading, title: "贅字檢查"),
+                    const SizedBox(height: 8),
+                    _buildFillerWordResult(),
+                    const Divider(height: 24),
+                    _buildSectionTitle(
+                      icon: Icons.track_changes_outlined,
+                      title: "贅字率計算",
                     ),
-                    _buildPlaceholderSetting(
-                      "常用字詞統計",
-                      Icons.track_changes_outlined,
-                    ),
+                    const SizedBox(height: 8),
+                    _buildFillerRateResult(),
                   ],
                 ),
               ),
@@ -111,30 +582,329 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     );
   }
 
-  // MARK: - 佔位元件
-  Widget _buildPlaceholderSetting(String title, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 12),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-          const Spacer(),
-          Text(
-            "即將推出",
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
+  Widget _buildSectionTitle({required IconData icon, required String title}) {
+    return Row(
+      children: [
+        Icon(icon, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(title, style: Theme.of(context).textTheme.titleSmall),
+      ],
     );
   }
+
+  Widget _buildPairCheckResult(String sourceText) {
+    if (sourceText.trim().isEmpty) {
+      return Text(
+        "請先輸入文本。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    if (_pairIssues.isEmpty) {
+      return Text(
+        "未發現閉合問題。",
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Colors.green,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _pairIssues.map((final _PairIssue issue) {
+        final ({int line, int column}) position = _lineColumnAt(
+          sourceText,
+          issue.index,
+        );
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: TextButton.icon(
+            onPressed: () => _jumpToOffset(issue.index),
+            icon: const Icon(Icons.my_location, size: 16),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              alignment: Alignment.centerLeft,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
+            ),
+            label: Text(
+              "第 ${position.line} 行，第 ${position.column} 字：${issue.message}",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPunctuationResult(_PunctuationNormalizationResult? result) {
+    final String sourceText = widget.textController.text;
+    if (sourceText.trim().isEmpty) {
+      return Text(
+        "請先輸入文本。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    if (result == null) {
+      return Text(
+        "尚未執行檢查。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    if (!result.hasChanges) {
+      return Text(
+        "格式已一致，無需調整。",
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Colors.green,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("共偵測到 ${result.changes.length} 處可統一的標點。"),
+        const SizedBox(height: 6),
+        ...result.changes.take(80).map((final _PunctuationChange change) {
+          final ({int line, int column}) position = _lineColumnAt(
+            sourceText,
+            change.index,
+          );
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _jumpToOffset(change.index),
+              icon: const Icon(Icons.edit_location_alt, size: 16),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                alignment: Alignment.centerLeft,
+              ),
+              label: Text(
+                "第 ${position.line} 行，第 ${position.column} 字：${change.from} -> ${change.to}",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          );
+        }),
+        if (result.changes.length > 80)
+          Text(
+            "其餘 ${result.changes.length - 80} 筆請先套用後再複查。",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        
+        SizedBox(height: 8),
+        TextButton(
+          onPressed: _applyPunctuationNormalization,
+          child: const SmallTitle(icon: Icons.auto_fix_high, text: "套用標點統一"),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFillerWordResult() {
+    final String sourceText = widget.textController.text;
+    if (sourceText.trim().isEmpty) {
+      return Text(
+        "請先輸入文本。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    if (_fillerWordAnalysis.hits.isEmpty) {
+      return Text(
+        "未偵測到詞庫中的贅字。",
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Colors.green,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+
+    final List<_FillerWordHit> topHits = _fillerWordAnalysis.hits.take(20).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "點擊下列贅字展開位置列表。",
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 280),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: Scrollbar(
+            thumbVisibility: true,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(8),
+              itemCount: topHits.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemBuilder: (BuildContext context, int index) {
+                final _FillerWordHit hit = topHits[index];
+                return Card(
+                  margin: EdgeInsets.zero,
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  child: ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+                    childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    dense: true,
+                    title: Text(
+                      hit.word,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    subtitle: Text(
+                      "出現 ${hit.count} 次",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    children: [
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: hit.positions.map((final int pos) {
+                          final ({int line, int column}) position = _lineColumnAt(
+                            sourceText,
+                            pos,
+                          );
+                          return ActionChip(
+                            avatar: const Icon(Icons.place, size: 14),
+                            label: Text("${position.line}:${position.column}"),
+                            onPressed: () => _jumpToOffset(pos),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        if (_fillerWordAnalysis.hits.length > topHits.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              "僅顯示前 ${topHits.length} 個高頻贅字。",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFillerRateResult() {
+    final String sourceText = widget.textController.text;
+    if (sourceText.trim().isEmpty) {
+      return Text(
+        "請先輸入文本。",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    final double percent = _fillerWordAnalysis.ratio * 100;
+    final double progress = _fillerWordAnalysis.ratio.clamp(0.0, 1.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("贅字總次數：${_fillerWordAnalysis.totalMatches}"),
+        Text("有效字數：${_fillerWordAnalysis.effectiveChars}"),
+        Text("贅字率：${percent.toStringAsFixed(2)}%"),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            minHeight: 10,
+            value: progress,
+            backgroundColor:
+                Theme.of(context).colorScheme.surfaceContainerHighest,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StackToken {
+  const _StackToken({required this.symbol, required this.index});
+
+  final String symbol;
+  final int index;
+}
+
+class _PairIssue {
+  const _PairIssue({
+    required this.index,
+    required this.symbol,
+    required this.message,
+  });
+
+  final int index;
+  final String symbol;
+  final String message;
+}
+
+class _PunctuationChange {
+  const _PunctuationChange({
+    required this.index,
+    required this.from,
+    required this.to,
+  });
+
+  final int index;
+  final String from;
+  final String to;
+}
+
+class _PunctuationNormalizationResult {
+  const _PunctuationNormalizationResult({
+    required this.normalizedText,
+    required this.changes,
+  });
+
+  final String normalizedText;
+  final List<_PunctuationChange> changes;
+
+  bool get hasChanges => changes.isNotEmpty;
+}
+
+class _FillerWordHit {
+  const _FillerWordHit({
+    required this.word,
+    required this.count,
+    required this.positions,
+  });
+
+  final String word;
+  final int count;
+  final List<int> positions;
+}
+
+class _FillerWordAnalysis {
+  const _FillerWordAnalysis({
+    required this.totalMatches,
+    required this.effectiveChars,
+    required this.ratio,
+    required this.hits,
+  });
+
+  const _FillerWordAnalysis.empty()
+    : totalMatches = 0,
+      effectiveChars = 0,
+      ratio = 0,
+      hits = const <_FillerWordHit>[];
+
+  final int totalMatches;
+  final int effectiveChars;
+  final double ratio;
+  final List<_FillerWordHit> hits;
 }

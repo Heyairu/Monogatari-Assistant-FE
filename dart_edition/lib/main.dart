@@ -269,6 +269,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   String? selectedSegID;
   String? selectedChapID;
   int totalWords = 0;
+  int _cursorOffset = 0;
 
   // 檔案狀態
   ProjectFile? currentProject;
@@ -314,13 +315,20 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
 
     textController.text = contentText;
+    _cursorOffset = 0;
 
     // 監聽文字變化
     textController.addListener(() {
+      final int selectionOffset = textController.selection.baseOffset;
+      final int normalizedOffset = selectionOffset < 0
+          ? 0
+          : selectionOffset.clamp(0, textController.text.length);
+
       // 只有當文字真的改變且不在同步狀態時才更新
       if (!_isSyncing && contentText != textController.text) {
         setState(() {
           contentText = textController.text;
+          _cursorOffset = normalizedOffset;
           // Trigger async incremental update instead of full sync recalculation
           _debouncedWordCountUpdate();
 
@@ -331,6 +339,10 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           _searchMatches = [];
           _currentMatchIndex = -1;
           textController.clearHighlights();
+        });
+      } else if (_cursorOffset != normalizedOffset) {
+        setState(() {
+          _cursorOffset = normalizedOffset;
         });
       }
     });
@@ -869,6 +881,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         ? DateFormat("HH:mm").format(_lastSavedTime!)
         : "--:--";
 
+    final ({int line, int column}) cursorPos = _lineColumnFromOffset(
+      contentText,
+      _cursorOffset,
+    );
+
     final int currentWords = ContentManager.calculateWordCount(
       contentText,
       mode: widget.settingsManager.wordCountMode,
@@ -915,6 +932,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           ),
           const SizedBox(width: 4),
           Text(saveTimeStr, style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(width: 12),
+          Icon(
+            Icons.pin_drop_outlined,
+            size: widget.settingsManager.fontSize,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            "${cursorPos.line}:${cursorPos.column}",
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
           const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1698,7 +1726,43 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Widget _buildProofreadingView() {
-    return const ProofReadingModule.ProofReadingView();
+    return ProofReadingModule.ProofReadingView(
+      textController: textController,
+      onRequestFocusEditor: _focusEditorForProofreading,
+    );
+  }
+
+  ({int line, int column}) _lineColumnFromOffset(String text, int offset) {
+    int line = 1;
+    int column = 1;
+
+    final int safeOffset = offset.clamp(0, text.length);
+    for (int i = 0; i < safeOffset; i++) {
+      if (text[i] == "\n") {
+        line++;
+        column = 1;
+      } else {
+        column++;
+      }
+    }
+
+    return (line: line, column: column);
+  }
+
+  void _focusEditorForProofreading() {
+    final bool isMobileLayout = MediaQuery.of(context).size.width < 800;
+    if (isMobileLayout && slidePageIndexNow < slidePageCounts) {
+      setState(() {
+        slidePageIndexNow = 114514;
+      });
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      editorFocusNode.requestFocus();
+    });
   }
 
   Widget _buildCopilotView() {
