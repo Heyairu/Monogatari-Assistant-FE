@@ -18,6 +18,9 @@ import "dart:convert";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
+import "package:shared_preferences/shared_preferences.dart";
+
+enum _PunctuationProfile { zhTw, zhHk, zhHans, jp, kr, enOther }
 
 class ProofReadingView extends StatefulWidget {
   const ProofReadingView({
@@ -35,6 +38,11 @@ class ProofReadingView extends StatefulWidget {
 
 class _ProofReadingViewState extends State<ProofReadingView> {
   static const String _fillerWordAssetPath = "assets/jsons/fillerwords.json";
+  static const String _punctuationProfileKey =
+      "proofreading_punctuation_profile";
+  static const String _latinSentenceDetectionKey =
+      "proofreading_latin_sentence_detection";
+  static const bool _numericDetectionAlwaysOn = true;
 
   static const Map<String, String> _openingToClosing = <String, String>{
     "(": ")",
@@ -53,7 +61,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "‘": "’",
   };
 
-  static const Map<String, String> _asciiPunctuationMap = <String, String>{
+  static const Map<String, String> _zhHantPunctuationMap = <String, String>{
     ",": "，",
     ":": "：",
     ";": "；",
@@ -65,6 +73,65 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "]": "］",
     "{": "｛",
     "}": "｝",
+  };
+
+  static const Map<String, String> _zhHansPunctuationMap = <String, String>{
+    ",": "，",
+    ".": "。",
+    ":": "：",
+    ";": "；",
+    "?": "？",
+    "!": "！",
+    "(": "（",
+    ")": "）",
+    "[": "［",
+    "]": "］",
+    "{": "｛",
+    "}": "｝",
+    "「": "“",
+    "」": "”",
+    "『": "‘",
+    "』": "’",
+  };
+
+  static const Map<String, String> _jpPunctuationMap = <String, String>{
+    ",": "、",
+    "，": "、",
+    ".": "。",
+    ":": "：",
+    ";": "；",
+    "?": "？",
+    "!": "！",
+    "(": "（",
+    ")": "）",
+    "[": "［",
+    "]": "］",
+    "{": "｛",
+    "}": "｝",
+  };
+
+  static const Map<String, String> _latinPunctuationMap = <String, String>{
+    "，": ",",
+    "。": ".",
+    "、": ",",
+    "：": ":",
+    "；": ";",
+    "？": "?",
+    "！": "!",
+    "（": "(",
+    "）": ")",
+    "［": "[",
+    "］": "]",
+    "｛": "{",
+    "｝": "}",
+    "「": "\"",
+    "」": "\"",
+    "『": "'",
+    "』": "'",
+    "“": "\"",
+    "”": "\"",
+    "‘": "'",
+    "’": "'",
   };
 
   static const Map<String, String> _consecutiveSymbolCategory =
@@ -87,6 +154,72 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         "'": "同類引號",
       };
 
+  static const Set<String> _cjkLineEndingSymbols = <String>{
+    "。",
+    "，",
+    "…",
+    "：",
+    "?",
+    "？",
+    "!",
+    "！",
+    ")",
+    "]",
+    "}",
+    "）",
+    "］",
+    "｝",
+    "」",
+    "』",
+    "】",
+    "》",
+    "〉",
+    "”",
+    "\"",
+    "’",
+    "'",
+    "—",
+  };
+
+  static const Set<String> _latinLineEndingSymbols = <String>{
+    ".",
+    ",",
+    "?",
+    "!",
+    "…",
+    ")",
+    "]",
+    "}",
+    ":",
+    "\"",
+    "'",
+    "”",
+    "’",
+  };
+
+  static const Set<String> _maskScopedSymbols = <String>{
+    "「",
+    "」",
+    "『",
+    "』",
+    "（",
+    "）",
+    "［",
+    "］",
+    "《",
+    "》",
+    "〈",
+    "〉",
+    "｛",
+    "｝",
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+  };
+
   List<String> _fillerWords = const <String>[];
   String? _loadingError;
   bool _isLoadingFillerWords = true;
@@ -94,8 +227,11 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   List<_PairIssue> _pairIssues = const <_PairIssue>[];
   List<_ConsecutiveSymbolIssue> _SymbolIssues =
       const <_ConsecutiveSymbolIssue>[];
-    List<_SameTypeQuoteIssue> _sameTypeQuoteIssues =
+  List<_SameTypeQuoteIssue> _sameTypeQuoteIssues =
       const <_SameTypeQuoteIssue>[];
+  List<_LineEndingIssue> _lineEndingIssues = const <_LineEndingIssue>[];
+  _PunctuationProfile _punctuationProfile = _PunctuationProfile.zhTw;
+  bool _enableLatinSentenceDetection = true;
   _PunctuationNormalizationResult? _punctuationResult;
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
   Timer? _scheduledAutoCheckTimer;
@@ -106,6 +242,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     super.initState();
     _lastObservedText = widget.textController.text;
     widget.textController.addListener(_onSharedTextChanged);
+    _loadPunctuationProfile();
     _loadFillerWords();
   }
 
@@ -193,6 +330,295 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     }
   }
 
+  Future<void> _loadPunctuationProfile() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? code = prefs.getString(_punctuationProfileKey);
+      final _PunctuationProfile loaded = _parsePunctuationProfile(code);
+      final bool latinSentenceDetection =
+          prefs.getBool(_latinSentenceDetectionKey) ?? true;
+      if (!mounted) {
+        return;
+      }
+
+      if (loaded != _punctuationProfile ||
+          latinSentenceDetection != _enableLatinSentenceDetection) {
+        setState(() {
+          _punctuationProfile = loaded;
+          _enableLatinSentenceDetection = latinSentenceDetection;
+        });
+      }
+    } catch (_) {
+      // 保持預設值，不阻斷檢查流程
+    }
+
+    if (mounted) {
+      _runProofreading();
+    }
+  }
+
+  _PunctuationProfile _parsePunctuationProfile(String? code) {
+    switch (code) {
+      case "ZH-TW":
+        return _PunctuationProfile.zhTw;
+      case "ZH-HK":
+        return _PunctuationProfile.zhHk;
+      case "ZH-HANS":
+        return _PunctuationProfile.zhHans;
+      case "JP":
+        return _PunctuationProfile.jp;
+      case "KR":
+        return _PunctuationProfile.kr;
+      case "EN/Other":
+        return _PunctuationProfile.enOther;
+      default:
+        return _PunctuationProfile.zhTw;
+    }
+  }
+
+  String _punctuationProfileCode(_PunctuationProfile profile) {
+    switch (profile) {
+      case _PunctuationProfile.zhTw:
+        return "ZH-TW";
+      case _PunctuationProfile.zhHk:
+        return "ZH-HK";
+      case _PunctuationProfile.zhHans:
+        return "ZH-HANS";
+      case _PunctuationProfile.jp:
+        return "JP";
+      case _PunctuationProfile.kr:
+        return "KR";
+      case _PunctuationProfile.enOther:
+        return "EN/Other";
+    }
+  }
+
+  Future<void> _setPunctuationProfile(_PunctuationProfile profile) async {
+    if (profile == _punctuationProfile) {
+      return;
+    }
+
+    setState(() {
+      _punctuationProfile = profile;
+    });
+    _runProofreading();
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_punctuationProfileKey, _punctuationProfileCode(profile));
+    } catch (_) {
+      // 儲存失敗不影響當前使用
+    }
+  }
+
+  Future<void> _setLatinSentenceDetection(bool enabled) async {
+    if (enabled == _enableLatinSentenceDetection) {
+      return;
+    }
+
+    setState(() {
+      _enableLatinSentenceDetection = enabled;
+    });
+    _runProofreading();
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_latinSentenceDetectionKey, enabled);
+    } catch (_) {
+      // 儲存失敗不影響當前使用
+    }
+  }
+
+  bool _usesCjkPunctuationStyle(_PunctuationProfile profile) {
+    return profile == _PunctuationProfile.zhTw ||
+        profile == _PunctuationProfile.zhHk ||
+        profile == _PunctuationProfile.zhHans ||
+        profile == _PunctuationProfile.jp;
+  }
+
+  Map<String, String> _punctuationMapForProfile(_PunctuationProfile profile) {
+    switch (profile) {
+      case _PunctuationProfile.zhTw:
+      case _PunctuationProfile.zhHk:
+        return _zhHantPunctuationMap;
+      case _PunctuationProfile.zhHans:
+        return _zhHansPunctuationMap;
+      case _PunctuationProfile.jp:
+        return _jpPunctuationMap;
+      case _PunctuationProfile.kr:
+      case _PunctuationProfile.enOther:
+        return _latinPunctuationMap;
+    }
+  }
+
+  Set<String> _allowedLineEndingSymbolsForProfile(_PunctuationProfile profile) {
+    switch (profile) {
+      case _PunctuationProfile.zhTw:
+      case _PunctuationProfile.zhHk:
+      case _PunctuationProfile.zhHans:
+      case _PunctuationProfile.jp:
+        return _cjkLineEndingSymbols;
+      case _PunctuationProfile.kr:
+      case _PunctuationProfile.enOther:
+        return _latinLineEndingSymbols;
+    }
+  }
+
+  bool _containsLatinLetter(String text) {
+    for (int i = 0; i < text.length; i++) {
+      if (_isAsciiLetter(text[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _containsAsciiDigitInText(String text) {
+    for (int i = 0; i < text.length; i++) {
+      if (_isAsciiDigit(text[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _shouldUseLatinStyleForLine(String line) {
+    return _enableLatinSentenceDetection && _containsLatinLetter(line);
+  }
+
+  List<bool> _buildLatinStyleMaskForLine(String line) {
+    final List<bool> mask = List<bool>.filled(line.length, false);
+    if (!_enableLatinSentenceDetection || line.isEmpty) {
+      return mask;
+    }
+
+    final Map<String, String> closingToOpening = <String, String>{
+      for (final MapEntry<String, String> entry in _openingToClosing.entries)
+        if (entry.key != entry.value) entry.value: entry.key,
+    };
+    final Set<String> selfPairedSymbols = _openingToClosing.entries
+        .where((MapEntry<String, String> entry) => entry.key == entry.value)
+        .map((MapEntry<String, String> entry) => entry.key)
+        .toSet();
+
+    final List<_StackToken> stack = <_StackToken>[];
+    final List<({int start, int end})> ranges = <({int start, int end})>[];
+
+    for (int i = 0; i < line.length; i++) {
+      final String char = line[i];
+
+      if (selfPairedSymbols.contains(char)) {
+        if (stack.isNotEmpty && stack.last.symbol == char) {
+          final _StackToken open = stack.removeLast();
+          ranges.add((start: open.index, end: i));
+        } else {
+          stack.add(_StackToken(symbol: char, index: i));
+        }
+        continue;
+      }
+
+      if (_openingToClosing.containsKey(char)) {
+        stack.add(_StackToken(symbol: char, index: i));
+        continue;
+      }
+
+      if (!closingToOpening.containsKey(char) || stack.isEmpty) {
+        continue;
+      }
+
+      final String expectedOpening = closingToOpening[char] ?? "";
+      if (stack.last.symbol == expectedOpening) {
+        final _StackToken open = stack.removeLast();
+        ranges.add((start: open.index, end: i));
+      }
+    }
+
+    for (final ({int start, int end}) range in ranges) {
+      bool hasLatin = false;
+      for (int i = range.start; i <= range.end; i++) {
+        if (_isAsciiLetter(line[i])) {
+          hasLatin = true;
+          break;
+        }
+      }
+
+      if (hasLatin) {
+        for (int i = range.start; i <= range.end; i++) {
+          mask[i] = true;
+        }
+      }
+    }
+
+    // 巢狀結構外的拉丁字只擴散到相鄰的非 CJK 區段，避免整行套用拉丁規則。
+    for (int i = 0; i < line.length; i++) {
+      if (!_isAsciiLetter(line[i]) || mask[i]) {
+        continue;
+      }
+
+      int start = i;
+      while (start > 0 && !_isCjkCharacter(line[start - 1])) {
+        start--;
+      }
+
+      int end = i;
+      while (end < line.length - 1 && !_isCjkCharacter(line[end + 1])) {
+        end++;
+      }
+
+      for (int j = start; j <= end; j++) {
+        mask[j] = true;
+      }
+    }
+
+    return mask;
+  }
+
+  bool _isMathSymbol(String char) {
+    return "+-*/%^=<>±×÷~()[]{}（）［］｛｝".contains(char);
+  }
+
+  bool _isAllowedNumericContextChar(String char) {
+    return _isAsciiDigit(char) || _isMathSymbol(char) || _isWhitespace(char);
+  }
+
+  bool _isProtectedNumericDot(String text, int index) {
+    if (index < 0 || index >= text.length || text[index] != ".") {
+      return false;
+    }
+
+    int left = index - 1;
+    bool hasLeftDigit = false;
+    while (left >= 0 && _isAllowedNumericContextChar(text[left])) {
+      if (_isAsciiDigit(text[left])) {
+        hasLeftDigit = true;
+      }
+      left--;
+    }
+
+    int right = index + 1;
+    bool hasRightDigit = false;
+    while (right < text.length && _isAllowedNumericContextChar(text[right])) {
+      if (_isAsciiDigit(text[right])) {
+        hasRightDigit = true;
+      }
+      right++;
+    }
+
+    if (!hasLeftDigit || !hasRightDigit) {
+      return false;
+    }
+
+    final String segment = text.substring(left + 1, right);
+    if (RegExp(r"[A-Za-z]").hasMatch(segment)) {
+      return false;
+    }
+    if (RegExp(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]").hasMatch(segment)) {
+      return false;
+    }
+
+    return true;
+  }
+
   void _runProofreading() {
     final String text = widget.textController.text;
     final List<_PairIssue> pairIssues = _checkPairClosures(text);
@@ -200,6 +626,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         _detectConsecutiveSymbols(text);
     final List<_SameTypeQuoteIssue> sameTypeQuoteIssues =
         _detectSameTypeQuoteNesting(text);
+    final List<_LineEndingIssue> lineEndingIssues =
+        _detectLineEndingIssues(text);
     final _PunctuationNormalizationResult punctuationResult =
         _normalizePunctuation(text);
     final _FillerWordAnalysis fillerWordAnalysis = _analyzeFillerWords(text);
@@ -208,6 +636,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       _pairIssues = pairIssues;
       _SymbolIssues = SymbolIssues;
       _sameTypeQuoteIssues = sameTypeQuoteIssues;
+      _lineEndingIssues = lineEndingIssues;
       _punctuationResult = punctuationResult;
       _fillerWordAnalysis = fillerWordAnalysis;
     });
@@ -481,6 +910,47 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return count >= 2;
   }
 
+  List<_LineEndingIssue> _detectLineEndingIssues(String text) {
+    final List<_LineEndingIssue> issues = <_LineEndingIssue>[];
+    final List<String> lines = text.split("\n");
+    final String code = _punctuationProfileCode(_punctuationProfile);
+    int lineStartOffset = 0;
+
+    for (final String line in lines) {
+      final String trimmedRight = line.replaceFirst(RegExp(r"\s+$"), "");
+      if (trimmedRight.isNotEmpty) {
+        final List<bool> latinMask = _buildLatinStyleMaskForLine(trimmedRight);
+        final bool useLatinStyle = latinMask.isNotEmpty &&
+            latinMask[trimmedRight.length - 1];
+        final Set<String> allowedSymbols = <String>{
+          ...useLatinStyle
+              ? _latinLineEndingSymbols
+              : _allowedLineEndingSymbolsForProfile(_punctuationProfile),
+        };
+        if (_numericDetectionAlwaysOn &&
+            _isProtectedNumericDot(trimmedRight, trimmedRight.length - 1)) {
+          allowedSymbols.add(".");
+        }
+
+        final int lastIndex = trimmedRight.length - 1;
+        final String endingSymbol = trimmedRight[lastIndex];
+        if (!allowedSymbols.contains(endingSymbol)) {
+          issues.add(
+            _LineEndingIssue(
+              index: lineStartOffset + lastIndex,
+              endingSymbol: endingSymbol,
+              message: "[$code] 行尾未符合結尾規則，目前為「$endingSymbol」。",
+            ),
+          );
+        }
+      }
+
+      lineStartOffset += line.length + 1;
+    }
+
+    return issues;
+  }
+
   void _applyPunctuationNormalization() {
     final _PunctuationNormalizationResult? result = _punctuationResult;
     if (result == null) {
@@ -581,41 +1051,129 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   _PunctuationNormalizationResult _normalizePunctuation(String text) {
     final StringBuffer buffer = StringBuffer();
     final List<_PunctuationChange> changes = <_PunctuationChange>[];
-    final Map<int, String> quoteReplacementMap = _buildQuoteReplacementMap(text);
+    final _PunctuationProfile profile = _punctuationProfile;
+    final List<String> lines = text.split("\n");
+    int lineStartOffset = 0;
 
-    for (int i = 0; i < text.length; i++) {
-      if (text.startsWith("......", i)) {
-        buffer.write("……");
-        changes.add(_PunctuationChange(index: i, from: "......", to: "……"));
-        i += 5;
-        continue;
-      } else if (text.startsWith("...", i)) {
-        buffer.write("……");
-        changes.add(_PunctuationChange(index: i, from: "...", to: "……"));
-        i += 2;
-        continue;
+    for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      final String line = lines[lineIndex];
+      final List<bool> latinMask = _buildLatinStyleMaskForLine(line);
+      final Map<int, String> quoteReplacementMapDefault =
+          _buildQuoteReplacementMap(line, profile);
+      final Map<int, String> quoteReplacementMapLatin = _buildQuoteReplacementMap(
+        line,
+        _PunctuationProfile.enOther,
+      );
+      final Map<String, String> punctuationMapDefault =
+          _punctuationMapForProfile(profile);
+
+      for (int i = 0; i < line.length; i++) {
+        final bool useLatinStyle = latinMask.isNotEmpty && latinMask[i];
+        final bool useCjkStyle =
+            !useLatinStyle && _usesCjkPunctuationStyle(profile);
+        final Map<int, String> quoteReplacementMap = useLatinStyle
+            ? quoteReplacementMapLatin
+            : quoteReplacementMapDefault;
+        final Map<String, String> punctuationMap = useLatinStyle
+            ? _latinPunctuationMap
+            : punctuationMapDefault;
+
+        if (useCjkStyle) {
+          if (line.startsWith("......", i)) {
+            buffer.write("……");
+            changes.add(
+              _PunctuationChange(
+                index: lineStartOffset + i,
+                from: "......",
+                to: "……",
+              ),
+            );
+            i += 5;
+            continue;
+          } else if (line.startsWith("...", i)) {
+            buffer.write("……");
+            changes.add(
+              _PunctuationChange(
+                index: lineStartOffset + i,
+                from: "...",
+                to: "……",
+              ),
+            );
+            i += 2;
+            continue;
+          }
+        } else {
+          if (line.startsWith("……", i)) {
+            buffer.write("...");
+            changes.add(
+              _PunctuationChange(
+                index: lineStartOffset + i,
+                from: "……",
+                to: "...",
+              ),
+            );
+            i += 1;
+            continue;
+          } else if (line.startsWith("…", i)) {
+            buffer.write("...");
+            changes.add(
+              _PunctuationChange(
+                index: lineStartOffset + i,
+                from: "…",
+                to: "...",
+              ),
+            );
+            continue;
+          } else if (line.startsWith("......", i)) {
+            buffer.write("...");
+            changes.add(
+              _PunctuationChange(
+                index: lineStartOffset + i,
+                from: "......",
+                to: "...",
+              ),
+            );
+            i += 5;
+            continue;
+          }
+        }
+
+        final String current = line[i];
+        String? replacement;
+
+        if (!useLatinStyle && _maskScopedSymbols.contains(current)) {
+          replacement = null;
+        } else if (current == "." &&
+            _numericDetectionAlwaysOn &&
+            _isProtectedNumericDot(line, i)) {
+          replacement = null;
+        } else if (current == "." && useCjkStyle && _shouldConvertPeriod(line, i)) {
+          replacement = "。";
+        } else if (current == "\"" ||
+            (current == "'" && _shouldConvertSingleQuote(line, i))) {
+          replacement = quoteReplacementMap[i];
+        } else {
+          replacement = punctuationMap[current];
+        }
+
+        if (replacement != null) {
+          buffer.write(replacement);
+          changes.add(
+            _PunctuationChange(
+              index: lineStartOffset + i,
+              from: current,
+              to: replacement,
+            ),
+          );
+        } else {
+          buffer.write(current);
+        }
       }
 
-      final String current = text[i];
-      String? replacement;
-
-      if (current == "." && _shouldConvertPeriod(text, i)) {
-        replacement = "。";
-      } else if (current == "\"" ||
-          (current == "'" && _shouldConvertSingleQuote(text, i))) {
-        replacement = quoteReplacementMap[i];
-      } else {
-        replacement = _asciiPunctuationMap[current];
+      if (lineIndex < lines.length - 1) {
+        buffer.write("\n");
       }
-
-      if (replacement != null) {
-        buffer.write(replacement);
-        changes.add(
-          _PunctuationChange(index: i, from: current, to: replacement),
-        );
-      } else {
-        buffer.write(current);
-      }
+      lineStartOffset += line.length + 1;
     }
 
     final String normalizedText = buffer.toString();
@@ -625,14 +1183,32 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     );
   }
 
-  Map<int, String> _buildQuoteReplacementMap(String text) {
+  Map<int, String> _buildQuoteReplacementMap(
+    String text,
+    _PunctuationProfile profile,
+  ) {
     final Map<int, String> replacements = <int, String>{};
     final List<_AsciiQuoteMarker> markers = _collectAsciiQuoteMarkers(text);
     for (final _AsciiQuoteMarker marker in markers) {
-      if (marker.isOpen) {
-        replacements[marker.index] = marker.level.isOdd ? "「" : "『";
+      if (profile == _PunctuationProfile.zhHans) {
+        if (marker.isOpen) {
+          replacements[marker.index] = marker.level.isOdd ? "“" : "‘";
+        } else {
+          replacements[marker.index] = marker.level.isOdd ? "”" : "’";
+        }
+      } else if (profile == _PunctuationProfile.kr ||
+          profile == _PunctuationProfile.enOther) {
+        if (marker.isOpen) {
+          replacements[marker.index] = marker.level.isOdd ? "\"" : "'";
+        } else {
+          replacements[marker.index] = marker.level.isOdd ? "\"" : "'";
+        }
       } else {
-        replacements[marker.index] = marker.level.isOdd ? "」" : "』";
+        if (marker.isOpen) {
+          replacements[marker.index] = marker.level.isOdd ? "「" : "『";
+        } else {
+          replacements[marker.index] = marker.level.isOdd ? "」" : "』";
+        }
       }
     }
 
@@ -843,6 +1419,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    _buildPunctuationProfileSetting(),
+                    const SizedBox(height: 12),
                     if (_isLoadingFillerWords)
                       const Text("載入贅字詞庫中")
                     else if (_loadingError != null)
@@ -901,6 +1479,72 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         Icon(icon, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
         Text(title, style: Theme.of(context).textTheme.titleSmall),
+      ],
+    );
+  }
+
+  Widget _buildPunctuationProfileSetting() {
+    final List<DropdownOption<_PunctuationProfile>> options =
+        <DropdownOption<_PunctuationProfile>>[
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.zhTw,
+            label: "ZH-TW",
+          ),
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.zhHk,
+            label: "ZH-HK",
+          ),
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.zhHans,
+            label: "ZH-HANS",
+          ),
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.jp,
+            label: "JP",
+          ),
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.kr,
+            label: "KR",
+          ),
+          const DropdownOption<_PunctuationProfile>(
+            value: _PunctuationProfile.enOther,
+            label: "EN/Other",
+          ),
+        ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppDropdownField<_PunctuationProfile>(
+          value: _punctuationProfile,
+          options: options,
+          onChanged: (final _PunctuationProfile? value) {
+            if (value == null) {
+              return;
+            }
+            unawaited(_setPunctuationProfile(value));
+          },
+          labelText: "標點符號檢查格式",
+          hintText: "請選擇格式",
+        ),
+        const SizedBox(height: 4),
+        Text(
+          "目前格式：${_punctuationProfileCode(_punctuationProfile)}",
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text("拉丁文句檢測"),
+          subtitle: const Text("偵測到拉丁文字時，自動套用拉丁標點"),
+          value: _enableLatinSentenceDetection,
+          onChanged: (bool value) {
+            unawaited(_setLatinSentenceDetection(value));
+          },
+        ),
       ],
     );
   }
@@ -1025,7 +1669,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       );
     }
 
-    if (_SymbolIssues.isEmpty && _sameTypeQuoteIssues.isEmpty) {
+    if (_SymbolIssues.isEmpty &&
+        _sameTypeQuoteIssues.isEmpty &&
+        _lineEndingIssues.isEmpty) {
       return Text(
         "未發現標點符號異常。",
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1097,6 +1743,30 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
+              ),
+            ),
+          );
+        }),
+        ..._lineEndingIssues.map((final _LineEndingIssue issue) {
+          final ({int line, int column}) position = _lineColumnAt(
+            sourceText,
+            issue.index,
+          );
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _jumpToOffset(issue.index),
+              icon: const Icon(Icons.my_location, size: 16),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                alignment: Alignment.centerLeft,
+              ),
+              label: Text(
+                " ${position.line}:${position.column} ｜ ${issue.message}",
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           );
@@ -1269,6 +1939,18 @@ class _ConsecutiveSymbolIssue {
   final int count;
   final String category;
   final String sequence;
+  final String message;
+}
+
+class _LineEndingIssue {
+  const _LineEndingIssue({
+    required this.index,
+    required this.endingSymbol,
+    required this.message,
+  });
+
+  final int index;
+  final String endingSymbol;
   final String message;
 }
 
