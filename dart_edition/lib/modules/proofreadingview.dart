@@ -245,34 +245,85 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     String line,
     int lineStartOffset,
   ) {
-    final RegExp runPattern = RegExp('"{2,}|\'{2,}');
-    if (!runPattern.hasMatch(line)) {
+    final List<_AsciiQuoteMarker> markers = _collectAsciiQuoteMarkers(line);
+    if (markers.length < 2) {
       return null;
     }
 
-    final List<int> quotePositions = <int>[];
-    for (int i = 0; i < line.length; i++) {
-      final String ch = line[i];
-      if (ch == '"' || ch == "'") {
-        quotePositions.add(i);
+    final String? startMessage = markers.first.symbol == "'"
+        ? "引號結構應以\" \"開頭，不應以' '開頭。"
+        : null;
+
+    int maxDepth = 0;
+    for (final _AsciiQuoteMarker marker in markers) {
+      if (marker.level > maxDepth) {
+        maxDepth = marker.level;
       }
     }
 
-    if (quotePositions.length < 4 || quotePositions.length.isOdd) {
+    final String suggested = _applyAsciiQuoteSuggestion(line, markers);
+    final bool hasNestedIssue = maxDepth > 1;
+    if (!hasNestedIssue && startMessage == null) {
       return null;
     }
 
-    final String outer = line[quotePositions.first];
-    final String inner = outer == '"' ? "'" : '"';
-    final List<String> chars = line.split("");
+    return _SameTypeQuoteIssue(
+      index: lineStartOffset + markers.first.index,
+      message: startMessage ?? "偵測到引號層級未交錯，建議以\" \"與' '交替。",
+      suggestion: suggested,
+    );
+  }
+
+  String _applyAsciiQuoteSuggestion(String text, List<_AsciiQuoteMarker> markers) {
+    final List<String> chars = text.split("");
+    for (final _AsciiQuoteMarker marker in markers) {
+      if (marker.isOpen) {
+        chars[marker.index] = marker.level.isOdd ? '"' : "'";
+      } else {
+        chars[marker.index] = marker.level.isOdd ? '"' : "'";
+      }
+    }
+    return chars.join();
+  }
+
+  List<_AsciiQuoteMarker> _collectAsciiQuoteMarkers(String text) {
+    final List<int> positions = <int>[];
+    final List<String> symbols = <String>[];
+
+    for (int i = 0; i < text.length; i++) {
+      final String ch = text[i];
+      if (ch == '"' || (ch == "'" && _shouldConvertSingleQuote(text, i))) {
+        positions.add(i);
+        symbols.add(ch);
+      }
+    }
+
+    final int usableCount = positions.length.isOdd
+        ? positions.length - 1
+        : positions.length;
+    if (usableCount <= 0) {
+      return const <_AsciiQuoteMarker>[];
+    }
+
+    final List<_AsciiQuoteMarker> markers = <_AsciiQuoteMarker>[];
     int depth = 0;
 
-    for (int k = 0; k < quotePositions.length; k++) {
-      final int pos = quotePositions[k];
-      final int remaining = quotePositions.length - k;
+    for (int k = 0; k < usableCount; k++) {
+      final int index = positions[k];
+      final String symbol = symbols[k];
+      final int remaining = usableCount - k;
+
+      final String prev = index > 0 ? text[index - 1] : "";
+      final String next = index < text.length - 1 ? text[index + 1] : "";
+      final bool likelyOpen = _isLikelyQuoteOpeningContext(prev, next);
+      final bool likelyClose = _isLikelyQuoteClosingContext(prev, next);
 
       final bool isOpen;
       if (depth == 0) {
+        isOpen = true;
+      } else if (likelyClose && !likelyOpen) {
+        isOpen = false;
+      } else if (likelyOpen && !likelyClose) {
         isOpen = true;
       } else if (remaining == depth) {
         isOpen = false;
@@ -282,82 +333,106 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
       if (isOpen) {
         final int level = depth + 1;
-        chars[pos] = level.isOdd ? outer : inner;
+        markers.add(
+          _AsciiQuoteMarker(
+            index: index,
+            symbol: symbol,
+            isOpen: true,
+            level: level,
+          ),
+        );
         depth = level;
       } else {
-        final int level = depth;
-        chars[pos] = level.isOdd ? outer : inner;
-        depth = depth > 0 ? depth - 1 : 0;
+        final int level = depth == 0 ? 1 : depth;
+        markers.add(
+          _AsciiQuoteMarker(
+            index: index,
+            symbol: symbol,
+            isOpen: false,
+            level: level,
+          ),
+        );
+        if (depth > 0) {
+          depth--;
+        }
       }
     }
 
-    final String suggested = chars.join();
-    if (suggested == line) {
-      return null;
-    }
+    return markers;
+  }
 
-    return _SameTypeQuoteIssue(
-      index: lineStartOffset + quotePositions.first,
-      message: "偵測到連續使用同種引號，建議交錯使用不同層級引號。",
-      suggestion: suggested,
-    );
+  bool _isLikelyQuoteOpeningContext(String prev, String next) {
+    final bool prevAllowsOpen =
+      prev.isEmpty ||
+      _isWhitespace(prev) ||
+      "([{（［｛「『【《〈".contains(prev) ||
+      "，。！？；：、,.;:!?".contains(prev);
+
+    final bool nextLooksContent =
+        next.isNotEmpty && (_isAsciiLetter(next) || _isAsciiDigit(next) || _isCjkCharacter(next));
+
+    return prevAllowsOpen || nextLooksContent;
+  }
+
+  bool _isLikelyQuoteClosingContext(String prev, String next) {
+    final bool prevLooksContent =
+        prev.isNotEmpty && (_isAsciiLetter(prev) || _isAsciiDigit(prev) || _isCjkCharacter(prev));
+
+    final bool nextAllowsClose =
+        next.isEmpty ||
+        _isWhitespace(next) ||
+      ")]}）］｝」』】》〉，。！？；：、,.;:!?".contains(next);
+
+    return prevLooksContent || nextAllowsClose;
   }
 
   _SameTypeQuoteIssue? _detectCjkQuoteIssueInLine(
     String line,
     int lineStartOffset,
   ) {
-    if (line.contains("『") || line.contains("』")) {
-      return null;
-    }
-
-    if (!line.contains("「") && !line.contains("」")) {
-      return null;
-    }
-
-    int depth = 0;
-    int maxDepth = 0;
     final List<int> positions = <int>[];
-
     for (int i = 0; i < line.length; i++) {
       final String ch = line[i];
-      if (ch == "「") {
-        depth++;
-        if (depth > maxDepth) {
-          maxDepth = depth;
-        }
+      if (ch == "「" || ch == "」" || ch == "『" || ch == "』") {
         positions.add(i);
-      } else if (ch == "」") {
-        positions.add(i);
-        depth = depth > 0 ? depth - 1 : 0;
       }
     }
 
-    if (maxDepth < 2 || positions.length < 4) {
+    if (positions.length < 2) {
       return null;
     }
 
+    final String firstQuote = line[positions.first];
+    final String? startMessage = firstQuote == "『"
+        ? "引號結構應以「」開頭，不應以『』開頭。"
+        : null;
+
     final List<String> chars = line.split("");
-    depth = 0;
+    int depth = 0;
     for (final int pos in positions) {
       final String ch = line[pos];
-      if (ch == "「") {
-        depth++;
-        chars[pos] = depth.isOdd ? "「" : "『";
+      final bool isOpen = ch == "「" || ch == "『";
+      if (isOpen) {
+        final int level = depth + 1;
+        chars[pos] = level.isOdd ? "「" : "『";
+        depth = level;
       } else {
-        chars[pos] = depth.isOdd ? "」" : "』";
-        depth = depth > 0 ? depth - 1 : 0;
+        final int level = depth == 0 ? 1 : depth;
+        chars[pos] = level.isOdd ? "」" : "』";
+        if (depth > 0) {
+          depth--;
+        }
       }
     }
 
     final String suggested = chars.join();
-    if (suggested == line) {
+    if (suggested == line && startMessage == null) {
       return null;
     }
 
     return _SameTypeQuoteIssue(
       index: lineStartOffset + positions.first,
-      message: "偵測到「『』層級未交錯，建議巢狀層改用『』。",
+      message: startMessage ?? "偵測到引號層級未交錯，建議以「『』」為一循環交替。",
       suggestion: suggested,
     );
   }
@@ -435,12 +510,25 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       for (final MapEntry<String, String> entry in _openingToClosing.entries)
         entry.value: entry.key,
     };
+    final Set<String> selfPairedSymbols = _openingToClosing.entries
+        .where((MapEntry<String, String> entry) => entry.key == entry.value)
+        .map((MapEntry<String, String> entry) => entry.key)
+        .toSet();
 
     final List<_StackToken> stack = <_StackToken>[];
     final List<_PairIssue> issues = <_PairIssue>[];
 
     for (int i = 0; i < text.length; i++) {
       final String char = text[i];
+
+      if (selfPairedSymbols.contains(char)) {
+        if (stack.isNotEmpty && stack.last.symbol == char) {
+          stack.removeLast();
+        } else {
+          stack.add(_StackToken(symbol: char, index: i));
+        }
+        continue;
+      }
 
       if (_openingToClosing.containsKey(char)) {
         stack.add(_StackToken(symbol: char, index: i));
@@ -493,9 +581,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   _PunctuationNormalizationResult _normalizePunctuation(String text) {
     final StringBuffer buffer = StringBuffer();
     final List<_PunctuationChange> changes = <_PunctuationChange>[];
-
-    bool useLeftDoubleQuote = true;
-    bool useLeftSingleQuote = true;
+    final Map<int, String> quoteReplacementMap = _buildQuoteReplacementMap(text);
 
     for (int i = 0; i < text.length; i++) {
       if (text.startsWith("......", i)) {
@@ -515,12 +601,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
       if (current == "." && _shouldConvertPeriod(text, i)) {
         replacement = "。";
-      } else if (current == "\"") {
-        replacement = useLeftDoubleQuote ? "「" : "」";
-        useLeftDoubleQuote = !useLeftDoubleQuote;
-      } else if (current == "'" && _shouldConvertSingleQuote(text, i)) {
-        replacement = useLeftSingleQuote ? "『" : "』";
-        useLeftSingleQuote = !useLeftSingleQuote;
+      } else if (current == "\"" ||
+          (current == "'" && _shouldConvertSingleQuote(text, i))) {
+        replacement = quoteReplacementMap[i];
       } else {
         replacement = _asciiPunctuationMap[current];
       }
@@ -540,6 +623,20 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       normalizedText: normalizedText,
       changes: changes,
     );
+  }
+
+  Map<int, String> _buildQuoteReplacementMap(String text) {
+    final Map<int, String> replacements = <int, String>{};
+    final List<_AsciiQuoteMarker> markers = _collectAsciiQuoteMarkers(text);
+    for (final _AsciiQuoteMarker marker in markers) {
+      if (marker.isOpen) {
+        replacements[marker.index] = marker.level.isOdd ? "「" : "『";
+      } else {
+        replacements[marker.index] = marker.level.isOdd ? "」" : "』";
+      }
+    }
+
+    return replacements;
   }
 
   bool _shouldConvertPeriod(String text, int index) {
@@ -746,28 +843,12 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        if (_isLoadingFillerWords)
-                          const Chip(
-                            avatar: SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            label: Text("載入贅字詞庫中"),
-                          )
-                        else if (_loadingError != null)
-                          Chip(
-                            avatar: const Icon(Icons.error_outline),
-                            label: Text(_loadingError!),
-                          )
-                        else
-                          Chip(label: Text("詞庫已載入 ${_fillerWords.length} 筆")),
-                      ],
-                    ),
+                    if (_isLoadingFillerWords)
+                      const Text("載入贅字詞庫中")
+                    else if (_loadingError != null)
+                      Text(_loadingError!)
+                    else
+                      Text("贅字詞庫已載入 ${_fillerWords.length} 筆")
                   ],
                 ),
               ),
@@ -1201,6 +1282,20 @@ class _SameTypeQuoteIssue {
   final int index;
   final String message;
   final String suggestion;
+}
+
+class _AsciiQuoteMarker {
+  const _AsciiQuoteMarker({
+    required this.index,
+    required this.symbol,
+    required this.isOpen,
+    required this.level,
+  });
+
+  final int index;
+  final String symbol;
+  final bool isOpen;
+  final int level;
 }
 
 class _PunctuationChange {
