@@ -1112,7 +1112,6 @@ class _GlossaryViewState extends State<GlossaryView> {
     final bool hasChildren = category.children.isNotEmpty;
     final bool isExpanded = _expandedCategoryIds.contains(category.id);
     final int totalEntries = _countSubtreeEntries(category);
-    final int localEntries = category.entryIds.length;
 
     return DraggableCardNode<_GlossaryCategoryDragData>(
       key: ValueKey(category.id),
