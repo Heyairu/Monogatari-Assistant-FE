@@ -220,6 +220,19 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "}",
   };
 
+  static const Set<String> _maskQuoteSymbols = <String>{
+    "\"",
+    "'",
+    "「",
+    "」",
+    "『",
+    "』",
+    "“",
+    "”",
+    "‘",
+    "’",
+  };
+
   List<String> _fillerWords = const <String>[];
   String? _loadingError;
   bool _isLoadingFillerWords = true;
@@ -308,13 +321,14 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         throw const FormatException("贅字詞庫缺少 ZH 陣列");
       }
 
-      final List<String> words = zhList
-          .whereType<String>()
-          .map((String e) => e.trim())
-          .where((String e) => e.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort((String a, String b) => b.length.compareTo(a.length));
+      final List<String> words =
+          zhList
+              .whereType<String>()
+              .map((String e) => e.trim())
+              .where((String e) => e.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort((String a, String b) => b.length.compareTo(a.length));
 
       setState(() {
         _fillerWords = words;
@@ -405,7 +419,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_punctuationProfileKey, _punctuationProfileCode(profile));
+      await prefs.setString(
+        _punctuationProfileKey,
+        _punctuationProfileCode(profile),
+      );
     } catch (_) {
       // 儲存失敗不影響當前使用
     }
@@ -486,7 +503,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return _enableLatinSentenceDetection && _containsLatinLetter(line);
   }
 
-  List<bool> _buildLatinStyleMaskForLine(String line) {
+  List<bool> _buildLatinStyleMaskForLine(
+    String line, {
+    Set<int>? maskBoundaryIndexes,
+  }) {
     final List<bool> mask = List<bool>.filled(line.length, false);
     if (!_enableLatinSentenceDetection || line.isEmpty) {
       return mask;
@@ -546,29 +566,44 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         for (int i = range.start; i <= range.end; i++) {
           mask[i] = true;
         }
+        maskBoundaryIndexes?.add(range.start);
+        maskBoundaryIndexes?.add(range.end);
       }
     }
 
-    // 巢狀結構外的拉丁字只擴散到相鄰的非 CJK 區段，避免整行套用拉丁規則。
+    int segmentStart = -1;
+    bool segmentHasLatin = false;
+
+    void flushSegment(int endExclusive) {
+      if (segmentStart < 0) {
+        return;
+      }
+      if (segmentHasLatin) {
+        for (int i = segmentStart; i < endExclusive; i++) {
+          if (!mask[i]) {
+            mask[i] = true;
+          }
+        }
+      }
+      segmentStart = -1;
+      segmentHasLatin = false;
+    }
+
     for (int i = 0; i < line.length; i++) {
-      if (!_isAsciiLetter(line[i]) || mask[i]) {
+      final String char = line[i];
+      if (mask[i] || _isCjkNonPunctuationMaskCharacter(char)) {
+        flushSegment(i);
         continue;
       }
 
-      int start = i;
-      while (start > 0 && !_isCjkCharacter(line[start - 1])) {
-        start--;
+      if (segmentStart < 0) {
+        segmentStart = i;
       }
-
-      int end = i;
-      while (end < line.length - 1 && !_isCjkCharacter(line[end + 1])) {
-        end++;
-      }
-
-      for (int j = start; j <= end; j++) {
-        mask[j] = true;
+      if (_isAsciiLetter(char)) {
+        segmentHasLatin = true;
       }
     }
+    flushSegment(line.length);
 
     return mask;
   }
@@ -612,7 +647,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     if (RegExp(r"[A-Za-z]").hasMatch(segment)) {
       return false;
     }
-    if (RegExp(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]").hasMatch(segment)) {
+    if (RegExp(
+      r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]",
+    ).hasMatch(segment)) {
       return false;
     }
 
@@ -626,8 +663,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         _detectConsecutiveSymbols(text);
     final List<_SameTypeQuoteIssue> sameTypeQuoteIssues =
         _detectSameTypeQuoteNesting(text);
-    final List<_LineEndingIssue> lineEndingIssues =
-        _detectLineEndingIssues(text);
+    final List<_LineEndingIssue> lineEndingIssues = _detectLineEndingIssues(
+      text,
+    );
     final _PunctuationNormalizationResult punctuationResult =
         _normalizePunctuation(text);
     final _FillerWordAnalysis fillerWordAnalysis = _analyzeFillerWords(text);
@@ -703,7 +741,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     );
   }
 
-  String _applyAsciiQuoteSuggestion(String text, List<_AsciiQuoteMarker> markers) {
+  String _applyAsciiQuoteSuggestion(
+    String text,
+    List<_AsciiQuoteMarker> markers,
+  ) {
     final List<String> chars = text.split("");
     for (final _AsciiQuoteMarker marker in markers) {
       if (marker.isOpen) {
@@ -792,25 +833,27 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
   bool _isLikelyQuoteOpeningContext(String prev, String next) {
     final bool prevAllowsOpen =
-      prev.isEmpty ||
-      _isWhitespace(prev) ||
-      "([{（［｛「『【《〈".contains(prev) ||
-      "，。！？；：、,.;:!?".contains(prev);
+        prev.isEmpty ||
+        _isWhitespace(prev) ||
+        "([{（［｛「『【《〈".contains(prev) ||
+        "，。！？；：、,.;:!?".contains(prev);
 
     final bool nextLooksContent =
-        next.isNotEmpty && (_isAsciiLetter(next) || _isAsciiDigit(next) || _isCjkCharacter(next));
+        next.isNotEmpty &&
+        (_isAsciiLetter(next) || _isAsciiDigit(next) || _isCjkCharacter(next));
 
     return prevAllowsOpen || nextLooksContent;
   }
 
   bool _isLikelyQuoteClosingContext(String prev, String next) {
     final bool prevLooksContent =
-        prev.isNotEmpty && (_isAsciiLetter(prev) || _isAsciiDigit(prev) || _isCjkCharacter(prev));
+        prev.isNotEmpty &&
+        (_isAsciiLetter(prev) || _isAsciiDigit(prev) || _isCjkCharacter(prev));
 
     final bool nextAllowsClose =
         next.isEmpty ||
         _isWhitespace(next) ||
-      ")]}）］｝」』】》〉，。！？；：、,.;:!?".contains(next);
+        ")]}）］｝」』】》〉，。！？；：、,.;:!?".contains(next);
 
     return prevLooksContent || nextAllowsClose;
   }
@@ -920,8 +963,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       final String trimmedRight = line.replaceFirst(RegExp(r"\s+$"), "");
       if (trimmedRight.isNotEmpty) {
         final List<bool> latinMask = _buildLatinStyleMaskForLine(trimmedRight);
-        final bool useLatinStyle = latinMask.isNotEmpty &&
-            latinMask[trimmedRight.length - 1];
+        final bool useLatinStyle =
+            latinMask.isNotEmpty && latinMask[trimmedRight.length - 1];
         final Set<String> allowedSymbols = <String>{
           ...useLatinStyle
               ? _latinLineEndingSymbols
@@ -1011,11 +1054,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
       if (stack.isEmpty) {
         issues.add(
-          _PairIssue(
-            index: i,
-            symbol: char,
-            message: "出現未配對的右符號「$char」。",
-          ),
+          _PairIssue(index: i, symbol: char, message: "出現未配對的右符號「$char」。"),
         );
         continue;
       }
@@ -1057,13 +1096,15 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
     for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       final String line = lines[lineIndex];
-      final List<bool> latinMask = _buildLatinStyleMaskForLine(line);
+      final Set<int> maskBoundaryIndexes = <int>{};
+      final List<bool> latinMask = _buildLatinStyleMaskForLine(
+        line,
+        maskBoundaryIndexes: maskBoundaryIndexes,
+      );
       final Map<int, String> quoteReplacementMapDefault =
           _buildQuoteReplacementMap(line, profile);
-      final Map<int, String> quoteReplacementMapLatin = _buildQuoteReplacementMap(
-        line,
-        _PunctuationProfile.enOther,
-      );
+      final Map<int, String> quoteReplacementMapLatin =
+          _buildQuoteReplacementMap(line, _PunctuationProfile.enOther);
       final Map<String, String> punctuationMapDefault =
           _punctuationMapForProfile(profile);
 
@@ -1140,14 +1181,23 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
         final String current = line[i];
         String? replacement;
+        final bool isMaskBoundaryQuote =
+            maskBoundaryIndexes.contains(i) &&
+            _maskQuoteSymbols.contains(current);
 
-        if (!useLatinStyle && _maskScopedSymbols.contains(current)) {
+        if (isMaskBoundaryQuote) {
+          replacement = null;
+        } else if (!useLatinStyle &&
+            (_maskScopedSymbols.contains(current) ||
+                _isCjkNonPunctuationMaskCharacter(current))) {
           replacement = null;
         } else if (current == "." &&
             _numericDetectionAlwaysOn &&
             _isProtectedNumericDot(line, i)) {
           replacement = null;
-        } else if (current == "." && useCjkStyle && _shouldConvertPeriod(line, i)) {
+        } else if (current == "." &&
+            useCjkStyle &&
+            _shouldConvertPeriod(line, i)) {
           replacement = "。";
         } else if (current == "\"" ||
             (current == "'" && _shouldConvertSingleQuote(line, i))) {
@@ -1225,13 +1275,15 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     final String prev = text[index - 1];
     final String next = hasNext ? text[index + 1] : "";
 
-    final bool isDecimal = hasNext && _isAsciiDigit(prev) && _isAsciiDigit(next);
+    final bool isDecimal =
+        hasNext && _isAsciiDigit(prev) && _isAsciiDigit(next);
     if (isDecimal) {
       return false;
     }
 
     final bool cjkBefore = _isCjkCharacter(prev);
-    final bool cjkOrBoundaryAfter = !hasNext || _isCjkCharacter(next) || _isWhitespace(next);
+    final bool cjkOrBoundaryAfter =
+        !hasNext || _isCjkCharacter(next) || _isWhitespace(next);
     return cjkBefore && cjkOrBoundaryAfter;
   }
 
@@ -1280,6 +1332,13 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         (code >= 0xF900 && code <= 0xFAFF);
   }
 
+  bool _isCjkNonPunctuationMaskCharacter(String char) {
+    if (!_isCjkCharacter(char)) {
+      return false;
+    }
+    return !"，。！？：；、…「」『』（）［］｛｝【】《》〈〉“”‘’".contains(char);
+  }
+
   _FillerWordAnalysis _analyzeFillerWords(String text) {
     if (text.trim().isEmpty || _fillerWords.isEmpty) {
       return _FillerWordAnalysis.empty();
@@ -1305,8 +1364,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
     hits.sort((a, b) => b.count.compareTo(a.count));
     final int effectiveChars = _countEffectiveChars(text);
-    final double ratio =
-        effectiveChars == 0 ? 0 : totalMatches / effectiveChars.toDouble();
+    final double ratio = effectiveChars == 0
+        ? 0
+        : totalMatches / effectiveChars.toDouble();
 
     return _FillerWordAnalysis(
       totalMatches: totalMatches,
@@ -1320,7 +1380,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     int count = 0;
     for (int i = 0; i < text.length; i++) {
       final String char = text[i];
-      if (_isCjkCharacter(char) || _isAsciiDigit(char) || _isAsciiLetter(char)) {
+      if (_isCjkCharacter(char) ||
+          _isAsciiDigit(char) ||
+          _isAsciiLetter(char)) {
         count++;
       }
     }
@@ -1426,7 +1488,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     else if (_loadingError != null)
                       Text(_loadingError!)
                     else
-                      Text("贅字詞庫已載入 ${_fillerWords.length} 筆")
+                      Text("贅字詞庫已載入 ${_fillerWords.length} 筆"),
                   ],
                 ),
               ),
@@ -1441,11 +1503,17 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SmallTitle(icon: Icons.data_array_rounded, text: "引號、括號閉合檢查"),
+                    SmallTitle(
+                      icon: Icons.data_array_rounded,
+                      text: "引號、括號閉合檢查",
+                    ),
                     const SizedBox(height: 8),
                     _buildPairCheckResult(sourceText),
                     const Divider(height: 24),
-                    SmallTitle(icon: Icons.warning_amber_rounded, text: "標點異常檢測"),
+                    SmallTitle(
+                      icon: Icons.warning_amber_rounded,
+                      text: "標點異常檢測",
+                    ),
                     const SizedBox(height: 8),
                     _buildConsecutiveSymbolResult(sourceText),
                     const Divider(height: 24),
@@ -1551,10 +1619,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
   Widget _buildPairCheckResult(String sourceText) {
     if (sourceText.trim().isEmpty) {
-      return Text(
-        "請先輸入文本。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     if (_pairIssues.isEmpty) {
@@ -1597,17 +1662,11 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   Widget _buildPunctuationResult(_PunctuationNormalizationResult? result) {
     final String sourceText = widget.textController.text;
     if (sourceText.trim().isEmpty) {
-      return Text(
-        "請先輸入文本。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     if (result == null) {
-      return Text(
-        "尚未執行檢查。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("尚未執行檢查。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     if (!result.hasChanges) {
@@ -1651,7 +1710,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
             "其餘 ${result.changes.length - 80} 筆請先套用後再複查。",
             style: Theme.of(context).textTheme.bodySmall,
           ),
-        
+
         SizedBox(height: 8),
         TextButton(
           onPressed: _applyPunctuationNormalization,
@@ -1663,10 +1722,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
   Widget _buildConsecutiveSymbolResult(String sourceText) {
     if (sourceText.trim().isEmpty) {
-      return Text(
-        "請先輸入文本。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     if (_SymbolIssues.isEmpty &&
@@ -1695,10 +1751,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
               onPressed: () => _jumpToOffset(issue.index),
               icon: const Icon(Icons.my_location, size: 16),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 alignment: Alignment.centerLeft,
               ),
               label: Text(
@@ -1758,10 +1811,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
               onPressed: () => _jumpToOffset(issue.index),
               icon: const Icon(Icons.my_location, size: 16),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 alignment: Alignment.centerLeft,
               ),
               label: Text(
@@ -1778,10 +1828,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   Widget _buildFillerWordResult() {
     final String sourceText = widget.textController.text;
     if (sourceText.trim().isEmpty) {
-      return Text(
-        "請先輸入文本。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     if (_fillerWordAnalysis.hits.isEmpty) {
@@ -1794,15 +1841,14 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       );
     }
 
-    final List<_FillerWordHit> topHits = _fillerWordAnalysis.hits.take(20).toList();
+    final List<_FillerWordHit> topHits = _fillerWordAnalysis.hits
+        .take(20)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "點擊下列贅字展開位置列表。",
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        Text("點擊下列贅字展開位置列表。", style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8),
         Container(
           constraints: const BoxConstraints(maxHeight: 280),
@@ -1842,10 +1888,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                         spacing: 6,
                         runSpacing: 6,
                         children: hit.positions.map((final int pos) {
-                          final ({int line, int column}) position = _lineColumnAt(
-                            sourceText,
-                            pos,
-                          );
+                          final ({int line, int column}) position =
+                              _lineColumnAt(sourceText, pos);
                           return ActionChip(
                             avatar: const Icon(Icons.place, size: 14),
                             label: Text("${position.line}:${position.column}"),
@@ -1875,10 +1919,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   Widget _buildFillerRateResult() {
     final String sourceText = widget.textController.text;
     if (sourceText.trim().isEmpty) {
-      return Text(
-        "請先輸入文本。",
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
     final double percent = _fillerWordAnalysis.ratio * 100;
@@ -1896,8 +1937,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
           child: LinearProgressIndicator(
             minHeight: 10,
             value: progress,
-            backgroundColor:
-                Theme.of(context).colorScheme.surfaceContainerHighest,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest,
           ),
         ),
       ],
