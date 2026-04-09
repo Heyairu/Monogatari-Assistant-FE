@@ -1156,6 +1156,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         final String endingSymbol = trimmedRight[lastIndex];
         final bool useLatinStyle = latinMask.isNotEmpty && latinMask[lastIndex];
         if (_isMaskedPunctuationCharacter(
+          line: trimmedRight,
           char: endingSymbol,
           index: lastIndex,
           useLatinStyle: useLatinStyle,
@@ -1186,7 +1187,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
           continue;
         }
 
-        if (!allowedSymbols.contains(endingSymbol)) {
+        if (_shouldForceWarnLineEnding(trimmedRight, endingSymbol) ||
+            !allowedSymbols.contains(endingSymbol)) {
           issues.add(
             _LineEndingIssue(
               index: lineStartOffset + lastIndex,
@@ -1209,10 +1211,235 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       return;
     }
 
-    final String normalized = result.normalizedText;
+    _applyUpdatedText(
+      result.normalizedText,
+      caretOffset: result.normalizedText.length,
+    );
+  }
+
+  void _resolvePunctuationChange(_PunctuationChange change) {
+    final String text = widget.textController.text;
+    final int start = change.index;
+    final int endExclusive = start + change.from.length;
+    if (start < 0 || endExclusive > text.length) {
+      return;
+    }
+    if (text.substring(start, endExclusive) != change.from) {
+      return;
+    }
+
+    final String updated = _replaceTextRange(
+      text,
+      start,
+      endExclusive,
+      change.to,
+    );
+    _applyUpdatedText(updated, caretOffset: start + change.to.length);
+  }
+
+  void _resolveConsecutiveIssue(_ConsecutiveSymbolIssue issue) {
+    final String text = widget.textController.text;
+    if (text.isEmpty) {
+      return;
+    }
+
+    int start = -1;
+    int endExclusive = -1;
+    if (issue.index >= 0 &&
+        issue.index + issue.sequence.length <= text.length &&
+        text.substring(issue.index, issue.index + issue.sequence.length) ==
+            issue.sequence) {
+      start = issue.index;
+      endExclusive = issue.index + issue.sequence.length;
+    } else {
+      final int pivot = issue.index < 0
+          ? 0
+          : (issue.index >= text.length ? text.length - 1 : issue.index);
+      if (text[pivot] != issue.symbol) {
+        return;
+      }
+      start = pivot;
+      while (start > 0 && text[start - 1] == issue.symbol) {
+        start--;
+      }
+      endExclusive = pivot + 1;
+      while (endExclusive < text.length && text[endExclusive] == issue.symbol) {
+        endExclusive++;
+      }
+    }
+
+    final String replacement = _normalizedReplacementForConsecutiveIssue(issue);
+    final String updated = _replaceTextRange(
+      text,
+      start,
+      endExclusive,
+      replacement,
+    );
+    _applyUpdatedText(updated, caretOffset: start + replacement.length);
+  }
+
+  void _resolveSameTypeQuoteIssue(_SameTypeQuoteIssue issue) {
+    final String text = widget.textController.text;
+    if (text.isEmpty) {
+      return;
+    }
+
+    final ({int start, int endExclusive}) range = _lineRangeAtIndex(
+      text,
+      issue.index,
+    );
+    final String updated = _replaceTextRange(
+      text,
+      range.start,
+      range.endExclusive,
+      issue.suggestion,
+    );
+    _applyUpdatedText(
+      updated,
+      caretOffset: range.start + issue.suggestion.length,
+    );
+  }
+
+  void _resolveAllAnomalies() {
+    final String text = widget.textController.text;
+    if (text.isEmpty) {
+      return;
+    }
+
+    final List<({int start, int endExclusive})> lineRanges =
+        <({int start, int endExclusive})>[];
+    final List<
+      ({int start, int endExclusive, String replacement, int priority})
+    >
+    operations =
+        <({int start, int endExclusive, String replacement, int priority})>[];
+
+    for (final _SameTypeQuoteIssue issue in _sameTypeQuoteIssues) {
+      final ({int start, int endExclusive}) range = _lineRangeAtIndex(
+        text,
+        issue.index,
+      );
+      lineRanges.add(range);
+      operations.add((
+        start: range.start,
+        endExclusive: range.endExclusive,
+        replacement: issue.suggestion,
+        priority: 0,
+      ));
+    }
+
+    bool overlapsLineRange(int start, int endExclusive) {
+      for (final ({int start, int endExclusive}) range in lineRanges) {
+        if (start < range.endExclusive && endExclusive > range.start) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    for (final _ConsecutiveSymbolIssue issue in _SymbolIssues) {
+      final int start = issue.index;
+      final int endExclusive = issue.index + issue.sequence.length;
+      if (start < 0 || endExclusive > text.length) {
+        continue;
+      }
+      if (overlapsLineRange(start, endExclusive)) {
+        continue;
+      }
+      if (text.substring(start, endExclusive) != issue.sequence) {
+        continue;
+      }
+      operations.add((
+        start: start,
+        endExclusive: endExclusive,
+        replacement: _normalizedReplacementForConsecutiveIssue(issue),
+        priority: 1,
+      ));
+    }
+
+    if (operations.isEmpty) {
+      return;
+    }
+
+    operations.sort((a, b) {
+      final int byStart = b.start.compareTo(a.start);
+      if (byStart != 0) {
+        return byStart;
+      }
+      return a.priority.compareTo(b.priority);
+    });
+
+    String updated = text;
+    for (final ({int start, int endExclusive, String replacement, int priority})
+        operation
+        in operations) {
+      if (operation.start < 0 ||
+          operation.endExclusive > updated.length ||
+          operation.start > operation.endExclusive) {
+        continue;
+      }
+      updated = _replaceTextRange(
+        updated,
+        operation.start,
+        operation.endExclusive,
+        operation.replacement,
+      );
+    }
+
+    _applyUpdatedText(updated);
+  }
+
+  String _normalizedReplacementForConsecutiveIssue(
+    _ConsecutiveSymbolIssue issue,
+  ) {
+    if (issue.symbol == "…") {
+      return "……";
+    }
+    return issue.symbol;
+  }
+
+  ({int start, int endExclusive}) _lineRangeAtIndex(String text, int index) {
+    final int safeIndex = index < 0
+        ? 0
+        : (index > text.length ? text.length : index);
+    int start = safeIndex;
+    while (start > 0 && text[start - 1] != "\n") {
+      start--;
+    }
+
+    int endExclusive = safeIndex;
+    while (endExclusive < text.length && text[endExclusive] != "\n") {
+      endExclusive++;
+    }
+
+    return (start: start, endExclusive: endExclusive);
+  }
+
+  String _replaceTextRange(
+    String text,
+    int start,
+    int endExclusive,
+    String replacement,
+  ) {
+    return text.substring(0, start) +
+        replacement +
+        text.substring(endExclusive);
+  }
+
+  void _applyUpdatedText(String updated, {int? caretOffset}) {
+    if (updated == widget.textController.text) {
+      return;
+    }
+
+    final int requestedOffset =
+        caretOffset ?? widget.textController.selection.baseOffset;
+    final int safeOffset = requestedOffset < 0
+        ? 0
+        : (requestedOffset > updated.length ? updated.length : requestedOffset);
+
     widget.textController.value = TextEditingValue(
-      text: normalized,
-      selection: TextSelection.collapsed(offset: normalized.length),
+      text: updated,
+      selection: TextSelection.collapsed(offset: safeOffset),
     );
     widget.onRequestFocusEditor?.call();
     _runProofreading();
@@ -1391,6 +1618,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         final String current = line[i];
         String? replacement;
         if (_isMaskedPunctuationCharacter(
+          line: line,
           char: current,
           index: i,
           useLatinStyle: useLatinStyle,
@@ -1581,7 +1809,10 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
   bool _shouldIgnoreLineEndingWarning(String line, String endingSymbol) {
     if (_lineEndingIgnoreComma &&
-        (endingSymbol == "," || endingSymbol == "，")) {
+        (endingSymbol == "," ||
+            endingSymbol == "，" ||
+            (_punctuationProfile == _PunctuationProfile.jp &&
+                endingSymbol == "、"))) {
       return true;
     }
     if (_lineEndingIgnoreDash && (endingSymbol == "—" || endingSymbol == "-")) {
@@ -1602,7 +1833,36 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return false;
   }
 
+  bool _shouldForceWarnLineEnding(String line, String endingSymbol) {
+    if (!_lineEndingIgnoreComma &&
+        (endingSymbol == "," ||
+            endingSymbol == "，" ||
+            (_punctuationProfile == _PunctuationProfile.jp &&
+                endingSymbol == "、"))) {
+      return true;
+    }
+    if (!_lineEndingIgnoreDash &&
+        (endingSymbol == "—" || endingSymbol == "-")) {
+      return true;
+    }
+    if (!_lineEndingIgnoreColon &&
+        (endingSymbol == ":" || endingSymbol == "：")) {
+      return true;
+    }
+    if (!_lineEndingIgnoreSemicolon &&
+        (endingSymbol == ";" || endingSymbol == "；")) {
+      return true;
+    }
+    if (!_lineEndingIgnoreEllipsis &&
+        (endingSymbol == "…" || line.endsWith("……") || line.endsWith("..."))) {
+      return true;
+    }
+
+    return false;
+  }
+
   bool _isMaskedPunctuationCharacter({
+    required String line,
     required String char,
     required int index,
     required bool useLatinStyle,
@@ -1619,7 +1879,63 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       return true;
     }
 
+    if (useLatinStyle &&
+        _isAllowedLatinEndingCjkSymbolInMask(line, index, char)) {
+      return true;
+    }
+
     return false;
+  }
+
+  bool _isAllowedLatinEndingCjkSymbolInMask(
+    String line,
+    int index,
+    String char,
+  ) {
+    final bool isQuoteBracketAllowed =
+        _latinAllowCjkQuoteBracketEnding &&
+        _latinEndingCjkQuoteBracketSymbols.contains(char);
+    final bool isQuestionExclamationAllowed =
+        _latinAllowCjkQuestionExclamationEnding &&
+        _latinEndingCjkQuestionExclamationSymbols.contains(char);
+
+    if (!isQuoteBracketAllowed && !isQuestionExclamationAllowed) {
+      return false;
+    }
+
+    return _isLatinEndingContext(line, index);
+  }
+
+  bool _isLatinEndingContext(String line, int index) {
+    int left = index - 1;
+    while (left >= 0 && _isLatinEndingCjkSymbol(line[left])) {
+      left--;
+    }
+
+    final bool hasLatinBefore =
+        left >= 0 && (_isAsciiLetter(line[left]) || _isAsciiDigit(line[left]));
+    if (!hasLatinBefore) {
+      return false;
+    }
+
+    int right = index + 1;
+    while (right < line.length && _isLatinEndingCjkSymbol(line[right])) {
+      right++;
+    }
+
+    if (right >= line.length) {
+      return true;
+    }
+
+    final String next = line[right];
+    return _isWhitespace(next) ||
+        _isCjkPunctuationCharacter(next) ||
+        _isCjkCharacter(next);
+  }
+
+  bool _isLatinEndingCjkSymbol(String char) {
+    return _latinEndingCjkQuoteBracketSymbols.contains(char) ||
+        _latinEndingCjkQuestionExclamationSymbols.contains(char);
   }
 
   _FillerWordAnalysis _analyzeFillerWords(String text) {
@@ -1755,7 +2071,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     const SizedBox(height: 4),
                     Text("當前文本長度：${sourceText.length} 字元"),
                     if (_isLoadingFillerWords)
-                      const Text("載入贅字詞庫中")  
+                      const Text("載入贅字詞庫中")
                     else if (_loadingError != null)
                       Text(_loadingError!)
                     else
@@ -1846,6 +2162,37 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     );
   }
 
+  Widget _buildScrollableResultArea({
+    required List<Widget> children,
+    double maxHeight = 300,
+  }) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: ListView(
+          primary: false,
+          padding: EdgeInsets.zero,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResolveSingleButton({
+    required VoidCallback onPressed,
+    String tooltip = "解決單項",
+  }) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      icon: const Icon(Icons.build_circle_outlined, size: 18),
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.all(4),
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+    );
+  }
+
   Widget _buildDetectionToggleTile({
     required String title,
     required String subtitle,
@@ -1894,39 +2241,6 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppDropdownField<_PunctuationProfile>(
-          value: _punctuationProfile,
-          options: options,
-          onChanged: (final _PunctuationProfile? value) {
-            if (value == null) {
-              return;
-            }
-            unawaited(_setPunctuationProfile(value));
-          },
-          labelText: "標點符號檢查格式",
-          hintText: "請選擇格式",
-        ),
-        const SizedBox(height: 4),
-        Text(
-          "目前格式：${_punctuationProfileCode(_punctuationProfile)}",
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 8),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          title: const Text("拉丁文句檢測"),
-          subtitle: const Text("偵測到拉丁文字時，自動套用拉丁標點"),
-          value: _enableLatinSentenceDetection,
-          onChanged: (bool value) {
-            unawaited(_setLatinSentenceDetection(value));
-          },
-        ),
-        const SizedBox(height: 8),
-        Text("檢測項目開關", style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 4),
         _buildDetectionToggleTile(
           title: "引號、括號閉合檢查",
           subtitle: "檢查配對與閉合狀態",
@@ -1953,22 +2267,6 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                 currentValue: _enableSymbolCheck,
                 stateUpdater: (bool enabled) => _enableSymbolCheck = enabled,
                 prefsKey: _symbolCheckEnabledKey,
-              ),
-            );
-          },
-        ),
-        _buildDetectionToggleTile(
-          title: "行尾辨識",
-          subtitle: "檢查行尾符號是否符合規則",
-          value: _enableLineEndingCheck,
-          onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _enableLineEndingCheck,
-                stateUpdater: (bool enabled) =>
-                    _enableLineEndingCheck = enabled,
-                prefsKey: _lineEndingCheckEnabledKey,
               ),
             );
           },
@@ -2005,90 +2303,142 @@ class _ProofReadingViewState extends State<ProofReadingView> {
             );
           },
         ),
+        _buildDetectionToggleTile(
+          title: "行尾辨識",
+          subtitle: "檢查行尾符號是否符合規則",
+          value: _enableLineEndingCheck,
+          onChanged: (bool value) {
+            unawaited(
+              _setDetectionSetting(
+                enabled: value,
+                currentValue: _enableLineEndingCheck,
+                stateUpdater: (bool enabled) =>
+                    _enableLineEndingCheck = enabled,
+                prefsKey: _lineEndingCheckEnabledKey,
+              ),
+            );
+          },
+        ),
+        if (_enableLineEndingCheck) ...[
+          const SizedBox(height: 8),
+          Text("行尾辨識細項", style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          _buildDetectionToggleTile(
+            title: "行尾逗號不提示",
+            subtitle: "行尾為 , 或 ，時不顯示提示",
+            value: _lineEndingIgnoreComma,
+            onChanged: (bool value) {
+              unawaited(
+                _setDetectionSetting(
+                  enabled: value,
+                  currentValue: _lineEndingIgnoreComma,
+                  stateUpdater: (bool enabled) =>
+                      _lineEndingIgnoreComma = enabled,
+                  prefsKey: _lineEndingIgnoreCommaKey,
+                ),
+              );
+            },
+          ),
+          _buildDetectionToggleTile(
+            title: "行尾破折號不提示",
+            subtitle: "行尾為 — 或 - 時不顯示提示",
+            value: _lineEndingIgnoreDash,
+            onChanged: (bool value) {
+              unawaited(
+                _setDetectionSetting(
+                  enabled: value,
+                  currentValue: _lineEndingIgnoreDash,
+                  stateUpdater: (bool enabled) =>
+                      _lineEndingIgnoreDash = enabled,
+                  prefsKey: _lineEndingIgnoreDashKey,
+                ),
+              );
+            },
+          ),
+          _buildDetectionToggleTile(
+            title: "行尾刪節號不提示",
+            subtitle: "行尾為 … / …… 時不顯示提示",
+            value: _lineEndingIgnoreEllipsis,
+            onChanged: (bool value) {
+              unawaited(
+                _setDetectionSetting(
+                  enabled: value,
+                  currentValue: _lineEndingIgnoreEllipsis,
+                  stateUpdater: (bool enabled) =>
+                      _lineEndingIgnoreEllipsis = enabled,
+                  prefsKey: _lineEndingIgnoreEllipsisKey,
+                ),
+              );
+            },
+          ),
+          _buildDetectionToggleTile(
+            title: "行尾冒號不提示",
+            subtitle: "行尾為 : 或 ：時不顯示提示",
+            value: _lineEndingIgnoreColon,
+            onChanged: (bool value) {
+              unawaited(
+                _setDetectionSetting(
+                  enabled: value,
+                  currentValue: _lineEndingIgnoreColon,
+                  stateUpdater: (bool enabled) =>
+                      _lineEndingIgnoreColon = enabled,
+                  prefsKey: _lineEndingIgnoreColonKey,
+                ),
+              );
+            },
+          ),
+          _buildDetectionToggleTile(
+            title: "行尾分號不提示",
+            subtitle: "行尾為 ; 或 ；時不顯示提示",
+            value: _lineEndingIgnoreSemicolon,
+            onChanged: (bool value) {
+              unawaited(
+                _setDetectionSetting(
+                  enabled: value,
+                  currentValue: _lineEndingIgnoreSemicolon,
+                  stateUpdater: (bool enabled) =>
+                      _lineEndingIgnoreSemicolon = enabled,
+                  prefsKey: _lineEndingIgnoreSemicolonKey,
+                ),
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 8),
-        Text("行尾辨識細項", style: Theme.of(context).textTheme.titleSmall),
+        SmallTitle(icon: Icons.translate, text: "格式選項"),
+        const SizedBox(height: 12),
+        AppDropdownField<_PunctuationProfile>(
+          value: _punctuationProfile,
+          options: options,
+          onChanged: (final _PunctuationProfile? value) {
+            if (value == null) {
+              return;
+            }
+            unawaited(_setPunctuationProfile(value));
+          },
+          labelText: "標點符號檢查格式",
+          hintText: "請選擇格式",
+        ),
         const SizedBox(height: 4),
-        _buildDetectionToggleTile(
-          title: "行尾逗號不提示",
-          subtitle: "行尾為 , 或 ，時不顯示提示",
-          value: _lineEndingIgnoreComma,
-          onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _lineEndingIgnoreComma,
-                stateUpdater: (bool enabled) =>
-                    _lineEndingIgnoreComma = enabled,
-                prefsKey: _lineEndingIgnoreCommaKey,
-              ),
-            );
-          },
+        Text(
+          "目前格式：${_punctuationProfileCode(_punctuationProfile)}",
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
-        _buildDetectionToggleTile(
-          title: "行尾破折號不提示",
-          subtitle: "行尾為 — 或 - 時不顯示提示",
-          value: _lineEndingIgnoreDash,
+        const SizedBox(height: 8),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text("拉丁文句檢測"),
+          subtitle: const Text("偵測到拉丁文字時，自動套用拉丁標點"),
+          value: _enableLatinSentenceDetection,
           onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _lineEndingIgnoreDash,
-                stateUpdater: (bool enabled) => _lineEndingIgnoreDash = enabled,
-                prefsKey: _lineEndingIgnoreDashKey,
-              ),
-            );
-          },
-        ),
-        _buildDetectionToggleTile(
-          title: "行尾刪節號不提示",
-          subtitle: "行尾為 … / …… / ... 時不顯示提示",
-          value: _lineEndingIgnoreEllipsis,
-          onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _lineEndingIgnoreEllipsis,
-                stateUpdater: (bool enabled) =>
-                    _lineEndingIgnoreEllipsis = enabled,
-                prefsKey: _lineEndingIgnoreEllipsisKey,
-              ),
-            );
-          },
-        ),
-        _buildDetectionToggleTile(
-          title: "行尾冒號不提示",
-          subtitle: "行尾為 : 或 ：時不顯示提示",
-          value: _lineEndingIgnoreColon,
-          onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _lineEndingIgnoreColon,
-                stateUpdater: (bool enabled) =>
-                    _lineEndingIgnoreColon = enabled,
-                prefsKey: _lineEndingIgnoreColonKey,
-              ),
-            );
-          },
-        ),
-        _buildDetectionToggleTile(
-          title: "行尾分號不提示",
-          subtitle: "行尾為 ; 或 ；時不顯示提示",
-          value: _lineEndingIgnoreSemicolon,
-          onChanged: (bool value) {
-            unawaited(
-              _setDetectionSetting(
-                enabled: value,
-                currentValue: _lineEndingIgnoreSemicolon,
-                stateUpdater: (bool enabled) =>
-                    _lineEndingIgnoreSemicolon = enabled,
-                prefsKey: _lineEndingIgnoreSemicolonKey,
-              ),
-            );
+            unawaited(_setLatinSentenceDetection(value));
           },
         ),
         const SizedBox(height: 8),
-        Text("拉丁字母辨識細項", style: Theme.of(context).textTheme.titleSmall),
+        Text("拉丁字母辨識細項", style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 4),
         _buildDetectionToggleTile(
           title: "允許字尾使用 CJK 引號/括號",
@@ -2161,8 +2511,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return _buildScrollableResultArea(
       children: _pairIssues.map((final _PairIssue issue) {
         final ({int line, int column}) position = _lineColumnAt(
           sourceText,
@@ -2217,37 +2566,46 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       children: [
         Text("共偵測到 ${result.changes.length} 處可統一的標點。"),
         const SizedBox(height: 6),
-        ...result.changes.take(80).map((final _PunctuationChange change) {
-          final ({int line, int column}) position = _lineColumnAt(
-            sourceText,
-            change.index,
-          );
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _jumpToOffset(change.index),
-              icon: const Icon(Icons.edit_location_alt, size: 16),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                alignment: Alignment.centerLeft,
-              ),
-              label: Text(
-                " ${position.line}:${position.column} ｜ ${change.from} → ${change.to}",
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          );
-        }),
-        if (result.changes.length > 80)
-          Text(
-            "其餘 ${result.changes.length - 80} 筆請先套用後再複查。",
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-
-        SizedBox(height: 8),
+        _buildScrollableResultArea(
+          children: result.changes.map((final _PunctuationChange change) {
+            final ({int line, int column}) position = _lineColumnAt(
+              sourceText,
+              change.index,
+            );
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildResolveSingleButton(
+                  onPressed: () => _resolvePunctuationChange(change),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _jumpToOffset(change.index),
+                      icon: const Icon(Icons.edit_location_alt, size: 16),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        alignment: Alignment.centerLeft,
+                      ),
+                      label: Text(
+                        " ${position.line}:${position.column} ｜ ${change.from} → ${change.to}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
         TextButton(
           onPressed: _applyPunctuationNormalization,
-          child: const SmallTitle(icon: Icons.auto_fix_high, text: "套用標點統一"),
+          child: const SmallTitle(icon: Icons.auto_fix_high, text: "全部解決"),
         ),
       ],
     );
@@ -2275,66 +2633,102 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ..._SymbolIssues.map((final _ConsecutiveSymbolIssue issue) {
-          final ({int line, int column}) position = _lineColumnAt(
-            sourceText,
-            issue.index,
-          );
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _jumpToOffset(issue.index),
-              icon: const Icon(Icons.my_location, size: 16),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                alignment: Alignment.centerLeft,
-              ),
-              label: Text(
-                " ${position.line}:${position.column} ｜ ${issue.message}",
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          );
-        }),
-        ..._sameTypeQuoteIssues.map((final _SameTypeQuoteIssue issue) {
-          final ({int line, int column}) position = _lineColumnAt(
-            sourceText,
-            issue.index,
-          );
-          return Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
+        _buildScrollableResultArea(
+          children: [
+            ..._SymbolIssues.map((final _ConsecutiveSymbolIssue issue) {
+              final ({int line, int column}) position = _lineColumnAt(
+                sourceText,
+                issue.index,
+              );
+              return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => _jumpToOffset(issue.index),
-                    icon: const Icon(Icons.my_location, size: 16),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      alignment: Alignment.centerLeft,
-                    ),
-                    label: Text(
-                      " ${position.line}:${position.column} ｜ ${issue.message}",
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                  _buildResolveSingleButton(
+                    onPressed: () => _resolveConsecutiveIssue(issue),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "建議：${issue.suggestion}",
-                    style: Theme.of(context).textTheme.bodySmall,
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => _jumpToOffset(issue.index),
+                        icon: const Icon(Icons.my_location, size: 16),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          alignment: Alignment.centerLeft,
+                        ),
+                        label: Text(
+                          " ${position.line}:${position.column} ｜ ${issue.message}",
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ),
                   ),
                 ],
-              ),
-            ),
-          );
-        }),
+              );
+            }),
+            ..._sameTypeQuoteIssues.map((final _SameTypeQuoteIssue issue) {
+              final ({int line, int column}) position = _lineColumnAt(
+                sourceText,
+                issue.index,
+              );
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildResolveSingleButton(
+                            onPressed: () => _resolveSameTypeQuoteIssue(issue),
+                          ),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: () => _jumpToOffset(issue.index),
+                              icon: const Icon(Icons.my_location, size: 16),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                alignment: Alignment.centerLeft,
+                              ),
+                              label: Text(
+                                " ${position.line}:${position.column} ｜ ${issue.message}",
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "建議：${issue.suggestion}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: _resolveAllAnomalies,
+          child: const SmallTitle(icon: Icons.auto_fix_high, text: "全部解決"),
+        ),
       ],
     );
   }
@@ -2358,8 +2752,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return _buildScrollableResultArea(
       children: _lineEndingIssues.map((final _LineEndingIssue issue) {
         final ({int line, int column}) position = _lineColumnAt(
           sourceText,
