@@ -46,6 +46,7 @@ flutter:
     # JSON
     - assets/jsons/didyouknow.json
     - assets/jsons/fillerwords.json
+    - assets/jsons/glossary.json
     - assets/jsons/name_eastAsia.json
   
   fonts:

@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "categoryTree": [
+    {
+      "id": "cat-character",
+      "name": "人物描寫",
+      "entryIds": ["entry-stalwart"],
+      "children": [
+        {
+          "id": "cat-personality",
+          "name": "性格",
+          "entryIds": ["entry-gentle", "entry-arrogant"],
+          "children": []
+        },
+        {
+          "id": "cat-emotion",
+          "name": "情緒",
+          "entryIds": ["entry-anxious", "entry-composed"],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "cat-narrative",
+      "name": "敘事語彙",
+      "entryIds": ["entry-foreshadow"],
+      "children": [
+        {
+          "id": "cat-conflict",
+          "name": "衝突",
+          "entryIds": ["entry-escalate", "entry-stalemate"],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "entries": {
+    "entry-stalwart": {
+      "id": "entry-stalwart",
+      "term": "堅毅",
+      "polarity": "positive",
+      "pairs": [
+        {
+          "meaning": "意志堅定，不易動搖。",
+          "example": "她在眾人質疑下依然堅毅地推進計畫。"
+        },
+        {
+          "meaning": "面對逆境仍保持行動力。",
+          "example": "即使補給中斷，隊長仍以堅毅口吻穩住軍心。"
+        }
+      ]
+    },
+    "entry-gentle": {
+      "id": "entry-gentle",
+      "term": "溫厚",
+      "polarity": "positive",
+      "pairs": [
+        {
+          "meaning": "性情溫和寬厚，待人不苛。",
+          "example": "老店主以溫厚語氣提醒主角，不必急著做決定。"
+        }
+      ]
+    },
+    "entry-arrogant": {
+      "id": "entry-arrogant",
+      "term": "倨傲",
+      "polarity": "negative",
+      "pairs": [
+        {
+          "meaning": "態度高傲，輕視他人。",
+          "example": "他倨傲地打斷發言，讓會議氣氛瞬間緊繃。"
+        },
+        {
+          "meaning": "在互動中帶有壓迫或羞辱意味。",
+          "example": "倨傲神情讓盟友開始懷疑合作價值。"
+        }
+      ]
+    },
+    "entry-anxious": {
+      "id": "entry-anxious",
+      "term": "惶然",
+      "polarity": "negative",
+      "pairs": [
+        {
+          "meaning": "內心不安、驚懼而難以鎮定。",
+          "example": "聽見腳步聲逼近，他神色惶然地收起信件。"
+        }
+      ]
+    },
+    "entry-composed": {
+      "id": "entry-composed",
+      "term": "從容",
+      "polarity": "neutral",
+      "pairs": [
+        {
+          "meaning": "行事沉著，不急不躁。",
+          "example": "面對連番追問，她仍從容地逐點回應。"
+        },
+        {
+          "meaning": "在壓力下維持清楚判斷。",
+          "example": "他的從容不是冷漠，而是長年訓練後的穩定。"
+        }
+      ]
+    },
+    "entry-foreshadow": {
+      "id": "entry-foreshadow",
+      "term": "伏筆",
+      "polarity": "neutral",
+      "pairs": [
+        {
+          "meaning": "在前文埋下線索，為後續情節鋪墊。",
+          "example": "第一章遺落的鑰匙其實是最終章的伏筆。"
+        },
+        {
+          "meaning": "使讀者在回收時產生連結與驚喜。",
+          "example": "看似無關的景物描述，最後成為真相逆轉的伏筆。"
+        }
+      ]
+    },
+    "entry-escalate": {
+      "id": "entry-escalate",
+      "term": "升高",
+      "polarity": "negative",
+      "pairs": [
+        {
+          "meaning": "使衝突、風險或張力程度提高。",
+          "example": "誤會被公開後，雙方對立進一步升高。"
+        }
+      ]
+    },
+    "entry-stalemate": {
+      "id": "entry-stalemate",
+      "term": "僵局",
+      "polarity": "neutral",
+      "pairs": [
+        {
+          "meaning": "雙方互相牽制，局勢暫時無法推進。",
+          "example": "談判陷入僵局，迫使主角改走非常手段。"
+        },
+        {
+          "meaning": "敘事中可作為轉折前的停滯段。",
+          "example": "劇情在僵局停留越久，後續爆發越有力道。"
+        }
+      ]
+    }
+  }
+}
