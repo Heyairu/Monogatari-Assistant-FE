@@ -69,6 +69,8 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       "proofreading_latin_allow_cjk_punctuation_around_cjk_text";
   static const bool _numericDetectionAlwaysOn = true;
 
+  // MARK: - Punctuation and Style Detection Logic
+
   static const Map<String, String> _openingToClosing = <String, String>{
     "(": ")",
     "[": "]",
@@ -98,6 +100,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "]": "］",
     "{": "｛",
     "}": "｝",
+    "─": "—",
   };
 
   static const Map<String, String> _zhHansPunctuationMap = <String, String>{
@@ -117,6 +120,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "」": "”",
     "『": "‘",
     "』": "’",
+    "─": "—",
   };
 
   static const Map<String, String> _jpPunctuationMap = <String, String>{
@@ -133,6 +137,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     "]": "］",
     "{": "｛",
     "}": "｝",
+    "─": "—",
   };
 
   static const Map<String, String> _latinPunctuationMap = <String, String>{
@@ -769,6 +774,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       final String char = line[i];
       if (mask[i] ||
           _isCjkNonPunctuationMaskCharacter(char) ||
+          _isCjkPunctuationLeadingCjkText(line, i) ||
           _isCjkPunctuationInCjkContext(line, i)) {
         flushSegment(i);
         continue;
@@ -1777,6 +1783,28 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     return _cjkPunctuationSymbols.contains(char);
   }
 
+  bool _isCjkPunctuationLeadingCjkText(String line, int index) {
+    if (index < 0 || index >= line.length) {
+      return false;
+    }
+
+    final String char = line[index];
+    if (!_isCjkPunctuationCharacter(char)) {
+      return false;
+    }
+
+    int right = index + 1;
+    while (right < line.length && _isCjkPunctuationCharacter(line[right])) {
+      right++;
+    }
+
+    if (right >= line.length) {
+      return false;
+    }
+
+    return _isCjkCharacter(line[right]);
+  }
+
   bool _isCjkPunctuationInCjkContext(String line, int index) {
     if (!_latinAllowCjkPunctuationAroundCjkText) {
       return false;
@@ -1804,7 +1832,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     final bool rightInCjkContext =
         right >= line.length || _isCjkCharacter(line[right]);
 
-    return leftInCjkContext && rightInCjkContext;
+    return leftInCjkContext || rightInCjkContext;
   }
 
   bool _shouldIgnoreLineEndingWarning(String line, String endingSymbol) {
@@ -2105,10 +2133,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     const SizedBox(height: 8),
                     _buildConsecutiveSymbolResult(sourceText),
                     const Divider(height: 24),
-                    _buildSectionTitle(
-                      icon: Icons.format_line_spacing,
-                      title: "行尾辨識",
-                    ),
+                    SmallTitle(icon: Icons.format_line_spacing, text: "行尾辨識"),
                     const SizedBox(height: 8),
                     _buildLineEndingResult(sourceText),
                     const Divider(height: 24),
@@ -2116,14 +2141,11 @@ class _ProofReadingViewState extends State<ProofReadingView> {
                     const SizedBox(height: 8),
                     _buildPunctuationResult(punctuationResult),
                     const Divider(height: 24),
-                    _buildSectionTitle(icon: Icons.grading, title: "贅字檢查"),
+                    SmallTitle(icon: Icons.grading, text: "贅字檢查"),
                     const SizedBox(height: 8),
                     _buildFillerWordResult(),
                     const Divider(height: 24),
-                    _buildSectionTitle(
-                      icon: Icons.track_changes_outlined,
-                      title: "贅字率計算",
-                    ),
+                    SmallTitle(icon: Icons.track_changes_outlined, text: "贅字率計算"),
                     const SizedBox(height: 8),
                     _buildFillerRateResult(),
                   ],
@@ -2152,19 +2174,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
     );
   }
 
-  Widget _buildSectionTitle({required IconData icon, required String title}) {
-    return Row(
-      children: [
-        Icon(icon, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(width: 8),
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-      ],
-    );
-  }
-
   Widget _buildScrollableResultArea({
     required List<Widget> children,
-    double maxHeight = 300,
+    double maxHeight = 200,
   }) {
     return Container(
       constraints: BoxConstraints(maxHeight: maxHeight),
@@ -2474,7 +2486,7 @@ class _ProofReadingViewState extends State<ProofReadingView> {
         ),
         _buildDetectionToggleTile(
           title: "允許在 CJK 文字前後加入 CJK 標點",
-          subtitle: "若前後語境為行首/CJK/行尾，CJK 標點不視為拉丁延伸",
+          subtitle: "若任一側語境為行首/CJK/行尾，CJK 標點不視為拉丁延伸",
           value: _latinAllowCjkPunctuationAroundCjkText,
           onChanged: (bool value) {
             unawaited(
