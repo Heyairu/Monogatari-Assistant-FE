@@ -220,6 +220,18 @@ class _GlossaryCategoryDragData {
   });
 }
 
+class _GlossaryEntryDragData {
+  final String entryId;
+  final String entryTerm;
+  final String sourceCategoryId;
+
+  const _GlossaryEntryDragData({
+    required this.entryId,
+    required this.entryTerm,
+    required this.sourceCategoryId,
+  });
+}
+
 class _CategoryEntryRef {
   final String entryId;
   final String sourceCategoryId;
@@ -267,6 +279,11 @@ class _GlossaryViewState extends State<GlossaryView> {
 
   bool _isDragging = false;
   String? _draggingCategoryId;
+  String? _draggingEntryId;
+  String? _draggingEntrySourceCategoryId;
+
+  String? _editingCategoryId;
+  TextEditingController? _categoryRenameController;
   final Set<String> _expandedCategoryIds = <String>{};
 
   Timer? _persistDebounce;
@@ -280,6 +297,7 @@ class _GlossaryViewState extends State<GlossaryView> {
   @override
   void dispose() {
     _persistDebounce?.cancel();
+    _categoryRenameController?.dispose();
     super.dispose();
   }
 
@@ -402,6 +420,8 @@ class _GlossaryViewState extends State<GlossaryView> {
         }
       }
     }
+
+    _deduplicateEntriesByTerm(categoryTree, entryIndex);
 
     return _GlossaryDecoded(categoryTree: categoryTree, entryIndex: entryIndex);
   }
@@ -623,6 +643,107 @@ class _GlossaryViewState extends State<GlossaryView> {
     return refs;
   }
 
+  String _normalizeTerm(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  String? _findEntryIdByTerm(String term, {String? excludeEntryId}) {
+    final String normalizedTerm = _normalizeTerm(term);
+    if (normalizedTerm.isEmpty) return null;
+
+    for (final MapEntry<String, GlossaryEntry> item in _entryIndex.entries) {
+      // 僅檢查主鍵，避免同一 entry 因別名 key 重複掃到。
+      if (item.key != item.value.id) continue;
+      if (excludeEntryId != null && item.value.id == excludeEntryId) continue;
+      if (_normalizeTerm(item.value.term) == normalizedTerm) {
+        return item.value.id;
+      }
+    }
+
+    return null;
+  }
+
+  void _rewriteCategoryEntryReferences(Map<String, String> replacements) {
+    if (replacements.isEmpty) return;
+
+    void walk(List<GlossaryCategory> nodes) {
+      for (final GlossaryCategory node in nodes) {
+        final List<String> rewrittenIds = [];
+        final Set<String> seen = <String>{};
+
+        for (final String entryId in node.entryIds) {
+          final String resolvedId = replacements[entryId] ?? entryId;
+          if (seen.add(resolvedId)) {
+            rewrittenIds.add(resolvedId);
+          }
+        }
+
+        node.entryIds = rewrittenIds;
+        walk(node.children);
+      }
+    }
+
+    walk(_categoryTree);
+  }
+
+  void _deduplicateEntriesByTerm(
+    List<GlossaryCategory> categoryTree,
+    HashMap<String, GlossaryEntry> entryIndex,
+  ) {
+    final List<String> primaryEntryIds = entryIndex.entries
+        .where((item) => item.key == item.value.id)
+        .map((item) => item.value.id)
+        .toSet()
+        .toList()
+      ..sort();
+
+    final Map<String, String> canonicalByTerm = {};
+    final Map<String, String> replacements = {};
+
+    for (final String entryId in primaryEntryIds) {
+      final GlossaryEntry? entry = entryIndex[entryId];
+      if (entry == null) continue;
+
+      final String normalizedTerm = _normalizeTerm(entry.term);
+      if (normalizedTerm.isEmpty) continue;
+
+      final String? canonicalId = canonicalByTerm[normalizedTerm];
+      if (canonicalId == null) {
+        canonicalByTerm[normalizedTerm] = entryId;
+        continue;
+      }
+
+      if (canonicalId != entryId) {
+        replacements[entryId] = canonicalId;
+      }
+    }
+
+    if (replacements.isEmpty) return;
+
+    void walk(List<GlossaryCategory> nodes) {
+      for (final GlossaryCategory node in nodes) {
+        final List<String> rewrittenIds = [];
+        final Set<String> seen = <String>{};
+
+        for (final String entryId in node.entryIds) {
+          final String resolvedId = replacements[entryId] ?? entryId;
+          if (seen.add(resolvedId)) {
+            rewrittenIds.add(resolvedId);
+          }
+        }
+
+        node.entryIds = rewrittenIds;
+        walk(node.children);
+      }
+    }
+
+    walk(categoryTree);
+    entryIndex.removeWhere(
+      (key, value) => replacements.containsKey(key) ||
+          replacements.containsKey(value.id),
+    );
+  }
+
   String _createId() => const Uuid().v4();
 
   Future<String?> _showTextInputDialog({
@@ -689,6 +810,10 @@ class _GlossaryViewState extends State<GlossaryView> {
   }
 
   void _selectCategory(String categoryId) {
+    if (_editingCategoryId != null && _editingCategoryId != categoryId) {
+      _submitEditingCategory();
+    }
+
     final List<_CategoryEntryRef> refs = _collectEntryRefs(
       categoryId,
       _categoryTree,
@@ -746,25 +871,51 @@ class _GlossaryViewState extends State<GlossaryView> {
     _schedulePersist();
   }
 
-  Future<void> _renameCategory(String categoryId) async {
+  void _startEditingCategory(String categoryId) {
     final GlossaryCategory? category = _findCategoryById(
       categoryId,
       _categoryTree,
     );
     if (category == null) return;
 
-    final String? name = await _showTextInputDialog(
-      title: "重新命名分類",
-      hint: "分類名稱",
-      initialValue: category.name,
-    );
-    if (!mounted) return;
-    if (name == null || name.isEmpty) return;
-
     setState(() {
-      category.name = name;
+      _editingCategoryId = categoryId;
+      _categoryRenameController?.dispose();
+      _categoryRenameController = TextEditingController(text: category.name);
     });
-    _schedulePersist();
+  }
+
+  void _submitEditingCategory() {
+    final String? editingId = _editingCategoryId;
+    final TextEditingController? controller = _categoryRenameController;
+
+    bool changed = false;
+    if (editingId != null && controller != null) {
+      final GlossaryCategory? category = _findCategoryById(
+        editingId,
+        _categoryTree,
+      );
+      if (category != null) {
+        final String nextName = controller.text.trim();
+        if (nextName.isNotEmpty && category.name != nextName) {
+          category.name = nextName;
+          changed = true;
+        }
+      }
+    }
+
+    _cancelEditingCategory();
+    if (changed) {
+      _schedulePersist();
+    }
+  }
+
+  void _cancelEditingCategory() {
+    setState(() {
+      _editingCategoryId = null;
+      _categoryRenameController?.dispose();
+      _categoryRenameController = null;
+    });
   }
 
   Future<void> _deleteCategory(String categoryId) async {
@@ -827,11 +978,6 @@ class _GlossaryViewState extends State<GlossaryView> {
 
   Future<void> _addEntryToSelectedCategory() async {
     if (_selectedCategoryId == null) return;
-    final GlossaryCategory? category = _findCategoryById(
-      _selectedCategoryId!,
-      _categoryTree,
-    );
-    if (category == null) return;
 
     final String? term = await _showTextInputDialog(
       title: "新增詞條",
@@ -841,10 +987,50 @@ class _GlossaryViewState extends State<GlossaryView> {
     if (!mounted) return;
     if (term == null || term.isEmpty) return;
 
+    _addEntryByTermToSelectedCategory(term);
+  }
+
+  void _addEntryByTermToSelectedCategory(String rawTerm) {
+    if (_selectedCategoryId == null) return;
+    final GlossaryCategory? category = _findCategoryById(
+      _selectedCategoryId!,
+      _categoryTree,
+    );
+    if (category == null) return;
+
+    final String normalizedTerm = rawTerm.trim();
+    if (normalizedTerm.isEmpty) return;
+
+    final String? existingEntryId = _findEntryIdByTerm(normalizedTerm);
+    if (existingEntryId != null) {
+      final bool alreadyLinked = category.entryIds.contains(existingEntryId);
+
+      setState(() {
+        if (!alreadyLinked) {
+          category.entryIds.add(existingEntryId);
+        }
+        _selectedEntryId = existingEntryId;
+      });
+
+      if (!alreadyLinked) {
+        _schedulePersist();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            alreadyLinked ? "此分類已有同名詞條，已定位到該詞條" : "已連結到同名詞條，共用意義/例句",
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
     final String entryId = _createId();
     final GlossaryEntry entry = GlossaryEntry(
       id: entryId,
-      term: term,
+      term: normalizedTerm,
       polarity: GlossaryPolarity.neutral,
       pairs: [GlossaryPair()],
     );
@@ -902,6 +1088,69 @@ class _GlossaryViewState extends State<GlossaryView> {
     _schedulePersist();
   }
 
+  bool _moveEntryToCategory({
+    required String entryId,
+    required String sourceCategoryId,
+    required String targetCategoryId,
+    int? targetInsertIndex,
+  }) {
+    final GlossaryCategory? source = _findCategoryById(
+      sourceCategoryId,
+      _categoryTree,
+    );
+    final GlossaryCategory? target = _findCategoryById(
+      targetCategoryId,
+      _categoryTree,
+    );
+    if (source == null || target == null) return false;
+
+    final int fromIndex = source.entryIds.indexOf(entryId);
+    if (fromIndex < 0) return false;
+
+    bool changed = false;
+    setState(() {
+      if (sourceCategoryId == targetCategoryId) {
+        if (targetInsertIndex == null) return;
+
+        int insertIndex = targetInsertIndex;
+        if (insertIndex < 0) insertIndex = 0;
+        if (insertIndex > source.entryIds.length) {
+          insertIndex = source.entryIds.length;
+        }
+
+        if (insertIndex == fromIndex || insertIndex == fromIndex + 1) {
+          return;
+        }
+
+        source.entryIds.removeAt(fromIndex);
+        if (insertIndex > fromIndex) {
+          insertIndex -= 1;
+        }
+        source.entryIds.insert(insertIndex, entryId);
+        changed = true;
+        return;
+      }
+
+      final bool removed = source.entryIds.remove(entryId);
+      if (!removed) return;
+
+      if (!target.entryIds.contains(entryId)) {
+        int insertIndex = targetInsertIndex ?? target.entryIds.length;
+        if (insertIndex < 0) insertIndex = 0;
+        if (insertIndex > target.entryIds.length) {
+          insertIndex = target.entryIds.length;
+        }
+        target.entryIds.insert(insertIndex, entryId);
+      }
+      changed = true;
+    });
+
+    if (changed) {
+      _schedulePersist();
+    }
+    return changed;
+  }
+
   GlossaryEntry? get _selectedEntry {
     if (_selectedEntryId == null) return null;
     return _entryIndex[_selectedEntryId!];
@@ -910,6 +1159,29 @@ class _GlossaryViewState extends State<GlossaryView> {
   void _updateTerm(String value) {
     final GlossaryEntry? entry = _selectedEntry;
     if (entry == null || entry.term == value) return;
+
+    final String? targetEntryId = _findEntryIdByTerm(
+      value,
+      excludeEntryId: entry.id,
+    );
+    if (targetEntryId != null) {
+      setState(() {
+        _rewriteCategoryEntryReferences({entry.id: targetEntryId});
+        _entryIndex.removeWhere(
+          (key, item) => key == entry.id || item.id == entry.id,
+        );
+        _selectedEntryId = targetEntryId;
+      });
+      _schedulePersist();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("同名詞條已合併，現在共用同一組意義/例句"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       entry.term = value;
@@ -1111,9 +1383,12 @@ class _GlossaryViewState extends State<GlossaryView> {
     final bool isSelected = _selectedCategoryId == category.id;
     final bool hasChildren = category.children.isNotEmpty;
     final bool isExpanded = _expandedCategoryIds.contains(category.id);
+    final bool isEditing = _editingCategoryId == category.id;
     final int totalEntries = _countSubtreeEntries(category);
+    final TextStyle menuTextStyle =
+        Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
 
-    return DraggableCardNode<_GlossaryCategoryDragData>(
+    return DraggableCardNode<Object>(
       key: ValueKey(category.id),
       dragData: _GlossaryCategoryDragData(
         categoryId: category.id,
@@ -1125,18 +1400,33 @@ class _GlossaryViewState extends State<GlossaryView> {
         hasChildren ? Icons.folder_copy_outlined : Icons.folder_open_outlined,
         color: Theme.of(context).colorScheme.primary,
       ),
-      title: GestureDetector(
-        onDoubleTap: () => _renameCategory(category.id),
-        child: Text(
-          category.name,
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
+      title: isEditing
+          ? TextField(
+              controller: _categoryRenameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+              ),
+              onSubmitted: (_) => _submitEditingCategory(),
+              onTapOutside: (_) => _submitEditingCategory(),
+            )
+          : GestureDetector(
+              onDoubleTap: () => _startEditingCategory(category.id),
+              child: Text(
+                category.name,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
       subtitle: Text(
         "共 $totalEntries 條",
         style: Theme.of(context).textTheme.bodySmall,
@@ -1145,7 +1435,7 @@ class _GlossaryViewState extends State<GlossaryView> {
         tooltip: "分類操作",
         onSelected: (value) {
           if (value == "rename") {
-            _renameCategory(category.id);
+            _startEditingCategory(category.id);
             return;
           }
           if (value == "delete") {
@@ -1167,10 +1457,19 @@ class _GlossaryViewState extends State<GlossaryView> {
             if (hasChildren)
               PopupMenuItem<String>(
                 value: "toggle",
-                child: Text(isExpanded ? "收合子分類" : "展開子分類"),
+                child: Text(
+                  isExpanded ? "收合子分類" : "展開子分類",
+                  style: menuTextStyle,
+                ),
               ),
-            const PopupMenuItem<String>(value: "rename", child: Text("重命名")),
-            const PopupMenuItem<String>(value: "delete", child: Text("刪除分類")),
+            PopupMenuItem<String>(
+              value: "rename",
+              child: Text("重命名", style: menuTextStyle),
+            ),
+            PopupMenuItem<String>(
+              value: "delete",
+              child: Text("刪除分類", style: menuTextStyle),
+            ),
           ];
         },
         icon: const Icon(Icons.more_horiz),
@@ -1179,42 +1478,76 @@ class _GlossaryViewState extends State<GlossaryView> {
       isDragging: _isDragging,
       isThisDragging: _draggingCategoryId == category.id,
       isDragForbidden:
-          _isDragging &&
           _draggingCategoryId != null &&
           _isDescendantCategory(_draggingCategoryId!, category.id),
       onClicked: () => _selectCategory(category.id),
       onDragStarted: () {
+        if (_editingCategoryId != null) {
+          _submitEditingCategory();
+        }
         setState(() {
           _isDragging = true;
           _draggingCategoryId = category.id;
+          _draggingEntryId = null;
+          _draggingEntrySourceCategoryId = null;
         });
       },
       onDragEnd: () {
         setState(() {
           _isDragging = false;
           _draggingCategoryId = null;
+          _draggingEntryId = null;
+          _draggingEntrySourceCategoryId = null;
         });
       },
       onWillAccept: (data, position) {
-        if (data.categoryId == category.id) return false;
-        if (_isDescendantCategory(data.categoryId, category.id)) return false;
-        return true;
+        if (data is _GlossaryCategoryDragData) {
+          if (data.categoryId == category.id) return false;
+          if (_isDescendantCategory(data.categoryId, category.id)) return false;
+          return true;
+        }
+        if (data is _GlossaryEntryDragData) {
+          return position == DropPosition.child;
+        }
+        return false;
       },
       onAccept: (data, position) {
-        _moveCategoryTo(data.categoryId, category.id, position);
-        final String actionText = switch (position) {
-          DropPosition.before => "移動到前方",
-          DropPosition.child => "移動到子目錄",
-          DropPosition.after => "移動到後方",
-        };
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("「${data.categoryName}」已$actionText"),
-            duration: const Duration(seconds: 1),
-          ),
-        );
+        if (data is _GlossaryCategoryDragData) {
+          _moveCategoryTo(data.categoryId, category.id, position);
+          final String actionText = switch (position) {
+            DropPosition.before => "移動到前方",
+            DropPosition.child => "移動到子目錄",
+            DropPosition.after => "移動到後方",
+          };
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("「${data.categoryName}」已$actionText"),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+          return;
+        }
+
+        if (data is _GlossaryEntryDragData && position == DropPosition.child) {
+          final bool moved = _moveEntryToCategory(
+            entryId: data.entryId,
+            sourceCategoryId: data.sourceCategoryId,
+            targetCategoryId: category.id,
+          );
+          if (moved) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("「${data.entryTerm}」已移到「${category.name}」"),
+                duration: const Duration(seconds: 1),
+              ),
+            );
+          }
+        }
       },
       getDropZoneSize: (position) {
+        if (_draggingEntryId != null) {
+          return position == DropPosition.child ? 1.0 : 0.0;
+        }
         switch (position) {
           case DropPosition.before:
             return 0.3;
@@ -1265,102 +1598,171 @@ class _GlossaryViewState extends State<GlossaryView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: MediumTitle(
-                    icon: Icons.format_list_bulleted,
-                    text: "詞語條目",
-                  ),
-                ),
-                IconButton(
-                  tooltip: "新增詞條",
-                  onPressed: _addEntryToSelectedCategory,
-                  icon: const Icon(Icons.post_add),
-                ),
-              ],
-            ),
+            MediumTitle(icon: Icons.format_list_bulleted, text: "詞語條目"),
             const SizedBox(height: 8),
             Text(
-              "同時顯示本目錄與子目錄條目，底色區分來源。",
+              "詞條可長按拖曳，支援排序與移動到其他分類。",
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
             if (visibleRefs.isEmpty)
               Text("此類別目前沒有詞條。", style: Theme.of(context).textTheme.bodyMedium)
             else
-              Column(
-                children: visibleRefs.map((ref) {
-                  final GlossaryEntry entry = _entryIndex[ref.entryId]!;
-                  final bool isSelected = _selectedEntryId == entry.id;
-                  final Color sourceColor = ref.isLocal
-                      ? scheme.primaryContainer.withValues(alpha: 0.52)
-                      : scheme.tertiaryContainer.withValues(alpha: 0.52);
-                  final String summary = entry.pairs.isEmpty
-                      ? "尚未填寫意義"
-                      : (entry.pairs.first.meaning.trim().isEmpty
-                            ? "尚未填寫意義"
-                            : entry.pairs.first.meaning);
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Card(
-                      elevation: 0,
-                      margin: EdgeInsets.zero,
-                      color: sourceColor,
-                      shape: RoundedRectangleBorder(
-                        side: BorderSide(
-                          color: isSelected
-                              ? scheme.primary
-                              : Colors.transparent,
-                          width: 1.8,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        leading: Icon(
-                          entry.polarity.icon,
-                          color: entry.polarity.color(scheme),
-                        ),
-                        title: Text(
-                          entry.term,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              summary,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: Scrollbar(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: visibleRefs
+                          .map(
+                            (ref) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _buildEntryRow(ref),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              ref.isLocal
-                                  ? "來源：本目錄"
-                                  : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                        trailing: IconButton(
-                          tooltip: "從此分類移除",
-                          icon: const Icon(Icons.remove_circle_outline),
-                          onPressed: () => _removeEntryFromCategory(ref),
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _selectedEntryId = entry.id;
-                          });
-                        },
-                      ),
+                          )
+                          .toList(),
                     ),
-                  );
-                }).toList(),
+                  ),
+                ),
               ),
+            const SizedBox(height: 12),
+            AddItemInput(
+              title: "詞條名稱",
+              onAdd: _addEntryByTermToSelectedCategory,
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEntryRow(_CategoryEntryRef ref) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final GlossaryEntry? entry = _entryIndex[ref.entryId];
+    if (entry == null) {
+      return const SizedBox.shrink();
+    }
+
+    final bool isSelected = _selectedEntryId == entry.id;
+    final Color sourceColor = ref.isLocal
+        ? scheme.primaryContainer.withValues(alpha: 0.52)
+        : scheme.tertiaryContainer.withValues(alpha: 0.52);
+    final String summary = entry.pairs.isEmpty
+        ? "尚未填寫意義"
+        : (entry.pairs.first.meaning.trim().isEmpty
+              ? "尚未填寫意義"
+              : entry.pairs.first.meaning);
+
+    return DraggableCardNode<Object>(
+      key: ValueKey("${ref.sourceCategoryId}_${entry.id}"),
+      dragData: _GlossaryEntryDragData(
+        entryId: entry.id,
+        entryTerm: entry.term,
+        sourceCategoryId: ref.sourceCategoryId,
+      ),
+      nodeId: "${ref.sourceCategoryId}_${entry.id}",
+      nodeType: NodeType.item,
+      baseColor: sourceColor,
+      selectedColor: isSelected
+          ? scheme.primaryContainer.withValues(alpha: 0.82)
+          : sourceColor,
+      leading: Icon(
+        entry.polarity.icon,
+        color: entry.polarity.color(scheme),
+      ),
+      title: Text(entry.term, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 4),
+          Text(
+            ref.isLocal ? "來源：本目錄" : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      trailing: IconButton(
+        tooltip: "從此分類移除",
+        icon: const Icon(Icons.remove_circle_outline),
+        onPressed: () => _removeEntryFromCategory(ref),
+      ),
+      isSelected: isSelected,
+      isDragging: _isDragging,
+      isThisDragging:
+          _draggingEntryId == entry.id &&
+          _draggingEntrySourceCategoryId == ref.sourceCategoryId,
+      onClicked: () {
+        setState(() {
+          _selectedEntryId = entry.id;
+        });
+      },
+      onDragStarted: () {
+        if (_editingCategoryId != null) {
+          _submitEditingCategory();
+        }
+        setState(() {
+          _isDragging = true;
+          _draggingCategoryId = null;
+          _draggingEntryId = entry.id;
+          _draggingEntrySourceCategoryId = ref.sourceCategoryId;
+        });
+      },
+      onDragEnd: () {
+        setState(() {
+          _isDragging = false;
+          _draggingCategoryId = null;
+          _draggingEntryId = null;
+          _draggingEntrySourceCategoryId = null;
+        });
+      },
+      onWillAccept: (data, position) {
+        if (data is! _GlossaryEntryDragData) return false;
+        if (position == DropPosition.child) return false;
+        if (data.entryId == ref.entryId &&
+            data.sourceCategoryId == ref.sourceCategoryId) {
+          return false;
+        }
+        return true;
+      },
+      onAccept: (data, position) {
+        if (data is! _GlossaryEntryDragData) return;
+        if (position == DropPosition.child) return;
+
+        final GlossaryCategory? targetCategory = _findCategoryById(
+          ref.sourceCategoryId,
+          _categoryTree,
+        );
+        if (targetCategory == null) return;
+
+        final int anchorIndex = targetCategory.entryIds.indexOf(ref.entryId);
+        if (anchorIndex < 0) return;
+
+        final int targetIndex = position == DropPosition.before
+            ? anchorIndex
+            : anchorIndex + 1;
+
+        final bool moved = _moveEntryToCategory(
+          entryId: data.entryId,
+          sourceCategoryId: data.sourceCategoryId,
+          targetCategoryId: ref.sourceCategoryId,
+          targetInsertIndex: targetIndex,
+        );
+
+        if (moved) {
+          final String destination = _categoryName(ref.sourceCategoryId);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("「${data.entryTerm}」已移動到「$destination」"),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
+      },
+      getDropZoneSize: (position) {
+        if (_draggingEntryId == null) return 0.0;
+        return position == DropPosition.child ? 0.0 : 0.5;
+      },
     );
   }
 
@@ -1393,6 +1795,10 @@ class _GlossaryViewState extends State<GlossaryView> {
               const SizedBox(height: 12),
               DropdownButtonFormField<GlossaryPolarity>(
                 value: selectedEntry.polarity,
+                isDense: true,
+                style:
+                    Theme.of(context).textTheme.bodySmall ??
+                    const TextStyle(fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: "詞性分類",
                   border: OutlineInputBorder(),
@@ -1408,7 +1814,12 @@ class _GlossaryViewState extends State<GlossaryView> {
                           color: polarity.color(scheme),
                         ),
                         const SizedBox(width: 8),
-                        Text(polarity.label),
+                        Text(
+                          polarity.label,
+                          style:
+                              Theme.of(context).textTheme.bodySmall ??
+                              const TextStyle(fontSize: 13),
+                        ),
                       ],
                     ),
                   );
