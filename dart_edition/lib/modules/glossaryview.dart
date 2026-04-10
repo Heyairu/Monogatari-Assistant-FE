@@ -14,6 +14,7 @@
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:file_picker/file_picker.dart";
 import "package:shared_preferences/shared_preferences.dart";
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
@@ -258,6 +259,26 @@ class _GlossaryDecoded {
   const _GlossaryDecoded({
     required this.categoryTree,
     required this.entryIndex,
+  });
+}
+
+class _GlossaryImportPreviewSummary {
+  final int newCategoryCount;
+  final int mergedCategoryCount;
+  final int newEntryCount;
+  final int reusedEntryCount;
+  final int newLinkCount;
+  final List<String> newCategorySamples;
+  final List<String> newEntrySamples;
+
+  const _GlossaryImportPreviewSummary({
+    required this.newCategoryCount,
+    required this.mergedCategoryCount,
+    required this.newEntryCount,
+    required this.reusedEntryCount,
+    required this.newLinkCount,
+    required this.newCategorySamples,
+    required this.newEntrySamples,
   });
 }
 
@@ -809,6 +830,463 @@ class _GlossaryViewState extends State<GlossaryView> {
     return accepted ?? false;
   }
 
+  List<GlossaryCategory>? _findCategoryPathById(
+    String categoryId,
+    List<GlossaryCategory> nodes,
+  ) {
+    for (final GlossaryCategory node in nodes) {
+      if (node.id == categoryId) {
+        return [node];
+      }
+
+      final List<GlossaryCategory>? childPath = _findCategoryPathById(
+        categoryId,
+        node.children,
+      );
+      if (childPath != null) {
+        return [node, ...childPath];
+      }
+    }
+
+    return null;
+  }
+
+  GlossaryCategory _cloneCategoryNode(
+    GlossaryCategory source, {
+    List<GlossaryCategory>? childrenOverride,
+  }) {
+    return GlossaryCategory(
+      id: source.id,
+      name: source.name,
+      entryIds: List<String>.from(source.entryIds),
+      children: childrenOverride ??
+          source.children.map(_cloneCategoryNode).toList(),
+    );
+  }
+
+  List<GlossaryCategory> _buildExportTreeForSelectedCategory(String categoryId) {
+    final List<GlossaryCategory>? path = _findCategoryPathById(
+      categoryId,
+      _categoryTree,
+    );
+    if (path == null || path.isEmpty) {
+      return [];
+    }
+
+    GlossaryCategory chain = _cloneCategoryNode(path.last);
+    for (int i = path.length - 2; i >= 0; i--) {
+      chain = _cloneCategoryNode(path[i], childrenOverride: [chain]);
+    }
+
+    return [chain];
+  }
+
+  Set<String> _collectEntryIdsFromTree(List<GlossaryCategory> nodes) {
+    final Set<String> refs = <String>{};
+
+    void walk(List<GlossaryCategory> categories) {
+      for (final GlossaryCategory category in categories) {
+        refs.addAll(category.entryIds);
+        walk(category.children);
+      }
+    }
+
+    walk(nodes);
+    return refs;
+  }
+
+  Map<String, GlossaryEntry> _collectPrimaryEntries() {
+    final Map<String, GlossaryEntry> result = {};
+    for (final MapEntry<String, GlossaryEntry> entry in _entryIndex.entries) {
+      if (entry.key == entry.value.id) {
+        result[entry.key] = entry.value;
+      }
+    }
+    return result;
+  }
+
+  String _sanitizeFileNamePart(String raw) {
+    final String sanitized = raw.replaceAll(RegExp(r'[\\/:*?"<>|]'), "_");
+    final String trimmed = sanitized.trim();
+    return trimmed.isEmpty ? "glossary" : trimmed;
+  }
+
+  Future<void> _exportGlossaryData({
+    required String defaultName,
+    required List<GlossaryCategory> exportTree,
+  }) async {
+    final Set<String> refs = _collectEntryIdsFromTree(exportTree);
+    final Map<String, GlossaryEntry> primaryEntries = _collectPrimaryEntries();
+
+    final Map<String, dynamic> payload = {
+      "version": 1,
+      "categoryTree": exportTree.map((e) => e.toJson()).toList(),
+      "entries": {
+        for (final String entryId in refs)
+          if (primaryEntries.containsKey(entryId))
+            entryId: primaryEntries[entryId]!.toJson(),
+      },
+    };
+
+    final String jsonContent = jsonEncode(payload);
+
+    final String? savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: "匯出詞語",
+      fileName: defaultName,
+      type: FileType.custom,
+      allowedExtensions: ["json"],
+    );
+
+    if (!mounted || savedPath == null) return;
+
+    final String resolvedPath = savedPath.toLowerCase().endsWith(".json")
+        ? savedPath
+        : "$savedPath.json";
+
+    try {
+      await File(resolvedPath).writeAsString(jsonContent);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("匯出失敗：無法寫入檔案"),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final String name = resolvedPath.replaceAll("\\", "/").split("/").last;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("匯出完成：$name\n$resolvedPath"),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _exportAllGlossary() async {
+    await _exportGlossaryData(
+      defaultName: "glossary_all.json",
+      exportTree: _categoryTree.map(_cloneCategoryNode).toList(),
+    );
+  }
+
+  Future<void> _exportSelectedGlossary() async {
+    if (_selectedCategoryId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("請先選擇類別"), duration: Duration(seconds: 1)),
+      );
+      return;
+    }
+
+    final List<GlossaryCategory> exportTree = _buildExportTreeForSelectedCategory(
+      _selectedCategoryId!,
+    );
+    if (exportTree.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("找不到選取類別"), duration: Duration(seconds: 1)),
+      );
+      return;
+    }
+
+    final String categoryName = _sanitizeFileNamePart(
+      _categoryName(_selectedCategoryId!),
+    );
+    await _exportGlossaryData(
+      defaultName: "glossary_$categoryName.json",
+      exportTree: exportTree,
+    );
+  }
+
+  _GlossaryImportPreviewSummary _buildImportPreviewSummary(
+    _GlossaryDecoded imported,
+  ) {
+    final List<GlossaryCategory> previewTree = _categoryTree
+        .map(_cloneCategoryNode)
+        .toList();
+    final Map<String, String> termToResolvedId = {
+      for (final MapEntry<String, GlossaryEntry> entry
+          in _collectPrimaryEntries().entries)
+        _normalizeTerm(entry.value.term): entry.key,
+    };
+
+    int newCategoryCount = 0;
+    int mergedCategoryCount = 0;
+    int newEntryCount = 0;
+    int reusedEntryCount = 0;
+    int newLinkCount = 0;
+
+    final List<String> newCategorySamples = [];
+    final List<String> newEntrySamples = [];
+
+    String resolveEntryId(GlossaryEntry importedEntry) {
+      final String normalizedTerm = _normalizeTerm(importedEntry.term);
+      final String? existing = termToResolvedId[normalizedTerm];
+      if (existing != null) {
+        reusedEntryCount++;
+        return existing;
+      }
+
+      newEntryCount++;
+      final String pseudoId = "__import_new_$newEntryCount";
+      termToResolvedId[normalizedTerm] = pseudoId;
+
+      if (newEntrySamples.length < 6) {
+        final String term = importedEntry.term.trim();
+        newEntrySamples.add(term.isEmpty ? "(空白詞條)" : term);
+      }
+      return pseudoId;
+    }
+
+    void walkAndPlan(
+      List<GlossaryCategory> incomingNodes,
+      List<GlossaryCategory> targetNodes,
+    ) {
+      for (final GlossaryCategory incoming in incomingNodes) {
+        GlossaryCategory? existing;
+        for (final GlossaryCategory candidate in targetNodes) {
+          if (candidate.name.trim() == incoming.name.trim()) {
+            existing = candidate;
+            break;
+          }
+        }
+
+        if (existing == null) {
+          existing = GlossaryCategory(
+            id: "__preview_${incoming.id}",
+            name: incoming.name,
+            entryIds: [],
+            children: [],
+          );
+          targetNodes.add(existing);
+          newCategoryCount++;
+          if (newCategorySamples.length < 6) {
+            newCategorySamples.add(incoming.name.trim().isEmpty ? "(未命名分類)" : incoming.name);
+          }
+        } else {
+          mergedCategoryCount++;
+        }
+
+        for (final String entryId in incoming.entryIds) {
+          final GlossaryEntry? importedEntry = imported.entryIndex[entryId];
+          if (importedEntry == null) continue;
+
+          final String resolvedId = resolveEntryId(importedEntry);
+          if (!existing.entryIds.contains(resolvedId)) {
+            existing.entryIds.add(resolvedId);
+            newLinkCount++;
+          }
+        }
+
+        walkAndPlan(incoming.children, existing.children);
+      }
+    }
+
+    walkAndPlan(imported.categoryTree, previewTree);
+
+    return _GlossaryImportPreviewSummary(
+      newCategoryCount: newCategoryCount,
+      mergedCategoryCount: mergedCategoryCount,
+      newEntryCount: newEntryCount,
+      reusedEntryCount: reusedEntryCount,
+      newLinkCount: newLinkCount,
+      newCategorySamples: newCategorySamples,
+      newEntrySamples: newEntrySamples,
+    );
+  }
+
+  Future<bool> _showImportPreviewDialog(
+    _GlossaryImportPreviewSummary summary,
+  ) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("匯入預覽"),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("將新增分類：${summary.newCategoryCount}"),
+                  Text("將合併到既有分類：${summary.mergedCategoryCount}"),
+                  Text("將匯入新詞條：${summary.newEntryCount}"),
+                  Text("將重用既有詞條：${summary.reusedEntryCount}"),
+                  Text("將新增分類條目連結：${summary.newLinkCount}"),
+                  if (summary.newCategorySamples.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text("新增分類（最多顯示 6 筆）"),
+                    const SizedBox(height: 4),
+                    for (final String item in summary.newCategorySamples)
+                      Text("- $item"),
+                  ],
+                  if (summary.newEntrySamples.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text("新增詞條（最多顯示 6 筆）"),
+                    const SizedBox(height: 4),
+                    for (final String item in summary.newEntrySamples)
+                      Text("- $item"),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text("確認匯入"),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<void> _importGlossary() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ["json"],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    String? raw;
+    final PlatformFile picked = result.files.first;
+    if (picked.bytes != null) {
+      raw = utf8.decode(picked.bytes!);
+    } else if (picked.path != null) {
+      raw = await File(picked.path!).readAsString();
+    }
+    if (!mounted || raw == null || raw.trim().isEmpty) return;
+
+    _GlossaryDecoded imported;
+    try {
+      imported = _decodeGlossary(raw);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("匯入檔案格式錯誤"), duration: Duration(seconds: 1)),
+      );
+      return;
+    }
+
+    final _GlossaryImportPreviewSummary preview = _buildImportPreviewSummary(
+      imported,
+    );
+    final bool confirmed = await _showImportPreviewDialog(preview);
+    if (!mounted || !confirmed) return;
+
+    int createdCategoryCount = 0;
+    int createdEntryCount = 0;
+    int reusedEntryCount = 0;
+    int linkedEntryCount = 0;
+
+    GlossaryEntry cloneEntry(GlossaryEntry source, String newId) {
+      return GlossaryEntry(
+        id: newId,
+        term: source.term,
+        polarity: source.polarity,
+        pairs: source.pairs
+            .map((p) => GlossaryPair(meaning: p.meaning, example: p.example))
+            .toList(),
+      );
+    }
+
+    void mergeNodes(
+      List<GlossaryCategory> incomingNodes,
+      List<GlossaryCategory> targetNodes,
+    ) {
+      for (final GlossaryCategory incoming in incomingNodes) {
+        GlossaryCategory? existing;
+        for (final GlossaryCategory candidate in targetNodes) {
+          if (candidate.name.trim() == incoming.name.trim()) {
+            existing = candidate;
+            break;
+          }
+        }
+
+        if (existing == null) {
+          existing = GlossaryCategory(
+            id: _createId(),
+            name: incoming.name,
+            entryIds: [],
+            children: [],
+          );
+          targetNodes.add(existing);
+          createdCategoryCount++;
+        }
+
+        for (final String importedEntryId in incoming.entryIds) {
+          final GlossaryEntry? importedEntry =
+              imported.entryIndex[importedEntryId];
+          if (importedEntry == null) continue;
+
+          String resolvedEntryId;
+          final String? existingEntryId = _findEntryIdByTerm(importedEntry.term);
+          if (existingEntryId != null) {
+            resolvedEntryId = existingEntryId;
+            reusedEntryCount++;
+          } else {
+            resolvedEntryId = _createId();
+            _entryIndex[resolvedEntryId] = cloneEntry(importedEntry, resolvedEntryId);
+            createdEntryCount++;
+          }
+
+          if (!existing.entryIds.contains(resolvedEntryId)) {
+            existing.entryIds.add(resolvedEntryId);
+            linkedEntryCount++;
+          }
+        }
+
+        mergeNodes(incoming.children, existing.children);
+      }
+    }
+
+    setState(() {
+      mergeNodes(imported.categoryTree, _categoryTree);
+
+      if (_selectedCategoryId == null && _categoryTree.isNotEmpty) {
+        _selectedCategoryId = _categoryTree.first.id;
+      }
+      if (_selectedCategoryId != null) {
+        final List<_CategoryEntryRef> refs = _collectEntryRefs(
+          _selectedCategoryId!,
+          _categoryTree,
+        );
+        _selectedEntryId = null;
+        for (final _CategoryEntryRef ref in refs) {
+          if (_entryIndex.containsKey(ref.entryId)) {
+            _selectedEntryId = ref.entryId;
+            break;
+          }
+        }
+      }
+    });
+
+    _schedulePersist();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          "匯入完成：新增類別 $createdCategoryCount、匯入新詞條 $createdEntryCount、重用既有詞條 $reusedEntryCount、連結詞條 $linkedEntryCount",
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   void _selectCategory(String categoryId) {
     if (_editingCategoryId != null && _editingCategoryId != categoryId) {
       _submitEditingCategory();
@@ -1332,6 +1810,8 @@ class _GlossaryViewState extends State<GlossaryView> {
   Widget _buildCategoryTreeCard() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<_VisibleCategoryRow> rows = _collectVisibleCategories();
+    final TextStyle menuTextStyle =
+        Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
 
     return Card(
       elevation: 0,
@@ -1357,6 +1837,45 @@ class _GlossaryViewState extends State<GlossaryView> {
                       ? null
                       : () => _addCategory(parentId: _selectedCategoryId),
                   icon: const Icon(Icons.create_new_folder),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: "匯入匯出",
+                  onSelected: (value) {
+                    switch (value) {
+                      case "import":
+                        unawaited(_importGlossary());
+                        break;
+                      case "export_selected":
+                        unawaited(_exportSelectedGlossary());
+                        break;
+                      case "export_all":
+                        unawaited(_exportAllGlossary());
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) {
+                    return [
+                      PopupMenuItem<String>(
+                        value: "import",
+                        child: Text("匯入…", style: menuTextStyle),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: Text("匯出……（已禁用）", style: menuTextStyle),
+                      ),
+                      PopupMenuItem<String>(
+                        value: "export_selected",
+                        enabled: _selectedCategoryId != null,
+                        child: Text("匯出選取類別", style: menuTextStyle),
+                      ),
+                      PopupMenuItem<String>(
+                        value: "export_all",
+                        child: Text("匯出全部", style: menuTextStyle),
+                      ),
+                    ];
+                  },
+                  icon: const Icon(Icons.import_export_outlined),
                 ),
               ],
             ),
