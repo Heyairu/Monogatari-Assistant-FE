@@ -56,11 +56,11 @@ extension GlossaryPolarityX on GlossaryPolarity {
   String get label {
     switch (this) {
       case GlossaryPolarity.positive:
-        return "正面詞";
+        return "正面";
       case GlossaryPolarity.negative:
-        return "負面詞";
+        return "負面";
       case GlossaryPolarity.neutral:
-        return "中性詞";
+        return "中性";
     }
   }
 
@@ -87,6 +87,76 @@ extension GlossaryPolarityX on GlossaryPolarity {
   }
 }
 
+enum GlossaryPartOfSpeech {
+  noun,
+  verb,
+  adjective,
+  adverb,
+  pronoun,
+  custom,
+  unspecified,
+}
+
+GlossaryPartOfSpeech parseGlossaryPartOfSpeech(String? raw) {
+  switch ((raw ?? "").toLowerCase()) {
+    case "noun":
+      return GlossaryPartOfSpeech.noun;
+    case "verb":
+      return GlossaryPartOfSpeech.verb;
+    case "adjective":
+      return GlossaryPartOfSpeech.adjective;
+    case "adverb":
+      return GlossaryPartOfSpeech.adverb;
+    case "pronoun":
+      return GlossaryPartOfSpeech.pronoun;
+    case "custom":
+      return GlossaryPartOfSpeech.custom;
+    case "unspecified":
+    default:
+      return GlossaryPartOfSpeech.unspecified;
+  }
+}
+
+extension GlossaryPartOfSpeechX on GlossaryPartOfSpeech {
+  String get rawValue {
+    switch (this) {
+      case GlossaryPartOfSpeech.noun:
+        return "noun";
+      case GlossaryPartOfSpeech.verb:
+        return "verb";
+      case GlossaryPartOfSpeech.adjective:
+        return "adjective";
+      case GlossaryPartOfSpeech.adverb:
+        return "adverb";
+      case GlossaryPartOfSpeech.pronoun:
+        return "pronoun";
+      case GlossaryPartOfSpeech.custom:
+        return "custom";
+      case GlossaryPartOfSpeech.unspecified:
+        return "unspecified";
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case GlossaryPartOfSpeech.noun:
+        return "名詞";
+      case GlossaryPartOfSpeech.verb:
+        return "動詞";
+      case GlossaryPartOfSpeech.adjective:
+        return "形容詞";
+      case GlossaryPartOfSpeech.adverb:
+        return "副詞";
+      case GlossaryPartOfSpeech.pronoun:
+        return "代詞";
+      case GlossaryPartOfSpeech.custom:
+        return "自訂";
+      case GlossaryPartOfSpeech.unspecified:
+        return "未指定";
+    }
+  }
+}
+
 class GlossaryPair {
   String meaning;
   String example;
@@ -108,12 +178,16 @@ class GlossaryPair {
 class GlossaryEntry {
   String id;
   String term;
+  GlossaryPartOfSpeech partOfSpeech;
+  String customPartOfSpeech;
   GlossaryPolarity polarity;
   List<GlossaryPair> pairs;
 
   GlossaryEntry({
     required this.id,
     required this.term,
+    required this.partOfSpeech,
+    required this.customPartOfSpeech,
     required this.polarity,
     required this.pairs,
   });
@@ -159,6 +233,8 @@ class GlossaryEntry {
     return GlossaryEntry(
       id: json["id"] as String? ?? "",
       term: json["term"] as String? ?? "",
+      partOfSpeech: parseGlossaryPartOfSpeech(json["partOfSpeech"] as String?),
+      customPartOfSpeech: json["customPartOfSpeech"] as String? ?? "",
       polarity: parseGlossaryPolarity(json["polarity"] as String?),
       pairs: parsedPairs,
     );
@@ -168,6 +244,8 @@ class GlossaryEntry {
     return {
       "id": id,
       "term": term,
+      "partOfSpeech": partOfSpeech.rawValue,
+      "customPartOfSpeech": customPartOfSpeech,
       "polarity": polarity.rawValue,
       "pairs": pairs.map((e) => e.toJson()).toList(),
     };
@@ -666,6 +744,16 @@ class _GlossaryViewState extends State<GlossaryView> {
 
   String _normalizeTerm(String value) {
     return value.trim().toLowerCase();
+  }
+
+  String _resolvePartOfSpeechLabel(GlossaryEntry entry) {
+    if (entry.partOfSpeech == GlossaryPartOfSpeech.custom) {
+      final String custom = entry.customPartOfSpeech.trim();
+      if (custom.isNotEmpty) {
+        return custom;
+      }
+    }
+    return entry.partOfSpeech.label;
   }
 
   String? _findEntryIdByTerm(String term, {String? excludeEntryId}) {
@@ -1196,6 +1284,8 @@ class _GlossaryViewState extends State<GlossaryView> {
       return GlossaryEntry(
         id: newId,
         term: source.term,
+        partOfSpeech: source.partOfSpeech,
+        customPartOfSpeech: source.customPartOfSpeech,
         polarity: source.polarity,
         pairs: source.pairs
             .map((p) => GlossaryPair(meaning: p.meaning, example: p.example))
@@ -1509,6 +1599,8 @@ class _GlossaryViewState extends State<GlossaryView> {
     final GlossaryEntry entry = GlossaryEntry(
       id: entryId,
       term: normalizedTerm,
+      partOfSpeech: GlossaryPartOfSpeech.unspecified,
+      customPartOfSpeech: "",
       polarity: GlossaryPolarity.neutral,
       pairs: [GlossaryPair()],
     );
@@ -1735,6 +1827,27 @@ class _GlossaryViewState extends State<GlossaryView> {
 
     setState(() {
       entry.polarity = value;
+    });
+    _schedulePersist();
+  }
+
+  void _setPartOfSpeech(GlossaryPartOfSpeech value) {
+    final GlossaryEntry? entry = _selectedEntry;
+    if (entry == null || entry.partOfSpeech == value) return;
+
+    setState(() {
+      entry.partOfSpeech = value;
+    });
+    _schedulePersist();
+  }
+
+  void _updateCustomPartOfSpeech(String value) {
+    final GlossaryEntry? entry = _selectedEntry;
+    if (entry == null) return;
+
+    if (entry.customPartOfSpeech == value) return;
+    setState(() {
+      entry.customPartOfSpeech = value;
     });
     _schedulePersist();
   }
@@ -2196,6 +2309,11 @@ class _GlossaryViewState extends State<GlossaryView> {
           Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 4),
           Text(
+            "詞性：${_resolvePartOfSpeechLabel(entry)}",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 2),
+          Text(
             ref.isLocal ? "來源：本目錄" : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -2312,6 +2430,46 @@ class _GlossaryViewState extends State<GlossaryView> {
                 onChanged: _updateTerm,
               ),
               const SizedBox(height: 12),
+              DropdownButtonFormField<GlossaryPartOfSpeech>(
+                value: selectedEntry.partOfSpeech,
+                isDense: true,
+                style:
+                    Theme.of(context).textTheme.bodySmall ??
+                    const TextStyle(fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: "詞性",
+                  border: OutlineInputBorder(),
+                ),
+                items: GlossaryPartOfSpeech.values.map((partOfSpeech) {
+                  return DropdownMenuItem<GlossaryPartOfSpeech>(
+                    value: partOfSpeech,
+                    child: Text(
+                      partOfSpeech.label,
+                      style:
+                          Theme.of(context).textTheme.bodySmall ??
+                          const TextStyle(fontSize: 13),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    _setPartOfSpeech(value);
+                  }
+                },
+              ),
+              if (selectedEntry.partOfSpeech == GlossaryPartOfSpeech.custom) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: ValueKey("custom_pos_${selectedEntry.id}"),
+                  initialValue: selectedEntry.customPartOfSpeech,
+                  decoration: const InputDecoration(
+                    labelText: "自訂詞性",
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: _updateCustomPartOfSpeech,
+                ),
+              ],
+              const SizedBox(height: 12),
               DropdownButtonFormField<GlossaryPolarity>(
                 value: selectedEntry.polarity,
                 isDense: true,
@@ -2319,7 +2477,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                     Theme.of(context).textTheme.bodySmall ??
                     const TextStyle(fontSize: 13),
                 decoration: const InputDecoration(
-                  labelText: "詞性分類",
+                  labelText: "情感傾向",
                   border: OutlineInputBorder(),
                 ),
                 items: GlossaryPolarity.values.map((polarity) {

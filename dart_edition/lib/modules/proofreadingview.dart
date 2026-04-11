@@ -26,10 +26,12 @@ class ProofReadingView extends StatefulWidget {
   const ProofReadingView({
     super.key,
     required this.textController,
+    required this.chapterSwitchVersion,
     this.onRequestFocusEditor,
   });
 
   final TextEditingController textController;
+  final int chapterSwitchVersion;
   final VoidCallback? onRequestFocusEditor;
 
   @override
@@ -371,6 +373,18 @@ class _ProofReadingViewState extends State<ProofReadingView> {
       _lastObservedText = widget.textController.text;
       _scheduledAutoCheckTimer?.cancel();
       _scheduledAutoCheckTimer = null;
+    }
+
+    if (oldWidget.chapterSwitchVersion != widget.chapterSwitchVersion) {
+      _lastObservedText = widget.textController.text;
+      _scheduledAutoCheckTimer?.cancel();
+      _scheduledAutoCheckTimer = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _runProofreading();
+      });
     }
   }
 
@@ -736,14 +750,22 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
     for (final ({int start, int end}) range in ranges) {
       bool hasLatin = false;
+      bool hasCjk = false;
       for (int i = range.start; i <= range.end; i++) {
         if (_isAsciiLetter(line[i])) {
           hasLatin = true;
+        }
+        if (_isCjkCharacter(line[i])) {
+          hasCjk = true;
+        }
+        if (hasLatin && hasCjk) {
           break;
         }
       }
 
-      if (hasLatin) {
+      // 僅在成對區段幾乎為純拉丁內容時，才整段套用拉丁語境。
+      // 若同時含有 CJK 與拉丁文字，避免把整句 CJK 標點誤判為拉丁標點。
+      if (hasLatin && !hasCjk) {
         for (int i = range.start; i <= range.end; i++) {
           mask[i] = true;
         }
