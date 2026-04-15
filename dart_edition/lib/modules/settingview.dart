@@ -13,24 +13,26 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
+import "../presentation/providers/global_state_providers.dart";
 
-class SettingView extends StatefulWidget {
-  final UILibrary themeManager;
-  final SettingsManager settingsManager;
-
-  const SettingView({
-    super.key,
-    required this.themeManager,
-    required this.settingsManager,
-  });
+class SettingView extends ConsumerStatefulWidget {
+  const SettingView({super.key});
 
   @override
-  State<SettingView> createState() => _SettingViewState();
+  ConsumerState<SettingView> createState() => _SettingViewState();
 }
 
-class _SettingViewState extends State<SettingView> {
+class _SettingViewState extends ConsumerState<SettingView> {
+  AppThemeStateData get _themeState =>
+      ref.watch(themeStateProvider).valueOrNull ?? const AppThemeStateData();
+
+  AppSettingsStateData get _settingsState =>
+      ref.watch(settingsStateProvider).valueOrNull ??
+      const AppSettingsStateData();
+
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
@@ -100,10 +102,11 @@ class _SettingViewState extends State<SettingView> {
                       "退出時提示",
                       Icons.warning,
                       "關閉應用前提示儲存未儲存的變更",
-                      widget.settingsManager.showExitWarning,
+                      _settingsState.showExitWarning,
                       (value) async {
-                        await widget.settingsManager.setShowExitWarning(value);
-                        setState(() {});
+                        await ref
+                            .read(settingsStateProvider.notifier)
+                            .setShowExitWarning(value);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -135,14 +138,14 @@ class _SettingViewState extends State<SettingView> {
             children: [
               Icon(
                 Icons.text_fields,
-                size: widget.settingsManager.fontSize + 6,
+                size: _settingsState.fontSize + 6,
                 color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 12),
               Text("字體大小調整", style: Theme.of(context).textTheme.labelMedium),
               const Spacer(),
               Text(
-                "${widget.settingsManager.fontSize.toInt()} px",
+                "${_settingsState.fontSize.toInt()} px",
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.primary,
@@ -152,14 +155,13 @@ class _SettingViewState extends State<SettingView> {
           ),
         ),
         Slider(
-          value: widget.settingsManager.fontSize,
+          value: _settingsState.fontSize,
           min: 12.0,
           max: 20.0,
           divisions: 8, // (20-12) = 8 steps, 1px per step
-          label: "${widget.settingsManager.fontSize.toInt()} px",
+          label: "${_settingsState.fontSize.toInt()} px",
           onChanged: (value) async {
-            await widget.settingsManager.setFontSize(value);
-            setState(() {});
+            await ref.read(settingsStateProvider.notifier).setFontSize(value);
           },
         ),
       ],
@@ -194,15 +196,12 @@ class _SettingViewState extends State<SettingView> {
           itemBuilder: (context, index) {
             final entry = UILibrary.supportedColors.entries.elementAt(index);
             final isSelected =
-                widget.themeManager.themeColor.value == entry.value.value;
+                _themeState.themeColor.toARGB32() == entry.value.toARGB32();
 
             return Center(
               child: InkWell(
-                onTap: () {
-                  setState(() {
-                    widget.themeManager.setThemeColor(entry.value);
-                  });
-                },
+                onTap: () =>
+                    ref.read(themeStateProvider.notifier).setThemeColor(entry.value),
                 borderRadius: BorderRadius.circular(50),
                 child: Container(
                   width: 36,
@@ -284,12 +283,11 @@ class _SettingViewState extends State<SettingView> {
               icon: Icon(Icons.brightness_auto),
             ),
           ],
-          selected: {widget.themeManager.themeMode},
-          onSelectionChanged: (Set<AppThemeMode> newSelection) {
-            setState(() {
-              widget.themeManager.setThemeMode(newSelection.first);
-            });
-          },
+          selected: {_themeState.themeMode},
+          onSelectionChanged: (Set<AppThemeMode> newSelection) =>
+              ref
+                  .read(themeStateProvider.notifier)
+                  .setThemeMode(newSelection.first),
         ),
       ],
     );
@@ -297,7 +295,10 @@ class _SettingViewState extends State<SettingView> {
 
   // MARK: - 主題預覽
   Widget _buildThemePreview() {
-    final isDark = widget.themeManager.isDarkMode;
+    final isSystemDark =
+      MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final isDark = _themeState.themeMode == AppThemeMode.dark ||
+      (_themeState.themeMode == AppThemeMode.system && isSystemDark);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -315,7 +316,7 @@ class _SettingViewState extends State<SettingView> {
             children: [
               Icon(
                 isDark ? Icons.dark_mode : Icons.light_mode,
-                size: widget.settingsManager.fontSize + 6,
+                size: _settingsState.fontSize + 6,
                 color: colorScheme.onPrimaryContainer,
               ),
               const SizedBox(width: 8),
@@ -349,7 +350,7 @@ class _SettingViewState extends State<SettingView> {
                 children: [
                   Text("字數統計模式", style: Theme.of(context).textTheme.bodySmall),
                   Text(
-                    widget.settingsManager.wordCountMode ==
+                    _settingsState.wordCountMode ==
                             WordCountMode.characters
                         ? "純字元數 (不建議)"
                         : "全形字元 + 半形單字",
@@ -376,10 +377,11 @@ class _SettingViewState extends State<SettingView> {
                 icon: Icon(Icons.text_fields),
               ),
             ],
-            selected: {widget.settingsManager.wordCountMode},
+            selected: {_settingsState.wordCountMode},
             onSelectionChanged: (Set<WordCountMode> newSelection) async {
-              await widget.settingsManager.setWordCountMode(newSelection.first);
-              setState(() {});
+              await ref
+                  .read(settingsStateProvider.notifier)
+                  .setWordCountMode(newSelection.first);
             },
           ),
         ),

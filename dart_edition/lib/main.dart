@@ -18,6 +18,7 @@ import "dart:async"; // Added for Timer
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter/foundation.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/appbar.dart";
@@ -31,6 +32,9 @@ import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 import "bin/content_manager.dart";
+import "presentation/providers/global_state_providers.dart";
+import "presentation/providers/project_io_providers.dart";
+import "presentation/providers/project_state_providers.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -54,54 +58,28 @@ void main() async {
     await windowManager.ensureInitialized();
   }
 
-  runApp(const MainApp());
+  runApp(const ProviderScope(child: MainApp()));
 }
 
-class MainApp extends StatefulWidget {
+class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
-  @override
-  State<MainApp> createState() => _MainAppState();
-}
-
-class _MainAppState extends State<MainApp> {
-  final UILibrary _themeManager = UILibrary();
-  final SettingsManager _settingsManager = SettingsManager();
-  bool _isInitializing = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeApp();
-    _themeManager.addListener(() {
-      setState(() {});
-    });
-    _settingsManager.addListener(() {
-      setState(() {});
-    });
-  }
-
-  Future<void> _initializeApp() async {
-    await Future.wait([
-      _themeManager.initialize(),
-      _settingsManager.initialize(),
-    ]);
-    setState(() {
-      _isInitializing = false;
-    });
+  ThemeMode _convertThemeMode(AppThemeMode mode) {
+    switch (mode) {
+      case AppThemeMode.light:
+        return ThemeMode.light;
+      case AppThemeMode.dark:
+        return ThemeMode.dark;
+      case AppThemeMode.system:
+        return ThemeMode.system;
+    }
   }
 
   @override
-  void dispose() {
-    _themeManager.dispose();
-    _settingsManager.dispose();
-    super.dispose();
-  }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bootstrap = ref.watch(appInitializationProvider);
 
-  @override
-  Widget build(BuildContext context) {
-    // 顯示載入畫面直到主題管理器初始化完成
-    if (_isInitializing) {
+    if (bootstrap.isLoading) {
       return MaterialApp(
         home: Scaffold(
           body: Center(
@@ -118,33 +96,37 @@ class _MainAppState extends State<MainApp> {
       );
     }
 
+    if (bootstrap.hasError) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text("初始化失敗：${bootstrap.error}"),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final themeState = ref.watch(themeStateProvider).valueOrNull ??
+        const AppThemeStateData();
+    final settingsState = ref.watch(settingsStateProvider).valueOrNull ??
+        const AppSettingsStateData();
+
     return MaterialApp(
       title: "物語Assistant",
       theme: AppTheme.getLightTheme(
-        _settingsManager.fontSize,
-        _themeManager.themeColor,
+        settingsState.fontSize,
+        themeState.themeColor,
       ),
       darkTheme: AppTheme.getDarkTheme(
-        _settingsManager.fontSize,
-        _themeManager.themeColor,
+        settingsState.fontSize,
+        themeState.themeColor,
       ),
-      themeMode: _convertThemeMode(_themeManager.themeMode),
-      home: ContentView(
-        themeManager: _themeManager,
-        settingsManager: _settingsManager,
-      ),
+      themeMode: _convertThemeMode(themeState.themeMode),
+      home: const ContentView(),
     );
-  }
-
-  ThemeMode _convertThemeMode(AppThemeMode mode) {
-    switch (mode) {
-      case AppThemeMode.light:
-        return ThemeMode.light;
-      case AppThemeMode.dark:
-        return ThemeMode.dark;
-      case AppThemeMode.system:
-        return ThemeMode.system;
-    }
   }
 }
 
@@ -197,21 +179,15 @@ class _ProjectInitialState {
 }
 
 // 主要 ContentView
-class ContentView extends StatefulWidget {
-  final UILibrary themeManager;
-  final SettingsManager settingsManager;
-
-  const ContentView({
-    super.key,
-    required this.themeManager,
-    required this.settingsManager,
-  });
+class ContentView extends ConsumerStatefulWidget {
+  const ContentView({super.key});
 
   @override
-  State<ContentView> createState() => _ContentViewState();
+  ConsumerState<ContentView> createState() => _ContentViewState();
 }
 
-class _ContentViewState extends State<ContentView> with WindowListener {
+class _ContentViewState extends ConsumerState<ContentView>
+    with WindowListener {
   // 狀態變數
   int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
@@ -220,7 +196,11 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
   // 主編輯器文字
-  String contentText = "";
+  String get contentText => ref.read(editorContentProvider);
+  set contentText(String value) {
+    ref.read(editorContentProvider.notifier).state = value;
+  }
+
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
 
@@ -236,53 +216,85 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   int _currentMatchIndex = -1;
   List<TextSelection> _searchMatches = [];
 
-  // 數據狀態（由 file.dart 的 ProjectData 集中管理）
-  ProjectData _projectData = ProjectData.empty();
+  AppSettingsStateData get _settingsState =>
+      ref.read(settingsStateProvider).valueOrNull ??
+      const AppSettingsStateData();
 
-  BaseInfoModule.BaseInfoData get baseInfoData => _projectData.baseInfoData;
+  ProviderSubscription<AsyncValue<AppSettingsStateData>>?
+  _settingsStateSubscription;
+  ProviderSubscription<AsyncValue<ProjectIoStatus>>?
+  _projectIoSubscription;
+  ProviderSubscription<String>? _editorContentSubscription;
+
+  BaseInfoModule.BaseInfoData get baseInfoData =>
+      ref.read(baseInfoDataProvider);
   set baseInfoData(BaseInfoModule.BaseInfoData value) {
-    _projectData.baseInfoData = value;
+    ref.read(baseInfoDataProvider.notifier).state = value;
   }
 
-  List<ChapterModule.SegmentData> get segmentsData => _projectData.segmentsData;
+  List<ChapterModule.SegmentData> get segmentsData =>
+      ref.read(segmentsDataProvider);
   set segmentsData(List<ChapterModule.SegmentData> value) {
-    _projectData.segmentsData = value;
+    ref.read(segmentsDataProvider.notifier).state = value;
   }
 
-  List<OutlineModule.StorylineData> get outlineData => _projectData.outlineData;
+  List<OutlineModule.StorylineData> get outlineData =>
+      ref.read(outlineDataProvider);
   set outlineData(List<OutlineModule.StorylineData> value) {
-    _projectData.outlineData = value;
+    ref.read(outlineDataProvider.notifier).state = value;
   }
 
-  List<LocationData> get worldSettingsData => _projectData.worldSettingsData;
+  List<LocationData> get worldSettingsData =>
+      ref.read(worldSettingsDataProvider);
   set worldSettingsData(List<LocationData> value) {
-    _projectData.worldSettingsData = value;
+    ref.read(worldSettingsDataProvider.notifier).state = value;
   }
 
   Map<String, Map<String, dynamic>> get characterData =>
-      _projectData.characterData;
+      ref.read(characterDataProvider);
   set characterData(Map<String, Map<String, dynamic>> value) {
-    _projectData.characterData = value;
+    ref.read(characterDataProvider.notifier).state = value;
   }
 
   List<PlanModule.ForeshadowItem> get foreshadowData =>
-      _projectData.foreshadowData;
+      ref.read(foreshadowDataProvider);
   set foreshadowData(List<PlanModule.ForeshadowItem> value) {
-    _projectData.foreshadowData = value;
+    ref.read(foreshadowDataProvider.notifier).state = value;
   }
 
   List<PlanModule.UpdatePlanItem> get updatePlanData =>
-      _projectData.updatePlanData;
+      ref.read(updatePlanDataProvider);
   set updatePlanData(List<PlanModule.UpdatePlanItem> value) {
-    _projectData.updatePlanData = value;
+    ref.read(updatePlanDataProvider.notifier).state = value;
   }
 
   // 選取狀態
-  String? selectedSegID;
-  String? selectedChapID;
+  String? get selectedSegID => ref.read(editorSelectionProvider).selectedSegID;
+  set selectedSegID(String? value) {
+    final current = ref.read(editorSelectionProvider);
+    ref.read(editorSelectionProvider.notifier).state =
+        current.copyWith(selectedSegID: value);
+  }
+
+  String? get selectedChapID => ref.read(editorSelectionProvider).selectedChapID;
+  set selectedChapID(String? value) {
+    final current = ref.read(editorSelectionProvider);
+    ref.read(editorSelectionProvider.notifier).state =
+        current.copyWith(selectedChapID: value);
+  }
+
   int _proofreadingChapterSwitchVersion = 0;
-  int totalWords = 0;
-  int _cursorOffset = 0;
+  int get totalWords => ref.read(totalWordsProvider);
+  set totalWords(int value) {
+    ref.read(totalWordsProvider.notifier).state = value;
+  }
+
+  int get _cursorOffset => ref.read(editorSelectionProvider).cursorOffset;
+  set _cursorOffset(int value) {
+    final current = ref.read(editorSelectionProvider);
+    ref.read(editorSelectionProvider.notifier).state =
+        current.copyWith(cursorOffset: value);
+  }
 
   // 檔案狀態
   ProjectFile? currentProject;
@@ -294,6 +306,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 同步狀態標記 - 防止在同步期間觸發循環更新
   bool _isSyncing = false;
+  bool _isApplyingProjectData = false;
 
   // 追蹤最後一個焦點輸入框
   FocusNode? _lastFocusedEditableNode;
@@ -321,14 +334,30 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
 
     // 初始化選取項目和編輯器內容
+    String? initialSegID;
+    String? initialChapID;
+    String initialContent = "";
     if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
-      selectedSegID = segmentsData[0].segmentUUID;
-      selectedChapID = segmentsData[0].chapters[0].chapterUUID;
-      contentText = segmentsData[0].chapters[0].chapterContent;
+      initialSegID = segmentsData[0].segmentUUID;
+      initialChapID = segmentsData[0].chapters[0].chapterUUID;
+      initialContent = segmentsData[0].chapters[0].chapterContent;
     }
 
-    textController.text = contentText;
-    _cursorOffset = 0;
+    // 避免在 widget 初始化生命週期中直接修改 provider。
+    textController.text = initialContent;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final currentSelection = ref.read(editorSelectionProvider);
+      ref.read(editorSelectionProvider.notifier).state = currentSelection
+          .copyWith(
+            selectedSegID: initialSegID,
+            selectedChapID: initialChapID,
+            cursorOffset: 0,
+          );
+      ref.read(editorContentProvider.notifier).state = initialContent;
+    });
 
     // 監聽文字變化
     textController.addListener(() {
@@ -339,20 +368,23 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
       // 只有當文字真的改變且不在同步狀態時才更新
       if (!_isSyncing && contentText != textController.text) {
-        setState(() {
-          contentText = textController.text;
-          _cursorOffset = normalizedOffset;
-          // Trigger async incremental update instead of full sync recalculation
-          _debouncedWordCountUpdate();
+        contentText = textController.text;
+        _cursorOffset = normalizedOffset;
 
-          // 標記有未儲存的變更
-          _markAsModified();
+        // Trigger async incremental update instead of full sync recalculation
+        _debouncedWordCountUpdate();
 
-          // 當文字內容變化時，清除所有高亮和搜尋狀態
-          _searchMatches = [];
-          _currentMatchIndex = -1;
-          textController.clearHighlights();
-        });
+        // 標記有未儲存的變更
+        _markAsModified();
+
+        // 當文字內容變化時，清除所有高亮和搜尋狀態
+        if (_searchMatches.isNotEmpty || _currentMatchIndex != -1) {
+          setState(() {
+            _searchMatches = [];
+            _currentMatchIndex = -1;
+            textController.clearHighlights();
+          });
+        }
       } else if (_cursorOffset != normalizedOffset) {
         setState(() {
           _cursorOffset = normalizedOffset;
@@ -360,13 +392,60 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       }
     });
 
-    // 應用程式啟動時自動創建新專案
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _newProject();
-    });
+    // 啟動時不自動建立新專案，避免與使用者手動開檔流程競態。
 
-    // 監聽設定變更
-    widget.settingsManager.addListener(_onSettingsChanged);
+    // 監聽設定變更（當字數模式切換時重新計算）
+    _settingsStateSubscription =
+        ref.listenManual<AsyncValue<AppSettingsStateData>>(
+          settingsStateProvider,
+          (previous, next) {
+            final previousMode = previous?.valueOrNull?.wordCountMode;
+            final nextMode = next.valueOrNull?.wordCountMode;
+            if (previousMode != null &&
+                nextMode != null &&
+                previousMode != nextMode) {
+              _onSettingsChanged();
+            }
+          },
+        );
+
+    _projectIoSubscription =
+        ref.listenManual<AsyncValue<ProjectIoStatus>>(
+          projectIoControllerProvider,
+          (previous, next) {
+            if (!mounted) {
+              return;
+            }
+
+            final nextLoading = next.isLoading;
+            if (isLoading != nextLoading) {
+              setState(() {
+                isLoading = nextLoading;
+              });
+            }
+          },
+        );
+
+    _editorContentSubscription = ref.listenManual<String>(
+      editorContentProvider,
+      (previous, next) {
+        if (!mounted || _isSyncing || textController.text == next) {
+          return;
+        }
+
+        final currentOffset = textController.selection.baseOffset;
+        final safeOffset = currentOffset < 0
+            ? 0
+            : currentOffset.clamp(0, next.length);
+
+        _isSyncing = true;
+        textController.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: safeOffset),
+        );
+        _isSyncing = false;
+      },
+    );
 
     // 監聽焦點變化
     WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
@@ -375,7 +454,9 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   @override
   void dispose() {
     _wordCountDebounce?.cancel(); // Cancel timer
-    widget.settingsManager.removeListener(_onSettingsChanged);
+    _settingsStateSubscription?.close();
+    _projectIoSubscription?.close();
+    _editorContentSubscription?.close();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -403,7 +484,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     if (selectedSegID == null || selectedChapID == null) return;
 
     final text = contentText;
-    final mode = widget.settingsManager.wordCountMode;
+    final mode = _settingsState.wordCountMode;
 
     // Use Isolate to calculate word count for active chapter only
     final count = await ContentManager.calculateWordCountAsync(
@@ -435,7 +516,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Future<void> _updateAllWordCounts() async {
-    final mode = widget.settingsManager.wordCountMode;
+    final mode = _settingsState.wordCountMode;
     // Create a list of futures to calculate all in parallel (or batched)
     final List<Future<void>> futures = [];
 
@@ -468,7 +549,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
         // use getWordCount for reading. It will use cache if available.
         // If cache is null (first load and async hasn't finished), it might calc sync.
         // But we try to rely on async updates.
-        sum += chap.getWordCount(widget.settingsManager.wordCountMode);
+        sum += chap.getWordCount(_settingsState.wordCountMode);
       }
     }
     return sum;
@@ -542,6 +623,8 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // MARK: 主體建構方法
   @override
   Widget build(BuildContext context) {
+    ref.watch(settingsStateProvider);
+
     // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
     final bool isApple =
         !kIsWeb &&
@@ -601,7 +684,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
           },
           child: Scaffold(
             appBar: MonogatariTopAppBar(
-              iconSize: widget.settingsManager.fontSize + 8,
+              iconSize: _settingsState.fontSize + 8,
               isLoading: isLoading,
               showPunctuationPanel: showPunctuationPanel,
               showFindReplaceWindow: showFindReplaceWindow,
@@ -707,7 +790,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
     final int currentWords = ContentManager.calculateWordCount(
       contentText,
-      mode: widget.settingsManager.wordCountMode,
+      mode: _settingsState.wordCountMode,
     );
 
     return MonogatariStatusBar(
@@ -717,7 +800,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       cursorColumn: cursorPos.column,
       currentWords: currentWords,
       totalWords: totalWords,
-      iconSize: widget.settingsManager.fontSize,
+      iconSize: _settingsState.fontSize,
     );
   }
 
@@ -733,7 +816,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       },
       pageCount: slidePageCounts,
       selectedIndex: slidePageIndexNow,
-      fontSize: widget.settingsManager.fontSize,
+      fontSize: _settingsState.fontSize,
       onBeforePageSwitch: _syncEditorToSelectedChapter,
       onPageSelected: (index) {
         setState(() {
@@ -1098,7 +1181,6 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     return WelcomeModule.WelcomeView(
       onNewProject: _newProject,
       onOpenProject: _openProject,
-      recentProjects: widget.settingsManager.recentProjects,
       onOpenRecentProject: _openRecentProject,
       onDeleteRecentProject: _deleteRecentProject,
     );
@@ -1107,129 +1189,36 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
     return BaseInfoModule.BaseInfoView(
-      data: baseInfoData,
-      contentText: contentText,
-      totalWords: totalWords,
-      wordCountMode: widget.settingsManager.wordCountMode,
-      onDataChanged: (updatedData) {
-        setState(() {
-          baseInfoData = updatedData;
-        });
-        _markAsModified();
-      },
+      onDataChanged: (_) => _markAsModified(),
     );
   }
 
   Widget _buildChapterSelectionView() {
     return ChapterModule.ChapterSelectionView(
-      segments: segmentsData,
-      contentText: contentText,
-      wordCountMode: widget.settingsManager.wordCountMode,
-      selectedSegmentID: selectedSegID,
-      selectedChapterID: selectedChapID,
       onSegmentsChanged: (updatedSegments) {
-        // 先存：總是嘗試保存當前編輯器內容（如果有選中的章節）
-        _syncEditorToSelectedChapter();
-
-        // 建立內容映射表 (UUID -> Content)，確保從 ChapterSelectionView 回傳的結構變更不會覆蓋掉實際的內容
-        final Map<String, String> contentMap = {};
-        final Map<String, int> countMap = {};
-        final mode = widget.settingsManager.wordCountMode;
-
-        for (final seg in segmentsData) {
-          for (final chap in seg.chapters) {
-            contentMap[chap.chapterUUID] = chap.chapterContent;
-            countMap[chap.chapterUUID] = chap.getWordCount(mode);
-          }
-        }
-
-        // 將內容回填到 updatedSegments
-        for (final seg in updatedSegments) {
-          for (final chap in seg.chapters) {
-            if (contentMap.containsKey(chap.chapterUUID)) {
-              chap.chapterContent = contentMap[chap.chapterUUID]!;
-              if (countMap.containsKey(chap.chapterUUID)) {
-                chap.updateCachedWordCount(countMap[chap.chapterUUID]!, mode);
-              }
-            }
-          }
-        }
-
-        // 然後更新 segmentsData
         setState(() {
           segmentsData = updatedSegments;
           totalWords = _recalculateSumFast();
         });
-
         _markAsModified();
-
-        // 再讀：這會透過 onContentChanged 自動發生
-      },
-      onContentChanged: (newContent) {
-        // 這是「再讀」的部分：載入選中章節的內容到編輯器
-        // 只在內容真的不同時才更新，避免不必要的重建
-        if (contentText != newContent) {
-          _isSyncing = true;
-          setState(() {
-            contentText = newContent;
-            textController.text = contentText;
-            // 重新計算字數
-            totalWords = _recalculateSumFast();
-          });
-          _isSyncing = false;
-        }
-      },
-      onSelectedSegmentChanged: (segmentID) {
-        // 先存：無論如何都先保存當前編輯器內容
-        _syncEditorToSelectedChapter();
-
-        setState(() {
-          selectedSegID = segmentID;
-        });
-      },
-      onSelectedChapterChanged: (chapterID) {
-        // 先存：無論如何都先保存當前編輯器內容
-        _syncEditorToSelectedChapter();
-
-        final bool isChapterChanged = selectedChapID != chapterID;
-
-        setState(() {
-          selectedChapID = chapterID;
-          if (isChapterChanged) {
-            _proofreadingChapterSwitchVersion++;
-          }
-        });
       },
     );
   }
 
   Widget _buildOutlineView() {
     return OutlineModule.OutlineAdjustView(
-      storylines: outlineData,
-      onStorylineChanged: (updatedOutlines) {
-        setState(() {
-          outlineData = updatedOutlines;
-        });
-        _markAsModified();
-      },
+      onStorylineChanged: (_) => _markAsModified(),
     );
   }
 
   Widget _buildWorldSettingsView() {
     return WorldSettingsView(
-      locations: worldSettingsData,
-      onChanged: (newLocations) {
-        setState(() {
-          worldSettingsData = newLocations;
-        });
-        _markAsModified();
-      },
+      onChanged: (_) => _markAsModified(),
     );
   }
 
   Widget _buildCharacterSettingsView() {
     return CharacterView(
-      initialData: characterData,
       onDataChanged: (updatedData) {
         setState(() {
           characterData = updatedData;
@@ -1259,15 +1248,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   Widget _buildPlanView() {
     return PlanModule.PlanView(
-      foreshadowItems: foreshadowData,
-      updatePlanItems: updatePlanData,
-      onChanged: (newForeshadows, newUpdatePlans) {
-        setState(() {
-          foreshadowData = newForeshadows;
-          updatePlanData = newUpdatePlans;
-        });
-        _markAsModified();
-      },
+      onChanged: (_, __) => _markAsModified(),
     );
   }
 
@@ -1326,10 +1307,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   }
 
   Widget _buildSettingView() {
-    return SettingView(
-      themeManager: widget.themeManager,
-      settingsManager: widget.settingsManager,
-    );
+    return const SettingView();
   }
 
   Widget _buildAboutView() {
@@ -1524,16 +1502,17 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     final defaultName =
         currentProject?.nameWithoutExtension ?? "MonogatariExport";
 
-    await ProjectManager.exportSelective(
-      context,
-      currentData: currentData,
-      defaultFileName: defaultName,
-      selectedModules: modules,
-      format: format,
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-    );
+    try {
+      await ref.read(projectIoControllerProvider.notifier).exportSelective(
+            currentData: currentData,
+            defaultFileName: defaultName,
+            selectedModules: modules,
+            format: format,
+          );
+      _showMessage("匯出成功！");
+    } catch (e) {
+      _showError("匯出檔案失敗：${e.toString()}");
+    }
   }
 
   // 插入文字到編輯器當前位置 (支援所有輸入框)
@@ -1660,14 +1639,30 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   /// 標記內容已修改
   void _markAsModified() {
-    setState(() => hasUnsavedChanges = ProjectManager.markAsModified());
+    if (_isApplyingProjectData) {
+      return;
+    }
+    final bool nextUnsaved = ProjectManager.markAsModified();
+    if (hasUnsavedChanges == nextUnsaved) {
+      return;
+    }
+    setState(() => hasUnsavedChanges = nextUnsaved);
   }
 
   /// 標記內容已儲存
   void _markAsSaved() {
+    final bool nextUnsaved = ProjectManager.markAsSaved();
+    final DateTime now = DateTime.now();
+    if (hasUnsavedChanges == nextUnsaved && _lastSavedTime != null) {
+      setState(() {
+        _lastSavedTime = now;
+      });
+      return;
+    }
+
     setState(() {
-      hasUnsavedChanges = ProjectManager.markAsSaved();
-      _lastSavedTime = DateTime.now();
+      hasUnsavedChanges = nextUnsaved;
+      _lastSavedTime = now;
     });
   }
 
@@ -1681,10 +1676,12 @@ class _ContentViewState extends State<ContentView> with WindowListener {
   Future<bool> _handleExit() async {
     return ProjectManager.handleExit(
       context,
-      showExitWarning: widget.settingsManager.showExitWarning,
+      showExitWarning: _settingsState.showExitWarning,
       hasUnsavedChanges: _hasUnsavedChanges(),
       onDontShowAgainChanged: (val) async =>
-          await widget.settingsManager.setShowExitWarning(!val),
+          await ref
+              .read(settingsStateProvider.notifier)
+              .setShowExitWarning(!val),
       onSave: () async {
         await _saveProject();
         // Check if save successful (dirty flag cleared)
@@ -1695,62 +1692,107 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 檔案操作方法
   Future<void> _newProject() async {
-    await ProjectManager.newProject(
-      context,
-      hasUnsavedChanges: _hasUnsavedChanges(),
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-      onProjectLoaded: (newProject, newData) {
-        // 在 SetState 之前執行耗時計算
-        // 注意：為了性能，這裡不再同步計算總字數，設為 0，稍後異步更新
-        final initialState = _calculateInitialState(
-          newData,
-          widget.settingsManager.wordCountMode,
-        );
+    if (_hasUnsavedChanges()) {
+      final shouldProceed = await ProjectManager.showSaveConfirmDialog(
+        context,
+        title: "建立新專案",
+        message: "您有未儲存的變更，是否要在建立新專案前儲存？",
+        onDontShowAgainChanged: (_) async {},
+        onSave: _saveProject,
+      );
 
-        setState(() {
-          currentProject = newProject;
-          _applyProjectData(newData, initialState);
-        });
-        _markAsSaved();
-        setState(() => _lastSavedTime = null);
+      if (shouldProceed == null) {
+        return;
+      }
+    }
 
-        // 觸發異步字數更新
-        _updateAllWordCounts();
-      },
-      onSave: _saveProject,
-    );
+    try {
+      final result =
+          await ref.read(projectIoControllerProvider.notifier).createNewProject();
+
+      final initialState = _calculateInitialState(
+        result.data,
+        _settingsState.wordCountMode,
+      );
+
+      setState(() {
+        currentProject = result.projectFile;
+        _applyProjectData(result.data, initialState);
+      });
+      _markAsSaved();
+      setState(() => _lastSavedTime = null);
+      _showMessage("新專案建立成功！");
+
+      _updateAllWordCounts();
+    } catch (e) {
+      _showError("建立新專案失敗：${e.toString()}");
+    }
   }
 
   Future<void> _openProject() async {
-    await ProjectManager.openProject(
-      context,
-      hasUnsavedChanges: _hasUnsavedChanges(),
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-      onProjectLoaded: (projectFile, data) {
-        // 在 SetState 之前執行耗時計算
-        final initialState = _calculateInitialState(
-          data,
-          widget.settingsManager.wordCountMode,
+    if (_hasUnsavedChanges()) {
+      final shouldProceed = await ProjectManager.showSaveConfirmDialog(
+        context,
+        title: "開啟專案",
+        message: "您有未儲存的變更，是否要在開啟新專案前儲存？",
+        onDontShowAgainChanged: (_) async {},
+        onSave: _saveProject,
+      );
+      if (shouldProceed == null) {
+        return;
+      }
+    }
+
+    try {
+      final projectFile =
+          await ref.read(projectIoControllerProvider.notifier).pickProjectFile();
+      if (projectFile == null) {
+        return;
+      }
+
+      final openedVersion = FileService.extractProjectVersion(projectFile.content);
+      final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
+        openedVersion,
+      );
+
+      if (hasNewerVersion) {
+        if (!mounted) {
+          return;
+        }
+        final shouldContinue = await ProjectManager.showVersionCompatibilityDialog(
+          context,
+          fileVersion: openedVersion ?? "unknown",
+          supportedVersion: FileService.projectVersion,
         );
+        if (!shouldContinue) {
+          _showError("已取消開啟較新版本檔案。");
+          return;
+        }
+      }
 
-        setState(() {
-          currentProject = projectFile;
-          _applyProjectData(data, initialState);
-        });
-        _markAsSaved();
-        setState(() => _lastSavedTime = null);
+      final data = await ref
+          .read(projectIoControllerProvider.notifier)
+          .loadProjectData(projectFile);
 
-        unawaited(_recordRecentProject(projectFile));
+      final initialState = _calculateInitialState(
+        data,
+        _settingsState.wordCountMode,
+      );
 
-        // 觸發異步字數更新
-        _updateAllWordCounts();
-      },
-      onSave: _saveProject,
-    );
+      setState(() {
+        currentProject = projectFile;
+        _applyProjectData(data, initialState);
+      });
+      _markAsSaved();
+      setState(() => _lastSavedTime = null);
+
+      unawaited(_recordRecentProject(projectFile));
+      _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
+
+      _updateAllWordCounts();
+    } catch (e) {
+      _showError("開啟專案失敗：${e.toString()}");
+    }
   }
 
   Future<void> _openRecentProject(RecentProjectEntry entry) async {
@@ -1759,42 +1801,75 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       return;
     }
 
-    await ProjectManager.openProjectFromPath(
-      context,
-      filePath: entry.filePath!,
-      accessToken: entry.uri,
-      hasUnsavedChanges: _hasUnsavedChanges(),
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: (message) {
-        _showError(message);
-        if (message.contains("檔案不存在")) {
-          unawaited(widget.settingsManager.removeRecentProject(entry));
+    if (_hasUnsavedChanges()) {
+      final shouldProceed = await ProjectManager.showSaveConfirmDialog(
+        context,
+        title: "開啟最近專案",
+        message: "您有未儲存的變更，是否要在開啟最近專案前儲存？",
+        onDontShowAgainChanged: (_) async {},
+        onSave: _saveProject,
+      );
+      if (shouldProceed == null) {
+        return;
+      }
+    }
+
+    try {
+      final projectFile = await ref
+          .read(projectIoControllerProvider.notifier)
+          .openProjectFromPath(entry.filePath!, accessToken: entry.uri);
+
+      final openedVersion = FileService.extractProjectVersion(projectFile.content);
+      final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
+        openedVersion,
+      );
+
+      if (hasNewerVersion) {
+        if (!mounted) {
+          return;
         }
-      },
-      onProjectLoaded: (projectFile, data) {
-        final initialState = _calculateInitialState(
-          data,
-          widget.settingsManager.wordCountMode,
+        final shouldContinue = await ProjectManager.showVersionCompatibilityDialog(
+          context,
+          fileVersion: openedVersion ?? "unknown",
+          supportedVersion: FileService.projectVersion,
         );
+        if (!shouldContinue) {
+          _showError("已取消開啟較新版本檔案。");
+          return;
+        }
+      }
 
-        setState(() {
-          currentProject = projectFile;
-          _applyProjectData(data, initialState);
-        });
-        _markAsSaved();
-        setState(() => _lastSavedTime = null);
+      final data = await ref
+          .read(projectIoControllerProvider.notifier)
+          .loadProjectData(projectFile);
 
-        unawaited(_recordRecentProject(projectFile));
+      final initialState = _calculateInitialState(
+        data,
+        _settingsState.wordCountMode,
+      );
 
-        _updateAllWordCounts();
-      },
-      onSave: _saveProject,
-    );
+      setState(() {
+        currentProject = projectFile;
+        _applyProjectData(data, initialState);
+      });
+      _markAsSaved();
+      setState(() => _lastSavedTime = null);
+
+      unawaited(_recordRecentProject(projectFile));
+      _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
+
+      _updateAllWordCounts();
+    } catch (e) {
+      final message = e.toString();
+      _showError("開啟最近專案失敗：$message");
+      if (message.contains("檔案不存在")) {
+        unawaited(ref.read(settingsStateProvider.notifier).removeRecentProject(entry));
+      }
+    }
   }
 
   Future<void> _deleteRecentProject(RecentProjectEntry entry) async {
-    await widget.settingsManager.removeRecentProject(entry);
+    await ref.read(settingsStateProvider.notifier).removeRecentProject(entry);
     _showMessage("已從最近清單移除：${entry.fileName}");
   }
 
@@ -1802,38 +1877,38 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
 
-    await ProjectManager.saveProject(
-      context,
-      currentProject: currentProject,
-      currentData: currentData,
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-      onProjectSaved: (savedProject) {
-        setState(() => currentProject = savedProject);
-        _markAsSaved();
-        unawaited(_recordRecentProject(savedProject));
-      },
-    );
+    try {
+      final savedProject = await ref.read(projectIoControllerProvider.notifier).saveProject(
+            currentProject: currentProject,
+            currentData: currentData,
+            forceSaveAs: false,
+          );
+      setState(() => currentProject = savedProject);
+      _markAsSaved();
+      unawaited(_recordRecentProject(savedProject));
+      _showMessage("專案儲存成功！");
+    } catch (e) {
+      _showError("儲存專案失敗：${e.toString()}");
+    }
   }
 
   Future<void> _saveProjectAs() async {
     _syncEditorToSelectedChapter();
     final currentData = _collectProjectData();
 
-    await ProjectManager.saveProjectAs(
-      context,
-      currentProject: currentProject,
-      currentData: currentData,
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-      onProjectSaved: (savedProject) {
-        setState(() => currentProject = savedProject);
-        _markAsSaved();
-        unawaited(_recordRecentProject(savedProject));
-      },
-    );
+    try {
+      final savedProject = await ref.read(projectIoControllerProvider.notifier).saveProject(
+            currentProject: currentProject,
+            currentData: currentData,
+            forceSaveAs: true,
+          );
+      setState(() => currentProject = savedProject);
+      _markAsSaved();
+      unawaited(_recordRecentProject(savedProject));
+      _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
+    } catch (e) {
+      _showError("另存專案失敗：${e.toString()}");
+    }
   }
 
   Future<void> _recordRecentProject(ProjectFile projectFile) async {
@@ -1847,7 +1922,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
       }
     }
 
-    await widget.settingsManager.addRecentProject(
+    await ref.read(settingsStateProvider.notifier).addRecentProject(
       fileName: projectFile.fullFileName,
       filePath: projectFile.filePath,
       uri: persistedAccessToken,
@@ -1860,15 +1935,16 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     final defaultName =
         currentProject?.nameWithoutExtension ?? "MonogatariExport";
 
-    await ProjectManager.exportAs(
-      context,
-      extension: extension,
-      currentData: currentData,
-      defaultFileName: defaultName,
-      setLoading: (loading) => setState(() => isLoading = loading),
-      onSuccess: _showMessage,
-      onError: _showError,
-    );
+    try {
+      await ref.read(projectIoControllerProvider.notifier).exportAs(
+            extension: extension,
+            currentData: currentData,
+            defaultFileName: defaultName,
+          );
+      _showMessage("匯出 $extension 檔案成功！");
+    } catch (e) {
+      _showError("匯出檔案失敗：${e.toString()}");
+    }
   }
 
   // 同步編輯器內容到選中的章節（先存的部分）
@@ -1906,6 +1982,7 @@ class _ContentViewState extends State<ContentView> with WindowListener {
 
   // 輔助方法：應用專案數據到狀態 (改為接收預先計算的狀態)
   void _applyProjectData(ProjectData data, _ProjectInitialState initialState) {
+    _isApplyingProjectData = true;
     final String? previousSelectedChapID = selectedChapID;
 
     baseInfoData = data.baseInfoData;
@@ -1935,6 +2012,13 @@ class _ContentViewState extends State<ContentView> with WindowListener {
     }
 
     totalWords = initialState.totalWords;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _isApplyingProjectData = false;
+    });
 
     // Force rebuild of all modules by using keys or ensuring state update
     // Note: Since we are replacing the data objects, didUpdateWidget in children should trigger

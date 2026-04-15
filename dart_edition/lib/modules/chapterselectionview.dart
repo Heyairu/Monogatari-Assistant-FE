@@ -26,9 +26,12 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "../bin/content_manager.dart";
 import "../bin/settings_manager.dart";
+import "../presentation/providers/global_state_providers.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 // MARK: - 拖放數據類型
 
@@ -314,38 +317,24 @@ class ChapterSelectionCodec {
 
 // MARK: - View
 
-class ChapterSelectionView extends StatefulWidget {
-  // 綁定主程式：段落與編輯器文字
-  final List<SegmentData> segments;
-  final String contentText;
-  final WordCountMode wordCountMode;
-  // 將「目前選取的 Seg/Chapter」提升為外部綁定，方便外層存檔前回寫
-  final String? selectedSegmentID;
-  final String? selectedChapterID;
+class ChapterSelectionView extends ConsumerStatefulWidget {
   final ValueChanged<List<SegmentData>>? onSegmentsChanged;
-  final ValueChanged<String>? onContentChanged;
-  final ValueChanged<String?>? onSelectedSegmentChanged;
-  final ValueChanged<String?>? onSelectedChapterChanged;
 
   const ChapterSelectionView({
     super.key,
-    required this.segments,
-    required this.contentText,
-    required this.wordCountMode,
-    this.selectedSegmentID,
-    this.selectedChapterID,
     this.onSegmentsChanged,
-    this.onContentChanged,
-    this.onSelectedSegmentChanged,
-    this.onSelectedChapterChanged,
   });
 
   @override
-  State<ChapterSelectionView> createState() => _ChapterSelectionViewState();
+  ConsumerState<ChapterSelectionView> createState() => _ChapterSelectionViewState();
 }
 
-class _ChapterSelectionViewState extends State<ChapterSelectionView> {
+class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   late List<SegmentData> _segments;
+  bool _isCommittingLocalChange = false;
+  bool _hasPerformedInitialSetup = false;
+  bool _shouldCommitInitialSegments = false;
+  ProviderSubscription<List<SegmentData>>? _segmentsSubscription;
 
   // 編輯名稱（雙擊）狀態
   String? _editingSegmentID;
@@ -380,6 +369,11 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
   }
 
+  WordCountMode get _wordCountMode {
+    return ref.read(settingsStateProvider).valueOrNull?.wordCountMode ??
+        WordCountMode.wordsAndCharacters;
+  }
+
   int get _totalWordCount {
     return _segments.fold(
       0,
@@ -387,15 +381,21 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           sum +
           seg.chapters.fold(
             0,
-            (s, c) => s + c.getWordCount(widget.wordCountMode),
+            (s, c) => s + c.getWordCount(_wordCountMode),
           ),
     );
   }
 
+  String? get _selectedSegmentID => ref.read(editorSelectionProvider).selectedSegID;
+
+  String? get _selectedChapterID => ref.read(editorSelectionProvider).selectedChapID;
+
+  String get _contentText => ref.read(editorContentProvider);
+
   int? get _selectedSegmentIndex {
-    if (widget.selectedSegmentID == null) return null;
+    if (_selectedSegmentID == null) return null;
     return _segments.indexWhere(
-      (seg) => seg.segmentUUID == widget.selectedSegmentID,
+      (seg) => seg.segmentUUID == _selectedSegmentID,
     );
   }
 
@@ -406,42 +406,32 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     super.initState();
     _initializeSegments();
     _initializeIfEmpty();
-  }
 
-  @override
-  void didUpdateWidget(ChapterSelectionView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.segments != widget.segments ||
-        oldWidget.wordCountMode != widget.wordCountMode) {
-      _initializeSegments();
-      _initializeIfEmpty();
-
-      // 當 segments 更新後，需要觸发「再讀」來同步當前選中章節的內容
-      if (widget.selectedSegmentID != null &&
-          widget.selectedChapterID != null) {
-        final segIdx = _segments.indexWhere(
-          (seg) => seg.segmentUUID == widget.selectedSegmentID,
-        );
-        if (segIdx >= 0) {
-          final chapterIdx = _segments[segIdx].chapters.indexWhere(
-            (ch) => ch.chapterUUID == widget.selectedChapterID,
-          );
-          if (chapterIdx >= 0) {
-            // 觸發「再讀」：載入更新後的章節內容到編輯器
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              widget.onContentChanged?.call(
-                _segments[segIdx].chapters[chapterIdx].chapterContent,
-              );
-            });
-          }
+    _segmentsSubscription = ref.listenManual<List<SegmentData>>(
+      segmentsDataProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
         }
-      }
-    }
+        setState(() {
+          _segments = _cloneSegments(next);
+          _initializeIfEmpty();
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+          _performInitialSetup();
+        });
+      },
+    );
   }
 
   @override
   void dispose() {
     _autoScrollTimer?.cancel();
+    _segmentsSubscription?.close();
+    _renameController?.dispose();
     _pageScrollController.dispose();
     _segmentListScrollController.dispose();
     _chapterListScrollController.dispose();
@@ -452,7 +442,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   /// 處理拖動時的自動滾動（頁面級別）
   void _handleDragUpdate(DragUpdateDetails details) {
-    // 如果正在拖動，優先檢查列表滾动
+    // 如果正在拖動，優先檢查列表滾動
     if (_isDragging) {
       // 檢查是否在任一列表的邊緣 20px 內
       bool handledByList = false;
@@ -597,8 +587,12 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   // MARK: - Helper 方法
 
   void _initializeSegments() {
-    _segments = List.from(
-      widget.segments.map(
+    _segments = _cloneSegments(ref.read(segmentsDataProvider));
+  }
+
+  List<SegmentData> _cloneSegments(List<SegmentData> source) {
+    return List.from(
+      source.map(
         (seg) => SegmentData(
           segmentName: seg.segmentName,
           chapters: List.from(
@@ -624,12 +618,12 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
         ),
       );
-      _notifySegmentsChanged();
+      _shouldCommitInitialSegments = true;
     } else if (_totalChaptersCount == 0) {
       _segments[0].chapters.add(
         ChapterData(chapterName: "Chapter 1", chapterContent: ""),
       );
-      _notifySegmentsChanged();
+      _shouldCommitInitialSegments = true;
     }
   }
 
@@ -637,51 +631,64 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
   void _commitCurrentEditorToSelectedChapter() {
     final si = _selectedSegmentIndex;
-    final cid = widget.selectedChapterID;
+    final cid = _selectedChapterID;
     if (si != null && cid != null) {
       final ci = _segments[si].chapters.indexWhere(
         (ch) => ch.chapterUUID == cid,
       );
       if (ci >= 0) {
-        _segments[si].chapters[ci].chapterContent = widget.contentText;
+        _segments[si].chapters[ci].chapterContent = _contentText;
       }
     }
   }
 
+  void _setSelection({String? segmentID, String? chapterID}) {
+    final current = ref.read(editorSelectionProvider);
+    ref.read(editorSelectionProvider.notifier).state = current.copyWith(
+      selectedSegID: segmentID,
+      selectedChapID: chapterID,
+    );
+  }
+
+  void _setEditorContent(String value) {
+    ref.read(editorContentProvider.notifier).state = value;
+  }
+
   void _selectSegment(String segID) {
     _commitCurrentEditorToSelectedChapter();
-    widget.onSelectedSegmentChanged?.call(segID);
+    _setSelection(segmentID: segID, chapterID: _selectedChapterID);
 
     final si = _segments.indexWhere((seg) => seg.segmentUUID == segID);
     if (si >= 0) {
       if (_segments[si].chapters.isNotEmpty) {
         final firstChapter = _segments[si].chapters.first;
-        widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
-        widget.onContentChanged?.call(firstChapter.chapterContent);
+        _setSelection(segmentID: segID, chapterID: firstChapter.chapterUUID);
+        _setEditorContent(firstChapter.chapterContent);
       } else {
-        widget.onSelectedChapterChanged?.call(null);
-        widget.onContentChanged?.call("");
+        _setSelection(segmentID: segID, chapterID: null);
+        _setEditorContent("");
       }
     }
   }
 
   void _selectChapter(int segIdx, String chapterID) {
     _commitCurrentEditorToSelectedChapter();
-    widget.onSelectedSegmentChanged?.call(_segments[segIdx].segmentUUID);
-    widget.onSelectedChapterChanged?.call(chapterID);
+    _setSelection(segmentID: _segments[segIdx].segmentUUID, chapterID: chapterID);
 
     final chapterIdx = _segments[segIdx].chapters.indexWhere(
       (ch) => ch.chapterUUID == chapterID,
     );
     if (chapterIdx >= 0) {
-      widget.onContentChanged?.call(
-        _segments[segIdx].chapters[chapterIdx].chapterContent,
-      );
+      _setEditorContent(_segments[segIdx].chapters[chapterIdx].chapterContent);
     }
   }
 
   void _notifySegmentsChanged() {
-    widget.onSegmentsChanged?.call(_segments);
+    final snapshot = _cloneSegments(_segments);
+    _isCommittingLocalChange = true;
+    ref.read(segmentsDataProvider.notifier).state = snapshot;
+    widget.onSegmentsChanged?.call(snapshot);
+    _isCommittingLocalChange = false;
   }
 
   // MARK: - 新增方法
@@ -736,7 +743,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     if (remainingChapters <= 0) return;
 
     // 如果要刪除的是當前選中的區段，先保存編輯器內容
-    if (widget.selectedSegmentID == segmentID) {
+    if (_selectedSegmentID == segmentID) {
       _commitCurrentEditorToSelectedChapter();
     }
 
@@ -746,21 +753,23 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     // 選擇第一個可用的區段
     if (_segments.isNotEmpty) {
       final firstSeg = _segments.first;
-      widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
+      _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
       final firstChapter = firstSeg.chapters.isNotEmpty
           ? firstSeg.chapters.first
           : null;
       if (firstChapter != null) {
-        widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
-        widget.onContentChanged?.call(firstChapter.chapterContent);
+        _setSelection(
+          segmentID: firstSeg.segmentUUID,
+          chapterID: firstChapter.chapterUUID,
+        );
+        _setEditorContent(firstChapter.chapterContent);
       } else {
-        widget.onSelectedChapterChanged?.call(null);
-        widget.onContentChanged?.call("");
+        _setSelection(segmentID: firstSeg.segmentUUID, chapterID: null);
+        _setEditorContent("");
       }
     } else {
-      widget.onSelectedSegmentChanged?.call(null);
-      widget.onSelectedChapterChanged?.call(null);
-      widget.onContentChanged?.call("");
+      _setSelection(segmentID: null, chapterID: null);
+      _setEditorContent("");
     }
   }
 
@@ -773,7 +782,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     if (chapterIdx < 0 || _totalChaptersCount <= 1) return;
 
     // 如果要刪除的是當前選中的章節，先保存編輯器內容
-    if (widget.selectedChapterID == chapterID) {
+    if (_selectedChapterID == chapterID) {
       _commitCurrentEditorToSelectedChapter();
     }
 
@@ -786,11 +795,14 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
           ? chapterIdx
           : _segments[segIdx].chapters.length - 1;
       final nextChapter = _segments[segIdx].chapters[nextIdx];
-      widget.onSelectedChapterChanged?.call(nextChapter.chapterUUID);
-      widget.onContentChanged?.call(nextChapter.chapterContent);
+      _setSelection(
+        segmentID: _segments[segIdx].segmentUUID,
+        chapterID: nextChapter.chapterUUID,
+      );
+      _setEditorContent(nextChapter.chapterContent);
     } else {
-      widget.onSelectedChapterChanged?.call(null);
-      widget.onContentChanged?.call("");
+      _setSelection(segmentID: _segments[segIdx].segmentUUID, chapterID: null);
+      _setEditorContent("");
 
       // 如果區段為空且有多個區段，刪除該區段
       if (_segments.length > 1) {
@@ -800,33 +812,38 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
 
         if (_segments.isNotEmpty) {
           final firstSeg = _segments.first;
-          widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
+          _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
               : null;
           if (firstChapter != null) {
-            widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
-            widget.onContentChanged?.call(firstChapter.chapterContent);
+            _setSelection(
+              segmentID: firstSeg.segmentUUID,
+              chapterID: firstChapter.chapterUUID,
+            );
+            _setEditorContent(firstChapter.chapterContent);
           } else {
-            widget.onSelectedChapterChanged?.call(null);
-            widget.onContentChanged?.call("");
+            _setSelection(segmentID: firstSeg.segmentUUID, chapterID: null);
+            _setEditorContent("");
           }
         } else {
-          widget.onSelectedSegmentChanged?.call(null);
-          widget.onSelectedChapterChanged?.call(null);
-          widget.onContentChanged?.call("");
+          _setSelection(segmentID: null, chapterID: null);
+          _setEditorContent("");
         }
 
         // 如果刪除的區段是當前選中的區段，重新選擇
-        if (widget.selectedSegmentID == removedSegID && _segments.isNotEmpty) {
+        if (_selectedSegmentID == removedSegID && _segments.isNotEmpty) {
           final firstSeg = _segments.first;
-          widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
+          _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
               : null;
           if (firstChapter != null) {
-            widget.onSelectedChapterChanged?.call(firstChapter.chapterUUID);
-            widget.onContentChanged?.call(firstChapter.chapterContent);
+            _setSelection(
+              segmentID: firstSeg.segmentUUID,
+              chapterID: firstChapter.chapterUUID,
+            );
+            _setEditorContent(firstChapter.chapterContent);
           }
         }
       }
@@ -890,35 +907,40 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
     _segments[targetSegIdx].chapters.add(movingChapter);
 
     // 更新選擇
-    widget.onSelectedSegmentChanged?.call(_segments[targetSegIdx].segmentUUID);
-    widget.onSelectedChapterChanged?.call(movingChapter.chapterUUID);
-    widget.onContentChanged?.call(movingChapter.chapterContent);
+    _setSelection(
+      segmentID: _segments[targetSegIdx].segmentUUID,
+      chapterID: movingChapter.chapterUUID,
+    );
+    _setEditorContent(movingChapter.chapterContent);
 
     // 如果來源區段變空，刪除它（如果有多個區段）
     if (_segments[sourceSegIdx].chapters.isEmpty && _segments.length > 1) {
       _segments.removeAt(sourceSegIdx);
 
       // 如果刪除的區段是當前選中的區段，重新選擇
-      if (widget.selectedSegmentID == sourceSegID) {
+      if (_selectedSegmentID == sourceSegID) {
         final firstSeg = _segments.firstWhere(
           (seg) => seg.segmentUUID == toSegmentUUID,
           orElse: () => _segments.isNotEmpty ? _segments.first : SegmentData(),
         );
-        widget.onSelectedSegmentChanged?.call(firstSeg.segmentUUID);
-        widget.onSelectedChapterChanged?.call(movingChapter.chapterUUID);
-        widget.onContentChanged?.call(movingChapter.chapterContent);
+        _setSelection(
+          segmentID: firstSeg.segmentUUID,
+          chapterID: movingChapter.chapterUUID,
+        );
+        _setEditorContent(movingChapter.chapterContent);
       }
     }
 
     _notifySegmentsChanged();
   }
 
-  bool _hasPerformedInitialSetup = false;
-
   // MARK: - UI 介面構建
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(settingsStateProvider);
+    ref.watch(editorSelectionProvider);
+
     // 初始化檢查（類似 SwiftUI 的 onAppear），但只執行一次
     if (!_hasPerformedInitialSetup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1003,6 +1025,11 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   // MARK: - 初始化邏輯（類似 SwiftUI 的 onAppear）
 
   void _performInitialSetup() {
+    if (_shouldCommitInitialSegments) {
+      _notifySegmentsChanged();
+      _shouldCommitInitialSegments = false;
+    }
+
     if (_segments.isEmpty) {
       _segments.add(
         SegmentData(
@@ -1016,29 +1043,28 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
       );
     }
 
-    if (widget.selectedSegmentID == null && _segments.isNotEmpty) {
-      widget.onSelectedSegmentChanged?.call(_segments.first.segmentUUID);
+    if (_selectedSegmentID == null && _segments.isNotEmpty) {
+      _setSelection(segmentID: _segments.first.segmentUUID, chapterID: _selectedChapterID);
     }
 
-    if (widget.selectedChapterID == null) {
+    if (_selectedChapterID == null) {
       final si = _selectedSegmentIndex;
       if (si != null && _segments[si].chapters.isNotEmpty) {
-        widget.onSelectedChapterChanged?.call(
-          _segments[si].chapters.first.chapterUUID,
+        _setSelection(
+          segmentID: _segments[si].segmentUUID,
+          chapterID: _segments[si].chapters.first.chapterUUID,
         );
       }
     }
 
     final si = _selectedSegmentIndex;
-    final cid = widget.selectedChapterID;
+    final cid = _selectedChapterID;
     if (si != null && cid != null) {
       final ci = _segments[si].chapters.indexWhere(
         (ch) => ch.chapterUUID == cid,
       );
       if (ci >= 0) {
-        widget.onContentChanged?.call(
-          _segments[si].chapters[ci].chapterContent,
-        );
+        _setEditorContent(_segments[si].chapters[ci].chapterContent);
       }
     }
   }
@@ -1080,7 +1106,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                       _segments.insert(toIndex, movedSegment);
 
                       // 如果移動的區段是當前選中的，更新選中狀態
-                      if (widget.selectedSegmentID ==
+                        if (_selectedSegmentID ==
                           movedSegment.segmentUUID) {
                         // selectedSegmentID 不變，因為移動的就是當前選中的區段
                         // 索引會自動通過 getter 重新計算
@@ -1203,9 +1229,11 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
                       _segments[selectedSegIdx].chapters.add(draggedChapter);
 
                       // 更新選中章節
-                      widget.onSelectedChapterChanged?.call(
-                        draggedChapter.chapterUUID,
+                      _setSelection(
+                        segmentID: _segments[selectedSegIdx].segmentUUID,
+                        chapterID: draggedChapter.chapterUUID,
                       );
+                      _setEditorContent(draggedChapter.chapterContent);
                       _notifySegmentsChanged();
                     }
                   });
@@ -1337,7 +1365,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   // MARK: - Row builders
 
   Widget _buildSegmentItem(SegmentData segment, int index) {
-    final isSelected = widget.selectedSegmentID == segment.segmentUUID;
+    final isSelected = _selectedSegmentID == segment.segmentUUID;
     final isEditing = _editingSegmentID == segment.segmentUUID;
 
     return DraggableCardNode<DragData>(
@@ -1384,7 +1412,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ),
             ),
       subtitle: Text(
-        "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(widget.wordCountMode))} 字",
+        "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(_wordCountMode))} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       leading: Icon(
@@ -1465,7 +1493,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
   }
 
   Widget _buildChapterItem(ChapterData chapter, int segIdx, int chapterIdx) {
-    final isSelected = widget.selectedChapterID == chapter.chapterUUID;
+    final isSelected = _selectedChapterID == chapter.chapterUUID;
     final isEditing = _editingChapterID == chapter.chapterUUID;
 
     return DraggableCardNode<DragData>(
@@ -1515,7 +1543,7 @@ class _ChapterSelectionViewState extends State<ChapterSelectionView> {
               ),
             ),
       subtitle: Text(
-        "${chapter.getWordCount(widget.wordCountMode)} 字",
+        "${chapter.getWordCount(_wordCountMode)} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       leading: Icon(

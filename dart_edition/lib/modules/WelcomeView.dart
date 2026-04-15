@@ -16,32 +16,34 @@ import "dart:convert";
 import "dart:math";
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter/services.dart";
 import "package:url_launcher/url_launcher.dart";
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
+import "../presentation/providers/global_state_providers.dart";
 
-class WelcomeView extends StatefulWidget {
+class WelcomeView extends ConsumerStatefulWidget {
   const WelcomeView({
     super.key,
     this.onNewProject,
     this.onOpenProject,
-    this.recentProjects = const [],
+    this.recentProjects,
     this.onOpenRecentProject,
     this.onDeleteRecentProject,
   });
 
   final Future<void> Function()? onNewProject;
   final Future<void> Function()? onOpenProject;
-  final List<RecentProjectEntry> recentProjects;
+  final List<RecentProjectEntry>? recentProjects;
   final Future<void> Function(RecentProjectEntry entry)? onOpenRecentProject;
   final Future<void> Function(RecentProjectEntry entry)? onDeleteRecentProject;
 
   @override
-  State<WelcomeView> createState() => _WelcomeViewState();
+  ConsumerState<WelcomeView> createState() => _WelcomeViewState();
 }
 
-class _WelcomeViewState extends State<WelcomeView> {
+class _WelcomeViewState extends ConsumerState<WelcomeView> {
   static const String _didYouKnowAssetPath = "assets/jsons/didyouknow.json";
   static const String _eastAsiaNameAssetPath =
       "assets/jsons/name_eastAsia.json";
@@ -367,6 +369,11 @@ class _WelcomeViewState extends State<WelcomeView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    final List<RecentProjectEntry> recentProjects =
+        widget.recentProjects ??
+        ref.watch(settingsStateProvider).valueOrNull?.recentProjects ??
+        const [];
+
     final Set<String> supportedGenderValues = <String>{
       "all",
       "male",
@@ -552,13 +559,13 @@ class _WelcomeViewState extends State<WelcomeView> {
                   children: [
                     const SmallTitle(icon: Icons.folder, text: "Recent"),
                     const SizedBox(height: 12),
-                    if (widget.recentProjects.isEmpty)
+                    if (recentProjects.isEmpty)
                       Text(
                         "尚無最近開啟檔案",
                         style: Theme.of(context).textTheme.labelMedium,
                       )
                     else
-                      ...widget.recentProjects.take(5).map((entry) {
+                      ...recentProjects.take(5).map((entry) {
                         final subtitle = entry.filePath ?? entry.uri ?? "無可用路徑";
                         return Row(
                           children: [

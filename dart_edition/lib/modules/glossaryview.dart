@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter/services.dart";
 import "package:file_picker/file_picker.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -23,6 +24,7 @@ import "dart:collection";
 import "dart:convert";
 import "dart:io";
 import "../bin/ui_library.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 const String _glossaryAssetPath = "assets/jsons/glossary.json";
 const String _legacyGlossaryPrefsKey = "glossary_json_v1";
@@ -360,13 +362,13 @@ class _GlossaryImportPreviewSummary {
   });
 }
 
-class GlossaryView extends StatefulWidget {
+class GlossaryView extends ConsumerStatefulWidget {
   const GlossaryView({super.key});
   @override
-  State<GlossaryView> createState() => _GlossaryViewState();
+  ConsumerState<GlossaryView> createState() => _GlossaryViewState();
 }
 
-class _GlossaryViewState extends State<GlossaryView> {
+class _GlossaryViewState extends ConsumerState<GlossaryView> {
   bool _isLoading = true;
   String? _loadError;
 
@@ -386,16 +388,42 @@ class _GlossaryViewState extends State<GlossaryView> {
   final Set<String> _expandedCategoryIds = <String>{};
 
   Timer? _persistDebounce;
+  ProviderSubscription<GlossaryStateData>? _glossarySubscription;
+  bool _isCommittingLocalChange = false;
 
   @override
   void initState() {
     super.initState();
-    _loadGlossary();
+    _glossarySubscription = ref.listenManual<GlossaryStateData>(
+      glossaryStateProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
+        }
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _applyProviderState(next);
+          _isLoading = false;
+          _loadError = null;
+        });
+      },
+    );
+
+    final initialState = ref.read(glossaryStateProvider);
+    if (initialState.categoryTree.isNotEmpty || initialState.entryIndex.isNotEmpty) {
+      _applyProviderState(initialState);
+      _isLoading = false;
+    } else {
+      _loadGlossary();
+    }
   }
 
   @override
   void dispose() {
     _persistDebounce?.cancel();
+    _glossarySubscription?.close();
     _categoryRenameController?.dispose();
     super.dispose();
   }
@@ -453,6 +481,7 @@ class _GlossaryViewState extends State<GlossaryView> {
           ..addAll(decoded.categoryTree.map((category) => category.id));
         _isLoading = false;
       });
+      _publishGlossaryState();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -540,7 +569,83 @@ class _GlossaryViewState extends State<GlossaryView> {
     await file.writeAsString(jsonEncode(payload));
   }
 
+  List<GlossaryCategory> _cloneCategoryTree(List<GlossaryCategory> nodes) {
+    return nodes
+        .map(
+          (node) => GlossaryCategory(
+            id: node.id,
+            name: node.name,
+            entryIds: List<String>.from(node.entryIds),
+            children: _cloneCategoryTree(node.children),
+          ),
+        )
+        .toList();
+  }
+
+  HashMap<String, GlossaryEntry> _cloneEntryIndex(
+    Map<String, GlossaryEntry> source,
+  ) {
+    final HashMap<String, GlossaryEntry> clone = HashMap();
+    for (final MapEntry<String, GlossaryEntry> entry in source.entries) {
+      final GlossaryEntry item = entry.value;
+      clone[entry.key] = GlossaryEntry(
+        id: item.id,
+        term: item.term,
+        partOfSpeech: item.partOfSpeech,
+        customPartOfSpeech: item.customPartOfSpeech,
+        polarity: item.polarity,
+        pairs: item.pairs
+            .map(
+              (pair) => GlossaryPair(
+                meaning: pair.meaning,
+                example: pair.example,
+              ),
+            )
+            .toList(),
+      );
+    }
+    return clone;
+  }
+
+  void _applyProviderState(GlossaryStateData state) {
+    _categoryTree = _cloneCategoryTree(state.categoryTree);
+    _entryIndex = _cloneEntryIndex(state.entryIndex);
+
+    if (_selectedCategoryId != null &&
+        _findCategoryById(_selectedCategoryId!, _categoryTree) == null) {
+      _selectedCategoryId = _categoryTree.isNotEmpty ? _categoryTree.first.id : null;
+    }
+
+    if (_selectedCategoryId != null) {
+      final List<_CategoryEntryRef> refs = _collectEntryRefs(
+        _selectedCategoryId!,
+        _categoryTree,
+      );
+      _selectedEntryId = null;
+      for (final _CategoryEntryRef ref in refs) {
+        if (_entryIndex.containsKey(ref.entryId)) {
+          _selectedEntryId = ref.entryId;
+          break;
+        }
+      }
+    } else {
+      _selectedEntryId = null;
+    }
+  }
+
+  void _publishGlossaryState() {
+    final snapshot = GlossaryStateData(
+      categoryTree: _cloneCategoryTree(_categoryTree),
+      entryIndex: _cloneEntryIndex(_entryIndex),
+    );
+
+    _isCommittingLocalChange = true;
+    ref.read(glossaryStateProvider.notifier).state = snapshot;
+    _isCommittingLocalChange = false;
+  }
+
   void _schedulePersist() {
+    _publishGlossaryState();
     _persistDebounce?.cancel();
     _persistDebounce = Timer(const Duration(milliseconds: 240), () {
       unawaited(_persistGlossaryNow());
@@ -1044,6 +1149,7 @@ class _GlossaryViewState extends State<GlossaryView> {
       return;
     }
 
+    if (!mounted) return;
     final String name = resolvedPath.replaceAll("\\", "/").split("/").last;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1542,20 +1648,6 @@ class _GlossaryViewState extends State<GlossaryView> {
     });
 
     _schedulePersist();
-  }
-
-  Future<void> _addEntryToSelectedCategory() async {
-    if (_selectedCategoryId == null) return;
-
-    final String? term = await _showTextInputDialog(
-      title: "新增詞條",
-      hint: "輸入詞條名稱",
-      initialValue: "",
-    );
-    if (!mounted) return;
-    if (term == null || term.isEmpty) return;
-
-    _addEntryByTermToSelectedCategory(term);
   }
 
   void _addEntryByTermToSelectedCategory(String rawTerm) {
@@ -2431,7 +2523,8 @@ class _GlossaryViewState extends State<GlossaryView> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<GlossaryPartOfSpeech>(
-                value: selectedEntry.partOfSpeech,
+                key: ValueKey("part_of_speech_${selectedEntry.id}"),
+                initialValue: selectedEntry.partOfSpeech,
                 isDense: true,
                 style:
                     Theme.of(context).textTheme.bodySmall ??
@@ -2471,7 +2564,8 @@ class _GlossaryViewState extends State<GlossaryView> {
               ],
               const SizedBox(height: 12),
               DropdownButtonFormField<GlossaryPolarity>(
-                value: selectedEntry.polarity,
+                key: ValueKey("polarity_${selectedEntry.id}"),
+                initialValue: selectedEntry.polarity,
                 isDense: true,
                 style:
                     Theme.of(context).textTheme.bodySmall ??
@@ -2536,6 +2630,8 @@ class _GlossaryViewState extends State<GlossaryView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    ref.watch(glossaryStateProvider);
+
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }

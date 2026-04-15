@@ -20,8 +20,10 @@ import "dart:math" as math;
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
 import "package:xml/xml.dart" as xml;
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 final _log = Logger("WorldSettingsView");
 
@@ -437,21 +439,20 @@ class WorldSettingsCodec {
 
 // MARK: - 主視圖
 
-class WorldSettingsView extends StatefulWidget {
-  final List<LocationData> locations;
-  final Function(List<LocationData>) onChanged;
+class WorldSettingsView extends ConsumerStatefulWidget {
+  final ValueChanged<List<LocationData>>? onChanged;
 
   const WorldSettingsView({
     super.key,
-    required this.locations,
-    required this.onChanged,
+    this.onChanged,
   });
 
   @override
-  State<WorldSettingsView> createState() => _WorldSettingsViewState();
+  ConsumerState<WorldSettingsView> createState() => _WorldSettingsViewState();
 }
 
-class _WorldSettingsViewState extends State<WorldSettingsView> {
+class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
+  List<LocationData> _locations = [];
   String? selectedNodeId;
   String? lastSelectedNodeId; // 記錄上次選取的節點
   String? editingNodeId;
@@ -467,6 +468,8 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   // 拖動狀態與游標資訊
   bool _isDragging = false;
   String? _draggingLocationId;
+  bool _isCommittingLocalChange = false;
+  ProviderSubscription<List<LocationData>>? _worldSettingsSubscription;
 
   // 控制器
   final TextEditingController tempKeyController = TextEditingController();
@@ -478,6 +481,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   @override
   void initState() {
     super.initState();
+    _locations = _cloneLocations(ref.read(worldSettingsDataProvider));
     _rebuildFlatList();
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
@@ -487,14 +491,21 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     locationNameController.addListener(_onNameChanged);
     locationTypeController.addListener(_onTypeChanged);
     locationNoteController.addListener(_onNoteChanged);
-  }
 
-  @override
-  void didUpdateWidget(WorldSettingsView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.locations != oldWidget.locations) {
-      _rebuildFlatList();
-    }
+    _worldSettingsSubscription = ref.listenManual<List<LocationData>>(
+      worldSettingsDataProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
+        }
+
+        setState(() {
+          _locations = _cloneLocations(next);
+          _rebuildFlatList();
+          _syncDetailControllers();
+        });
+      },
+    );
   }
 
   void _rebuildFlatList() {
@@ -506,11 +517,12 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       }
     }
 
-    flatten(widget.locations, 0);
+    flatten(_locations, 0);
   }
 
   @override
   void dispose() {
+    _worldSettingsSubscription?.close();
     locationNameController.removeListener(_onNameChanged);
     locationTypeController.removeListener(_onTypeChanged);
     locationNoteController.removeListener(_onNoteChanged);
@@ -524,7 +536,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   void _onNameChanged() {
     if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, widget.locations);
+    final location = _getLocation(selectedNodeId!, _locations);
     if (location != null && location.localName != locationNameController.text) {
       location.localName = locationNameController.text;
       _notifyChange();
@@ -534,7 +546,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   void _onTypeChanged() {
     if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, widget.locations);
+    final location = _getLocation(selectedNodeId!, _locations);
     if (location != null && location.localType != locationTypeController.text) {
       location.localType = locationTypeController.text;
       _notifyChange();
@@ -543,7 +555,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   void _onNoteChanged() {
     if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, widget.locations);
+    final location = _getLocation(selectedNodeId!, _locations);
     if (location != null && location.note != locationNoteController.text) {
       location.note = locationNoteController.text;
       _notifyChange();
@@ -551,12 +563,35 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _notifyChange() {
-    widget.onChanged(widget.locations);
+    final snapshot = _cloneLocations(_locations);
+    _isCommittingLocalChange = true;
+    ref.read(worldSettingsDataProvider.notifier).state = snapshot;
+    widget.onChanged?.call(snapshot);
+    _isCommittingLocalChange = false;
+  }
+
+  List<LocationData> _cloneLocations(List<LocationData> source) {
+    return source
+        .map(
+          (location) => LocationData(
+            id: location.id,
+            localName: location.localName,
+            localType: location.localType,
+            nodeType: location.nodeType,
+            customVal: location.customVal
+                .map((item) => LocationCustomize(id: item.id, key: item.key, val: item.val))
+                .toList(),
+            note: location.note,
+            child: _cloneLocations(location.child),
+          ),
+        )
+        .toList();
   }
 
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    ref.watch(worldSettingsDataProvider);
     final viewportHeight = MediaQuery.sizeOf(context).height;
     const listMinHeight = 320.0;
     final listHeight = math.max(viewportHeight * 0.4, listMinHeight);
@@ -672,7 +707,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
                           ),
                           child: Builder(
                             builder: (context) {
-                              if (widget.locations.isEmpty) {
+                              if (_locations.isEmpty) {
                                 return Center(
                                   child: Text(
                                     "尚無地點，請新增第一個地點",
@@ -921,7 +956,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       return const Center(child: Text("請選擇一個地點來編輯詳情"));
     }
 
-    final location = _getLocation(displayNodeId, widget.locations);
+    final location = _getLocation(displayNodeId, _locations);
     if (location == null) {
       return const Center(child: Text("找不到該地點"));
     }
@@ -1132,7 +1167,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   void _saveCurrentAsPreset() {
     if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, widget.locations);
+    final location = _getLocation(selectedNodeId!, _locations);
     if (location == null) return;
 
     final worldType = location.localType.trim();
@@ -1437,7 +1472,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
     } else {
       // 沒有選中節點：作為頂層節點添加
       setState(() {
-        widget.locations.add(LocationData(localName: name));
+        _locations.add(LocationData(localName: name));
         _rebuildFlatList(); // 必須重建扁平化列表，否則視圖不會更新
       });
       _notifyChange();
@@ -1445,7 +1480,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _addChild(String parentId, String name) {
-    _addChildRecursive(parentId, name, widget.locations);
+    _addChildRecursive(parentId, name, _locations);
     setState(() {
       _rebuildFlatList();
     });
@@ -1467,7 +1502,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _renameNode(String id, String newName) {
-    _renameNodeRecursive(id, newName, widget.locations);
+    _renameNodeRecursive(id, newName, _locations);
     _notifyChange();
     setState(() {});
   }
@@ -1519,7 +1554,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
       return null;
     }
 
-    return search(widget.locations);
+    return search(_locations);
   }
 
   // 移動節點到目標位置
@@ -1554,7 +1589,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
         return false;
       }
 
-      removeFromTree(widget.locations);
+      removeFromTree(_locations);
 
       if (sourceNode == null) return;
 
@@ -1576,7 +1611,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           return false;
         }
 
-        success = addAsChild(widget.locations);
+        success = addAsChild(_locations);
       } else {
         // before 或 after: 在同級列表中插入
         bool insertInList(List<LocationData> nodes) {
@@ -1597,12 +1632,12 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
           return false;
         }
 
-        success = insertInList(widget.locations);
+        success = insertInList(_locations);
       }
 
       if (!success) {
         // 如果沒找到目標，恢復原節點
-        widget.locations.add(sourceNode!);
+        _locations.add(sourceNode!);
       }
 
       _rebuildFlatList();
@@ -1611,7 +1646,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
   }
 
   void _deleteNode(String id) {
-    if (_removeNodeRecursive(id, widget.locations)) {
+    if (_removeNodeRecursive(id, _locations)) {
       setState(() {
         if (selectedNodeId == id) {
           selectedNodeId = null;
@@ -1646,7 +1681,7 @@ class _WorldSettingsViewState extends State<WorldSettingsView> {
 
   void _syncDetailControllers() {
     if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, widget.locations);
+    final location = _getLocation(selectedNodeId!, _locations);
     if (location != null) {
       locationNameController.text = location.localName;
       locationTypeController.text = location.localType;

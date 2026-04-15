@@ -13,12 +13,15 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:intl/intl.dart";
 import "package:xml/xml.dart" as xml;
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../bin/content_manager.dart";
 import "../bin/settings_manager.dart";
+import "../presentation/providers/global_state_providers.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 final _log = Logger("BaseInfoView");
 
@@ -318,30 +321,23 @@ class BaseInfoCodec {
 
 // MARK: - View
 
-class BaseInfoView extends StatefulWidget {
-  final BaseInfoData data;
-  final String contentText;
-  final int totalWords;
-  final WordCountMode wordCountMode;
+class BaseInfoView extends ConsumerStatefulWidget {
   final ValueChanged<BaseInfoData>? onDataChanged;
 
-  const BaseInfoView({
-    super.key,
-    required this.data,
-    required this.contentText,
-    required this.totalWords,
-    required this.wordCountMode,
-    this.onDataChanged,
-  });
+  const BaseInfoView({super.key, this.onDataChanged});
 
   @override
-  State<BaseInfoView> createState() => _BaseInfoViewState();
+  ConsumerState<BaseInfoView> createState() => _BaseInfoViewState();
 }
 
-class _BaseInfoViewState extends State<BaseInfoView> {
+class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   late BaseInfoData _data;
   bool _isUpdating = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
+  ProviderSubscription<BaseInfoData>? _baseInfoSubscription;
+  ProviderSubscription<String>? _contentSubscription;
+  ProviderSubscription<AsyncValue<AppSettingsStateData>>?
+  _settingsSubscription;
 
   // 為每個文字欄位創建專用的 TextEditingController
   late final TextEditingController _bookNameController;
@@ -354,18 +350,8 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   @override
   void initState() {
     super.initState();
-    _data = BaseInfoData()
-      ..bookName = widget.data.bookName
-      ..author = widget.data.author
-      ..purpose = widget.data.purpose
-      ..toRecap = widget.data.toRecap
-      ..storyType = widget.data.storyType
-      ..intro = widget.data.intro
-      ..tags = List.from(widget.data.tags)
-      ..latestSave = widget.data.latestSave
-      ..nowWords = widget.data.nowWords;
-
-    _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
+    _data = _cloneData(ref.read(baseInfoDataProvider));
+    _syncNowWords(commitToProvider: false);
 
     // 初始化各個文字欄位的 controller
     _bookNameController = TextEditingController(text: _data.bookName);
@@ -408,53 +394,47 @@ class _BaseInfoViewState extends State<BaseInfoView> {
 
     _introController.addListener(() {
       if (_isUpdating) return;
-      _data.intro = _introController.text;
-      _notifyDataChanged();
+      _applyChange((data) => data.intro = _introController.text);
     });
-  }
 
-  @override
-  void didUpdateWidget(BaseInfoView oldWidget) {
-    super.didUpdateWidget(oldWidget);
+    _baseInfoSubscription = ref.listenManual<BaseInfoData>(
+      baseInfoDataProvider,
+      (previous, next) {
+        if (_isUpdating || previous == next) {
+          return;
+        }
+        _syncFromProvider(next);
+      },
+    );
 
-    // 檢查 data 是否變化（新建或開啟檔案時）
-    if (oldWidget.data != widget.data ||
-        oldWidget.wordCountMode != widget.wordCountMode) {
-      setState(() {
-        // 更新內部數據
-        _data = BaseInfoData()
-          ..bookName = widget.data.bookName
-          ..author = widget.data.author
-          ..purpose = widget.data.purpose
-          ..toRecap = widget.data.toRecap
-          ..storyType = widget.data.storyType
-          ..intro = widget.data.intro
-          ..tags = List.from(widget.data.tags)
-          ..latestSave = widget.data.latestSave
-          ..nowWords = widget.data.nowWords;
+    _contentSubscription = ref.listenManual<String>(
+      editorContentProvider,
+      (previous, next) {
+        if (previous == next) {
+          return;
+        }
+        _syncNowWords();
+      },
+    );
 
-        _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
-
-        // 更新所有 TextEditingController，使用 _isUpdating 標記防止循環通知
-        _isUpdating = true;
-        _bookNameController.text = _data.bookName;
-        _authorController.text = _data.author;
-        _purposeController.text = _data.purpose;
-        _toRecapController.text = _data.toRecap;
-        _storyTypeController.text = _data.storyType;
-        _introController.text = _data.intro;
-        _isUpdating = false;
-      });
-    } else if (oldWidget.contentText != widget.contentText) {
-      // 只有 contentText 變化時，重新計算字數
-      setState(() {
-        _data.recalcNowWords(widget.contentText, mode: widget.wordCountMode);
-      });
-    }
+    _settingsSubscription = ref.listenManual<AsyncValue<AppSettingsStateData>>(
+      settingsStateProvider,
+      (previous, next) {
+        final previousMode = previous?.valueOrNull?.wordCountMode;
+        final nextMode = next.valueOrNull?.wordCountMode;
+        if (previousMode == nextMode) {
+          return;
+        }
+        _syncNowWords();
+      },
+    );
   }
 
   @override
   void dispose() {
+    _baseInfoSubscription?.close();
+    _contentSubscription?.close();
+    _settingsSubscription?.close();
     _bookNameController.dispose();
     _authorController.dispose();
     _purposeController.dispose();
@@ -465,7 +445,58 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   }
 
   void _notifyDataChanged() {
-    widget.onDataChanged?.call(_data);
+    final snapshot = _cloneData(_data);
+    ref.read(baseInfoDataProvider.notifier).state = snapshot;
+    widget.onDataChanged?.call(snapshot);
+  }
+
+  BaseInfoData _cloneData(BaseInfoData source) {
+    return BaseInfoData()
+      ..bookName = source.bookName
+      ..author = source.author
+      ..purpose = source.purpose
+      ..toRecap = source.toRecap
+      ..storyType = source.storyType
+      ..intro = source.intro
+      ..tags = List.from(source.tags)
+      ..latestSave = source.latestSave
+      ..nowWords = source.nowWords;
+  }
+
+  void _syncFromProvider(BaseInfoData source) {
+    final nextData = _cloneData(source);
+    setState(() {
+      _isUpdating = true;
+      _data = nextData;
+      _bookNameController.text = _data.bookName;
+      _authorController.text = _data.author;
+      _purposeController.text = _data.purpose;
+      _toRecapController.text = _data.toRecap;
+      _storyTypeController.text = _data.storyType;
+      _introController.text = _data.intro;
+      _isUpdating = false;
+    });
+  }
+
+  void _syncNowWords({bool commitToProvider = true}) {
+    final settingsState = ref.read(settingsStateProvider).valueOrNull;
+    final contentText = ref.read(editorContentProvider);
+    final wordCountMode =
+        settingsState?.wordCountMode ?? WordCountMode.wordsAndCharacters;
+
+    setState(() {
+      _data.recalcNowWords(contentText, mode: wordCountMode);
+    });
+    if (commitToProvider) {
+      _notifyDataChanged();
+    }
+  }
+
+  void _applyChange(void Function(BaseInfoData data) update) {
+    setState(() {
+      update(_data);
+    });
+    _notifyDataChanged();
   }
 
   void _addTag(String tagText) {
@@ -489,6 +520,10 @@ class _BaseInfoViewState extends State<BaseInfoView> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(baseInfoDataProvider);
+    ref.watch(editorContentProvider);
+    ref.watch(settingsStateProvider);
+
     return Scaffold(
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -637,6 +672,8 @@ class _BaseInfoViewState extends State<BaseInfoView> {
   }
 
   Widget _buildStatsSection() {
+    final totalWords = ref.watch(totalWordsProvider);
+
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.tertiaryContainer,
@@ -676,7 +713,7 @@ class _BaseInfoViewState extends State<BaseInfoView> {
             // 總字數
             _buildStatRow(
               "總字數",
-              "${widget.totalWords} 字",
+              "$totalWords 字",
               Icons.format_list_numbered,
             ),
             const Divider(height: 16),

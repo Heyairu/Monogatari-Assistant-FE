@@ -16,13 +16,15 @@ import "dart:async";
 import "dart:convert";
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter/services.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
+import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 enum _PunctuationProfile { zhTw, zhHk, zhHans, jp, kr, enOther }
 
-class ProofReadingView extends StatefulWidget {
+class ProofReadingView extends ConsumerStatefulWidget {
   const ProofReadingView({
     super.key,
     required this.textController,
@@ -35,10 +37,10 @@ class ProofReadingView extends StatefulWidget {
   final VoidCallback? onRequestFocusEditor;
 
   @override
-  State<ProofReadingView> createState() => _ProofReadingViewState();
+  ConsumerState<ProofReadingView> createState() => _ProofReadingViewState();
 }
 
-class _ProofReadingViewState extends State<ProofReadingView> {
+class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   static const String _fillerWordAssetPath = "assets/jsons/fillerwords.json";
   static const String _punctuationProfileKey =
       "proofreading_punctuation_profile";
@@ -353,13 +355,19 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   _PunctuationNormalizationResult? _punctuationResult;
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
   Timer? _scheduledAutoCheckTimer;
+  ProviderSubscription<String>? _editorContentSubscription;
   late String _lastObservedText;
 
   @override
   void initState() {
     super.initState();
-    _lastObservedText = widget.textController.text;
-    widget.textController.addListener(_onSharedTextChanged);
+    _lastObservedText = ref.read(editorContentProvider);
+    _editorContentSubscription = ref.listenManual<String>(
+      editorContentProvider,
+      (previous, next) {
+        _onSharedTextChanged(next);
+      },
+    );
     _loadPunctuationProfile();
     _loadFillerWords();
   }
@@ -367,16 +375,9 @@ class _ProofReadingViewState extends State<ProofReadingView> {
   @override
   void didUpdateWidget(covariant ProofReadingView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.textController != widget.textController) {
-      oldWidget.textController.removeListener(_onSharedTextChanged);
-      widget.textController.addListener(_onSharedTextChanged);
-      _lastObservedText = widget.textController.text;
-      _scheduledAutoCheckTimer?.cancel();
-      _scheduledAutoCheckTimer = null;
-    }
 
     if (oldWidget.chapterSwitchVersion != widget.chapterSwitchVersion) {
-      _lastObservedText = widget.textController.text;
+      _lastObservedText = ref.read(editorContentProvider);
       _scheduledAutoCheckTimer?.cancel();
       _scheduledAutoCheckTimer = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -390,13 +391,12 @@ class _ProofReadingViewState extends State<ProofReadingView> {
 
   @override
   void dispose() {
-    widget.textController.removeListener(_onSharedTextChanged);
+    _editorContentSubscription?.close();
     _scheduledAutoCheckTimer?.cancel();
     super.dispose();
   }
 
-  void _onSharedTextChanged() {
-    final String currentText = widget.textController.text;
+  void _onSharedTextChanged(String currentText) {
     if (currentText == _lastObservedText) {
       return;
     }

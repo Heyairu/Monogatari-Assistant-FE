@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "dart:convert";
 import "dart:io";
 import "package:path_provider/path_provider.dart";
@@ -20,6 +21,7 @@ import "package:uuid/uuid.dart";
 import "package:xml/xml.dart" as xml;
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 final _log = Logger("PlanView");
 
@@ -366,23 +368,19 @@ class PlanCodec {
   }
 }
 
-class PlanView extends StatefulWidget {
-  final List<ForeshadowItem> foreshadowItems;
-  final List<UpdatePlanItem> updatePlanItems;
-  final void Function(List<ForeshadowItem>, List<UpdatePlanItem>) onChanged;
+class PlanView extends ConsumerStatefulWidget {
+  final void Function(List<ForeshadowItem>, List<UpdatePlanItem>)? onChanged;
 
   const PlanView({
     super.key,
-    required this.foreshadowItems,
-    required this.updatePlanItems,
-    required this.onChanged,
+    this.onChanged,
   });
 
   @override
-  State<PlanView> createState() => _PlanViewState();
+  ConsumerState<PlanView> createState() => _PlanViewState();
 }
 
-class _PlanViewState extends State<PlanView> {
+class _PlanViewState extends ConsumerState<PlanView> {
   String? selectedForeshadowId;
   String? selectedUpdatePlanId;
   String? selectedFolderId;
@@ -396,6 +394,11 @@ class _PlanViewState extends State<PlanView> {
   String? _draggingUpdatePlanId;
   bool _showRootDirectory = false;
   List<String> _rootLayerOrder = [];
+  List<ForeshadowItem> _foreshadowItems = [];
+  List<UpdatePlanItem> _updatePlanItems = [];
+  bool _isCommittingLocalChange = false;
+  ProviderSubscription<List<ForeshadowItem>>? _foreshadowSubscription;
+  ProviderSubscription<List<UpdatePlanItem>>? _updatePlanSubscription;
 
   final TextEditingController foreshadowTitleController =
       TextEditingController();
@@ -417,18 +420,46 @@ class _PlanViewState extends State<PlanView> {
   @override
   void initState() {
     super.initState();
+    _foreshadowItems = _cloneForeshadowItems(ref.read(foreshadowDataProvider));
+    _updatePlanItems = _cloneUpdatePlanItems(ref.read(updatePlanDataProvider));
+
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
     foreshadowNoteController.addListener(_onForeshadowNoteChanged);
     updatePlanTitleController.addListener(_onUpdatePlanTitleChanged);
     updatePlanNoteController.addListener(_onUpdatePlanNoteChanged);
     inspirationTitleController.addListener(_onInspirationTitleChanged);
     inspirationContentController.addListener(_onInspirationContentChanged);
+
+    _foreshadowSubscription = ref.listenManual<List<ForeshadowItem>>(
+      foreshadowDataProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
+        }
+        setState(() {
+          _foreshadowItems = _cloneForeshadowItems(next);
+          _syncSelectionAfterDataUpdate();
+        });
+      },
+    );
+
+    _updatePlanSubscription = ref.listenManual<List<UpdatePlanItem>>(
+      updatePlanDataProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
+        }
+        setState(() {
+          _updatePlanItems = _cloneUpdatePlanItems(next);
+          _syncSelectionAfterDataUpdate();
+        });
+      },
+    );
+
     _loadInspirationFromDisk();
   }
 
-  @override
-  void didUpdateWidget(PlanView oldWidget) {
-    super.didUpdateWidget(oldWidget);
+  void _syncSelectionAfterDataUpdate() {
     if (_selectedForeshadow == null && selectedForeshadowId != null) {
       selectedForeshadowId = null;
       _syncForeshadowControllers();
@@ -441,6 +472,9 @@ class _PlanViewState extends State<PlanView> {
 
   @override
   void dispose() {
+    _foreshadowSubscription?.close();
+    _updatePlanSubscription?.close();
+
     foreshadowTitleController.removeListener(_onForeshadowTitleChanged);
     foreshadowNoteController.removeListener(_onForeshadowNoteChanged);
     updatePlanTitleController.removeListener(_onUpdatePlanTitleChanged);
@@ -459,7 +493,7 @@ class _PlanViewState extends State<PlanView> {
 
   ForeshadowItem? get _selectedForeshadow {
     if (selectedForeshadowId == null) return null;
-    for (final item in widget.foreshadowItems) {
+    for (final item in _foreshadowItems) {
       if (item.id == selectedForeshadowId) return item;
     }
     return null;
@@ -467,7 +501,7 @@ class _PlanViewState extends State<PlanView> {
 
   UpdatePlanItem? get _selectedUpdatePlan {
     if (selectedUpdatePlanId == null) return null;
-    for (final item in widget.updatePlanItems) {
+    for (final item in _updatePlanItems) {
       if (item.id == selectedUpdatePlanId) return item;
     }
     return null;
@@ -535,7 +569,40 @@ class _PlanViewState extends State<PlanView> {
   }
 
   void _notifyProjectChanged() {
-    widget.onChanged(widget.foreshadowItems, widget.updatePlanItems);
+    final foreshadowSnapshot = _cloneForeshadowItems(_foreshadowItems);
+    final updatePlanSnapshot = _cloneUpdatePlanItems(_updatePlanItems);
+
+    _isCommittingLocalChange = true;
+    ref.read(foreshadowDataProvider.notifier).state = foreshadowSnapshot;
+    ref.read(updatePlanDataProvider.notifier).state = updatePlanSnapshot;
+    widget.onChanged?.call(foreshadowSnapshot, updatePlanSnapshot);
+    _isCommittingLocalChange = false;
+  }
+
+  List<ForeshadowItem> _cloneForeshadowItems(List<ForeshadowItem> source) {
+    return source
+        .map(
+          (item) => ForeshadowItem(
+            id: item.id,
+            title: item.title,
+            note: item.note,
+            isRevealed: item.isRevealed,
+          ),
+        )
+        .toList();
+  }
+
+  List<UpdatePlanItem> _cloneUpdatePlanItems(List<UpdatePlanItem> source) {
+    return source
+        .map(
+          (item) => UpdatePlanItem(
+            id: item.id,
+            title: item.title,
+            note: item.note,
+            isDone: item.isDone,
+          ),
+        )
+        .toList();
   }
 
   void _syncForeshadowControllers() {
@@ -660,7 +727,7 @@ class _PlanViewState extends State<PlanView> {
     if (trimmed.isEmpty) return;
     setState(() {
       final item = ForeshadowItem(title: trimmed);
-      widget.foreshadowItems.add(item);
+      _foreshadowItems.add(item);
       selectedForeshadowId = item.id;
       _syncForeshadowControllers();
     });
@@ -668,10 +735,10 @@ class _PlanViewState extends State<PlanView> {
   }
 
   void _deleteForeshadow(String id) {
-    final index = widget.foreshadowItems.indexWhere((e) => e.id == id);
+    final index = _foreshadowItems.indexWhere((e) => e.id == id);
     if (index == -1) return;
     setState(() {
-      widget.foreshadowItems.removeAt(index);
+      _foreshadowItems.removeAt(index);
       if (selectedForeshadowId == id) {
         selectedForeshadowId = null;
         _syncForeshadowControllers();
@@ -701,21 +768,21 @@ class _PlanViewState extends State<PlanView> {
     String targetId,
     bool isBefore,
   ) {
-    final draggedIndex = widget.foreshadowItems.indexWhere(
+    final draggedIndex = _foreshadowItems.indexWhere(
       (e) => e.id == draggedId,
     );
-    final targetIndex = widget.foreshadowItems.indexWhere(
+    final targetIndex = _foreshadowItems.indexWhere(
       (e) => e.id == targetId,
     );
     if (draggedIndex == -1 || targetIndex == -1) return;
 
-    final draggedItem = widget.foreshadowItems.removeAt(draggedIndex);
+    final draggedItem = _foreshadowItems.removeAt(draggedIndex);
     var adjustedTarget = targetIndex;
     if (draggedIndex < targetIndex) {
       adjustedTarget -= 1;
     }
     final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
-    widget.foreshadowItems.insert(insertIndex, draggedItem);
+    _foreshadowItems.insert(insertIndex, draggedItem);
   }
 
   void _handleForeshadowDrop(
@@ -737,7 +804,7 @@ class _PlanViewState extends State<PlanView> {
     if (trimmed.isEmpty) return;
     setState(() {
       final item = UpdatePlanItem(title: trimmed);
-      widget.updatePlanItems.add(item);
+      _updatePlanItems.add(item);
       selectedUpdatePlanId = item.id;
       _syncUpdatePlanControllers();
     });
@@ -745,10 +812,10 @@ class _PlanViewState extends State<PlanView> {
   }
 
   void _deleteUpdatePlan(String id) {
-    final index = widget.updatePlanItems.indexWhere((e) => e.id == id);
+    final index = _updatePlanItems.indexWhere((e) => e.id == id);
     if (index == -1) return;
     setState(() {
-      widget.updatePlanItems.removeAt(index);
+      _updatePlanItems.removeAt(index);
       if (selectedUpdatePlanId == id) {
         selectedUpdatePlanId = null;
         _syncUpdatePlanControllers();
@@ -778,21 +845,21 @@ class _PlanViewState extends State<PlanView> {
     String targetId,
     bool isBefore,
   ) {
-    final draggedIndex = widget.updatePlanItems.indexWhere(
+    final draggedIndex = _updatePlanItems.indexWhere(
       (e) => e.id == draggedId,
     );
-    final targetIndex = widget.updatePlanItems.indexWhere(
+    final targetIndex = _updatePlanItems.indexWhere(
       (e) => e.id == targetId,
     );
     if (draggedIndex == -1 || targetIndex == -1) return;
 
-    final draggedItem = widget.updatePlanItems.removeAt(draggedIndex);
+    final draggedItem = _updatePlanItems.removeAt(draggedIndex);
     var adjustedTarget = targetIndex;
     if (draggedIndex < targetIndex) {
       adjustedTarget -= 1;
     }
     final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
-    widget.updatePlanItems.insert(insertIndex, draggedItem);
+    _updatePlanItems.insert(insertIndex, draggedItem);
   }
 
   void _handleUpdatePlanDrop(
@@ -1214,13 +1281,13 @@ class _PlanViewState extends State<PlanView> {
                 borderRadius: BorderRadius.circular(8),
                 color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
-              child: widget.foreshadowItems.isEmpty
+              child: _foreshadowItems.isEmpty
                   ? const Center(child: Text("尚無伏筆，請新增項目"))
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
-                      itemCount: widget.foreshadowItems.length,
+                      itemCount: _foreshadowItems.length,
                       itemBuilder: (context, index) {
-                        final item = widget.foreshadowItems[index];
+                        final item = _foreshadowItems[index];
                         final isSelected = item.id == selectedForeshadowId;
                         return DraggableCardNode<_ForeshadowDragData>(
                           key: ValueKey("foreshadow:${item.id}"),
@@ -1371,13 +1438,13 @@ class _PlanViewState extends State<PlanView> {
                 borderRadius: BorderRadius.circular(8),
                 color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
-              child: widget.updatePlanItems.isEmpty
+              child: _updatePlanItems.isEmpty
                   ? const Center(child: Text("尚無更新計畫，請新增項目"))
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
-                      itemCount: widget.updatePlanItems.length,
+                      itemCount: _updatePlanItems.length,
                       itemBuilder: (context, index) {
-                        final item = widget.updatePlanItems[index];
+                        final item = _updatePlanItems[index];
                         final isSelected = item.id == selectedUpdatePlanId;
                         return DraggableCardNode<_UpdatePlanDragData>(
                           key: ValueKey("update-plan:${item.id}"),

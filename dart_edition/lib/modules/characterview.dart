@@ -25,8 +25,10 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 final _log = Logger("CharacterView");
 
@@ -1167,19 +1169,18 @@ class CharacterCodec {
   }
 }
 
-class CharacterView extends StatefulWidget {
-  final Map<String, Map<String, dynamic>>? initialData;
+class CharacterView extends ConsumerStatefulWidget {
   final ValueChanged<Map<String, Map<String, dynamic>>>? onDataChanged;
 
-  const CharacterView({super.key, this.initialData, this.onDataChanged});
+  const CharacterView({super.key, this.onDataChanged});
 
   @override
-  State<CharacterView> createState() => _CharacterViewState();
+  ConsumerState<CharacterView> createState() => _CharacterViewState();
 }
 
 // MARK: - 角色資料控制項
 
-class _CharacterViewState extends State<CharacterView>
+class _CharacterViewState extends ConsumerState<CharacterView>
     with SingleTickerProviderStateMixin {
   // 拖動相關狀態
   bool _isDragging = false;
@@ -1310,6 +1311,8 @@ class _CharacterViewState extends State<CharacterView>
 
   bool _isLoading = false;
   Timer? _debounceTimer;
+  ProviderSubscription<Map<String, Map<String, dynamic>>>? _characterDataSubscription;
+  bool _isCommittingLocalChange = false;
 
   void _markAsModified() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
@@ -1355,63 +1358,49 @@ class _CharacterViewState extends State<CharacterView>
       }
     });
 
-    // 載入初始資料
-    if (widget.initialData != null && widget.initialData!.isNotEmpty) {
-      characterData = Map<String, Map<String, dynamic>>.from(
-        widget.initialData!,
-      );
-      characters = characterData.keys.toList();
+    // 從提供者讀取初始資料（不直接提交，避免生命週期違規）
+    characterData = Map<String, Map<String, dynamic>>.from(
+      ref.read(characterDataProvider),
+    );
+    characters = characterData.keys.toList();
 
-      // 如果有角色,選取第一個
-      if (characters.isNotEmpty) {
-        selectedCharacterIndex = 0;
-        selectedCharacter = characters[0];
-        _loadCharacterData(selectedCharacter!);
-      }
+    // 如果有角色，選取第一個
+    if (characters.isNotEmpty) {
+      selectedCharacterIndex = 0;
+      selectedCharacter = characters[0];
+      _loadCharacterData(selectedCharacter!);
     }
-  }
 
-  @override
-  void didUpdateWidget(covariant CharacterView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialData != oldWidget.initialData) {
-      if (widget.initialData != null && widget.initialData!.isNotEmpty) {
-        characterData = Map<String, Map<String, dynamic>>.from(
-          widget.initialData!,
-        );
-        characters = characterData.keys.toList();
+    // 設置提供者訂閱以同步外部變化
+    _characterDataSubscription =
+        ref.listenManual<Map<String, Map<String, dynamic>>>(
+      characterDataProvider,
+      (prev, next) {
+        if (_isLoading || _isCommittingLocalChange) {
+          return;
+        }
+        if (mounted) {
+          setState(() {
+          // 同步外部提供者更新
+          characterData = Map<String, Map<String, dynamic>>.from(next);
+          characters = characterData.keys.toList();
 
-        if (characters.isNotEmpty) {
-          // 嘗試保留目前的選擇
-          int newIndex = -1;
-          if (selectedCharacter != null) {
-            newIndex = characters.indexOf(selectedCharacter!);
-          }
-
-          if (newIndex >= 0) {
-            selectedCharacterIndex = newIndex;
-            // 不需要重新載入資料，因為資料已經更新且編輯器內容應保留或由 _saveCurrentCharacterData 同步
-            // 不過如果外部資料變更了（例如從檔案載入），這裡可能需要重新載入
-            // 如果是自動儲存觸發的更新，這裡的資料其實就是剛才儲存的
-          } else {
-            // 如果當前選中的角色不在新列表中，選取第一個
+          if (selectedCharacter != null &&
+              characters.contains(selectedCharacter)) {
+            // 保留當前選擇
+            _loadCharacterData(selectedCharacter!);
+          } else if (characters.isNotEmpty) {
+            // 選取第一個
             selectedCharacterIndex = 0;
             selectedCharacter = characters[0];
             _loadCharacterData(selectedCharacter!);
+          } else {
+            _clearAllFields();
           }
-        } else {
-          selectedCharacterIndex = null;
-          selectedCharacter = null;
-          _clearAllFields();
+          });
         }
-      } else {
-        characterData = {};
-        characters = [];
-        selectedCharacterIndex = null;
-        selectedCharacter = null;
-        _clearAllFields();
-      }
-    }
+      },
+    );
   }
 
   @override
@@ -1420,6 +1409,7 @@ class _CharacterViewState extends State<CharacterView>
       _debounceTimer!.cancel();
       _saveCurrentCharacterData();
     }
+    _characterDataSubscription?.close();
     _tabController.dispose();
     _newCharacterController.dispose();
 
@@ -2480,10 +2470,18 @@ class _CharacterViewState extends State<CharacterView>
     data["fearItemList"] = List<String>.from(fearItemList);
     data["familiarItemList"] = List<String>.from(familiarItemList);
 
-    characterData[selectedCharacter!] = data;
+    final nextCharacterData = Map<String, Map<String, dynamic>>.from(
+      characterData,
+    );
+    nextCharacterData[selectedCharacter!] = data;
 
-    // 通知外部資料已改變
-    widget.onDataChanged?.call(characterData);
+    characterData = nextCharacterData;
+
+    // 寫入提供者並通知外部。標記本地提交，避免立刻被 provider 回流重載輸入框。
+    _isCommittingLocalChange = true;
+    ref.read(characterDataProvider.notifier).state = nextCharacterData;
+    widget.onDataChanged?.call(nextCharacterData);
+    _isCommittingLocalChange = false;
   }
 
   // 載入角色資料

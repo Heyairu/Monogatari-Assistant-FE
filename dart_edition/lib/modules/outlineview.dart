@@ -15,8 +15,10 @@
 import "package:flutter/material.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../presentation/providers/project_state_providers.dart";
 
 final _log = Logger("OutlineView");
 
@@ -582,24 +584,25 @@ class OutlineCodec {
 }
 
 // MARK: - OutlineAdjustView
-class OutlineAdjustView extends StatefulWidget {
-  final List<StorylineData> storylines;
-  final ValueChanged<List<StorylineData>> onStorylineChanged;
+class OutlineAdjustView extends ConsumerStatefulWidget {
+  final ValueChanged<List<StorylineData>>? onStorylineChanged;
 
   const OutlineAdjustView({
     super.key,
-    required this.storylines,
     required this.onStorylineChanged,
   });
 
   @override
-  State<OutlineAdjustView> createState() => _OutlineAdjustViewState();
+  ConsumerState<OutlineAdjustView> createState() => _OutlineAdjustViewState();
 }
 
-class _OutlineAdjustViewState extends State<OutlineAdjustView> {
+class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   String? selectedStorylineID;
   String? selectedEventID;
   String? selectedSceneID;
+  List<StorylineData> _storylines = [];
+  bool _isCommittingLocalChange = false;
+  ProviderSubscription<List<StorylineData>>? _outlineSubscription;
 
   String? editingStorylineID;
   String? editingEventID;
@@ -653,7 +656,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   static const double _scrollEdgeThreshold = 100.0;
   static const double _listScrollEdgeThreshold = 20.0;
 
-  List<StorylineData> get storylines => widget.storylines;
+  List<StorylineData> get storylines => _storylines;
 
   int? get selectedStorylineIndex {
     if (selectedStorylineID == null) return null;
@@ -680,6 +683,7 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   @override
   void initState() {
     super.initState();
+    _storylines = _cloneStorylines(ref.read(outlineDataProvider));
     _initializeSelection();
 
     // Add listeners
@@ -698,6 +702,19 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
     sceneFocusController.addListener(_onSceneFocusChanged);
     sceneConflictController.addListener(_onSceneConflictChanged);
     sceneMemoController.addListener(_onSceneMemoChanged);
+
+    _outlineSubscription = ref.listenManual<List<StorylineData>>(
+      outlineDataProvider,
+      (previous, next) {
+        if (_isCommittingLocalChange) {
+          return;
+        }
+        setState(() {
+          _storylines = _cloneStorylines(next);
+          _initializeSelection();
+        });
+      },
+    );
   }
 
   void _onStorylineNameChanged() {
@@ -861,16 +878,8 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   @override
-  void didUpdateWidget(OutlineAdjustView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 當外部數據更新時，重新初始化選擇
-    if (widget.storylines != oldWidget.storylines) {
-      _initializeSelection();
-    }
-  }
-
-  @override
   void dispose() {
+    _outlineSubscription?.close();
     storylineNameController.removeListener(_onStorylineNameChanged);
     storylineTypeController.removeListener(_onStorylineTypeChanged);
     storylineConflictController.removeListener(_onStorylineConflictChanged);
@@ -1028,7 +1037,55 @@ class _OutlineAdjustViewState extends State<OutlineAdjustView> {
   }
 
   void _notifyChange() {
-    widget.onStorylineChanged(storylines);
+    final snapshot = _cloneStorylines(storylines);
+    _isCommittingLocalChange = true;
+    ref.read(outlineDataProvider.notifier).state = snapshot;
+    widget.onStorylineChanged?.call(snapshot);
+    _isCommittingLocalChange = false;
+  }
+
+  List<StorylineData> _cloneStorylines(List<StorylineData> source) {
+    return source
+        .map(
+          (sl) => StorylineData(
+            storylineName: sl.storylineName,
+            storylineType: sl.storylineType,
+            chapterUUID: sl.chapterUUID,
+            memo: sl.memo,
+            conflictPoint: sl.conflictPoint,
+            people: List<String>.from(sl.people),
+            item: List<String>.from(sl.item),
+            scenes: sl.scenes
+                .map(
+                  (ev) => StoryEventData(
+                    storyEvent: ev.storyEvent,
+                    storyEventUUID: ev.storyEventUUID,
+                    memo: ev.memo,
+                    conflictPoint: ev.conflictPoint,
+                    people: List<String>.from(ev.people),
+                    item: List<String>.from(ev.item),
+                    scenes: ev.scenes
+                        .map(
+                          (sc) => SceneData(
+                            sceneName: sc.sceneName,
+                            sceneUUID: sc.sceneUUID,
+                            time: sc.time,
+                            location: sc.location,
+                            focusPoint: sc.focusPoint,
+                            conflictPoint: sc.conflictPoint,
+                            memo: sc.memo,
+                            people: List<String>.from(sc.people),
+                            item: List<String>.from(sc.item),
+                            doingThings: List<String>.from(sc.doingThings),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                )
+                .toList(),
+          ),
+        )
+        .toList();
   }
 
   // MARK: - 自動滾動方法
