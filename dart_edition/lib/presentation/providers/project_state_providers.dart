@@ -99,6 +99,10 @@ final totalWordsProvider = StateProvider<int>((ref) {
   return 0;
 });
 
+final currentProjectFileProvider = StateProvider<file_module.ProjectFile?>((ref) {
+  return null;
+});
+
 final projectDataProvider = Provider<file_module.ProjectData>((ref) {
   return file_module.ProjectData(
     baseInfoData: ref.watch(baseInfoDataProvider),

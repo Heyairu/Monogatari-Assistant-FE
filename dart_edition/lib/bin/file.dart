@@ -157,17 +157,30 @@ class _SystemBridge {
       );
     }
 
-    if (result != null && result.files.single.bytes != null) {
-      final file = result.files.single;
-      final content = utf8.decode(file.bytes!);
-      return (
-        name: file.name,
-        path: file.path,
-        uri: file.identifier,
-        content: content,
-      );
+    if (result == null) {
+      return null;
     }
-    return null;
+
+    final file = result.files.single;
+    final filePath = file.path?.trim();
+
+    String? content;
+    if (file.bytes != null) {
+      content = utf8.decode(file.bytes!);
+    } else if (filePath != null && filePath.isNotEmpty) {
+      content = await _FileIO.read(filePath);
+    }
+
+    if (content == null) {
+      return null;
+    }
+
+    return (
+      name: file.name,
+      path: filePath,
+      uri: file.identifier,
+      content: content,
+    );
   }
 
   /// 顯示儲存專案對話框
@@ -1633,6 +1646,38 @@ class FileService {
         message.contains("errno = 13");
   }
 
+  static bool _looksLikeLocalPath(String value) {
+    return value.startsWith("/") ||
+        value.startsWith("\\") ||
+        RegExp(r"^[a-zA-Z]:[\\/]").hasMatch(value);
+  }
+
+  static String? _normalizeLocalPathOrNull(String? rawPath) {
+    if (rawPath == null) {
+      return null;
+    }
+
+    final trimmed = rawPath.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.scheme.toLowerCase() == "file") {
+      try {
+        return uri.toFilePath(windows: Platform.isWindows);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (_looksLikeLocalPath(trimmed)) {
+      return trimmed;
+    }
+
+    return null;
+  }
+
   /// 建立平台持久化存取 token（目前 macOS 會回傳 security-scoped bookmark）
   static Future<String?> createPersistentAccessToken(String? filePath) async {
     if (filePath == null || filePath.trim().isEmpty) {
@@ -1641,7 +1686,11 @@ class FileService {
     if (!Platform.isMacOS) {
       return null;
     }
-    return await _SystemBridge.createSecurityScopedBookmark(filePath.trim());
+    final normalizedPath = _normalizeLocalPathOrNull(filePath);
+    if (normalizedPath == null || normalizedPath.isEmpty) {
+      return null;
+    }
+    return await _SystemBridge.createSecurityScopedBookmark(normalizedPath);
   }
 
   // --- 專案生命週期 ---
@@ -1660,9 +1709,17 @@ class FileService {
     try {
       final result = await _SystemBridge.pickProjectFile();
       if (result != null) {
+        final normalizedPath =
+            _normalizeLocalPathOrNull(result.path) ??
+            _normalizeLocalPathOrNull(result.uri);
+        final resolvedFileName = result.name.trim().isNotEmpty
+            ? result.name.trim()
+            : (normalizedPath != null
+                  ? path.basename(normalizedPath)
+                  : "$defaultFileName$projectExtension");
         return ProjectFile(
-          fileName: result.name,
-          filePath: result.path,
+          fileName: resolvedFileName,
+          filePath: normalizedPath,
           uri: result.uri,
           content: result.content,
         );
@@ -1678,7 +1735,8 @@ class FileService {
     String filePath, {
     String? accessToken,
   }) async {
-    final normalizedPath = filePath.trim();
+    final normalizedPath =
+        _normalizeLocalPathOrNull(filePath) ?? filePath.trim();
     if (normalizedPath.isEmpty) {
       throw FileException("檔案路徑不可為空");
     }
@@ -1755,10 +1813,13 @@ class FileService {
         }
       }
 
-      if (projectFile.filePath != null) {
+      final normalizedPath = _normalizeLocalPathOrNull(projectFile.filePath);
+
+      if (normalizedPath != null) {
+        projectFile.filePath = normalizedPath;
         // 儲存到現有路徑
         try {
-          await _FileIO.write(projectFile.filePath!, projectFile.content);
+          await _FileIO.write(normalizedPath, projectFile.content);
           return projectFile;
         } catch (e) {
           // 在移動設備上，如果直接寫入失敗（常見於外部存儲權限問題），則退回到另存新檔
@@ -1780,24 +1841,41 @@ class FileService {
   /// 另存新檔
   static Future<ProjectFile> saveProjectAs(ProjectFile projectFile) async {
     try {
-      final outputFile = await _SystemBridge.saveProjectFileDialog(
+      final outputFileRaw = await _SystemBridge.saveProjectFileDialog(
         defaultName: "${projectFile.nameWithoutExtension}$projectExtension",
         content: projectFile.content,
       );
 
       // 如果使用者取消儲存
-      if (outputFile == null) {
+      if (outputFileRaw == null) {
         throw FileException("另存檔案已取消");
       }
 
-      // 在桌面平台上仍需要寫入檔案 (SystemBridge 可能只回傳路徑)
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        await _FileIO.write(outputFile, projectFile.content);
+      final outputFile = outputFileRaw.trim();
+      if (outputFile.isEmpty) {
+        throw FileException("另存檔案失敗: 無效檔案路徑");
       }
 
+      final normalizedPath =
+          _normalizeLocalPathOrNull(outputFile) ?? outputFile;
+
+      // 在桌面平台上仍需要寫入檔案 (SystemBridge 可能只回傳路徑)
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await _FileIO.write(normalizedPath, projectFile.content);
+      }
+
+      final resolvedFileName = _looksLikeLocalPath(normalizedPath)
+          ? path.basenameWithoutExtension(normalizedPath)
+          : (projectFile.fileName.trim().isNotEmpty
+                ? projectFile.fileName.trim()
+                : defaultFileName);
+
       return ProjectFile(
-        fileName: path.basenameWithoutExtension(outputFile),
-        filePath: outputFile,
+        fileName: resolvedFileName,
+        filePath: _normalizeLocalPathOrNull(normalizedPath),
+        uri: _normalizeLocalPathOrNull(normalizedPath) == null
+            ? normalizedPath
+            : null,
         content: projectFile.content,
       );
     } catch (e) {

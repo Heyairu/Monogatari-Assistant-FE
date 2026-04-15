@@ -444,10 +444,12 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     super.dispose();
   }
 
-  void _notifyDataChanged() {
+  void _notifyDataChanged({bool notifyParent = true}) {
     final snapshot = _cloneData(_data);
     ref.read(baseInfoDataProvider.notifier).state = snapshot;
-    widget.onDataChanged?.call(snapshot);
+    if (notifyParent) {
+      widget.onDataChanged?.call(snapshot);
+    }
   }
 
   BaseInfoData _cloneData(BaseInfoData source) {
@@ -468,14 +470,44 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     setState(() {
       _isUpdating = true;
       _data = nextData;
-      _bookNameController.text = _data.bookName;
-      _authorController.text = _data.author;
-      _purposeController.text = _data.purpose;
-      _toRecapController.text = _data.toRecap;
-      _storyTypeController.text = _data.storyType;
-      _introController.text = _data.intro;
+      _syncControllerText(_bookNameController, _data.bookName);
+      _syncControllerText(_authorController, _data.author);
+      _syncControllerText(_purposeController, _data.purpose);
+      _syncControllerText(_toRecapController, _data.toRecap);
+      _syncControllerText(_storyTypeController, _data.storyType);
+      _syncControllerText(_introController, _data.intro);
       _isUpdating = false;
     });
+  }
+
+  void _syncControllerText(TextEditingController controller, String nextText) {
+    if (controller.text == nextText) {
+      return;
+    }
+
+    final previousSelection = controller.selection;
+    final hasValidSelection =
+        previousSelection.baseOffset >= 0 && previousSelection.extentOffset >= 0;
+
+    if (!hasValidSelection) {
+      controller.value = TextEditingValue(
+        text: nextText,
+        selection: TextSelection.collapsed(offset: nextText.length),
+      );
+      return;
+    }
+
+    final int baseOffset = previousSelection.baseOffset > nextText.length
+        ? nextText.length
+        : previousSelection.baseOffset;
+    final int extentOffset = previousSelection.extentOffset > nextText.length
+        ? nextText.length
+        : previousSelection.extentOffset;
+
+    controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection(baseOffset: baseOffset, extentOffset: extentOffset),
+    );
   }
 
   void _syncNowWords({bool commitToProvider = true}) {
@@ -488,7 +520,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       _data.recalcNowWords(contentText, mode: wordCountMode);
     });
     if (commitToProvider) {
-      _notifyDataChanged();
+      _notifyDataChanged(notifyParent: false);
     }
   }
 
@@ -630,6 +662,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         const SizedBox(height: 8),
         TextField(
           controller: controller,
+          selectAllOnFocus: false,
           decoration: InputDecoration(
             hintText: hint,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -659,6 +692,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         const SizedBox(height: 8),
         TextField(
           controller: _introController,
+          selectAllOnFocus: false,
           decoration: InputDecoration(
             hintText: "輸入作品簡介",
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

@@ -296,8 +296,12 @@ class _ContentViewState extends ConsumerState<ContentView>
         current.copyWith(cursorOffset: value);
   }
 
+  ProjectFile? get currentProject => ref.read(currentProjectFileProvider);
+  set currentProject(ProjectFile? value) {
+    ref.read(currentProjectFileProvider.notifier).state = value;
+  }
+
   // 檔案狀態
-  ProjectFile? currentProject;
   bool showingError = false;
   String errorMessage = "";
   bool isLoading = false;
@@ -1786,7 +1790,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       _markAsSaved();
       setState(() => _lastSavedTime = null);
 
-      unawaited(_recordRecentProject(projectFile));
+      await _recordRecentProject(projectFile);
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -1855,7 +1859,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       _markAsSaved();
       setState(() => _lastSavedTime = null);
 
-      unawaited(_recordRecentProject(projectFile));
+      await _recordRecentProject(projectFile);
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -1885,7 +1889,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           );
       setState(() => currentProject = savedProject);
       _markAsSaved();
-      unawaited(_recordRecentProject(savedProject));
+      await _recordRecentProject(savedProject);
       _showMessage("專案儲存成功！");
     } catch (e) {
       _showError("儲存專案失敗：${e.toString()}");
@@ -1904,7 +1908,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           );
       setState(() => currentProject = savedProject);
       _markAsSaved();
-      unawaited(_recordRecentProject(savedProject));
+      await _recordRecentProject(savedProject);
       _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
     } catch (e) {
       _showError("另存專案失敗：${e.toString()}");
@@ -1912,21 +1916,25 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Future<void> _recordRecentProject(ProjectFile projectFile) async {
-    var persistedAccessToken = projectFile.uri;
-    if (projectFile.filePath != null) {
-      final generatedToken = await FileService.createPersistentAccessToken(
-        projectFile.filePath,
-      );
-      if (generatedToken != null && generatedToken.trim().isNotEmpty) {
-        persistedAccessToken = generatedToken;
+    try {
+      var persistedAccessToken = projectFile.uri;
+      if (projectFile.filePath != null) {
+        final generatedToken = await FileService.createPersistentAccessToken(
+          projectFile.filePath,
+        );
+        if (generatedToken != null && generatedToken.trim().isNotEmpty) {
+          persistedAccessToken = generatedToken;
+        }
       }
-    }
 
-    await ref.read(settingsStateProvider.notifier).addRecentProject(
-      fileName: projectFile.fullFileName,
-      filePath: projectFile.filePath,
-      uri: persistedAccessToken,
-    );
+      await ref.read(settingsStateProvider.notifier).addRecentProject(
+        fileName: projectFile.fullFileName,
+        filePath: projectFile.filePath,
+        uri: persistedAccessToken,
+      );
+    } catch (e) {
+      debugPrint("Failed to persist recent project state: $e");
+    }
   }
 
   Future<void> _exportAs(String extension) async {
