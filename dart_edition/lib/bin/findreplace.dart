@@ -10,6 +10,7 @@
  * Commercial use allowed under conditions described in Section 1;
  */
 
+import "package:code_text_field/code_text_field.dart";
 import "package:flutter/material.dart";
 import "package:flutter/foundation.dart"; // Added for compute
 
@@ -35,101 +36,207 @@ class FindReplaceOptions {
 // ==================== 自定義 UI Controller ====================
 
 // 自定義 TextEditingController，支持高亮顯示
-class HighlightTextEditingController extends TextEditingController {
+class HighlightTextEditingController extends CodeController {
+  HighlightTextEditingController({super.text});
+
   List<TextSelection> searchMatches = [];
   int currentMatchIndex = -1;
-  Color? highlightColor;
-  Color? currentHighlightColor;
+  List<TextSelection> punctuationMatches = [];
+  List<TextSelection> fillerWordMatches = [];
+
+  Color currentMatchColor = Colors.red;
+  Color otherMatchColor = Colors.orange;
+  Color punctuationColor = Colors.purple;
+  Color fillerWordColor = Colors.blue;
 
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
     TextStyle? style,
-    required bool withComposing,
+    bool? withComposing,
   }) {
-    if (searchMatches.isEmpty) {
+    // Highlighter strategy:
+    // 1) split text by all highlight boundaries,
+    // 2) apply a single color per segment by priority:
+    // current search(red) > other search(orange) > punctuation(purple) > filler(blue).
+    // Limitation: this is color-only rendering and does not support multi-layer blends
+    // inside the same segment.
+    final List<TextSelection> normalizedSearch = _normalizeMatches(
+      searchMatches,
+    );
+    final List<TextSelection> normalizedPunctuation = _normalizeMatches(
+      punctuationMatches,
+    );
+    final List<TextSelection> normalizedFiller = _normalizeMatches(
+      fillerWordMatches,
+    );
+
+    if (normalizedSearch.isEmpty &&
+        normalizedPunctuation.isEmpty &&
+        normalizedFiller.isEmpty) {
       return TextSpan(text: text, style: style);
     }
 
-    final List<TextSpan> spans = [];
-    int lastEnd = 0;
+    final int textLength = text.length;
+    final Set<int> boundaries = <int>{0, textLength};
+    for (final TextSelection match in normalizedSearch) {
+      boundaries.add(match.start);
+      boundaries.add(match.end);
+    }
+    for (final TextSelection match in normalizedPunctuation) {
+      boundaries.add(match.start);
+      boundaries.add(match.end);
+    }
+    for (final TextSelection match in normalizedFiller) {
+      boundaries.add(match.start);
+      boundaries.add(match.end);
+    }
+    final List<int> sortedBoundaries = boundaries.toList()..sort();
 
-    // 獲取主題顏色設定
-    final colorScheme = Theme.of(context).colorScheme;
+    final TextSelection? currentMatch =
+        currentMatchIndex >= 0 && currentMatchIndex < normalizedSearch.length
+        ? normalizedSearch[currentMatchIndex]
+        : null;
 
-    // 定義高亮顏色 - 使用高對比度顏色
-    // 當前選中項：使用 Tertiary Container 作為背景，這是 Material 3 推薦的對比色用法
-    final Color activeBgColor =
-        currentHighlightColor ?? colorScheme.tertiaryContainer;
-
-    // 當前選中項文字顏色：使用對應的 On Color 以確保最大可讀性
-    final Color? activeFgColor = currentHighlightColor != null
-        ? null
-        : colorScheme.onTertiaryContainer;
-
-    // 其他匹配項：使用 Secondary Container，較柔和但仍清晰可見
-    final Color inactiveBgColor =
-        highlightColor ?? colorScheme.secondaryContainer;
-
-    // 其他匹配項文字顏色
-    final Color? inactiveFgColor = highlightColor != null
-        ? null
-        : colorScheme.onSecondaryContainer;
-
-    for (int i = 0; i < searchMatches.length; i++) {
-      final match = searchMatches[i];
-
-      // 添加匹配項之前的普通文本
-      if (match.start > lastEnd) {
-        spans.add(
-          TextSpan(text: text.substring(lastEnd, match.start), style: style),
-        );
+    final List<TextSpan> spans = <TextSpan>[];
+    for (int i = 0; i < sortedBoundaries.length - 1; i++) {
+      final int segmentStart = sortedBoundaries[i];
+      final int segmentEnd = sortedBoundaries[i + 1];
+      if (segmentEnd <= segmentStart) {
+        continue;
       }
 
-      // 添加高亮的匹配項
-      final isCurrentMatch = i == currentMatchIndex;
+      final String segmentText = text.substring(segmentStart, segmentEnd);
+      TextStyle? segmentStyle = style;
 
-      spans.add(
-        TextSpan(
-          text: text.substring(match.start, match.end),
-          style: style?.copyWith(
-            backgroundColor: isCurrentMatch ? activeBgColor : inactiveBgColor,
-            color: isCurrentMatch
-                ? (activeFgColor ?? style.color)
-                : (inactiveFgColor ?? style.color),
-          ),
-        ),
-      );
+      final bool isCurrentMatch =
+          currentMatch != null &&
+          _isRangeCovered(currentMatch, segmentStart, segmentEnd);
+      final bool isOtherMatch =
+          !isCurrentMatch &&
+          _isRangeCoveredByAny(normalizedSearch, segmentStart, segmentEnd);
+      final bool isPunctuationIssue =
+          !isCurrentMatch &&
+          !isOtherMatch &&
+          _isRangeCoveredByAny(
+            normalizedPunctuation,
+            segmentStart,
+            segmentEnd,
+          );
+      final bool isFillerWord =
+          !isCurrentMatch &&
+          !isOtherMatch &&
+          !isPunctuationIssue &&
+          _isRangeCoveredByAny(normalizedFiller, segmentStart, segmentEnd);
 
-      lastEnd = match.end;
-    }
+      if (isCurrentMatch) {
+        segmentStyle = _withColor(segmentStyle, currentMatchColor);
+      } else if (isOtherMatch) {
+        segmentStyle = _withColor(segmentStyle, otherMatchColor);
+      } else if (isPunctuationIssue) {
+        segmentStyle = _withColor(segmentStyle, punctuationColor);
+      } else if (isFillerWord) {
+        segmentStyle = _withColor(segmentStyle, fillerWordColor);
+      }
 
-    // 添加最後一個匹配項之後的文本
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd), style: style));
+      spans.add(TextSpan(text: segmentText, style: segmentStyle));
     }
 
     return TextSpan(children: spans, style: style);
   }
 
-  void updateHighlights({
+  TextStyle _withColor(TextStyle? style, Color color) {
+    return (style ?? const TextStyle()).copyWith(
+      color: color,
+      fontWeight: FontWeight.w600,
+    );
+  }
+
+  bool _isRangeCovered(
+    TextSelection selection,
+    int start,
+    int end,
+  ) {
+    return selection.start <= start && selection.end >= end;
+  }
+
+  bool _isRangeCoveredByAny(
+    List<TextSelection> selections,
+    int start,
+    int end,
+  ) {
+    for (final TextSelection selection in selections) {
+      if (_isRangeCovered(selection, start, end)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<TextSelection> _normalizeMatches(List<TextSelection> rawMatches) {
+    final int textLength = text.length;
+    final List<TextSelection> normalized = <TextSelection>[];
+    for (final TextSelection match in rawMatches) {
+      if (!match.isValid) {
+        continue;
+      }
+      final int start = match.start.clamp(0, textLength);
+      final int end = match.end.clamp(0, textLength);
+      if (end <= start) {
+        continue;
+      }
+      normalized.add(TextSelection(baseOffset: start, extentOffset: end));
+    }
+    return normalized;
+  }
+
+  void updateSearchHighlights({
     required List<TextSelection> matches,
     required int currentIndex,
-    Color? highlight,
-    Color? currentHighlight,
+    Color? otherMatch,
+    Color? currentMatch,
   }) {
     searchMatches = matches;
     currentMatchIndex = currentIndex;
-    highlightColor = highlight;
-    currentHighlightColor = currentHighlight;
+    otherMatchColor = otherMatch ?? Colors.orange;
+    currentMatchColor = currentMatch ?? Colors.red;
     notifyListeners();
   }
 
-  void clearHighlights() {
+  void clearSearchHighlights() {
     searchMatches = [];
     currentMatchIndex = -1;
     notifyListeners();
   }
+
+  void updateFillerHighlights({
+    required List<TextSelection> matches,
+    Color? color,
+  }) {
+    fillerWordMatches = matches;
+    fillerWordColor = color ?? Colors.blue;
+    notifyListeners();
+  }
+
+  void clearFillerHighlights() {
+    fillerWordMatches = [];
+    notifyListeners();
+  }
+
+  void updatePunctuationHighlights({
+    required List<TextSelection> matches,
+    Color? color,
+  }) {
+    punctuationMatches = matches;
+    punctuationColor = color ?? Colors.purple;
+    notifyListeners();
+  }
+
+  void clearPunctuationHighlights() {
+    punctuationMatches = [];
+    notifyListeners();
+  }
+
 }
 
 // ==================== 搜尋與取代邏輯操作 ====================
@@ -172,7 +279,7 @@ Future<void> performFind(
   final searchMatches = await findAllMatchesAsync(text, findText, options);
 
   if (searchMatches.isEmpty) {
-    textController.updateHighlights(matches: [], currentIndex: -1);
+    textController.updateSearchHighlights(matches: [], currentIndex: -1);
     onStateUpdate([], -1); // 更新 UI 以顯示 0 個匹配
     return;
   }
@@ -214,7 +321,7 @@ Future<void> performFind(
   }
 
   // 更新高亮顯示
-  textController.updateHighlights(
+  textController.updateSearchHighlights(
     matches: searchMatches,
     currentIndex: newMatchIndex,
   );
@@ -322,7 +429,7 @@ Future<void> performReplace(
       );
 
       // 清除搜尋狀態，因為文本已改變
-      textController.clearHighlights();
+      textController.clearSearchHighlights();
 
       // 通知外部文本更新和狀態重置
       onTextUpdate(newText);
@@ -438,7 +545,7 @@ Future<void> performReplaceAll(
 
   textController.text = newText;
   textController.selection = TextSelection.collapsed(offset: 0);
-  textController.clearHighlights();
+  textController.clearSearchHighlights();
 
   onTextUpdate(newText);
   onStateUpdate([], -1);
@@ -1116,7 +1223,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
           color: Theme.of(context).colorScheme.surface,
           border: Border(
             bottom: BorderSide(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
             ),
           ),
         ),
@@ -1127,7 +1236,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
             Row(
               children: [
                 // 尋找輸入框
-                Container(child: Text("搜尋：")),
+                const Text("搜尋："),
                 Expanded(
                   flex: 3,
                   child: SizedBox(
@@ -1257,7 +1366,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Container(child: Text("取代：")),
+                  const Text("取代："),
                   // 取代輸入框
                   Expanded(
                     flex: 3,

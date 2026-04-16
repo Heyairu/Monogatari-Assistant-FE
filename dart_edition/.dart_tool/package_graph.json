@@ -8,10 +8,13 @@
       "version": "0.1.0",
       "dependencies": [
         "characters",
+        "code_text_field",
         "file_picker",
         "flutter",
+        "flutter_highlight",
         "flutter_quill",
         "flutter_riverpod",
+        "highlight",
         "intl",
         "logging",
         "path",
@@ -140,6 +143,31 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "highlight",
+      "version": "0.7.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
+      "name": "flutter_highlight",
+      "version": "0.7.0",
+      "dependencies": [
+        "flutter",
+        "highlight"
+      ]
+    },
+    {
+      "name": "code_text_field",
+      "version": "1.1.0",
+      "dependencies": [
+        "flutter",
+        "flutter_highlight",
+        "highlight",
+        "linked_scroll_controller"
       ]
     },
     {
@@ -827,6 +855,13 @@
         "stream_channel",
         "string_scanner",
         "term_glyph"
+      ]
+    },
+    {
+      "name": "linked_scroll_controller",
+      "version": "0.2.0",
+      "dependencies": [
+        "flutter"
       ]
     },
     {

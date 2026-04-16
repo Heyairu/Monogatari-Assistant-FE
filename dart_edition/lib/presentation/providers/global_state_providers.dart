@@ -176,7 +176,9 @@ final settingsStateProvider =
 
 final appInitializationProvider = FutureProvider<void>((ref) async {
   await Future.wait([
-    ref.watch(themeStateProvider.future),
-    ref.watch(settingsStateProvider.future),
+    // Bootstrap should only await initial load; later updates should not
+    // re-enter app-level loading and replace the whole UI tree.
+    ref.read(themeStateProvider.future),
+    ref.read(settingsStateProvider.future),
   ]);
 });

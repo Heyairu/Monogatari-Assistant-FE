@@ -324,6 +324,30 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
   }
 
+  int _clampOffset(int offset, int textLength) {
+    if (offset < 0) {
+      return 0;
+    }
+    return offset.clamp(0, textLength);
+  }
+
+  TextSelection _clampSelection(TextSelection selection, String text) {
+    final int textLength = text.length;
+    if (!selection.isValid) {
+      return const TextSelection.collapsed(offset: 0);
+    }
+
+    final int base = _clampOffset(selection.baseOffset, textLength);
+    final int extent = _clampOffset(selection.extentOffset, textLength);
+
+    return TextSelection(
+      baseOffset: base,
+      extentOffset: extent,
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -366,9 +390,10 @@ class _ContentViewState extends ConsumerState<ContentView>
     // 監聽文字變化
     textController.addListener(() {
       final int selectionOffset = textController.selection.baseOffset;
-      final int normalizedOffset = selectionOffset < 0
-          ? 0
-          : selectionOffset.clamp(0, textController.text.length);
+      final int normalizedOffset = _clampOffset(
+        selectionOffset,
+        textController.text.length,
+      );
 
       // 只有當文字真的改變且不在同步狀態時才更新
       if (!_isSyncing && contentText != textController.text) {
@@ -386,7 +411,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           setState(() {
             _searchMatches = [];
             _currentMatchIndex = -1;
-            textController.clearHighlights();
+            textController.clearSearchHighlights();
           });
         }
       } else if (_cursorOffset != normalizedOffset) {
@@ -437,17 +462,21 @@ class _ContentViewState extends ConsumerState<ContentView>
           return;
         }
 
-        final currentOffset = textController.selection.baseOffset;
-        final safeOffset = currentOffset < 0
-            ? 0
-            : currentOffset.clamp(0, next.length);
+        final currentSelection = _clampSelection(
+          textController.selection,
+          next,
+        );
 
         _isSyncing = true;
-        textController.value = TextEditingValue(
-          text: next,
-          selection: TextSelection.collapsed(offset: safeOffset),
-        );
-        _isSyncing = false;
+        try {
+          textController.value = textController.value.copyWith(
+            text: next,
+            selection: currentSelection,
+            composing: TextRange.empty,
+          );
+        } finally {
+          _isSyncing = false;
+        }
       },
     );
 
@@ -1143,7 +1172,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                         _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
                       }
                       // 更新高亮顯示
-                      textController.updateHighlights(
+                      textController.updateSearchHighlights(
                         matches: _searchMatches,
                         currentIndex: _currentMatchIndex,
                       );
@@ -1153,7 +1182,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                   setState(() {
                     _searchMatches = [];
                     _currentMatchIndex = -1;
-                    textController.clearHighlights();
+                    textController.clearSearchHighlights();
                   });
                 }
               },
@@ -1163,7 +1192,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                   // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
                   _searchMatches = [];
                   _currentMatchIndex = -1;
-                  textController.clearHighlights();
+                  textController.clearSearchHighlights();
                   // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                 });
               },
@@ -1333,7 +1362,7 @@ class _ContentViewState extends ConsumerState<ContentView>
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Icon(icon, size: 64, color: color),

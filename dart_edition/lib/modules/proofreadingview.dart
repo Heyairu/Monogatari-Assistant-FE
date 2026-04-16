@@ -18,6 +18,7 @@ import "dart:convert";
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter/services.dart";
+import "package:monogatari_assistant/bin/findreplace.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -332,7 +333,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   bool _isLoadingFillerWords = true;
 
   List<_PairIssue> _pairIssues = const <_PairIssue>[];
-  List<_ConsecutiveSymbolIssue> _SymbolIssues =
+  List<_ConsecutiveSymbolIssue> _symbolIssues =
       const <_ConsecutiveSymbolIssue>[];
   List<_SameTypeQuoteIssue> _sameTypeQuoteIssues =
       const <_SameTypeQuoteIssue>[];
@@ -676,28 +677,6 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
   }
 
-  bool _containsLatinLetter(String text) {
-    for (int i = 0; i < text.length; i++) {
-      if (_isAsciiLetter(text[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool _containsAsciiDigitInText(String text) {
-    for (int i = 0; i < text.length; i++) {
-      if (_isAsciiDigit(text[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool _shouldUseLatinStyleForLine(String line) {
-    return _enableLatinSentenceDetection && _containsLatinLetter(line);
-  }
-
   List<bool> _buildLatinStyleMaskForLine(
     String line, {
     Set<int>? maskBoundaryIndexes,
@@ -867,7 +846,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     final List<_PairIssue> pairIssues = _enablePairCheck
         ? _checkPairClosures(text)
         : const <_PairIssue>[];
-    final List<_ConsecutiveSymbolIssue> SymbolIssues = _enableSymbolCheck
+    final List<_ConsecutiveSymbolIssue> symbolIssues = _enableSymbolCheck
         ? _detectConsecutiveSymbols(text)
         : const <_ConsecutiveSymbolIssue>[];
     final List<_SameTypeQuoteIssue> sameTypeQuoteIssues = _enableSymbolCheck
@@ -883,14 +862,103 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         ? _analyzeFillerWords(text)
         : _FillerWordAnalysis.empty();
 
+    _syncPunctuationHighlights(
+      text,
+      symbolIssues: symbolIssues,
+      sameTypeQuoteIssues: sameTypeQuoteIssues,
+      lineEndingIssues: lineEndingIssues,
+      punctuationResult: punctuationResult,
+    );
+    _syncFillerWordHighlights(text, fillerWordAnalysis);
+
     setState(() {
       _pairIssues = pairIssues;
-      _SymbolIssues = SymbolIssues;
+      _symbolIssues = symbolIssues;
       _sameTypeQuoteIssues = sameTypeQuoteIssues;
       _lineEndingIssues = lineEndingIssues;
       _punctuationResult = punctuationResult;
       _fillerWordAnalysis = fillerWordAnalysis;
     });
+  }
+
+  void _syncFillerWordHighlights(
+    String text,
+    _FillerWordAnalysis analysis,
+  ) {
+    final TextEditingController controller = widget.textController;
+    if (controller is! HighlightTextEditingController) {
+      return;
+    }
+
+    final List<TextSelection> matches = <TextSelection>[];
+    for (final _FillerWordHit hit in analysis.hits) {
+      final int wordLength = hit.word.length;
+      if (wordLength <= 0) {
+        continue;
+      }
+      for (final int start in hit.positions) {
+        final int end = start + wordLength;
+        if (start < 0 || end > text.length) {
+          continue;
+        }
+        matches.add(TextSelection(baseOffset: start, extentOffset: end));
+      }
+    }
+
+    controller.updateFillerHighlights(
+      matches: matches,
+      color: Colors.blue,
+    );
+  }
+
+  void _syncPunctuationHighlights(
+    String text, {
+    required List<_ConsecutiveSymbolIssue> symbolIssues,
+    required List<_SameTypeQuoteIssue> sameTypeQuoteIssues,
+    required List<_LineEndingIssue> lineEndingIssues,
+    required _PunctuationNormalizationResult? punctuationResult,
+  }) {
+    final TextEditingController controller = widget.textController;
+    if (controller is! HighlightTextEditingController) {
+      return;
+    }
+
+    final List<TextSelection> matches = <TextSelection>[];
+    final Set<String> dedup = <String>{};
+
+    void addRange(int start, int endExclusive) {
+      if (start < 0 || endExclusive > text.length || endExclusive <= start) {
+        return;
+      }
+      final String key = "$start:$endExclusive";
+      if (!dedup.add(key)) {
+        return;
+      }
+      matches.add(TextSelection(baseOffset: start, extentOffset: endExclusive));
+    }
+
+    if (punctuationResult != null) {
+      for (final _PunctuationChange change in punctuationResult.changes) {
+        addRange(change.index, change.index + change.from.length);
+      }
+    }
+
+    for (final _ConsecutiveSymbolIssue issue in symbolIssues) {
+      addRange(issue.index, issue.index + issue.sequence.length);
+    }
+
+    for (final _SameTypeQuoteIssue issue in sameTypeQuoteIssues) {
+      addRange(issue.index, issue.index + 1);
+    }
+
+    for (final _LineEndingIssue issue in lineEndingIssues) {
+      addRange(issue.index, issue.index + issue.endingSymbol.length);
+    }
+
+    controller.updatePunctuationHighlights(
+      matches: matches,
+      color: Colors.purple,
+    );
   }
 
   List<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
@@ -1365,7 +1433,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       return false;
     }
 
-    for (final _ConsecutiveSymbolIssue issue in _SymbolIssues) {
+    for (final _ConsecutiveSymbolIssue issue in _symbolIssues) {
       final int start = issue.index;
       final int endExclusive = issue.index + issue.sequence.length;
       if (start < 0 || endExclusive > text.length) {
@@ -2654,7 +2722,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       return Text("請先輸入文本。", style: Theme.of(context).textTheme.bodySmall);
     }
 
-    if (_SymbolIssues.isEmpty && _sameTypeQuoteIssues.isEmpty) {
+    if (_symbolIssues.isEmpty && _sameTypeQuoteIssues.isEmpty) {
       return Text(
         "未發現標點符號異常。",
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2669,7 +2737,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       children: [
         _buildScrollableResultArea(
           children: [
-            ..._SymbolIssues.map((final _ConsecutiveSymbolIssue issue) {
+            ..._symbolIssues.map((final _ConsecutiveSymbolIssue issue) {
               final ({int line, int column}) position = _lineColumnAt(
                 sourceText,
                 issue.index,

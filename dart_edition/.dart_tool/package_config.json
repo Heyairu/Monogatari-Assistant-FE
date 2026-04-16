@@ -128,6 +128,12 @@
       "languageVersion": "3.7"
     },
     {
+      "name": "code_text_field",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/code_text_field-1.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
       "name": "collection",
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/collection-1.19.1",
       "packageUri": "lib/",
@@ -240,6 +246,12 @@
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_colorpicker-1.1.0",
       "packageUri": "lib/",
       "languageVersion": "2.14"
+    },
+    {
+      "name": "flutter_highlight",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_highlight-0.7.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
     },
     {
       "name": "flutter_keyboard_visibility",
@@ -362,6 +374,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "highlight",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/highlight-0.7.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
       "name": "html",
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/html-0.15.6",
       "packageUri": "lib/",
@@ -432,6 +450,12 @@
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/leak_tracker_testing-3.0.2",
       "packageUri": "lib/",
       "languageVersion": "3.2"
+    },
+    {
+      "name": "linked_scroll_controller",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/linked_scroll_controller-0.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
     },
     {
       "name": "lints",
