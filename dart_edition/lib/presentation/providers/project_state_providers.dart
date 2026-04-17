@@ -53,13 +53,28 @@ class EditorSelectionState {
 }
 
 class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
+  base_info_module.BaseInfoData _createSnapshot(
+    base_info_module.BaseInfoData value,
+  ) {
+    return value.copyWith(tags: [...value.tags]);
+  }
+
   @override
   base_info_module.BaseInfoData build() {
-    return file_module.ProjectData.empty().baseInfoData;
+    return _createSnapshot(file_module.ProjectData.empty().baseInfoData);
   }
 
   void setBaseInfoData(base_info_module.BaseInfoData value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateBaseInfoData(
+    base_info_module.BaseInfoData Function(
+      base_info_module.BaseInfoData current,
+    )
+    update,
+  ) {
+    setBaseInfoData(update(state));
   }
 }
 
@@ -69,13 +84,38 @@ final baseInfoDataProvider =
     );
 
 class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
+  List<chapter_module.SegmentData> _createSnapshot(
+    List<chapter_module.SegmentData> source,
+  ) {
+    return List<chapter_module.SegmentData>.unmodifiable(
+      source
+          .map(
+            (segment) => segment.copyWith(
+              chapters: segment.chapters
+                  .map((chapter) => chapter.copyWith())
+                  .toList(growable: false),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
   @override
   List<chapter_module.SegmentData> build() {
-    return file_module.ProjectData.empty().segmentsData;
+    return _createSnapshot(file_module.ProjectData.empty().segmentsData);
   }
 
   void setSegmentsData(List<chapter_module.SegmentData> value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateSegmentsData(
+    List<chapter_module.SegmentData> Function(
+      List<chapter_module.SegmentData> current,
+    )
+    update,
+  ) {
+    setSegmentsData(update(state));
   }
 }
 
@@ -85,13 +125,54 @@ final segmentsDataProvider =
     );
 
 class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
+  List<outline_module.StorylineData> _createSnapshot(
+    List<outline_module.StorylineData> source,
+  ) {
+    return List<outline_module.StorylineData>.unmodifiable(
+      source
+          .map(
+            (storyline) => storyline.copyWith(
+              people: [...storyline.people],
+              item: [...storyline.item],
+              scenes: storyline.scenes
+                  .map(
+                    (event) => event.copyWith(
+                      people: [...event.people],
+                      item: [...event.item],
+                      scenes: event.scenes
+                          .map(
+                            (scene) => scene.copyWith(
+                              people: [...scene.people],
+                              item: [...scene.item],
+                              doingThings: [...scene.doingThings],
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
   @override
   List<outline_module.StorylineData> build() {
-    return file_module.ProjectData.empty().outlineData;
+    return _createSnapshot(file_module.ProjectData.empty().outlineData);
   }
 
   void setOutlineData(List<outline_module.StorylineData> value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateOutlineData(
+    List<outline_module.StorylineData> Function(
+      List<outline_module.StorylineData> current,
+    )
+    update,
+  ) {
+    setOutlineData(update(state));
   }
 }
 
@@ -133,7 +214,8 @@ final characterDataProvider =
       CharacterDataNotifier.new,
     );
 
-class ForeshadowDataNotifier extends Notifier<List<plan_module.ForeshadowItem>> {
+class ForeshadowDataNotifier
+    extends Notifier<List<plan_module.ForeshadowItem>> {
   @override
   List<plan_module.ForeshadowItem> build() {
     return file_module.ProjectData.empty().foreshadowData;
@@ -144,12 +226,13 @@ class ForeshadowDataNotifier extends Notifier<List<plan_module.ForeshadowItem>> 
   }
 }
 
-final foreshadowDataProvider = NotifierProvider<ForeshadowDataNotifier,
-    List<plan_module.ForeshadowItem>>(
-  ForeshadowDataNotifier.new,
-);
+final foreshadowDataProvider =
+    NotifierProvider<ForeshadowDataNotifier, List<plan_module.ForeshadowItem>>(
+      ForeshadowDataNotifier.new,
+    );
 
-class UpdatePlanDataNotifier extends Notifier<List<plan_module.UpdatePlanItem>> {
+class UpdatePlanDataNotifier
+    extends Notifier<List<plan_module.UpdatePlanItem>> {
   @override
   List<plan_module.UpdatePlanItem> build() {
     return file_module.ProjectData.empty().updatePlanData;
@@ -160,10 +243,10 @@ class UpdatePlanDataNotifier extends Notifier<List<plan_module.UpdatePlanItem>> 
   }
 }
 
-final updatePlanDataProvider = NotifierProvider<UpdatePlanDataNotifier,
-    List<plan_module.UpdatePlanItem>>(
-  UpdatePlanDataNotifier.new,
-);
+final updatePlanDataProvider =
+    NotifierProvider<UpdatePlanDataNotifier, List<plan_module.UpdatePlanItem>>(
+      UpdatePlanDataNotifier.new,
+    );
 
 class GlossaryStateData {
   final List<glossary_module.GlossaryCategory> categoryTree;
@@ -178,10 +261,7 @@ class GlossaryStateData {
 class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
   @override
   GlossaryStateData build() {
-    return const GlossaryStateData(
-      categoryTree: [],
-      entryIndex: {},
-    );
+    return const GlossaryStateData(categoryTree: [], entryIndex: {});
   }
 
   void setGlossaryState(GlossaryStateData value) {

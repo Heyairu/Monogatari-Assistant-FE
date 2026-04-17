@@ -7,6 +7,7 @@ import "../../modules/characterview.dart";
 import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/worldsettingsview.dart";
 import "core_providers.dart";
+import "project_state_providers.dart";
 
 enum ProjectIoOperation {
   idle,
@@ -36,6 +37,74 @@ class ProjectLoadResult {
 }
 
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
+  base_info_module.BaseInfoData _snapshotBaseInfo(
+    base_info_module.BaseInfoData value,
+  ) {
+    return value.copyWith(tags: [...value.tags]);
+  }
+
+  List<chapter_module.SegmentData> _snapshotSegments(
+    List<chapter_module.SegmentData> source,
+  ) {
+    return source
+        .map(
+          (segment) => segment.copyWith(
+            chapters: segment.chapters
+                .map((chapter) => chapter.copyWith())
+                .toList(growable: false),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<outline_module.StorylineData> _snapshotOutline(
+    List<outline_module.StorylineData> source,
+  ) {
+    return source
+        .map(
+          (storyline) => storyline.copyWith(
+            people: [...storyline.people],
+            item: [...storyline.item],
+            scenes: storyline.scenes
+                .map(
+                  (event) => event.copyWith(
+                    people: [...event.people],
+                    item: [...event.item],
+                    scenes: event.scenes
+                        .map(
+                          (scene) => scene.copyWith(
+                            people: [...scene.people],
+                            item: [...scene.item],
+                            doingThings: [...scene.doingThings],
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  ProjectData _snapshotProjectData(
+    ProjectData source, {
+    base_info_module.BaseInfoData? baseInfoOverride,
+  }) {
+    return ProjectData(
+      baseInfoData: _snapshotBaseInfo(baseInfoOverride ?? source.baseInfoData),
+      segmentsData: _snapshotSegments(source.segmentsData),
+      outlineData: _snapshotOutline(source.outlineData),
+      foreshadowData: source.foreshadowData,
+      updatePlanData: source.updatePlanData,
+      worldSettingsData: source.worldSettingsData,
+      characterData: source.characterData,
+      totalWords: source.totalWords,
+      contentText: source.contentText,
+      isDirty: source.isDirty,
+    );
+  }
+
   @override
   Future<ProjectIoStatus> build() async {
     return const ProjectIoStatus.idle();
@@ -46,7 +115,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectFile = await useCase.createNewProject();
-      final data = ProjectData.empty();
+      final data = _snapshotProjectData(ProjectData.empty());
       state = const AsyncData(
         ProjectIoStatus(
           operation: ProjectIoOperation.newProject,
@@ -101,8 +170,11 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final data = await useCase.loadProjectFromXml(projectFile);
-      state = const AsyncData(ProjectIoStatus(operation: ProjectIoOperation.openProject));
-      return data;
+      final snapshot = _snapshotProjectData(data);
+      state = const AsyncData(
+        ProjectIoStatus(operation: ProjectIoOperation.openProject),
+      );
+      return snapshot;
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       rethrow;
@@ -118,7 +190,22 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectToSave = currentProject ?? await useCase.createNewProject();
-      final xmlContent = await useCase.generateProjectXml(currentData);
+
+      final baseInfoSnapshot =
+          base_info_module.BaseInfoCodec.createSaveSnapshot(
+            data: currentData.baseInfoData,
+            contentText: currentData.contentText,
+          );
+      ref
+          .read(baseInfoDataProvider.notifier)
+          .updateBaseInfoData((_) => baseInfoSnapshot);
+
+      final snapshotData = _snapshotProjectData(
+        currentData,
+        baseInfoOverride: baseInfoSnapshot,
+      );
+
+      final xmlContent = await useCase.generateProjectXml(snapshotData);
       projectToSave.content = xmlContent;
 
       final shouldSaveAs = forceSaveAs || currentProject == null;
@@ -150,8 +237,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }) async {
     state = const AsyncLoading();
     try {
+      final snapshotData = _snapshotProjectData(currentData);
       final buffer = StringBuffer();
-      for (final segment in currentData.segmentsData) {
+      for (final segment in snapshotData.segmentsData) {
         buffer.writeln("# ${segment.segmentName}");
         buffer.writeln();
         for (final chapter in segment.chapters) {
@@ -162,11 +250,13 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         }
       }
 
-      await ref.read(projectFileUseCaseProvider).exportText(
-        content: buffer.toString(),
-        fileName: defaultFileName,
-        extension: extension == "txt" ? ".txt" : ".md",
-      );
+      await ref
+          .read(projectFileUseCaseProvider)
+          .exportText(
+            content: buffer.toString(),
+            fileName: defaultFileName,
+            extension: extension == "txt" ? ".txt" : ".md",
+          );
 
       state = AsyncData(
         ProjectIoStatus(
@@ -188,6 +278,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }) async {
     state = const AsyncLoading();
     try {
+      final snapshotData = _snapshotProjectData(currentData);
       final buffer = StringBuffer();
 
       if (format == "xml") {
@@ -196,45 +287,63 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
 
         if (selectedModules.contains("BaseInfo")) {
+          final baseInfoSnapshot =
+              base_info_module.BaseInfoCodec.createSaveSnapshot(
+                data: snapshotData.baseInfoData,
+                contentText: snapshotData.contentText,
+                updateLatestSave: false,
+              );
           final xml = base_info_module.BaseInfoCodec.saveXML(
-            data: currentData.baseInfoData,
-            totalWords: currentData.totalWords,
-            contentText: currentData.contentText,
+            data: snapshotData.baseInfoData,
+            totalWords: snapshotData.totalWords,
+            contentText: snapshotData.contentText,
+            updateLatestSave: false,
+            snapshot: baseInfoSnapshot,
           );
           if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("Chapters")) {
           final xml = chapter_module.ChapterSelectionCodec.saveXML(
-            currentData.segmentsData,
+            snapshotData.segmentsData,
           );
           if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("Outline")) {
           final xml = outline_module.OutlineCodec.saveXML(
-            currentData.outlineData,
+            snapshotData.outlineData,
           );
           if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("WorldSettings")) {
-          final xml = WorldSettingsCodec.saveXML(currentData.worldSettingsData);
+          final xml = WorldSettingsCodec.saveXML(
+            snapshotData.worldSettingsData,
+          );
           if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("Characters")) {
-          final xml = CharacterCodec.saveXML(currentData.characterData);
+          final xml = CharacterCodec.saveXML(snapshotData.characterData);
           if (xml != null) buffer.writeln(xml);
         }
 
         buffer.writeln("</Project>");
       } else {
         if (selectedModules.contains("BaseInfo")) {
+          final baseInfoSnapshot =
+              base_info_module.BaseInfoCodec.createSaveSnapshot(
+                data: snapshotData.baseInfoData,
+                contentText: snapshotData.contentText,
+                updateLatestSave: false,
+              );
           final xml = base_info_module.BaseInfoCodec.saveXML(
-            data: currentData.baseInfoData,
-            totalWords: currentData.totalWords,
-            contentText: currentData.contentText,
+            data: snapshotData.baseInfoData,
+            totalWords: snapshotData.totalWords,
+            contentText: snapshotData.contentText,
+            updateLatestSave: false,
+            snapshot: baseInfoSnapshot,
           );
           buffer.writeln("## BaseInfo");
           buffer.writeln();
@@ -250,7 +359,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
 
         if (selectedModules.contains("Chapters")) {
           final xml = chapter_module.ChapterSelectionCodec.saveXML(
-            currentData.segmentsData,
+            snapshotData.segmentsData,
           );
           buffer.writeln("## Chapters");
           buffer.writeln();
@@ -266,7 +375,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
 
         if (selectedModules.contains("Outline")) {
           final xml = outline_module.OutlineCodec.saveXML(
-            currentData.outlineData,
+            snapshotData.outlineData,
           );
           buffer.writeln("## Outline");
           buffer.writeln();
@@ -281,7 +390,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         }
 
         if (selectedModules.contains("WorldSettings")) {
-          final xml = WorldSettingsCodec.saveXML(currentData.worldSettingsData);
+          final xml = WorldSettingsCodec.saveXML(
+            snapshotData.worldSettingsData,
+          );
           buffer.writeln("## WorldSettings");
           buffer.writeln();
           if (xml != null) {
@@ -295,7 +406,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         }
 
         if (selectedModules.contains("Characters")) {
-          final xml = CharacterCodec.saveXML(currentData.characterData);
+          final xml = CharacterCodec.saveXML(snapshotData.characterData);
           buffer.writeln("## Characters");
           buffer.writeln();
           if (xml != null) {
@@ -309,7 +420,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         }
       }
 
-      await ref.read(projectFileUseCaseProvider).exportText(
+      await ref
+          .read(projectFileUseCaseProvider)
+          .exportText(
             content: buffer.toString(),
             fileName: defaultFileName,
             extension: format == "xml" ? ".xml" : ".md",

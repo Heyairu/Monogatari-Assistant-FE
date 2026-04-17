@@ -18,7 +18,10 @@ import "package:xml/xml.dart" as xml;
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../models/outline_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+
+export "../models/outline_data.dart";
 
 final _log = Logger("OutlineView");
 
@@ -38,191 +41,6 @@ class OutlineDragData {
 
 enum OutlineDragType { storyline, event, scene }
 
-// MARK: - 資料結構
-
-// 大箱（故事線）
-class StorylineData {
-  String storylineName;
-  String storylineType;
-  List<StoryEventData> scenes; // 中箱（事件序列）
-  String memo;
-  String conflictPoint; // 衝突點
-  List<String> people; // 人物
-  List<String> item; // 物件
-  String chapterUUID;
-
-  StorylineData({
-    this.storylineName = "",
-    this.storylineType = "",
-    List<StoryEventData>? scenes,
-    this.memo = "",
-    this.conflictPoint = "",
-    List<String>? people,
-    List<String>? item,
-    String? chapterUUID,
-  }) : scenes = scenes ?? [],
-       people = people ?? [],
-       item = item ?? [],
-       chapterUUID =
-           chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  StorylineData copyWith({
-    String? storylineName,
-    String? storylineType,
-    List<StoryEventData>? scenes,
-    String? memo,
-    String? conflictPoint,
-    List<String>? people,
-    List<String>? item,
-    String? chapterUUID,
-  }) {
-    final nextScenes = scenes ?? this.scenes;
-    return StorylineData(
-      storylineName: storylineName ?? this.storylineName,
-      storylineType: storylineType ?? this.storylineType,
-      scenes: nextScenes.map((event) => event.copyWith()).toList(),
-      memo: memo ?? this.memo,
-      conflictPoint: conflictPoint ?? this.conflictPoint,
-      people: List<String>.from(people ?? this.people),
-      item: List<String>.from(item ?? this.item),
-      chapterUUID: chapterUUID ?? this.chapterUUID,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is StorylineData &&
-          runtimeType == other.runtimeType &&
-          chapterUUID == other.chapterUUID;
-
-  @override
-  int get hashCode => chapterUUID.hashCode;
-}
-
-// 中箱（事件序列）
-class StoryEventData {
-  String storyEvent;
-  List<SceneData> scenes; // 小箱（場景）
-  String memo;
-  String conflictPoint; // 衝突點
-  List<String> people; // 人物
-  List<String> item; // 物件
-  String storyEventUUID;
-
-  StoryEventData({
-    this.storyEvent = "",
-    List<SceneData>? scenes,
-    this.memo = "",
-    this.conflictPoint = "",
-    List<String>? people,
-    List<String>? item,
-    String? storyEventUUID,
-  }) : scenes = scenes ?? [],
-       people = people ?? [],
-       item = item ?? [],
-       storyEventUUID =
-           storyEventUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  StoryEventData copyWith({
-    String? storyEvent,
-    List<SceneData>? scenes,
-    String? memo,
-    String? conflictPoint,
-    List<String>? people,
-    List<String>? item,
-    String? storyEventUUID,
-  }) {
-    final nextScenes = scenes ?? this.scenes;
-    return StoryEventData(
-      storyEvent: storyEvent ?? this.storyEvent,
-      scenes: nextScenes.map((scene) => scene.copyWith()).toList(),
-      memo: memo ?? this.memo,
-      conflictPoint: conflictPoint ?? this.conflictPoint,
-      people: List<String>.from(people ?? this.people),
-      item: List<String>.from(item ?? this.item),
-      storyEventUUID: storyEventUUID ?? this.storyEventUUID,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is StoryEventData &&
-          runtimeType == other.runtimeType &&
-          storyEventUUID == other.storyEventUUID;
-
-  @override
-  int get hashCode => storyEventUUID.hashCode;
-}
-
-// 小箱（場景）
-class SceneData {
-  String sceneName;
-  String time;
-  String location;
-  String focusPoint; // 聚焦點
-  String conflictPoint; // 衝突點
-  List<String> people;
-  List<String> item;
-  List<String> doingThings;
-  String memo;
-  String sceneUUID;
-
-  SceneData({
-    this.sceneName = "",
-    this.time = "",
-    this.location = "",
-    this.focusPoint = "",
-    this.conflictPoint = "",
-    List<String>? people,
-    List<String>? item,
-    List<String>? doingThings,
-    this.memo = "",
-    String? sceneUUID,
-  }) : people = people ?? [],
-       item = item ?? [],
-       doingThings = doingThings ?? [],
-       sceneUUID =
-           sceneUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  SceneData copyWith({
-    String? sceneName,
-    String? time,
-    String? location,
-    String? focusPoint,
-    String? conflictPoint,
-    List<String>? people,
-    List<String>? item,
-    List<String>? doingThings,
-    String? memo,
-    String? sceneUUID,
-  }) {
-    return SceneData(
-      sceneName: sceneName ?? this.sceneName,
-      time: time ?? this.time,
-      location: location ?? this.location,
-      focusPoint: focusPoint ?? this.focusPoint,
-      conflictPoint: conflictPoint ?? this.conflictPoint,
-      people: List<String>.from(people ?? this.people),
-      item: List<String>.from(item ?? this.item),
-      doingThings: List<String>.from(doingThings ?? this.doingThings),
-      memo: memo ?? this.memo,
-      sceneUUID: sceneUUID ?? this.sceneUUID,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is SceneData &&
-          runtimeType == other.runtimeType &&
-          sceneUUID == other.sceneUUID;
-
-  @override
-  int get hashCode => sceneUUID.hashCode;
-}
-
 // MARK: - 拖放識別字串
 class DragPayload {
   static const String eventPrefix = "EVENT:";
@@ -234,6 +52,36 @@ class DragPayload {
 
 // MARK: - XML Codec for Outline
 class OutlineCodec {
+  static List<StorylineData> _createSnapshot(List<StorylineData> source) {
+    return List<StorylineData>.unmodifiable(
+      source
+          .map(
+            (storyline) => storyline.copyWith(
+              people: [...storyline.people],
+              item: [...storyline.item],
+              scenes: storyline.scenes
+                  .map(
+                    (event) => event.copyWith(
+                      people: [...event.people],
+                      item: [...event.item],
+                      scenes: event.scenes
+                          .map(
+                            (scene) => scene.copyWith(
+                              people: [...scene.people],
+                              item: [...scene.item],
+                              doingThings: [...scene.doingThings],
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
   static void _writeTextElement(
     xml.XmlBuilder builder,
     String name,
@@ -303,7 +151,8 @@ class OutlineCodec {
   }
 
   static String? saveXML(List<StorylineData> storylines) {
-    if (storylines.isEmpty) return null;
+    final snapshot = _createSnapshot(storylines);
+    if (snapshot.isEmpty) return null;
 
     final builder = xml.XmlBuilder();
     builder.element(
@@ -311,7 +160,7 @@ class OutlineCodec {
       nest: () {
         builder.element("Name", nest: "Outline");
 
-        for (final sl in storylines) {
+        for (final sl in snapshot) {
           builder.element(
             "Storyline",
             attributes: {
@@ -481,171 +330,171 @@ class OutlineCodec {
             storylineNode.getAttribute("UUID") ??
             DateTime.now().millisecondsSinceEpoch.toString();
 
-        final storyline = StorylineData(
-          storylineName: storylineName,
-          storylineType: storylineType,
-          chapterUUID: storylineUUID,
-          scenes: [],
-          people: [],
-          item: [],
-          memo: "",
-          conflictPoint: "",
-        );
-
-        // Parse Memo
-        storyline.memo = _readElementText(
+        final storylineMemo = _readElementText(
           storylineNode.findAllElements("Memo").firstOrNull,
         );
-
-        // Parse ConflictPoint
-        storyline.conflictPoint = _readElementText(
+        final storylineConflict = _readElementText(
           storylineNode.findAllElements("ConflictPoint").firstOrNull,
         );
 
-        // Parse People
+        final storylinePeople = <String>[];
         final peopleNode = storylineNode.findAllElements("People").firstOrNull;
         if (peopleNode != null) {
           for (final personNode in peopleNode.findAllElements("Person")) {
             final person = _readElementText(personNode).trim();
-            if (person.isNotEmpty) storyline.people.add(person);
+            if (person.isNotEmpty) {
+              storylinePeople.add(person);
+            }
           }
         }
 
-        // Parse Items
+        final storylineItems = <String>[];
         final itemsNode = storylineNode.findAllElements("Items").firstOrNull;
         if (itemsNode != null) {
           for (final itemNode in itemsNode.findAllElements("Item")) {
             final item = _readElementText(itemNode).trim();
-            if (item.isNotEmpty) storyline.item.add(item);
+            if (item.isNotEmpty) {
+              storylineItems.add(item);
+            }
           }
         }
 
-        // Parse Events (direct children with name "Event")
-        // We use .children instead of .findAllElements to detect direct structure if hierarchy matters
-        // But here simpler find works as Event is inside Storyline
-
-        // Be careful not to find nested Events if they existed (not in this schema)
-        // findAllElements finds descendants. We should use .findElements for direct children if appropriate.
-        // In the builder structure: Type -> Storyline -> Event -> Scene
-        // So safe to use findAllElements inside storylineNode but "Event" is also a common word.
-        // It is safer to use direct child iteration or ensure scope.
-        // storylineNode.findElements("Event") is safer.
-
+        final events = <StoryEventData>[];
         for (final eventNode in storylineNode.findElements("Event")) {
           final eventName = eventNode.getAttribute("Name") ?? "";
           final eventUUID =
               eventNode.getAttribute("UUID") ??
               DateTime.now().millisecondsSinceEpoch.toString();
 
-          final event = StoryEventData(
-            storyEvent: eventName,
-            storyEventUUID: eventUUID,
-            scenes: [],
-            people: [],
-            item: [],
-            memo: "",
-            conflictPoint: "",
-          );
-
-          event.memo = _readElementText(
+          final eventMemo = _readElementText(
             eventNode.findAllElements("Memo").firstOrNull,
           );
-          event.conflictPoint = _readElementText(
+          final eventConflict = _readElementText(
             eventNode.findAllElements("ConflictPoint").firstOrNull,
           );
 
+          final eventPeople = <String>[];
           final eventPeopleNode = eventNode
               .findAllElements("People")
               .firstOrNull;
           if (eventPeopleNode != null) {
             for (final p in eventPeopleNode.findAllElements("Person")) {
               final person = _readElementText(p).trim();
-              if (person.isNotEmpty) event.people.add(person);
+              if (person.isNotEmpty) {
+                eventPeople.add(person);
+              }
             }
           }
 
+          final eventItems = <String>[];
           final eventItemsNode = eventNode.findAllElements("Items").firstOrNull;
           if (eventItemsNode != null) {
             for (final it in eventItemsNode.findAllElements("Item")) {
               final item = _readElementText(it).trim();
-              if (item.isNotEmpty) event.item.add(item);
+              if (item.isNotEmpty) {
+                eventItems.add(item);
+              }
             }
           }
 
-          // Parse Scenes
+          final scenes = <SceneData>[];
           for (final sceneNode in eventNode.findElements("Scene")) {
             final sceneName = sceneNode.getAttribute("Name") ?? "";
             final sceneUUID =
                 sceneNode.getAttribute("UUID") ??
                 DateTime.now().millisecondsSinceEpoch.toString();
 
-            final scene = SceneData(
-              sceneName: sceneName,
-              sceneUUID: sceneUUID,
-              people: [],
-              item: [],
-              doingThings: [],
-              time: "",
-              location: "",
-              focusPoint: "",
-              conflictPoint: "",
-              memo: "",
-            );
-
-            scene.time = _readElementText(
-              sceneNode.findAllElements("Time").firstOrNull,
-            );
-            scene.location = _readElementText(
-              sceneNode.findAllElements("Location").firstOrNull,
-            );
-            scene.focusPoint = _readElementText(
-              sceneNode.findAllElements("FocusPoint").firstOrNull,
-            );
-            scene.conflictPoint = _readElementText(
-              sceneNode.findAllElements("ConflictPoint").firstOrNull,
-            );
-            scene.memo = _readElementText(
-              sceneNode.findAllElements("Memo").firstOrNull,
-            );
-
+            final scenePeople = <String>[];
             final scenePeopleNode = sceneNode
                 .findAllElements("People")
                 .firstOrNull;
             if (scenePeopleNode != null) {
               for (final p in scenePeopleNode.findAllElements("Person")) {
                 final person = _readElementText(p).trim();
-                if (person.isNotEmpty) scene.people.add(person);
+                if (person.isNotEmpty) {
+                  scenePeople.add(person);
+                }
               }
             }
 
+            final sceneItems = <String>[];
             final sceneItemsNode = sceneNode
                 .findAllElements("Items")
                 .firstOrNull;
             if (sceneItemsNode != null) {
               for (final it in sceneItemsNode.findAllElements("Item")) {
                 final item = _readElementText(it).trim();
-                if (item.isNotEmpty) scene.item.add(item);
+                if (item.isNotEmpty) {
+                  sceneItems.add(item);
+                }
               }
             }
 
+            final sceneDoings = <String>[];
             final doingsNode = sceneNode.findAllElements("Doings").firstOrNull;
             if (doingsNode != null) {
               for (final d in doingsNode.findAllElements("Doing")) {
                 final doing = _readElementText(d).trim();
-                if (doing.isNotEmpty) scene.doingThings.add(doing);
+                if (doing.isNotEmpty) {
+                  sceneDoings.add(doing);
+                }
               }
             }
 
-            event.scenes.add(scene);
+            scenes.add(
+              SceneData(
+                sceneName: sceneName,
+                sceneUUID: sceneUUID,
+                time: _readElementText(
+                  sceneNode.findAllElements("Time").firstOrNull,
+                ),
+                location: _readElementText(
+                  sceneNode.findAllElements("Location").firstOrNull,
+                ),
+                focusPoint: _readElementText(
+                  sceneNode.findAllElements("FocusPoint").firstOrNull,
+                ),
+                conflictPoint: _readElementText(
+                  sceneNode.findAllElements("ConflictPoint").firstOrNull,
+                ),
+                memo: _readElementText(
+                  sceneNode.findAllElements("Memo").firstOrNull,
+                ),
+                people: scenePeople,
+                item: sceneItems,
+                doingThings: sceneDoings,
+              ),
+            );
           }
 
-          storyline.scenes.add(event);
+          events.add(
+            StoryEventData(
+              storyEvent: eventName,
+              storyEventUUID: eventUUID,
+              scenes: scenes,
+              memo: eventMemo,
+              conflictPoint: eventConflict,
+              people: eventPeople,
+              item: eventItems,
+            ),
+          );
         }
 
-        storylines.add(storyline);
+        storylines.add(
+          StorylineData(
+            storylineName: storylineName,
+            storylineType: storylineType,
+            chapterUUID: storylineUUID,
+            scenes: events,
+            people: storylinePeople,
+            item: storylineItems,
+            memo: storylineMemo,
+            conflictPoint: storylineConflict,
+          ),
+        );
       }
 
-      return storylines.isEmpty ? null : storylines;
+      return storylines.isEmpty ? null : _createSnapshot(storylines);
     } catch (e) {
       _log.severe("Error parsing Outline XML: $e");
       return null;
@@ -657,10 +506,7 @@ class OutlineCodec {
 class OutlineAdjustView extends ConsumerStatefulWidget {
   final ValueChanged<List<StorylineData>>? onStorylineChanged;
 
-  const OutlineAdjustView({
-    super.key,
-    required this.onStorylineChanged,
-  });
+  const OutlineAdjustView({super.key, required this.onStorylineChanged});
 
   @override
   ConsumerState<OutlineAdjustView> createState() => _OutlineAdjustViewState();
@@ -792,7 +638,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && si >= 0 && si < storylines.length) {
       final storyline = storylines[si];
       if (storyline.storylineName != storylineNameController.text) {
-        storyline.storylineName = storylineNameController.text;
+        _updateStorylineAt(
+          si,
+          (current) =>
+              current.copyWith(storylineName: storylineNameController.text),
+        );
         _notifyChange();
         setState(() {}); // Trigger rebuild to update list item title
       }
@@ -803,7 +653,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].storylineType != storylineTypeController.text) {
-        storylines[si].storylineType = storylineTypeController.text;
+        _updateStorylineAt(
+          si,
+          (current) =>
+              current.copyWith(storylineType: storylineTypeController.text),
+        );
         _notifyChange();
       }
     }
@@ -813,7 +667,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].conflictPoint != storylineConflictController.text) {
-        storylines[si].conflictPoint = storylineConflictController.text;
+        _updateStorylineAt(
+          si,
+          (current) =>
+              current.copyWith(conflictPoint: storylineConflictController.text),
+        );
         _notifyChange();
       }
     }
@@ -823,7 +681,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].memo != storylineMemoController.text) {
-        storylines[si].memo = storylineMemoController.text;
+        _updateStorylineAt(
+          si,
+          (current) => current.copyWith(memo: storylineMemoController.text),
+        );
         _notifyChange();
       }
     }
@@ -835,7 +696,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null) {
       final event = storylines[si].scenes[ei];
       if (event.storyEvent != eventNameController.text) {
-        event.storyEvent = eventNameController.text;
+        _updateEventAt(
+          si,
+          ei,
+          (current) => current.copyWith(storyEvent: eventNameController.text),
+        );
         _notifyChange();
         setState(() {});
       }
@@ -848,7 +713,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null) {
       if (storylines[si].scenes[ei].conflictPoint !=
           eventConflictController.text) {
-        storylines[si].scenes[ei].conflictPoint = eventConflictController.text;
+        _updateEventAt(
+          si,
+          ei,
+          (current) =>
+              current.copyWith(conflictPoint: eventConflictController.text),
+        );
         _notifyChange();
       }
     }
@@ -859,7 +729,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
       if (storylines[si].scenes[ei].memo != eventMemoController.text) {
-        storylines[si].scenes[ei].memo = eventMemoController.text;
+        _updateEventAt(
+          si,
+          ei,
+          (current) => current.copyWith(memo: eventMemoController.text),
+        );
         _notifyChange();
       }
     }
@@ -872,7 +746,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       final scene = storylines[si].scenes[ei].scenes[ci];
       if (scene.sceneName != sceneNameController.text) {
-        scene.sceneName = sceneNameController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) => current.copyWith(sceneName: sceneNameController.text),
+        );
         _notifyChange();
         setState(() {});
       }
@@ -886,7 +765,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       if (storylines[si].scenes[ei].scenes[ci].time !=
           sceneTimeController.text) {
-        storylines[si].scenes[ei].scenes[ci].time = sceneTimeController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) => current.copyWith(time: sceneTimeController.text),
+        );
         _notifyChange();
       }
     }
@@ -899,8 +783,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       if (storylines[si].scenes[ei].scenes[ci].location !=
           sceneLocationController.text) {
-        storylines[si].scenes[ei].scenes[ci].location =
-            sceneLocationController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) => current.copyWith(location: sceneLocationController.text),
+        );
         _notifyChange();
       }
     }
@@ -913,8 +801,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       if (storylines[si].scenes[ei].scenes[ci].focusPoint !=
           sceneFocusController.text) {
-        storylines[si].scenes[ei].scenes[ci].focusPoint =
-            sceneFocusController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) => current.copyWith(focusPoint: sceneFocusController.text),
+        );
         _notifyChange();
       }
     }
@@ -927,8 +819,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       if (storylines[si].scenes[ei].scenes[ci].conflictPoint !=
           sceneConflictController.text) {
-        storylines[si].scenes[ei].scenes[ci].conflictPoint =
-            sceneConflictController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) =>
+              current.copyWith(conflictPoint: sceneConflictController.text),
+        );
         _notifyChange();
       }
     }
@@ -941,7 +838,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si != null && ei != null && ci != null) {
       if (storylines[si].scenes[ei].scenes[ci].memo !=
           sceneMemoController.text) {
-        storylines[si].scenes[ei].scenes[ci].memo = sceneMemoController.text;
+        _updateSceneAt(
+          si,
+          ei,
+          ci,
+          (current) => current.copyWith(memo: sceneMemoController.text),
+        );
         _notifyChange();
       }
     }
@@ -1115,7 +1017,177 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   List<StorylineData> _copyStorylines(List<StorylineData> source) {
-    return source.map((storyline) => storyline.copyWith()).toList();
+    return source
+        .map(
+          (storyline) => storyline.copyWith(
+            people: [...storyline.people],
+            item: [...storyline.item],
+            scenes: storyline.scenes
+                .map(
+                  (event) => event.copyWith(
+                    people: [...event.people],
+                    item: [...event.item],
+                    scenes: event.scenes
+                        .map(
+                          (scene) => scene.copyWith(
+                            people: [...scene.people],
+                            item: [...scene.item],
+                            doingThings: [...scene.doingThings],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                )
+                .toList(),
+          ),
+        )
+        .toList();
+  }
+
+  void _reduceStorylines(
+    List<StorylineData> Function(List<StorylineData>) reduce,
+  ) {
+    _storylines = reduce(_storylines);
+  }
+
+  void _reduceStorylineAt(
+    int storylineIndex,
+    StorylineData Function(StorylineData) reduce,
+  ) {
+    _reduceStorylines((storylines) {
+      final nextStorylines = [...storylines];
+      nextStorylines[storylineIndex] = reduce(nextStorylines[storylineIndex]);
+      return nextStorylines;
+    });
+  }
+
+  void _reduceEventAt(
+    int storylineIndex,
+    int eventIndex,
+    StoryEventData Function(StoryEventData) reduce,
+  ) {
+    _reduceStorylineAt(storylineIndex, (storyline) {
+      final events = [...storyline.scenes];
+      events[eventIndex] = reduce(events[eventIndex]);
+      return storyline.copyWith(scenes: events);
+    });
+  }
+
+  void _reduceSceneAt(
+    int storylineIndex,
+    int eventIndex,
+    int sceneIndex,
+    SceneData Function(SceneData) reduce,
+  ) {
+    _reduceEventAt(storylineIndex, eventIndex, (event) {
+      final scenes = [...event.scenes];
+      scenes[sceneIndex] = reduce(scenes[sceneIndex]);
+      return event.copyWith(scenes: scenes);
+    });
+  }
+
+  void _updateStorylineAt(
+    int storylineIndex,
+    StorylineData Function(StorylineData) update,
+  ) {
+    _reduceStorylineAt(storylineIndex, update);
+  }
+
+  void _updateEventAt(
+    int storylineIndex,
+    int eventIndex,
+    StoryEventData Function(StoryEventData) update,
+  ) {
+    _reduceEventAt(storylineIndex, eventIndex, update);
+  }
+
+  void _updateSceneAt(
+    int storylineIndex,
+    int eventIndex,
+    int sceneIndex,
+    SceneData Function(SceneData) update,
+  ) {
+    _reduceSceneAt(storylineIndex, eventIndex, sceneIndex, update);
+  }
+
+  void _appendStoryline(StorylineData storyline) {
+    _reduceStorylines((storylines) => [...storylines, storyline]);
+  }
+
+  StorylineData _removeStorylineAt(int index) {
+    final nextStorylines = [..._storylines];
+    final removed = nextStorylines.removeAt(index);
+    _storylines = nextStorylines;
+    return removed;
+  }
+
+  void _insertStorylineAt(int index, StorylineData storyline) {
+    _reduceStorylines(
+      (storylines) => [...storylines]..insert(index, storyline),
+    );
+  }
+
+  void _appendEventToStoryline(int storylineIndex, StoryEventData event) {
+    _reduceStorylineAt(storylineIndex, (storyline) {
+      return storyline.copyWith(scenes: [...storyline.scenes, event]);
+    });
+  }
+
+  void _insertEventInStoryline(
+    int storylineIndex,
+    int eventIndex,
+    StoryEventData event,
+  ) {
+    _reduceStorylineAt(storylineIndex, (storyline) {
+      final events = [...storyline.scenes]..insert(eventIndex, event);
+      return storyline.copyWith(scenes: events);
+    });
+  }
+
+  StoryEventData _removeEventFromStoryline(int storylineIndex, int eventIndex) {
+    late StoryEventData removed;
+    _reduceStorylineAt(storylineIndex, (storyline) {
+      final events = [...storyline.scenes];
+      removed = events.removeAt(eventIndex);
+      return storyline.copyWith(scenes: events);
+    });
+    return removed;
+  }
+
+  void _appendSceneToEvent(
+    int storylineIndex,
+    int eventIndex,
+    SceneData scene,
+  ) {
+    _updateEventAt(storylineIndex, eventIndex, (event) {
+      return event.copyWith(scenes: [...event.scenes, scene]);
+    });
+  }
+
+  void _insertSceneInEvent(
+    int storylineIndex,
+    int eventIndex,
+    int sceneIndex,
+    SceneData scene,
+  ) {
+    _updateEventAt(storylineIndex, eventIndex, (event) {
+      final scenes = [...event.scenes]..insert(sceneIndex, scene);
+      return event.copyWith(scenes: scenes);
+    });
+  }
+
+  SceneData _removeSceneFromEvent(
+    int storylineIndex,
+    int eventIndex,
+    int sceneIndex,
+  ) {
+    late SceneData removed;
+    _updateEventAt(storylineIndex, eventIndex, (event) {
+      final scenes = [...event.scenes];
+      removed = scenes.removeAt(sceneIndex);
+      return event.copyWith(scenes: scenes);
+    });
+    return removed;
   }
 
   // MARK: - 自動滾動方法
@@ -1338,8 +1410,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     if (fromIndex >= 0 &&
                         fromIndex < storylines.length &&
                         fromIndex != toIndex) {
-                      final movedStoryline = storylines.removeAt(fromIndex);
-                      storylines.insert(toIndex, movedStoryline);
+                      final movedStoryline = _removeStorylineAt(fromIndex);
+                      _insertStorylineAt(toIndex, movedStoryline);
                       _notifyChange();
                     }
                   });
@@ -1371,9 +1443,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                       ? Center(
                           child: Text(
                             "暫無故事線",
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                           ),
                         )
                       : ListView.builder(
@@ -1432,7 +1507,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   void _submitRenamingStoryline(int index) {
     if (editingStorylineID != null && _renameListController != null) {
       final val = _renameListController!.text.trim();
-      storylines[index].storylineName = val.isEmpty ? "(未命名故事線)" : val;
+      _updateStorylineAt(
+        index,
+        (storyline) =>
+            storyline.copyWith(storylineName: val.isEmpty ? "(未命名故事線)" : val),
+      );
       _notifyChange();
     }
     _cancelRenaming();
@@ -1451,9 +1530,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   void _submitRenamingEvent(int slIdx, int evIdx) {
     if (editingEventID != null && _renameListController != null) {
       final val = _renameListController!.text.trim();
-      storylines[slIdx].scenes[evIdx].storyEvent = val.isEmpty
-          ? "(未命名事件)"
-          : val;
+      _updateEventAt(
+        slIdx,
+        evIdx,
+        (event) => event.copyWith(storyEvent: val.isEmpty ? "(未命名事件)" : val),
+      );
       _notifyChange();
     }
     _cancelRenaming();
@@ -1472,9 +1553,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   void _submitRenamingScene(int slIdx, int evIdx, int scIdx) {
     if (editingSceneID != null && _renameListController != null) {
       final val = _renameListController!.text.trim();
-      storylines[slIdx].scenes[evIdx].scenes[scIdx].sceneName = val.isEmpty
-          ? "(未命名場景)"
-          : val;
+      _updateSceneAt(
+        slIdx,
+        evIdx,
+        scIdx,
+        (scene) => scene.copyWith(sceneName: val.isEmpty ? "(未命名場景)" : val),
+      );
       _notifyChange();
     }
     _cancelRenaming();
@@ -1602,9 +1686,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                         ? Center(
                             child: Text(
                               "此故事線暫無事件",
-                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           )
                         : ListView.builder(
@@ -2014,13 +2101,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               items: event.people,
               onAdd: (item) {
                 setState(() {
-                  event.people.add(item);
+                  _updateEventAt(si, ei, (current) {
+                    return current.copyWith(people: [...current.people, item]);
+                  });
                 });
                 _notifyChange();
               },
               onRemove: (index) {
                 setState(() {
-                  event.people.removeAt(index);
+                  _updateEventAt(si, ei, (current) {
+                    final people = [...current.people]..removeAt(index);
+                    return current.copyWith(people: people);
+                  });
                 });
                 _notifyChange();
               },
@@ -2034,13 +2126,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               items: event.item,
               onAdd: (item) {
                 setState(() {
-                  event.item.add(item);
+                  _updateEventAt(si, ei, (current) {
+                    return current.copyWith(item: [...current.item, item]);
+                  });
                 });
                 _notifyChange();
               },
               onRemove: (index) {
                 setState(() {
-                  event.item.removeAt(index);
+                  _updateEventAt(si, ei, (current) {
+                    final items = [...current.item]..removeAt(index);
+                    return current.copyWith(item: items);
+                  });
                 });
                 _notifyChange();
               },
@@ -2138,9 +2235,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                         ? Center(
                             child: Text(
                               "暫無場景",
-                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           )
                         : ListView.builder(
@@ -2521,13 +2621,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               items: scene.people,
               onAdd: (item) {
                 setState(() {
-                  scene.people.add(item);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    return current.copyWith(people: [...current.people, item]);
+                  });
                 });
                 _notifyChange();
               },
               onRemove: (index) {
                 setState(() {
-                  scene.people.removeAt(index);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    final people = [...current.people]..removeAt(index);
+                    return current.copyWith(people: people);
+                  });
                 });
                 _notifyChange();
               },
@@ -2541,13 +2646,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               items: scene.item,
               onAdd: (item) {
                 setState(() {
-                  scene.item.add(item);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    return current.copyWith(item: [...current.item, item]);
+                  });
                 });
                 _notifyChange();
               },
               onRemove: (index) {
                 setState(() {
-                  scene.item.removeAt(index);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    final items = [...current.item]..removeAt(index);
+                    return current.copyWith(item: items);
+                  });
                 });
                 _notifyChange();
               },
@@ -2561,13 +2671,20 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               items: scene.doingThings,
               onAdd: (item) {
                 setState(() {
-                  scene.doingThings.add(item);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    return current.copyWith(
+                      doingThings: [...current.doingThings, item],
+                    );
+                  });
                 });
                 _notifyChange();
               },
               onRemove: (index) {
                 setState(() {
-                  scene.doingThings.removeAt(index);
+                  _updateSceneAt(si, ei, ci, (current) {
+                    final doings = [...current.doingThings]..removeAt(index);
+                    return current.copyWith(doingThings: doings);
+                  });
                 });
                 _notifyChange();
               },
@@ -2617,7 +2734,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     );
 
     setState(() {
-      storylines.add(newStoryline);
+      _appendStoryline(newStoryline);
       selectedStorylineID = newStoryline.chapterUUID;
       selectedEventID = null;
       selectedSceneID = null;
@@ -2636,20 +2753,21 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         ? "事件 ${storylines[si].scenes.length + 1}"
         : name;
 
-    final newEvent = StoryEventData(
-      storyEvent: finalName,
-      scenes: [],
-      memo: "",
-      conflictPoint: "",
-      people: const [],
-      item: const [],
-    ).copyWith(
-      people: storylines[si].people, // 繼承大箱
-      item: storylines[si].item, // 繼承大箱
-    );
+    final newEvent =
+        StoryEventData(
+          storyEvent: finalName,
+          scenes: [],
+          memo: "",
+          conflictPoint: "",
+          people: const [],
+          item: const [],
+        ).copyWith(
+          people: storylines[si].people, // 繼承大箱
+          item: storylines[si].item, // 繼承大箱
+        );
 
     setState(() {
-      storylines[si].scenes.add(newEvent);
+      _appendEventToStoryline(si, newEvent);
       selectedStorylineID = storylines[si].chapterUUID;
       selectedEventID = newEvent.storyEventUUID;
       selectedSceneID = null;
@@ -2669,19 +2787,20 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         ? "場景 ${storylines[si].scenes[ei].scenes.length + 1}"
         : name;
 
-    final newScene = SceneData(
-      sceneName: finalName,
-      focusPoint: "",
-      conflictPoint: "",
-      people: const [],
-      item: const [],
-    ).copyWith(
-      people: storylines[si].scenes[ei].people, // 繼承中箱
-      item: storylines[si].scenes[ei].item, // 繼承中箱
-    );
+    final newScene =
+        SceneData(
+          sceneName: finalName,
+          focusPoint: "",
+          conflictPoint: "",
+          people: const [],
+          item: const [],
+        ).copyWith(
+          people: storylines[si].scenes[ei].people, // 繼承中箱
+          item: storylines[si].scenes[ei].item, // 繼承中箱
+        );
 
     setState(() {
-      storylines[si].scenes[ei].scenes.add(newScene);
+      _appendSceneToEvent(si, ei, newScene);
       selectedStorylineID = storylines[si].chapterUUID;
       selectedEventID = storylines[si].scenes[ei].storyEventUUID;
       selectedSceneID = newScene.sceneUUID;
@@ -2697,7 +2816,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (index == -1) return;
 
     setState(() {
-      storylines.removeAt(index);
+      _removeStorylineAt(index);
       selectedStorylineID = storylines.isNotEmpty
           ? storylines.first.chapterUUID
           : null;
@@ -2714,7 +2833,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (eventIndex == -1) return;
 
     setState(() {
-      storylines[storylineIndex].scenes.removeAt(eventIndex);
+      _removeEventFromStoryline(storylineIndex, eventIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
       selectedEventID = storylines[storylineIndex].scenes.isNotEmpty
           ? storylines[storylineIndex].scenes.first.storyEventUUID
@@ -2731,7 +2850,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (sceneIndex == -1) return;
 
     setState(() {
-      storylines[storylineIndex].scenes[eventIndex].scenes.removeAt(sceneIndex);
+      _removeSceneFromEvent(storylineIndex, eventIndex, sceneIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
       selectedEventID =
           storylines[storylineIndex].scenes[eventIndex].storyEventUUID;
@@ -2750,8 +2869,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (fromIndex == toIndex) return;
 
     setState(() {
-      final storyline = storylines.removeAt(fromIndex);
-      storylines.insert(toIndex, storyline);
+      final storyline = _removeStorylineAt(fromIndex);
+      _insertStorylineAt(toIndex, storyline);
     });
 
     _notifyChange();
@@ -2782,10 +2901,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       return;
 
     // 執行移動
-    final movingEvent = storylines[sourceStorylineIdx].scenes.removeAt(
+    final movingEvent = _removeEventFromStoryline(
+      sourceStorylineIdx,
       sourceEventIdx,
     );
-    storylines[targetStorylineIdx].scenes.add(movingEvent);
+    _appendEventToStoryline(targetStorylineIdx, movingEvent);
 
     // 更新選擇
     setState(() {
@@ -2832,13 +2952,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       return;
 
     // 執行移動
-    final movingScene = storylines[sourceStorylineIdx]
-        .scenes[sourceEventIdx]
-        .scenes
-        .removeAt(sourceSceneIdx);
-    storylines[targetStorylineIdx].scenes[targetEventIdx].scenes.add(
-      movingScene,
+    final movingScene = _removeSceneFromEvent(
+      sourceStorylineIdx,
+      sourceEventIdx,
+      sourceSceneIdx,
     );
+    _appendSceneToEvent(targetStorylineIdx, targetEventIdx, movingScene);
 
     // 更新選擇
     setState(() {
@@ -2855,8 +2974,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (fromIndex == toIndex) return;
 
     setState(() {
-      final event = storylines[storylineIndex].scenes.removeAt(fromIndex);
-      storylines[storylineIndex].scenes.insert(toIndex, event);
+      final event = _removeEventFromStoryline(storylineIndex, fromIndex);
+      _insertEventInStoryline(storylineIndex, toIndex, event);
     });
 
     _notifyChange();
@@ -2871,12 +2990,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (fromIndex == toIndex) return;
 
     setState(() {
-      final scene = storylines[storylineIndex].scenes[eventIndex].scenes
-          .removeAt(fromIndex);
-      storylines[storylineIndex].scenes[eventIndex].scenes.insert(
-        toIndex,
-        scene,
+      final scene = _removeSceneFromEvent(
+        storylineIndex,
+        eventIndex,
+        fromIndex,
       );
+      _insertSceneInEvent(storylineIndex, eventIndex, toIndex, scene);
     });
 
     _notifyChange();

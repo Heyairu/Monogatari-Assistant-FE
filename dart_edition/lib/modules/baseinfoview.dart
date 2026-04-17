@@ -18,112 +18,31 @@ import "package:intl/intl.dart";
 import "package:xml/xml.dart" as xml;
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
-import "../bin/content_manager.dart";
 import "../bin/settings_manager.dart";
+import "../models/base_info_data.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
 
+export "../models/base_info_data.dart";
+
 final _log = Logger("BaseInfoView");
-
-// MARK: - Model
-
-const Object _baseInfoUnset = Object();
-
-class BaseInfoData {
-  String bookName = "";
-  String author = "";
-  String purpose = "";
-  String toRecap = "";
-  String storyType = "";
-  String intro = "";
-  List<String> tags = [];
-  DateTime? latestSave;
-  int nowWords = 0; // 由 content（非空白字元數）計算
-
-  BaseInfoData();
-
-  BaseInfoData copyWith({
-    String? bookName,
-    String? author,
-    String? purpose,
-    String? toRecap,
-    String? storyType,
-    String? intro,
-    List<String>? tags,
-    Object? latestSave = _baseInfoUnset,
-    int? nowWords,
-  }) {
-    return BaseInfoData()
-      ..bookName = bookName ?? this.bookName
-      ..author = author ?? this.author
-      ..purpose = purpose ?? this.purpose
-      ..toRecap = toRecap ?? this.toRecap
-      ..storyType = storyType ?? this.storyType
-      ..intro = intro ?? this.intro
-      ..tags = List<String>.from(tags ?? this.tags)
-      ..latestSave = identical(latestSave, _baseInfoUnset)
-          ? this.latestSave
-          : latestSave as DateTime?
-      ..nowWords = nowWords ?? this.nowWords;
-  }
-
-  void recalcNowWords(
-    String content, {
-    WordCountMode mode = WordCountMode.characters,
-  }) {
-    nowWords = ContentManager.calculateWordCount(content, mode: mode);
-  }
-
-  bool get isEffectivelyEmpty {
-    return bookName.trim().isEmpty &&
-        author.trim().isEmpty &&
-        storyType.trim().isEmpty &&
-        intro.trim().isEmpty &&
-        tags.isEmpty;
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is BaseInfoData &&
-        other.bookName == bookName &&
-        other.author == author &&
-        other.purpose == purpose &&
-        other.toRecap == toRecap &&
-        other.storyType == storyType &&
-        other.intro == intro &&
-        _listEquals(other.tags, tags) &&
-        other.latestSave == latestSave &&
-        other.nowWords == nowWords;
-  }
-
-  @override
-  int get hashCode {
-    return Object.hash(
-      bookName,
-      author,
-      purpose,
-      toRecap,
-      storyType,
-      intro,
-      tags,
-      latestSave,
-      nowWords,
-    );
-  }
-
-  bool _listEquals<T>(List<T> a, List<T> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-}
 
 // MARK: - XML Codec (compatible with the Qt format)
 
 class BaseInfoCodec {
+  static BaseInfoData createSaveSnapshot({
+    required BaseInfoData data,
+    required String contentText,
+    bool updateLatestSave = true,
+    WordCountMode wordCountMode = WordCountMode.characters,
+  }) {
+    return data
+        .copyWith(
+          latestSave: updateLatestSave ? DateTime.now() : data.latestSave,
+        )
+        .withRecalculatedNowWords(contentText, mode: wordCountMode);
+  }
+
   static void _writeTextElement(
     xml.XmlBuilder builder,
     String name,
@@ -199,22 +118,19 @@ class BaseInfoCodec {
     required String contentText,
     bool updateLatestSave = true,
     WordCountMode wordCountMode = WordCountMode.characters,
+    BaseInfoData? snapshot,
   }) {
-    if (data.isEffectivelyEmpty) return null;
+    final resolved =
+        snapshot ??
+        createSaveSnapshot(
+          data: data,
+          contentText: contentText,
+          updateLatestSave: updateLatestSave,
+          wordCountMode: wordCountMode,
+        );
+    if (resolved.isEffectivelyEmpty) return null;
 
-    var snapshot = data.copyWith(
-      latestSave: updateLatestSave ? DateTime.now() : data.latestSave,
-    );
-
-    snapshot.recalcNowWords(contentText, mode: wordCountMode);
-
-    // Update original data if requested
-    if (updateLatestSave) {
-      data.latestSave = snapshot.latestSave;
-      data.nowWords = snapshot.nowWords;
-    }
-
-    final isoSave = snapshot.latestSave?.toIso8601String() ?? "";
+    final isoSave = resolved.latestSave?.toIso8601String() ?? "";
 
     final builder = xml.XmlBuilder();
     builder.element(
@@ -224,12 +140,12 @@ class BaseInfoCodec {
         builder.element(
           "General",
           nest: () {
-            _writeTextElement(builder, "BookName", snapshot.bookName);
-            _writeTextElement(builder, "Author", snapshot.author);
-            _writeTextElement(builder, "Purpose", snapshot.purpose);
-            _writeTextElement(builder, "ToRecap", snapshot.toRecap);
-            _writeTextElement(builder, "StoryType", snapshot.storyType);
-            _writeTextElement(builder, "Intro", snapshot.intro);
+            _writeTextElement(builder, "BookName", resolved.bookName);
+            _writeTextElement(builder, "Author", resolved.author);
+            _writeTextElement(builder, "Purpose", resolved.purpose);
+            _writeTextElement(builder, "ToRecap", resolved.toRecap);
+            _writeTextElement(builder, "StoryType", resolved.storyType);
+            _writeTextElement(builder, "Intro", resolved.intro);
             if (isoSave.isNotEmpty) {
               builder.element("LatestSave", nest: isoSave);
             }
@@ -238,7 +154,7 @@ class BaseInfoCodec {
         builder.element(
           "Tags",
           nest: () {
-            for (String tag in snapshot.tags) {
+            for (String tag in resolved.tags) {
               final trimmed = tag.trim();
               if (trimmed.isNotEmpty) {
                 _writeTextElement(builder, "Tag", trimmed);
@@ -272,29 +188,34 @@ class BaseInfoCodec {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "BaseInfo") return null;
 
-      final data = BaseInfoData();
+      DateTime? latestSave;
+      int nowWords = 0;
 
       // <General> parsing
       final general = typeElement.findAllElements("General").firstOrNull;
+      var bookName = "";
+      var author = "";
+      var purpose = "";
+      var toRecap = "";
+      var storyType = "";
+      var intro = "";
       if (general != null) {
-        data.bookName = _readElementText(
+        bookName = _readElementText(
           general.findAllElements("BookName").firstOrNull,
         );
-        data.author = _readElementText(
+        author = _readElementText(
           general.findAllElements("Author").firstOrNull,
         );
-        data.purpose = _readElementText(
+        purpose = _readElementText(
           general.findAllElements("Purpose").firstOrNull,
         );
-        data.toRecap = _readElementText(
+        toRecap = _readElementText(
           general.findAllElements("ToRecap").firstOrNull,
         );
-        data.storyType = _readElementText(
+        storyType = _readElementText(
           general.findAllElements("StoryType").firstOrNull,
         );
-        data.intro = _readElementText(
-          general.findAllElements("Intro").firstOrNull,
-        );
+        intro = _readElementText(general.findAllElements("Intro").firstOrNull);
 
         final latestSaveStr = general
             .findAllElements("LatestSave")
@@ -302,7 +223,7 @@ class BaseInfoCodec {
             ?.innerText;
         if (latestSaveStr != null && latestSaveStr.isNotEmpty) {
           try {
-            data.latestSave = DateTime.parse(latestSaveStr);
+            latestSave = DateTime.parse(latestSaveStr);
           } catch (e) {
             // Keep null if parsing fails
           }
@@ -310,12 +231,13 @@ class BaseInfoCodec {
       }
 
       // <Tags> parsing
+      final tags = <String>[];
       final tagsElement = typeElement.findAllElements("Tags").firstOrNull;
       if (tagsElement != null) {
         for (final tagNode in tagsElement.findAllElements("Tag")) {
           final tagText = _readElementText(tagNode).trim();
           if (tagText.isNotEmpty) {
-            data.tags.add(tagText);
+            tags.add(tagText);
           }
         }
       }
@@ -328,11 +250,21 @@ class BaseInfoCodec {
             .firstOrNull
             ?.innerText;
         if (nowWordsStr != null) {
-          data.nowWords = int.tryParse(nowWordsStr) ?? 0;
+          nowWords = int.tryParse(nowWordsStr) ?? 0;
         }
       }
 
-      return data;
+      return BaseInfoData(
+        bookName: bookName,
+        author: author,
+        purpose: purpose,
+        toRecap: toRecap,
+        storyType: storyType,
+        intro: intro,
+        tags: tags,
+        latestSave: latestSave,
+        nowWords: nowWords,
+      );
     } catch (e) {
       _log.severe("Error parsing BaseInfo XML: $e");
       return null;
@@ -357,8 +289,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
   ProviderSubscription<BaseInfoData>? _baseInfoSubscription;
   ProviderSubscription<String>? _contentSubscription;
-  ProviderSubscription<AsyncValue<AppSettingsStateData>>?
-  _settingsSubscription;
+  ProviderSubscription<AsyncValue<AppSettingsStateData>>? _settingsSubscription;
 
   // 為每個文字欄位創建專用的 TextEditingController
   late final TextEditingController _bookNameController;
@@ -371,7 +302,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   @override
   void initState() {
     super.initState();
-    _data = ref.read(baseInfoDataProvider).copyWith();
+    _data = ref.read(baseInfoDataProvider);
     _syncNowWords(commitToProvider: false);
 
     // 初始化各個文字欄位的 controller
@@ -385,37 +316,34 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     // 添加監聽器
     _bookNameController.addListener(() {
       if (_isUpdating) return;
-      _data.bookName = _bookNameController.text;
-      _notifyDataChanged();
+      _applyChange((data) => data.copyWith(bookName: _bookNameController.text));
     });
 
     _authorController.addListener(() {
       if (_isUpdating) return;
-      _data.author = _authorController.text;
-      _notifyDataChanged();
+      _applyChange((data) => data.copyWith(author: _authorController.text));
     });
 
     _purposeController.addListener(() {
       if (_isUpdating) return;
-      _data.purpose = _purposeController.text;
-      _notifyDataChanged();
+      _applyChange((data) => data.copyWith(purpose: _purposeController.text));
     });
 
     _toRecapController.addListener(() {
       if (_isUpdating) return;
-      _data.toRecap = _toRecapController.text;
-      _notifyDataChanged();
+      _applyChange((data) => data.copyWith(toRecap: _toRecapController.text));
     });
 
     _storyTypeController.addListener(() {
       if (_isUpdating) return;
-      _data.storyType = _storyTypeController.text;
-      _notifyDataChanged();
+      _applyChange(
+        (data) => data.copyWith(storyType: _storyTypeController.text),
+      );
     });
 
     _introController.addListener(() {
       if (_isUpdating) return;
-      _applyChange((data) => data.intro = _introController.text);
+      _applyChange((data) => data.copyWith(intro: _introController.text));
     });
 
     _baseInfoSubscription = ref.listenManual<BaseInfoData>(
@@ -428,15 +356,15 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       },
     );
 
-    _contentSubscription = ref.listenManual<String>(
-      editorContentProvider,
-      (previous, next) {
-        if (previous == next) {
-          return;
-        }
-        _syncNowWords();
-      },
-    );
+    _contentSubscription = ref.listenManual<String>(editorContentProvider, (
+      previous,
+      next,
+    ) {
+      if (previous == next) {
+        return;
+      }
+      _syncNowWords();
+    });
 
     _settingsSubscription = ref.listenManual<AsyncValue<AppSettingsStateData>>(
       settingsStateProvider,
@@ -495,7 +423,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
     final previousSelection = controller.selection;
     final hasValidSelection =
-        previousSelection.baseOffset >= 0 && previousSelection.extentOffset >= 0;
+        previousSelection.baseOffset >= 0 &&
+        previousSelection.extentOffset >= 0;
 
     if (!hasValidSelection) {
       controller.value = TextEditingValue(
@@ -514,7 +443,10 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
     controller.value = TextEditingValue(
       text: nextText,
-      selection: TextSelection(baseOffset: baseOffset, extentOffset: extentOffset),
+      selection: TextSelection(
+        baseOffset: baseOffset,
+        extentOffset: extentOffset,
+      ),
     );
   }
 
@@ -525,16 +457,16 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         settingsState?.wordCountMode ?? WordCountMode.wordsAndCharacters;
 
     setState(() {
-      _data.recalcNowWords(contentText, mode: wordCountMode);
+      _data = _data.withRecalculatedNowWords(contentText, mode: wordCountMode);
     });
     if (commitToProvider) {
       _notifyDataChanged(notifyParent: false);
     }
   }
 
-  void _applyChange(void Function(BaseInfoData data) update) {
+  void _applyChange(BaseInfoData Function(BaseInfoData data) update) {
     setState(() {
-      update(_data);
+      _data = update(_data);
     });
     _notifyDataChanged();
   }
@@ -546,14 +478,15 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     }
 
     setState(() {
-      _data.tags.add(tagText);
+      _data = _data.copyWith(tags: [..._data.tags, tagText]);
     });
     _notifyDataChanged();
   }
 
   void _removeTag(int index) {
+    final nextTags = [..._data.tags]..removeAt(index);
     setState(() {
-      _data.tags.removeAt(index);
+      _data = _data.copyWith(tags: nextTags);
     });
     _notifyDataChanged();
   }
@@ -729,12 +662,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                   color: Theme.of(context).colorScheme.onTertiaryContainer,
                 ),
                 textTheme: Theme.of(context).textTheme.copyWith(
-                  titleSmall: Theme.of(context).textTheme.titleSmall
-                      ?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onTertiaryContainer,
-                      ),
+                  titleSmall: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onTertiaryContainer,
+                  ),
                 ),
               ),
               child: const SmallTitle(icon: Icons.analytics, text: "統計資訊"),
@@ -753,11 +683,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             const Divider(height: 16),
 
             // 總字數
-            _buildStatRow(
-              "總字數",
-              "$totalWords 字",
-              Icons.format_list_numbered,
-            ),
+            _buildStatRow("總字數", "$totalWords 字", Icons.format_list_numbered),
             const Divider(height: 16),
 
             // 本章字數

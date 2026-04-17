@@ -284,8 +284,12 @@ class ProjectManager {
       );
       if (chapIndex != -1) {
         final currentEditorContent = textController.text;
-        segmentsData[segIndex].chapters[chapIndex].chapterContent =
-            currentEditorContent;
+        final segment = segmentsData[segIndex];
+        final chapters = [...segment.chapters];
+        chapters[chapIndex] = chapters[chapIndex].copyWith(
+          chapterContent: currentEditorContent,
+        );
+        segmentsData[segIndex] = segment.copyWith(chapters: chapters);
         updateContentCallback(currentEditorContent);
       }
     }
@@ -1063,8 +1067,65 @@ class _ProjectParser {
       // 如果 XML 格式完全錯誤，將回傳預設的空專案
     }
 
+    List<ChapterModule.SegmentData> snapshotSegments(
+      List<ChapterModule.SegmentData> source,
+    ) {
+      return List<ChapterModule.SegmentData>.unmodifiable(
+        source
+            .map(
+              (segment) => segment.copyWith(
+                chapters: segment.chapters
+                    .map((chapter) => chapter.copyWith())
+                    .toList(growable: false),
+              ),
+            )
+            .toList(growable: false),
+      );
+    }
+
+    List<OutlineModule.StorylineData> snapshotOutline(
+      List<OutlineModule.StorylineData> source,
+    ) {
+      return List<OutlineModule.StorylineData>.unmodifiable(
+        source
+            .map(
+              (storyline) => storyline.copyWith(
+                people: [...storyline.people],
+                item: [...storyline.item],
+                scenes: storyline.scenes
+                    .map(
+                      (event) => event.copyWith(
+                        people: [...event.people],
+                        item: [...event.item],
+                        scenes: event.scenes
+                            .map(
+                              (scene) => scene.copyWith(
+                                people: [...scene.people],
+                                item: [...scene.item],
+                                doingThings: [...scene.doingThings],
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            )
+            .toList(growable: false),
+      );
+    }
+
+    final parsedBaseInfo = (loadedBaseInfo ?? defaultData.baseInfoData)
+        .copyWith(tags: [...(loadedBaseInfo ?? defaultData.baseInfoData).tags]);
+    final parsedSegments = snapshotSegments(
+      loadedSegments ?? defaultData.segmentsData,
+    );
+    final parsedOutline = snapshotOutline(
+      loadedOutline ?? defaultData.outlineData,
+    );
+
     // 如果有載入章節數據，使用第一個章節的內容
-    final targetSegments = loadedSegments ?? defaultData.segmentsData;
+    final targetSegments = parsedSegments;
     if (targetSegments.isNotEmpty && targetSegments[0].chapters.isNotEmpty) {
       contentText = targetSegments[0].chapters[0].chapterContent;
       // 簡單的字數統計
@@ -1075,9 +1136,9 @@ class _ProjectParser {
     }
 
     return ProjectData(
-      baseInfoData: loadedBaseInfo ?? defaultData.baseInfoData,
-      segmentsData: loadedSegments ?? defaultData.segmentsData,
-      outlineData: loadedOutline ?? defaultData.outlineData,
+      baseInfoData: parsedBaseInfo,
+      segmentsData: parsedSegments,
+      outlineData: parsedOutline,
       foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
       updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
       worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,

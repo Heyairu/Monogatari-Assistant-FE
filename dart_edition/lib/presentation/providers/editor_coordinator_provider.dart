@@ -5,6 +5,7 @@ import "../../bin/file.dart" as file_module;
 import "../../bin/file.dart";
 import "../../bin/settings_manager.dart";
 import "../../modules/chapterselectionview.dart" as chapter_module;
+import "../../modules/outlineview.dart" as outline_module;
 import "global_state_providers.dart";
 import "project_io_providers.dart";
 import "project_state_providers.dart";
@@ -74,10 +75,10 @@ class EditorCoordinatorState {
       lastSavedTime: identical(lastSavedTime, _editorCoordinatorUnset)
           ? this.lastSavedTime
           : lastSavedTime as DateTime?,
-        wordCountMode: identical(wordCountMode, _editorCoordinatorUnset)
+      wordCountMode: identical(wordCountMode, _editorCoordinatorUnset)
           ? this.wordCountMode
           : wordCountMode as WordCountMode?,
-        wordCountModeEventId: wordCountModeEventId ?? this.wordCountModeEventId,
+      wordCountModeEventId: wordCountModeEventId ?? this.wordCountModeEventId,
       errorEventId: errorEventId ?? this.errorEventId,
       errorMessage: identical(errorMessage, _editorCoordinatorUnset)
           ? this.errorMessage
@@ -101,38 +102,38 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         .valueOrNull
         ?.wordCountMode;
 
-    ref.listen<AsyncValue<ProjectIoStatus>>(
-      projectIoControllerProvider,
-      (previous, next) {
-        setLoading(next.isLoading);
-      },
-    );
+    ref.listen<AsyncValue<ProjectIoStatus>>(projectIoControllerProvider, (
+      previous,
+      next,
+    ) {
+      setLoading(next.isLoading);
+    });
 
-    ref.listen<AsyncValue<AppSettingsStateData>>(
-      settingsStateProvider,
-      (previous, next) {
-        final previousMode = previous?.valueOrNull?.wordCountMode;
-        final nextMode = next.valueOrNull?.wordCountMode;
+    ref.listen<AsyncValue<AppSettingsStateData>>(settingsStateProvider, (
+      previous,
+      next,
+    ) {
+      final previousMode = previous?.valueOrNull?.wordCountMode;
+      final nextMode = next.valueOrNull?.wordCountMode;
 
-        if (nextMode == null) {
-          return;
+      if (nextMode == null) {
+        return;
+      }
+
+      if (previousMode == null) {
+        if (state.wordCountMode != nextMode) {
+          state = state.copyWith(wordCountMode: nextMode);
         }
+        return;
+      }
 
-        if (previousMode == null) {
-          if (state.wordCountMode != nextMode) {
-            state = state.copyWith(wordCountMode: nextMode);
-          }
-          return;
-        }
-
-        if (previousMode != nextMode) {
-          state = state.copyWith(
-            wordCountMode: nextMode,
-            wordCountModeEventId: state.wordCountModeEventId + 1,
-          );
-        }
-      },
-    );
+      if (previousMode != nextMode) {
+        state = state.copyWith(
+          wordCountMode: nextMode,
+          wordCountModeEventId: state.wordCountModeEventId + 1,
+        );
+      }
+    });
 
     return EditorCoordinatorState(
       isLoading: initialLoading,
@@ -200,10 +201,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
   void resetAfterProjectLoaded() {
     final bool nextUnsaved = ProjectManager.markAsSaved();
-    state = state.copyWith(
-      hasUnsavedChanges: nextUnsaved,
-      lastSavedTime: null,
-    );
+    state = state.copyWith(hasUnsavedChanges: nextUnsaved, lastSavedTime: null);
   }
 
   void clearLastSavedTime() {
@@ -277,7 +275,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         }
       }
 
-      await ref.read(settingsStateProvider.notifier).addRecentProject(
+      await ref
+          .read(settingsStateProvider.notifier)
+          .addRecentProject(
             fileName: projectFile.fullFileName,
             filePath: projectFile.filePath,
             uri: persistedAccessToken,
@@ -288,7 +288,10 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
   }
 
   bool hasUnsavedChanges(file_module.ProjectFile? currentProject) {
-    return ProjectManager.hasUnsavedChanges(state.hasUnsavedChanges, currentProject);
+    return ProjectManager.hasUnsavedChanges(
+      state.hasUnsavedChanges,
+      currentProject,
+    );
   }
 
   EditorProjectInitialState calculateInitialState(
@@ -321,17 +324,84 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     );
   }
 
-  file_module.ProjectData collectProjectData() {
+  base_info_module.BaseInfoData _snapshotBaseInfo(
+    base_info_module.BaseInfoData value,
+  ) {
+    return value.copyWith(tags: [...value.tags]);
+  }
+
+  List<chapter_module.SegmentData> _snapshotSegments(
+    List<chapter_module.SegmentData> source,
+  ) {
+    return source
+        .map(
+          (segment) => segment.copyWith(
+            chapters: segment.chapters
+                .map((chapter) => chapter.copyWith())
+                .toList(growable: false),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<outline_module.StorylineData> _snapshotOutline(
+    List<outline_module.StorylineData> source,
+  ) {
+    return source
+        .map(
+          (storyline) => storyline.copyWith(
+            people: [...storyline.people],
+            item: [...storyline.item],
+            scenes: storyline.scenes
+                .map(
+                  (event) => event.copyWith(
+                    people: [...event.people],
+                    item: [...event.item],
+                    scenes: event.scenes
+                        .map(
+                          (scene) => scene.copyWith(
+                            people: [...scene.people],
+                            item: [...scene.item],
+                            doingThings: [...scene.doingThings],
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  file_module.ProjectData _snapshotProjectData(file_module.ProjectData source) {
     return file_module.ProjectData(
-      baseInfoData: ref.read(baseInfoDataProvider),
-      segmentsData: ref.read(segmentsDataProvider),
-      outlineData: ref.read(outlineDataProvider),
-      foreshadowData: ref.read(foreshadowDataProvider),
-      updatePlanData: ref.read(updatePlanDataProvider),
-      worldSettingsData: ref.read(worldSettingsDataProvider),
-      characterData: ref.read(characterDataProvider),
-      totalWords: ref.read(totalWordsProvider),
-      contentText: ref.read(editorContentProvider),
+      baseInfoData: _snapshotBaseInfo(source.baseInfoData),
+      segmentsData: _snapshotSegments(source.segmentsData),
+      outlineData: _snapshotOutline(source.outlineData),
+      foreshadowData: source.foreshadowData,
+      updatePlanData: source.updatePlanData,
+      worldSettingsData: source.worldSettingsData,
+      characterData: source.characterData,
+      totalWords: source.totalWords,
+      contentText: source.contentText,
+      isDirty: source.isDirty,
+    );
+  }
+
+  file_module.ProjectData collectProjectData() {
+    return _snapshotProjectData(
+      file_module.ProjectData(
+        baseInfoData: ref.read(baseInfoDataProvider),
+        segmentsData: ref.read(segmentsDataProvider),
+        outlineData: ref.read(outlineDataProvider),
+        foreshadowData: ref.read(foreshadowDataProvider),
+        updatePlanData: ref.read(updatePlanDataProvider),
+        worldSettingsData: ref.read(worldSettingsDataProvider),
+        characterData: ref.read(characterDataProvider),
+        totalWords: ref.read(totalWordsProvider),
+        contentText: ref.read(editorContentProvider),
+      ),
     );
   }
 
@@ -339,23 +409,43 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     required file_module.ProjectData data,
     required EditorProjectInitialState initialState,
   }) {
-    ref.read(baseInfoDataProvider.notifier).setBaseInfoData(data.baseInfoData);
-    ref.read(segmentsDataProvider.notifier).setSegmentsData(data.segmentsData);
-    ref.read(outlineDataProvider.notifier).setOutlineData(data.outlineData);
-    ref.read(foreshadowDataProvider.notifier).setForeshadowData(data.foreshadowData);
-    ref.read(updatePlanDataProvider.notifier).setUpdatePlanData(data.updatePlanData);
+    final snapshot = _snapshotProjectData(data);
+
+    ref
+        .read(baseInfoDataProvider.notifier)
+        .updateBaseInfoData((_) => snapshot.baseInfoData);
+    ref
+        .read(segmentsDataProvider.notifier)
+        .updateSegmentsData((_) => snapshot.segmentsData);
+    ref
+        .read(outlineDataProvider.notifier)
+        .updateOutlineData((_) => snapshot.outlineData);
+    ref
+        .read(foreshadowDataProvider.notifier)
+        .setForeshadowData(snapshot.foreshadowData);
+    ref
+        .read(updatePlanDataProvider.notifier)
+        .setUpdatePlanData(snapshot.updatePlanData);
     ref
         .read(worldSettingsDataProvider.notifier)
-        .setWorldSettingsData(data.worldSettingsData);
-    ref.read(characterDataProvider.notifier).setCharacterData(data.characterData);
+        .setWorldSettingsData(snapshot.worldSettingsData);
+    ref
+        .read(characterDataProvider.notifier)
+        .setCharacterData(snapshot.characterData);
 
-    ref.read(editorSelectionProvider.notifier).setSelectionAndCursor(
-      selectedSegID: initialState.selectedSegID,
-      selectedChapID: initialState.selectedChapID,
-      cursorOffset: 0,
-    );
-    ref.read(editorContentProvider.notifier).setContent(initialState.contentText);
-    ref.read(totalWordsProvider.notifier).setTotalWords(initialState.totalWords);
+    ref
+        .read(editorSelectionProvider.notifier)
+        .setSelectionAndCursor(
+          selectedSegID: initialState.selectedSegID,
+          selectedChapID: initialState.selectedChapID,
+          cursorOffset: 0,
+        );
+    ref
+        .read(editorContentProvider.notifier)
+        .setContent(initialState.contentText);
+    ref
+        .read(totalWordsProvider.notifier)
+        .setTotalWords(initialState.totalWords);
   }
 
   void syncEditorToSelectedChapter({
@@ -367,10 +457,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
     try {
       final editorSelection = ref.read(editorSelectionProvider);
-      final sourceSegments = ref.read(segmentsDataProvider);
-      final copiedSegments = sourceSegments
-          .map((chapter_module.SegmentData segment) => segment.copyWith())
-          .toList();
+      final copiedSegments = _snapshotSegments(ref.read(segmentsDataProvider));
 
       String? syncedContent;
       ProjectManager.syncEditorToSelectedChapter(
@@ -383,7 +470,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         },
       );
 
-      ref.read(segmentsDataProvider.notifier).setSegmentsData(copiedSegments);
+      ref
+          .read(segmentsDataProvider.notifier)
+          .updateSegmentsData((_) => copiedSegments);
       if (syncedContent != null) {
         ref.read(editorContentProvider.notifier).setContent(syncedContent!);
       }

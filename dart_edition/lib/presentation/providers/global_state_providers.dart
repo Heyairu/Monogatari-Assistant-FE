@@ -3,55 +3,10 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/settings_manager.dart";
 import "../../bin/ui_library.dart";
+import "../../models/app_state_data.dart";
 import "core_providers.dart";
 
-class AppThemeStateData {
-  final AppThemeMode themeMode;
-  final Color themeColor;
-
-  const AppThemeStateData({
-    this.themeMode = AppThemeMode.system,
-    this.themeColor = Colors.lightBlue,
-  });
-
-  AppThemeStateData copyWith({
-    AppThemeMode? themeMode,
-    Color? themeColor,
-  }) {
-    return AppThemeStateData(
-      themeMode: themeMode ?? this.themeMode,
-      themeColor: themeColor ?? this.themeColor,
-    );
-  }
-}
-
-class AppSettingsStateData {
-  final bool showExitWarning;
-  final double fontSize;
-  final WordCountMode wordCountMode;
-  final List<RecentProjectEntry> recentProjects;
-
-  const AppSettingsStateData({
-    this.showExitWarning = true,
-    this.fontSize = 12.0,
-    this.wordCountMode = WordCountMode.wordsAndCharacters,
-    this.recentProjects = const [],
-  });
-
-  AppSettingsStateData copyWith({
-    bool? showExitWarning,
-    double? fontSize,
-    WordCountMode? wordCountMode,
-    List<RecentProjectEntry>? recentProjects,
-  }) {
-    return AppSettingsStateData(
-      showExitWarning: showExitWarning ?? this.showExitWarning,
-      fontSize: fontSize ?? this.fontSize,
-      wordCountMode: wordCountMode ?? this.wordCountMode,
-      recentProjects: recentProjects ?? this.recentProjects,
-    );
-  }
-}
+export "../../models/app_state_data.dart";
 
 class ThemeStateNotifier extends AsyncNotifier<AppThemeStateData> {
   @override
@@ -145,12 +100,16 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
 
     final merged = [
       entry,
-      ...current.recentProjects.where((item) => item.identityKey != entry.identityKey),
+      ...current.recentProjects.where(
+        (item) => item.identityKey != entry.identityKey,
+      ),
     ];
     final nextRecentProjects = merged.take(_maxRecentProjects).toList();
 
     state = AsyncData(current.copyWith(recentProjects: nextRecentProjects));
-    await ref.read(settingsRepositoryProvider).saveRecentProjects(nextRecentProjects);
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveRecentProjects(nextRecentProjects);
   }
 
   Future<void> removeRecentProject(RecentProjectEntry entry) async {
@@ -160,7 +119,9 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
         .toList();
 
     state = AsyncData(current.copyWith(recentProjects: nextRecentProjects));
-    await ref.read(settingsRepositoryProvider).saveRecentProjects(nextRecentProjects);
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveRecentProjects(nextRecentProjects);
   }
 }
 

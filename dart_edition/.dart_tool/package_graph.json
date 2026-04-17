@@ -14,6 +14,7 @@
         "flutter_highlight",
         "flutter_quill",
         "flutter_riverpod",
+        "freezed_annotation",
         "highlight",
         "intl",
         "logging",
@@ -33,6 +34,7 @@
         "flutter_launcher_icons",
         "flutter_lints",
         "flutter_test",
+        "freezed",
         "integration_test",
         "riverpod_generator"
       ]
@@ -94,7 +96,7 @@
     },
     {
       "name": "riverpod_generator",
-      "version": "2.6.5",
+      "version": "2.6.4",
       "dependencies": [
         "analyzer",
         "build",
@@ -105,6 +107,21 @@
         "path",
         "riverpod_analyzer_utils",
         "riverpod_annotation",
+        "source_gen"
+      ]
+    },
+    {
+      "name": "freezed",
+      "version": "2.5.8",
+      "dependencies": [
+        "analyzer",
+        "build",
+        "build_config",
+        "collection",
+        "dart_style",
+        "freezed_annotation",
+        "json_annotation",
+        "meta",
         "source_gen"
       ]
     },
@@ -327,6 +344,15 @@
         "plugin_platform_interface",
         "web",
         "win32"
+      ]
+    },
+    {
+      "name": "freezed_annotation",
+      "version": "2.4.4",
+      "dependencies": [
+        "collection",
+        "json_annotation",
+        "meta"
       ]
     },
     {
@@ -757,7 +783,7 @@
     },
     {
       "name": "riverpod_analyzer_utils",
-      "version": "0.5.10",
+      "version": "0.5.9",
       "dependencies": [
         "analyzer",
         "collection",
@@ -1301,15 +1327,6 @@
       "name": "_fe_analyzer_shared",
       "version": "85.0.0",
       "dependencies": [
-        "meta"
-      ]
-    },
-    {
-      "name": "freezed_annotation",
-      "version": "3.1.0",
-      "dependencies": [
-        "collection",
-        "json_annotation",
         "meta"
       ]
     },

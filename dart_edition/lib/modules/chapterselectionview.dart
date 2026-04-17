@@ -28,10 +28,12 @@ import "dart:async";
 import "package:xml/xml.dart" as xml;
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
-import "../bin/content_manager.dart";
 import "../bin/settings_manager.dart";
+import "../models/chapter_selection_data.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
+
+export "../models/chapter_selection_data.dart";
 
 // MARK: - 拖放數據類型
 
@@ -45,141 +47,23 @@ class DragData {
 
 enum DragType { segment, chapter }
 
-// MARK: - 資料結構
-
-class ChapterData {
-  String chapterName;
-  String _chapterContent;
-  String chapterUUID;
-
-  // Cache for word count to avoid expensive recalculation
-  int? _cachedWordCount;
-  WordCountMode? _cachedMode;
-
-  ChapterData({
-    this.chapterName = "",
-    String chapterContent = "",
-    String? chapterUUID,
-  }) : _chapterContent = chapterContent,
-       chapterUUID =
-           chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  ChapterData copyWith({
-    String? chapterName,
-    String? chapterContent,
-    String? chapterUUID,
-  }) {
-    final nextContent = chapterContent ?? _chapterContent;
-    final next = ChapterData(
-      chapterName: chapterName ?? this.chapterName,
-      chapterContent: nextContent,
-      chapterUUID: chapterUUID ?? this.chapterUUID,
-    );
-
-    if (chapterContent == null || chapterContent == _chapterContent) {
-      next._cachedWordCount = _cachedWordCount;
-      next._cachedMode = _cachedMode;
-    }
-    return next;
-  }
-
-  String get chapterContent => _chapterContent;
-
-  set chapterContent(String value) {
-    if (_chapterContent != value) {
-      _chapterContent = value;
-      // Invalidate cache when content changes
-      _cachedWordCount = null;
-    }
-  }
-
-  int getWordCount(WordCountMode mode) {
-    // Return cached value if available and mode matches
-    if (_cachedWordCount != null && _cachedMode == mode) {
-      return _cachedWordCount!;
-    }
-    // Fallback to synchronous calculation if not cached
-    _cachedWordCount = ContentManager.calculateWordCount(
-      _chapterContent,
-      mode: mode,
-    );
-    _cachedMode = mode;
-    return _cachedWordCount!;
-  }
-
-  // Method to update cache from async calculation
-  void updateCachedWordCount(int count, WordCountMode mode) {
-    _cachedWordCount = count;
-    _cachedMode = mode;
-  }
-
-  String get id => chapterUUID;
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is ChapterData &&
-        other.chapterName == chapterName &&
-        other.chapterContent == _chapterContent &&
-        other.chapterUUID == chapterUUID;
-  }
-
-  @override
-  int get hashCode => Object.hash(chapterName, _chapterContent, chapterUUID);
-}
-
-class SegmentData {
-  String segmentName;
-  List<ChapterData> chapters;
-  String segmentUUID;
-
-  SegmentData({
-    this.segmentName = "",
-    List<ChapterData>? chapters,
-    String? segmentUUID,
-  }) : chapters = chapters ?? [],
-       segmentUUID =
-           segmentUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  SegmentData copyWith({
-    String? segmentName,
-    List<ChapterData>? chapters,
-    String? segmentUUID,
-  }) {
-    final nextChapters = chapters ?? this.chapters;
-    return SegmentData(
-      segmentName: segmentName ?? this.segmentName,
-      chapters: nextChapters.map((chapter) => chapter.copyWith()).toList(),
-      segmentUUID: segmentUUID ?? this.segmentUUID,
-    );
-  }
-
-  String get id => segmentUUID;
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is SegmentData &&
-        other.segmentName == segmentName &&
-        _listEquals(other.chapters, chapters) &&
-        other.segmentUUID == segmentUUID;
-  }
-
-  @override
-  int get hashCode => Object.hash(segmentName, chapters, segmentUUID);
-
-  bool _listEquals<T>(List<T> a, List<T> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-}
-
 // MARK: - XML Codec
 
 class ChapterSelectionCodec {
+  static List<SegmentData> _createSnapshot(List<SegmentData> source) {
+    return List<SegmentData>.unmodifiable(
+      source
+          .map(
+            (segment) => segment.copyWith(
+              chapters: segment.chapters
+                  .map((chapter) => chapter.copyWith())
+                  .toList(growable: false),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
   static void _writeTextElement(
     xml.XmlBuilder builder,
     String name,
@@ -250,7 +134,8 @@ class ChapterSelectionCodec {
 
   /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段
   static String? saveXML(List<SegmentData> segments) {
-    if (segments.isEmpty || !segments.any((seg) => seg.chapters.isNotEmpty)) {
+    final snapshot = _createSnapshot(segments);
+    if (snapshot.isEmpty || !snapshot.any((seg) => seg.chapters.isNotEmpty)) {
       return null;
     }
 
@@ -266,7 +151,7 @@ class ChapterSelectionCodec {
           },
         );
 
-        for (final seg in segments) {
+        for (final seg in snapshot) {
           builder.element(
             "Segment",
             attributes: {"Name": seg.segmentName, "UUID": seg.segmentUUID},
@@ -339,7 +224,7 @@ class ChapterSelectionCodec {
         );
       }
 
-      return segments.isNotEmpty ? segments : null;
+      return segments.isNotEmpty ? _createSnapshot(segments) : null;
     } catch (e) {
       debugPrint("ChapterSelection XML Parse Error: $e");
       return null;
@@ -352,13 +237,11 @@ class ChapterSelectionCodec {
 class ChapterSelectionView extends ConsumerStatefulWidget {
   final ValueChanged<List<SegmentData>>? onSegmentsChanged;
 
-  const ChapterSelectionView({
-    super.key,
-    this.onSegmentsChanged,
-  });
+  const ChapterSelectionView({super.key, this.onSegmentsChanged});
 
   @override
-  ConsumerState<ChapterSelectionView> createState() => _ChapterSelectionViewState();
+  ConsumerState<ChapterSelectionView> createState() =>
+      _ChapterSelectionViewState();
 }
 
 class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
@@ -411,24 +294,21 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       0,
       (sum, seg) =>
           sum +
-          seg.chapters.fold(
-            0,
-            (s, c) => s + c.getWordCount(_wordCountMode),
-          ),
+          seg.chapters.fold(0, (s, c) => s + c.getWordCount(_wordCountMode)),
     );
   }
 
-  String? get _selectedSegmentID => ref.read(editorSelectionProvider).selectedSegID;
+  String? get _selectedSegmentID =>
+      ref.read(editorSelectionProvider).selectedSegID;
 
-  String? get _selectedChapterID => ref.read(editorSelectionProvider).selectedChapID;
+  String? get _selectedChapterID =>
+      ref.read(editorSelectionProvider).selectedChapID;
 
   String get _contentText => ref.read(editorContentProvider);
 
   int? get _selectedSegmentIndex {
     if (_selectedSegmentID == null) return null;
-    return _segments.indexWhere(
-      (seg) => seg.segmentUUID == _selectedSegmentID,
-    );
+    return _segments.indexWhere((seg) => seg.segmentUUID == _selectedSegmentID);
   }
 
   // MARK: - 生命週期方法
@@ -623,12 +503,85 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }
 
   List<SegmentData> _copySegments(List<SegmentData> source) {
-    return source.map((segment) => segment.copyWith()).toList();
+    return source
+        .map(
+          (segment) => segment.copyWith(
+            chapters: segment.chapters
+                .map((chapter) => chapter.copyWith())
+                .toList(),
+          ),
+        )
+        .toList();
+  }
+
+  void _updateSegmentAt(
+    int segmentIndex,
+    SegmentData Function(SegmentData) update,
+  ) {
+    final nextSegments = [..._segments];
+    nextSegments[segmentIndex] = update(nextSegments[segmentIndex]);
+    _segments = nextSegments;
+  }
+
+  void _updateChapterAt(
+    int segmentIndex,
+    int chapterIndex,
+    ChapterData Function(ChapterData) update,
+  ) {
+    _updateSegmentAt(segmentIndex, (segment) {
+      final chapters = [...segment.chapters];
+      chapters[chapterIndex] = update(chapters[chapterIndex]);
+      return segment.copyWith(chapters: chapters);
+    });
+  }
+
+  void _appendChapterToSegment(int segmentIndex, ChapterData chapter) {
+    _updateSegmentAt(segmentIndex, (segment) {
+      return segment.copyWith(chapters: [...segment.chapters, chapter]);
+    });
+  }
+
+  void _appendSegment(SegmentData segment) {
+    _segments = [..._segments, segment];
+  }
+
+  SegmentData _removeSegmentAt(int segmentIndex) {
+    final nextSegments = [..._segments];
+    final removed = nextSegments.removeAt(segmentIndex);
+    _segments = nextSegments;
+    return removed;
+  }
+
+  void _insertSegmentAt(int segmentIndex, SegmentData segment) {
+    final nextSegments = [..._segments]..insert(segmentIndex, segment);
+    _segments = nextSegments;
+  }
+
+  void _insertChapterInSegment(
+    int segmentIndex,
+    int targetChapterIndex,
+    ChapterData chapter,
+  ) {
+    _updateSegmentAt(segmentIndex, (segment) {
+      final chapters = [...segment.chapters]
+        ..insert(targetChapterIndex, chapter);
+      return segment.copyWith(chapters: chapters);
+    });
+  }
+
+  ChapterData _removeChapterFromSegment(int segmentIndex, int chapterIndex) {
+    late ChapterData removed;
+    _updateSegmentAt(segmentIndex, (segment) {
+      final chapters = [...segment.chapters];
+      removed = chapters.removeAt(chapterIndex);
+      return segment.copyWith(chapters: chapters);
+    });
+    return removed;
   }
 
   void _initializeIfEmpty() {
     if (_segments.isEmpty) {
-      _segments.add(
+      _appendSegment(
         SegmentData(
           segmentName: "Seg 1",
           chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
@@ -636,7 +589,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       );
       _shouldCommitInitialSegments = true;
     } else if (_totalChaptersCount == 0) {
-      _segments[0].chapters.add(
+      _appendChapterToSegment(
+        0,
         ChapterData(chapterName: "Chapter 1", chapterContent: ""),
       );
       _shouldCommitInitialSegments = true;
@@ -653,16 +607,19 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         (ch) => ch.chapterUUID == cid,
       );
       if (ci >= 0) {
-        _segments[si].chapters[ci].chapterContent = _contentText;
+        _updateChapterAt(
+          si,
+          ci,
+          (chapter) => chapter.copyWith(chapterContent: _contentText),
+        );
       }
     }
   }
 
   void _setSelection({String? segmentID, String? chapterID}) {
-    ref.read(editorSelectionProvider.notifier).setSelection(
-      selectedSegID: segmentID,
-      selectedChapID: chapterID,
-    );
+    ref
+        .read(editorSelectionProvider.notifier)
+        .setSelection(selectedSegID: segmentID, selectedChapID: chapterID);
   }
 
   void _setEditorContent(String value) {
@@ -688,7 +645,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   void _selectChapter(int segIdx, String chapterID) {
     _commitCurrentEditorToSelectedChapter();
-    _setSelection(segmentID: _segments[segIdx].segmentUUID, chapterID: chapterID);
+    _setSelection(
+      segmentID: _segments[segIdx].segmentUUID,
+      chapterID: chapterID,
+    );
 
     final chapterIdx = _segments[segIdx].chapters.indexWhere(
       (ch) => ch.chapterUUID == chapterID,
@@ -723,7 +683,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     );
 
     setState(() {
-      _segments.add(newSegment);
+      _appendSegment(newSegment);
     });
     _notifySegmentsChanged();
 
@@ -740,7 +700,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     final newChapter = ChapterData(chapterName: finalName, chapterContent: "");
 
     setState(() {
-      _segments[segIdx].chapters.add(newChapter);
+      _appendChapterToSegment(segIdx, newChapter);
     });
     _notifySegmentsChanged();
 
@@ -762,13 +722,16 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       _commitCurrentEditorToSelectedChapter();
     }
 
-    _segments.removeAt(segIdx);
+    _removeSegmentAt(segIdx);
     _notifySegmentsChanged();
 
     // 選擇第一個可用的區段
     if (_segments.isNotEmpty) {
       final firstSeg = _segments.first;
-      _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
+      _setSelection(
+        segmentID: firstSeg.segmentUUID,
+        chapterID: _selectedChapterID,
+      );
       final firstChapter = firstSeg.chapters.isNotEmpty
           ? firstSeg.chapters.first
           : null;
@@ -801,8 +764,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       _commitCurrentEditorToSelectedChapter();
     }
 
-    _segments[segIdx].chapters.removeAt(chapterIdx);
-    _notifySegmentsChanged();
+    _removeChapterFromSegment(segIdx, chapterIdx);
 
     // 選擇下一個可用章節
     if (_segments[segIdx].chapters.isNotEmpty) {
@@ -822,12 +784,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       // 如果區段為空且有多個區段，刪除該區段
       if (_segments.length > 1) {
         final removedSegID = _segments[segIdx].segmentUUID;
-        _segments.removeAt(segIdx);
-        _notifySegmentsChanged();
+        _removeSegmentAt(segIdx);
 
         if (_segments.isNotEmpty) {
           final firstSeg = _segments.first;
-          _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
+          _setSelection(
+            segmentID: firstSeg.segmentUUID,
+            chapterID: _selectedChapterID,
+          );
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
               : null;
@@ -849,7 +813,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         // 如果刪除的區段是當前選中的區段，重新選擇
         if (_selectedSegmentID == removedSegID && _segments.isNotEmpty) {
           final firstSeg = _segments.first;
-          _setSelection(segmentID: firstSeg.segmentUUID, chapterID: _selectedChapterID);
+          _setSelection(
+            segmentID: firstSeg.segmentUUID,
+            chapterID: _selectedChapterID,
+          );
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
               : null;
@@ -863,6 +830,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         }
       }
     }
+
+    _notifySegmentsChanged();
   }
 
   // MARK: - 移動/拖放方法
@@ -872,8 +841,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
     _commitCurrentEditorToSelectedChapter();
 
-    final segment = _segments.removeAt(fromIndex);
-    _segments.insert(toIndex, segment);
+    final segment = _removeSegmentAt(fromIndex);
+    _insertSegmentAt(toIndex, segment);
     _notifySegmentsChanged();
   }
 
@@ -883,8 +852,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
     _commitCurrentEditorToSelectedChapter();
 
-    final chapter = _segments[segIdx].chapters.removeAt(fromIndex);
-    _segments[segIdx].chapters.insert(toIndex, chapter);
+    final chapter = _removeChapterFromSegment(segIdx, fromIndex);
+    _insertChapterInSegment(segIdx, toIndex, chapter);
     _notifySegmentsChanged();
   }
 
@@ -916,10 +885,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     final sourceSegID = _segments[sourceSegIdx].segmentUUID;
 
     // 執行移動
-    final movingChapter = _segments[sourceSegIdx].chapters.removeAt(
+    final movingChapter = _removeChapterFromSegment(
+      sourceSegIdx,
       sourceChapIdx,
     );
-    _segments[targetSegIdx].chapters.add(movingChapter);
+    _appendChapterToSegment(targetSegIdx, movingChapter);
 
     // 更新選擇
     _setSelection(
@@ -930,7 +900,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
     // 如果來源區段變空，刪除它（如果有多個區段）
     if (_segments[sourceSegIdx].chapters.isEmpty && _segments.length > 1) {
-      _segments.removeAt(sourceSegIdx);
+      _removeSegmentAt(sourceSegIdx);
 
       // 如果刪除的區段是當前選中的區段，重新選擇
       if (_selectedSegmentID == sourceSegID) {
@@ -1009,7 +979,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                         const SizedBox(width: 6),
                         Text(
                           "全書共 $_totalWordCount 字",
-                          style: Theme.of(context).textTheme.labelSmall
+                          style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ],
                     ),
@@ -1046,20 +1016,24 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
 
     if (_segments.isEmpty) {
-      _segments.add(
+      _appendSegment(
         SegmentData(
           segmentName: "Seg 1",
           chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
         ),
       );
     } else if (_totalChaptersCount == 0) {
-      _segments[0].chapters.add(
+      _appendChapterToSegment(
+        0,
         ChapterData(chapterName: "Chapter 1", chapterContent: ""),
       );
     }
 
     if (_selectedSegmentID == null && _segments.isNotEmpty) {
-      _setSelection(segmentID: _segments.first.segmentUUID, chapterID: _selectedChapterID);
+      _setSelection(
+        segmentID: _segments.first.segmentUUID,
+        chapterID: _selectedChapterID,
+      );
     }
 
     if (_selectedChapterID == null) {
@@ -1117,12 +1091,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                     if (fromIndex >= 0 &&
                         fromIndex < _segments.length &&
                         fromIndex != toIndex) {
-                      final movedSegment = _segments.removeAt(fromIndex);
-                      _segments.insert(toIndex, movedSegment);
+                      final movedSegment = _removeSegmentAt(fromIndex);
+                      _insertSegmentAt(toIndex, movedSegment);
 
                       // 如果移動的區段是當前選中的，更新選中狀態
-                        if (_selectedSegmentID ==
-                          movedSegment.segmentUUID) {
+                      if (_selectedSegmentID == movedSegment.segmentUUID) {
                         // selectedSegmentID 不變，因為移動的就是當前選中的區段
                         // 索引會自動通過 getter 重新計算
                       }
@@ -1187,7 +1160,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             Row(
               children: [
                 const Expanded(
-                  child: MediumTitle(icon: Icons.article_outlined, text: "章節選擇"),
+                  child: MediumTitle(
+                    icon: Icons.article_outlined,
+                    text: "章節選擇",
+                  ),
                 ),
                 Tooltip(
                   message: "拖動章節排序 | 長按拖動至其他區段",
@@ -1236,12 +1212,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
                     if (draggedChapter != null) {
                       // 移除來源章節
-                      _segments[sourceSegIdx].chapters.removeAt(
-                        sourceChapterIdx,
-                      );
+                      _removeChapterFromSegment(sourceSegIdx, sourceChapterIdx);
 
                       // 添加到目標區段的最後
-                      _segments[selectedSegIdx].chapters.add(draggedChapter);
+                      _appendChapterToSegment(selectedSegIdx, draggedChapter);
 
                       // 更新選中章節
                       _setSelection(
@@ -1336,7 +1310,12 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       );
       if (index >= 0) {
         final value = _renameController!.text.trim();
-        _segments[index].segmentName = value.isEmpty ? "(未命名 Seg)" : value;
+        _updateSegmentAt(
+          index,
+          (segment) => segment.copyWith(
+            segmentName: value.isEmpty ? "(未命名 Seg)" : value,
+          ),
+        );
         _notifySegmentsChanged();
       }
     }
@@ -1359,9 +1338,13 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       );
       if (chapterIdx >= 0) {
         final value = _renameController!.text.trim();
-        _segments[segIdx].chapters[chapterIdx].chapterName = value.isEmpty
-            ? "(未命名 Chapter)"
-            : value;
+        _updateChapterAt(
+          segIdx,
+          chapterIdx,
+          (chapter) => chapter.copyWith(
+            chapterName: value.isEmpty ? "(未命名 Chapter)" : value,
+          ),
+        );
         _notifySegmentsChanged();
       }
     }
@@ -1632,10 +1615,3 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     );
   }
 }
-// End of class methods, removing the slave classes now by not including them in `newString`.
-// Wait, replace_string_in_file needs `oldString` to match exactly.
-// I have to replace _buildSegmentItem and _buildChapterItem with the NEW content.
-// AND I have to delete the classes below.
-// I will split this into two calls.
-// First call: Update Helper methods and the build methods.
-// Second call: Delete the classes at the bottom of the file.
