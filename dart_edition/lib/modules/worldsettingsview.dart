@@ -120,6 +120,18 @@ class LocationCustomize {
     );
   }
 
+  LocationCustomize copyWith({
+    String? id,
+    String? key,
+    String? val,
+  }) {
+    return LocationCustomize(
+      id: id ?? this.id,
+      key: key ?? this.key,
+      val: val ?? this.val,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -179,6 +191,33 @@ class LocationData {
       child: (json["child"] as List<dynamic>?)
           ?.map((e) => LocationData.fromJson(e as Map<String, dynamic>))
           .toList(),
+    );
+  }
+
+  LocationData copyWith({
+    String? id,
+    String? localName,
+    String? localType,
+    WorldNodeType? nodeType,
+    List<LocationCustomize>? customVal,
+    String? note,
+    List<LocationData>? child,
+  }) {
+    final List<LocationCustomize> copiedCustomVal = (customVal ?? this.customVal)
+        .map((item) => item.copyWith())
+        .toList();
+    final List<LocationData> copiedChild = (child ?? this.child)
+        .map((item) => item.copyWith())
+        .toList();
+
+    return LocationData(
+      id: id ?? this.id,
+      localName: localName ?? this.localName,
+      localType: localType ?? this.localType,
+      nodeType: nodeType ?? this.nodeType,
+      customVal: copiedCustomVal,
+      note: note ?? this.note,
+      child: copiedChild,
     );
   }
 
@@ -481,7 +520,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   @override
   void initState() {
     super.initState();
-    _locations = _cloneLocations(ref.read(worldSettingsDataProvider));
+    _locations = _copyLocations(ref.read(worldSettingsDataProvider));
     _rebuildFlatList();
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
@@ -500,7 +539,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         }
 
         setState(() {
-          _locations = _cloneLocations(next);
+          _locations = _copyLocations(next);
           _rebuildFlatList();
           _syncDetailControllers();
         });
@@ -563,29 +602,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _notifyChange() {
-    final snapshot = _cloneLocations(_locations);
+    final snapshot = _copyLocations(_locations);
     _isCommittingLocalChange = true;
     ref.read(worldSettingsDataProvider.notifier).setWorldSettingsData(snapshot);
     widget.onChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }
 
-  List<LocationData> _cloneLocations(List<LocationData> source) {
-    return source
-        .map(
-          (location) => LocationData(
-            id: location.id,
-            localName: location.localName,
-            localType: location.localType,
-            nodeType: location.nodeType,
-            customVal: location.customVal
-                .map((item) => LocationCustomize(id: item.id, key: item.key, val: item.val))
-                .toList(),
-            note: location.note,
-            child: _cloneLocations(location.child),
-          ),
-        )
-        .toList();
+  List<LocationData> _copyLocations(List<LocationData> source) {
+    return source.map((location) => location.copyWith()).toList();
   }
 
   // MARK: - UI 介面建構

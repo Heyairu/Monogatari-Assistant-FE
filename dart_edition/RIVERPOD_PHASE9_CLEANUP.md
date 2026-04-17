@@ -36,3 +36,32 @@ Remove remaining legacy listener chains and reduce high-risk `setState` hotspots
 ## Residual Non-Blocking Items
 - Analyze may still report style/info-level issues unrelated to migration behavior.
 - These can be handled in a follow-up lint-cleaning pass without changing runtime logic.
+
+## Phase 6 Addendum (Boundary + Guard Rules)
+
+### Scope Cleanup
+- Removed obsolete transition accessors from `main.dart` that were only kept during migration:
+  - provider passthrough getter/setter wrappers for base/outline/world/character/plan payloads
+  - unused selection setters (`selectedSegID` / `selectedChapID`)
+  - unused `segmentsData` setter
+- `main.dart` keeps only accessors still required by current UI flow (`contentText`, `totalWords`, `currentProject`, selection getters).
+
+### Coordinator Responsibility Boundary
+- `EditorCoordinator` owns coordination concerns:
+  - sync/apply guards (`isSyncing`, `isApplyingProjectData`)
+  - dirty/save lifecycle (`markAsModified`, `markAsSaved`, `hasUnsavedChanges`)
+  - project load/save/open recent coordination and recent-project persistence
+  - one-shot UI event channels (error/message/word-count-mode event ids)
+- `ContentView` owns UI concerns:
+  - widget rendering, local panel/overlay visibility, focus routing, window callbacks
+  - controller/UI listeners that forward input events to coordinator
+
+### Guard Usage Rules
+- Always pair `beginSync()`/`endSync()` and `beginApplyingProjectData()`/`endApplyingProjectData()` with `try/finally`.
+- During apply flow, suppress dirty transitions via coordinator guard (`isApplyingProjectData`) instead of local widget flags.
+- For one-shot UI notifications, increment event ids in coordinator and consume via `ref.listenManual` in `main.dart` to avoid duplicate dialogs/snackbars on rebuild.
+- Keep module-side `_isCommittingLocalChange` guards to prevent immediate provider echo reloads while editing.
+
+### Explicit Out-of-Scope (This Phase)
+- No refactor of `WelcomeView` / `SettingView` UI-only `setState` paths.
+- No visual/interaction redesign in module-local UI state handling.

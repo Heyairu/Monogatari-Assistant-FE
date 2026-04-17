@@ -37,6 +37,20 @@ class ForeshadowItem {
     this.note = "",
     this.isRevealed = false,
   }) : id = id ?? const Uuid().v4();
+
+  ForeshadowItem copyWith({
+    String? id,
+    String? title,
+    String? note,
+    bool? isRevealed,
+  }) {
+    return ForeshadowItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      note: note ?? this.note,
+      isRevealed: isRevealed ?? this.isRevealed,
+    );
+  }
 }
 
 class UpdatePlanItem {
@@ -51,6 +65,20 @@ class UpdatePlanItem {
     this.note = "",
     this.isDone = false,
   }) : id = id ?? const Uuid().v4();
+
+  UpdatePlanItem copyWith({
+    String? id,
+    String? title,
+    String? note,
+    bool? isDone,
+  }) {
+    return UpdatePlanItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      note: note ?? this.note,
+      isDone: isDone ?? this.isDone,
+    );
+  }
 }
 
 class _ForeshadowDragData {
@@ -420,8 +448,8 @@ class _PlanViewState extends ConsumerState<PlanView> {
   @override
   void initState() {
     super.initState();
-    _foreshadowItems = _cloneForeshadowItems(ref.read(foreshadowDataProvider));
-    _updatePlanItems = _cloneUpdatePlanItems(ref.read(updatePlanDataProvider));
+    _foreshadowItems = _copyForeshadowItems(ref.read(foreshadowDataProvider));
+    _updatePlanItems = _copyUpdatePlanItems(ref.read(updatePlanDataProvider));
 
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
     foreshadowNoteController.addListener(_onForeshadowNoteChanged);
@@ -437,7 +465,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
           return;
         }
         setState(() {
-          _foreshadowItems = _cloneForeshadowItems(next);
+          _foreshadowItems = _copyForeshadowItems(next);
           _syncSelectionAfterDataUpdate();
         });
       },
@@ -450,7 +478,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
           return;
         }
         setState(() {
-          _updatePlanItems = _cloneUpdatePlanItems(next);
+          _updatePlanItems = _copyUpdatePlanItems(next);
           _syncSelectionAfterDataUpdate();
         });
       },
@@ -569,8 +597,8 @@ class _PlanViewState extends ConsumerState<PlanView> {
   }
 
   void _notifyProjectChanged() {
-    final foreshadowSnapshot = _cloneForeshadowItems(_foreshadowItems);
-    final updatePlanSnapshot = _cloneUpdatePlanItems(_updatePlanItems);
+    final foreshadowSnapshot = _copyForeshadowItems(_foreshadowItems);
+    final updatePlanSnapshot = _copyUpdatePlanItems(_updatePlanItems);
 
     _isCommittingLocalChange = true;
     ref.read(foreshadowDataProvider.notifier).setForeshadowData(
@@ -583,30 +611,12 @@ class _PlanViewState extends ConsumerState<PlanView> {
     _isCommittingLocalChange = false;
   }
 
-  List<ForeshadowItem> _cloneForeshadowItems(List<ForeshadowItem> source) {
-    return source
-        .map(
-          (item) => ForeshadowItem(
-            id: item.id,
-            title: item.title,
-            note: item.note,
-            isRevealed: item.isRevealed,
-          ),
-        )
-        .toList();
+  List<ForeshadowItem> _copyForeshadowItems(List<ForeshadowItem> source) {
+    return source.map((item) => item.copyWith()).toList();
   }
 
-  List<UpdatePlanItem> _cloneUpdatePlanItems(List<UpdatePlanItem> source) {
-    return source
-        .map(
-          (item) => UpdatePlanItem(
-            id: item.id,
-            title: item.title,
-            note: item.note,
-            isDone: item.isDone,
-          ),
-        )
-        .toList();
+  List<UpdatePlanItem> _copyUpdatePlanItems(List<UpdatePlanItem> source) {
+    return source.map((item) => item.copyWith()).toList();
   }
 
   void _syncForeshadowControllers() {

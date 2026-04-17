@@ -165,6 +165,16 @@ class GlossaryPair {
 
   GlossaryPair({this.meaning = "", this.example = ""});
 
+  GlossaryPair copyWith({
+    String? meaning,
+    String? example,
+  }) {
+    return GlossaryPair(
+      meaning: meaning ?? this.meaning,
+      example: example ?? this.example,
+    );
+  }
+
   factory GlossaryPair.fromJson(Map<String, dynamic> json) {
     return GlossaryPair(
       meaning: json["meaning"] as String? ?? "",
@@ -252,6 +262,28 @@ class GlossaryEntry {
       "pairs": pairs.map((e) => e.toJson()).toList(),
     };
   }
+
+  GlossaryEntry copyWith({
+    String? id,
+    String? term,
+    GlossaryPartOfSpeech? partOfSpeech,
+    String? customPartOfSpeech,
+    GlossaryPolarity? polarity,
+    List<GlossaryPair>? pairs,
+  }) {
+    final List<GlossaryPair> copiedPairs = (pairs ?? this.pairs)
+        .map((pair) => pair.copyWith())
+        .toList();
+
+    return GlossaryEntry(
+      id: id ?? this.id,
+      term: term ?? this.term,
+      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+      customPartOfSpeech: customPartOfSpeech ?? this.customPartOfSpeech,
+      polarity: polarity ?? this.polarity,
+      pairs: copiedPairs,
+    );
+  }
 }
 
 class GlossaryCategory {
@@ -288,6 +320,27 @@ class GlossaryCategory {
       "entryIds": entryIds,
       "children": children.map((e) => e.toJson()).toList(),
     };
+  }
+
+  GlossaryCategory copyWith({
+    String? id,
+    String? name,
+    List<String>? entryIds,
+    List<GlossaryCategory>? children,
+  }) {
+    final List<String> copiedEntryIds = List<String>.from(
+      entryIds ?? this.entryIds,
+    );
+    final List<GlossaryCategory> copiedChildren = (children ?? this.children)
+        .map((child) => child.copyWith())
+        .toList();
+
+    return GlossaryCategory(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      entryIds: copiedEntryIds,
+      children: copiedChildren,
+    );
   }
 }
 
@@ -569,47 +622,23 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     await file.writeAsString(jsonEncode(payload));
   }
 
-  List<GlossaryCategory> _cloneCategoryTree(List<GlossaryCategory> nodes) {
-    return nodes
-        .map(
-          (node) => GlossaryCategory(
-            id: node.id,
-            name: node.name,
-            entryIds: List<String>.from(node.entryIds),
-            children: _cloneCategoryTree(node.children),
-          ),
-        )
-        .toList();
+  List<GlossaryCategory> _copyCategoryTree(List<GlossaryCategory> nodes) {
+    return nodes.map((node) => node.copyWith()).toList();
   }
 
-  HashMap<String, GlossaryEntry> _cloneEntryIndex(
+  HashMap<String, GlossaryEntry> _copyEntryIndex(
     Map<String, GlossaryEntry> source,
   ) {
-    final HashMap<String, GlossaryEntry> clone = HashMap();
+    final HashMap<String, GlossaryEntry> copied = HashMap();
     for (final MapEntry<String, GlossaryEntry> entry in source.entries) {
-      final GlossaryEntry item = entry.value;
-      clone[entry.key] = GlossaryEntry(
-        id: item.id,
-        term: item.term,
-        partOfSpeech: item.partOfSpeech,
-        customPartOfSpeech: item.customPartOfSpeech,
-        polarity: item.polarity,
-        pairs: item.pairs
-            .map(
-              (pair) => GlossaryPair(
-                meaning: pair.meaning,
-                example: pair.example,
-              ),
-            )
-            .toList(),
-      );
+      copied[entry.key] = entry.value.copyWith();
     }
-    return clone;
+    return copied;
   }
 
   void _applyProviderState(GlossaryStateData state) {
-    _categoryTree = _cloneCategoryTree(state.categoryTree);
-    _entryIndex = _cloneEntryIndex(state.entryIndex);
+    _categoryTree = _copyCategoryTree(state.categoryTree);
+    _entryIndex = _copyEntryIndex(state.entryIndex);
 
     if (_selectedCategoryId != null &&
         _findCategoryById(_selectedCategoryId!, _categoryTree) == null) {
@@ -635,8 +664,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   void _publishGlossaryState() {
     final snapshot = GlossaryStateData(
-      categoryTree: _cloneCategoryTree(_categoryTree),
-      entryIndex: _cloneEntryIndex(_entryIndex),
+      categoryTree: _copyCategoryTree(_categoryTree),
+      entryIndex: _copyEntryIndex(_entryIndex),
     );
 
     _isCommittingLocalChange = true;
@@ -1044,16 +1073,12 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return null;
   }
 
-  GlossaryCategory _cloneCategoryNode(
+  GlossaryCategory _copyCategoryNode(
     GlossaryCategory source, {
     List<GlossaryCategory>? childrenOverride,
   }) {
-    return GlossaryCategory(
-      id: source.id,
-      name: source.name,
-      entryIds: List<String>.from(source.entryIds),
-      children: childrenOverride ??
-          source.children.map(_cloneCategoryNode).toList(),
+    return source.copyWith(
+      children: childrenOverride ?? source.children.map(_copyCategoryNode).toList(),
     );
   }
 
@@ -1066,9 +1091,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       return [];
     }
 
-    GlossaryCategory chain = _cloneCategoryNode(path.last);
+    GlossaryCategory chain = _copyCategoryNode(path.last);
     for (int i = path.length - 2; i >= 0; i--) {
-      chain = _cloneCategoryNode(path[i], childrenOverride: [chain]);
+      chain = _copyCategoryNode(path[i], childrenOverride: [chain]);
     }
 
     return [chain];
@@ -1162,7 +1187,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   Future<void> _exportAllGlossary() async {
     await _exportGlossaryData(
       defaultName: "glossary_all.json",
-      exportTree: _categoryTree.map(_cloneCategoryNode).toList(),
+      exportTree: _categoryTree.map(_copyCategoryNode).toList(),
     );
   }
 
@@ -1199,7 +1224,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     _GlossaryDecoded imported,
   ) {
     final List<GlossaryCategory> previewTree = _categoryTree
-        .map(_cloneCategoryNode)
+        .map(_copyCategoryNode)
         .toList();
     final Map<String, String> termToResolvedId = {
       for (final MapEntry<String, GlossaryEntry> entry

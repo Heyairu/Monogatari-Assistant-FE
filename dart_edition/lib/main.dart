@@ -32,6 +32,7 @@ import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 import "bin/content_manager.dart";
+import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_state_providers.dart";
@@ -162,22 +163,6 @@ class FindIntent extends Intent {
   const FindIntent();
 }
 
-class _ProjectInitialState {
-  final String? selectedSegID;
-  final String? selectedChapID;
-  final String contentText;
-  final int totalWords;
-  final bool hasSelection;
-
-  _ProjectInitialState({
-    this.selectedSegID,
-    this.selectedChapID,
-    required this.contentText,
-    required this.totalWords,
-    required this.hasSelection,
-  });
-}
-
 // 主要 ContentView
 class ContentView extends ConsumerStatefulWidget {
   const ContentView({super.key});
@@ -220,64 +205,27 @@ class _ContentViewState extends ConsumerState<ContentView>
       ref.read(settingsStateProvider).valueOrNull ??
       const AppSettingsStateData();
 
-  ProviderSubscription<AsyncValue<AppSettingsStateData>>?
-  _settingsStateSubscription;
-  ProviderSubscription<AsyncValue<ProjectIoStatus>>?
-  _projectIoSubscription;
-  ProviderSubscription<String>? _editorContentSubscription;
+  EditorCoordinatorState get _editorCoordinatorState =>
+      ref.read(editorCoordinatorProvider);
 
-  BaseInfoModule.BaseInfoData get baseInfoData =>
-      ref.read(baseInfoDataProvider);
-  set baseInfoData(BaseInfoModule.BaseInfoData value) {
-    ref.read(baseInfoDataProvider.notifier).setBaseInfoData(value);
-  }
+  EditorCoordinatorNotifier get _editorCoordinatorNotifier =>
+      ref.read(editorCoordinatorProvider.notifier);
+
+  bool get isLoading => _editorCoordinatorState.isLoading;
+  bool get _isSyncing => _editorCoordinatorState.isSyncing;
+  bool get hasUnsavedChanges => _editorCoordinatorState.hasUnsavedChanges;
+  DateTime? get _lastSavedTime => _editorCoordinatorState.lastSavedTime;
+
+  ProviderSubscription<EditorCoordinatorState>? _editorCoordinatorSubscription;
+  ProviderSubscription<String>? _editorContentSubscription;
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
-  set segmentsData(List<ChapterModule.SegmentData> value) {
-    ref.read(segmentsDataProvider.notifier).setSegmentsData(value);
-  }
-
-  List<OutlineModule.StorylineData> get outlineData =>
-      ref.read(outlineDataProvider);
-  set outlineData(List<OutlineModule.StorylineData> value) {
-    ref.read(outlineDataProvider.notifier).setOutlineData(value);
-  }
-
-  List<LocationData> get worldSettingsData =>
-      ref.read(worldSettingsDataProvider);
-  set worldSettingsData(List<LocationData> value) {
-    ref.read(worldSettingsDataProvider.notifier).setWorldSettingsData(value);
-  }
-
-  Map<String, Map<String, dynamic>> get characterData =>
-      ref.read(characterDataProvider);
-  set characterData(Map<String, Map<String, dynamic>> value) {
-    ref.read(characterDataProvider.notifier).setCharacterData(value);
-  }
-
-  List<PlanModule.ForeshadowItem> get foreshadowData =>
-      ref.read(foreshadowDataProvider);
-  set foreshadowData(List<PlanModule.ForeshadowItem> value) {
-    ref.read(foreshadowDataProvider.notifier).setForeshadowData(value);
-  }
-
-  List<PlanModule.UpdatePlanItem> get updatePlanData =>
-      ref.read(updatePlanDataProvider);
-  set updatePlanData(List<PlanModule.UpdatePlanItem> value) {
-    ref.read(updatePlanDataProvider.notifier).setUpdatePlanData(value);
-  }
 
   // 選取狀態
   String? get selectedSegID => ref.read(editorSelectionProvider).selectedSegID;
-  set selectedSegID(String? value) {
-    ref.read(editorSelectionProvider.notifier).setSelectedSegID(value);
-  }
 
   String? get selectedChapID => ref.read(editorSelectionProvider).selectedChapID;
-  set selectedChapID(String? value) {
-    ref.read(editorSelectionProvider.notifier).setSelectedChapID(value);
-  }
 
   int _proofreadingChapterSwitchVersion = 0;
   int get totalWords => ref.read(totalWordsProvider);
@@ -286,9 +234,6 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   int get _cursorOffset => ref.read(editorSelectionProvider).cursorOffset;
-  set _cursorOffset(int value) {
-    ref.read(editorSelectionProvider.notifier).setCursorOffset(value);
-  }
 
   ProjectFile? get currentProject => ref.read(currentProjectFileProvider);
   set currentProject(ProjectFile? value) {
@@ -296,15 +241,6 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   // 檔案狀態
-  bool showingError = false;
-  String errorMessage = "";
-  bool isLoading = false;
-  bool hasUnsavedChanges = false;
-  DateTime? _lastSavedTime; // Track last saved time
-
-  // 同步狀態標記 - 防止在同步期間觸發循環更新
-  bool _isSyncing = false;
-  bool _isApplyingProjectData = false;
 
   // 追蹤最後一個焦點輸入框
   FocusNode? _lastFocusedEditableNode;
@@ -389,17 +325,17 @@ class _ContentViewState extends ConsumerState<ContentView>
         selectionOffset,
         textController.text.length,
       );
+      final bool contentChanged = !_isSyncing && contentText != textController.text;
 
-      // 只有當文字真的改變且不在同步狀態時才更新
-      if (!_isSyncing && contentText != textController.text) {
-        editorContentNotifier.setContent(textController.text);
-        editorSelectionNotifier.setCursorOffset(normalizedOffset);
+      // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
+      if (contentChanged) {
+        _editorCoordinatorNotifier.handleEditorInputChanged(
+          nextContent: textController.text,
+          cursorOffset: normalizedOffset,
+        );
 
         // Trigger async incremental update instead of full sync recalculation
         _debouncedWordCountUpdate();
-
-        // 標記有未儲存的變更
-        _markAsModified();
 
         // 當文字內容變化時，清除所有高亮和搜尋狀態
         if (_searchMatches.isNotEmpty || _currentMatchIndex != -1) {
@@ -410,7 +346,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           });
         }
       } else if (_cursorOffset != normalizedOffset) {
-        editorSelectionNotifier.setCursorOffset(normalizedOffset);
+        _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         setState(() {
           // Trigger UI refresh for cursor/line-column display.
         });
@@ -418,38 +354,6 @@ class _ContentViewState extends ConsumerState<ContentView>
     });
 
     // 啟動時不自動建立新專案，避免與使用者手動開檔流程競態。
-
-    // 監聽設定變更（當字數模式切換時重新計算）
-    _settingsStateSubscription =
-        ref.listenManual<AsyncValue<AppSettingsStateData>>(
-          settingsStateProvider,
-          (previous, next) {
-            final previousMode = previous?.valueOrNull?.wordCountMode;
-            final nextMode = next.valueOrNull?.wordCountMode;
-            if (previousMode != null &&
-                nextMode != null &&
-                previousMode != nextMode) {
-              _onSettingsChanged();
-            }
-          },
-        );
-
-    _projectIoSubscription =
-        ref.listenManual<AsyncValue<ProjectIoStatus>>(
-          projectIoControllerProvider,
-          (previous, next) {
-            if (!mounted) {
-              return;
-            }
-
-            final nextLoading = next.isLoading;
-            if (isLoading != nextLoading) {
-              setState(() {
-                isLoading = nextLoading;
-              });
-            }
-          },
-        );
 
     _editorContentSubscription = ref.listenManual<String>(
       editorContentProvider,
@@ -463,7 +367,8 @@ class _ContentViewState extends ConsumerState<ContentView>
           next,
         );
 
-        _isSyncing = true;
+        final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
+        final beganSync = coordinatorNotifier.beginSync();
         try {
           textController.value = textController.value.copyWith(
             text: next,
@@ -471,7 +376,69 @@ class _ContentViewState extends ConsumerState<ContentView>
             composing: TextRange.empty,
           );
         } finally {
-          _isSyncing = false;
+          if (beganSync) {
+            coordinatorNotifier.endSync();
+          }
+        }
+      },
+    );
+
+    _editorCoordinatorSubscription = ref.listenManual<EditorCoordinatorState>(
+      editorCoordinatorProvider,
+      (previous, next) {
+        if (!mounted) {
+          return;
+        }
+
+        if (previous?.messageEventId != next.messageEventId &&
+            next.messageText != null &&
+            next.messageText!.isNotEmpty) {
+          final snackMessage = next.messageText!;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) {
+              return;
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(snackMessage),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            _editorCoordinatorNotifier.clearMessage();
+          });
+        }
+
+        if (previous?.wordCountModeEventId != next.wordCountModeEventId) {
+          _onSettingsChanged();
+        }
+
+        if (previous?.errorEventId != next.errorEventId &&
+            next.errorMessage != null &&
+            next.errorMessage!.isNotEmpty) {
+          final dialogMessage = next.errorMessage!;
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) {
+              return;
+            }
+            await showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text("錯誤"),
+                content: Text(dialogMessage),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text("確定"),
+                  ),
+                ],
+              ),
+            );
+
+            if (mounted) {
+              _editorCoordinatorNotifier.clearError();
+            }
+          });
         }
       },
     );
@@ -483,8 +450,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   @override
   void dispose() {
     _wordCountDebounce?.cancel(); // Cancel timer
-    _settingsStateSubscription?.close();
-    _projectIoSubscription?.close();
+    _editorCoordinatorSubscription?.close();
     _editorContentSubscription?.close();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
@@ -653,6 +619,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   @override
   Widget build(BuildContext context) {
     ref.watch(settingsStateProvider);
+    ref.watch(editorCoordinatorProvider);
 
     // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
     final bool isApple =
@@ -1218,42 +1185,37 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
     return BaseInfoModule.BaseInfoView(
-      onDataChanged: (_) => _markAsModified(),
+      onDataChanged: (_) => _commitModuleChange(),
     );
   }
 
   Widget _buildChapterSelectionView() {
     return ChapterModule.ChapterSelectionView(
-      onSegmentsChanged: (updatedSegments) {
-        setState(() {
-          segmentsData = updatedSegments;
-          totalWords = _recalculateSumFast();
+      onSegmentsChanged: (_) {
+        _commitModuleChange(() {
+          setState(() {
+            totalWords = _recalculateSumFast();
+          });
         });
-        _markAsModified();
       },
     );
   }
 
   Widget _buildOutlineView() {
     return OutlineModule.OutlineAdjustView(
-      onStorylineChanged: (_) => _markAsModified(),
+      onStorylineChanged: (_) => _commitModuleChange(),
     );
   }
 
   Widget _buildWorldSettingsView() {
     return WorldSettingsView(
-      onChanged: (_) => _markAsModified(),
+      onChanged: (_) => _commitModuleChange(),
     );
   }
 
   Widget _buildCharacterSettingsView() {
     return CharacterView(
-      onDataChanged: (updatedData) {
-        setState(() {
-          characterData = updatedData;
-        });
-        _markAsModified();
-      },
+      onDataChanged: (_) => _commitModuleChange(),
     );
   }
 
@@ -1277,7 +1239,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   Widget _buildPlanView() {
     return PlanModule.PlanView(
-      onChanged: (_, __) => _markAsModified(),
+      onChanged: (_, __) => _commitModuleChange(),
     );
   }
 
@@ -1374,12 +1336,7 @@ class _ContentViewState extends ConsumerState<ContentView>
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("$title 功能即將推出！"),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showMessage("$title 功能即將推出！");
               },
               icon: const Icon(Icons.construction),
               label: const Text("即將推出"),
@@ -1666,39 +1623,27 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 變更追蹤和退出處理
 
+  /// Module callback entrypoint: avoid writing provider in main.
+  /// Optional UI-only side effects (e.g., aggregated counters) can run before dirty mark.
+  void _commitModuleChange([VoidCallback? beforeMarkModified]) {
+    beforeMarkModified?.call();
+    _markAsModified();
+  }
+
   /// 標記內容已修改
   void _markAsModified() {
-    if (_isApplyingProjectData) {
-      return;
-    }
-    final bool nextUnsaved = ProjectManager.markAsModified();
-    if (hasUnsavedChanges == nextUnsaved) {
-      return;
-    }
-    setState(() => hasUnsavedChanges = nextUnsaved);
+    _editorCoordinatorNotifier.markAsModified();
   }
 
   /// 標記內容已儲存
   void _markAsSaved() {
-    final bool nextUnsaved = ProjectManager.markAsSaved();
-    final DateTime now = DateTime.now();
-    if (hasUnsavedChanges == nextUnsaved && _lastSavedTime != null) {
-      setState(() {
-        _lastSavedTime = now;
-      });
-      return;
-    }
-
-    setState(() {
-      hasUnsavedChanges = nextUnsaved;
-      _lastSavedTime = now;
-    });
+    _editorCoordinatorNotifier.markAsSaved();
   }
 
   /// 檢查是否有未儲存的變更
   bool _hasUnsavedChanges() {
     _syncEditorToSelectedChapter();
-    return ProjectManager.hasUnsavedChanges(hasUnsavedChanges, currentProject);
+    return _editorCoordinatorNotifier.hasUnsavedChanges(currentProject);
   }
 
   /// 處理退出請求
@@ -1739,7 +1684,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       final result =
           await ref.read(projectIoControllerProvider.notifier).createNewProject();
 
-      final initialState = _calculateInitialState(
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(
         result.data,
         _settingsState.wordCountMode,
       );
@@ -1748,8 +1695,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         currentProject = result.projectFile;
         _applyProjectData(result.data, initialState);
       });
-      _markAsSaved();
-      setState(() => _lastSavedTime = null);
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _showMessage("新專案建立成功！");
 
       _updateAllWordCounts();
@@ -1803,7 +1749,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           .read(projectIoControllerProvider.notifier)
           .loadProjectData(projectFile);
 
-      final initialState = _calculateInitialState(
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(
         data,
         _settingsState.wordCountMode,
       );
@@ -1812,10 +1760,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         currentProject = projectFile;
         _applyProjectData(data, initialState);
       });
-      _markAsSaved();
-      setState(() => _lastSavedTime = null);
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
-      await _recordRecentProject(projectFile);
+      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -1872,7 +1819,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           .read(projectIoControllerProvider.notifier)
           .loadProjectData(projectFile);
 
-      final initialState = _calculateInitialState(
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(
         data,
         _settingsState.wordCountMode,
       );
@@ -1881,10 +1830,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         currentProject = projectFile;
         _applyProjectData(data, initialState);
       });
-      _markAsSaved();
-      setState(() => _lastSavedTime = null);
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
-      await _recordRecentProject(projectFile);
+      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -1914,7 +1862,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           );
       setState(() => currentProject = savedProject);
       _markAsSaved();
-      await _recordRecentProject(savedProject);
+      await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       _showMessage("專案儲存成功！");
     } catch (e) {
       _showError("儲存專案失敗：${e.toString()}");
@@ -1933,32 +1881,10 @@ class _ContentViewState extends ConsumerState<ContentView>
           );
       setState(() => currentProject = savedProject);
       _markAsSaved();
-      await _recordRecentProject(savedProject);
+      await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
     } catch (e) {
       _showError("另存專案失敗：${e.toString()}");
-    }
-  }
-
-  Future<void> _recordRecentProject(ProjectFile projectFile) async {
-    try {
-      var persistedAccessToken = projectFile.uri;
-      if (projectFile.filePath != null) {
-        final generatedToken = await FileService.createPersistentAccessToken(
-          projectFile.filePath,
-        );
-        if (generatedToken != null && generatedToken.trim().isNotEmpty) {
-          persistedAccessToken = generatedToken;
-        }
-      }
-
-      await ref.read(settingsStateProvider.notifier).addRecentProject(
-        fileName: projectFile.fullFileName,
-        filePath: projectFile.filePath,
-        uri: persistedAccessToken,
-      );
-    } catch (e) {
-      debugPrint("Failed to persist recent project state: $e");
     }
   }
 
@@ -1982,148 +1908,66 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 同步編輯器內容到選中的章節（先存的部分）
   void _syncEditorToSelectedChapter() {
-    if (_isSyncing) return;
-    _isSyncing = true;
-    ProjectManager.syncEditorToSelectedChapter(
-      segmentsData: segmentsData,
-      selectedSegID: selectedSegID,
-      selectedChapID: selectedChapID,
+    ref.read(editorCoordinatorProvider.notifier).syncEditorToSelectedChapter(
       textController: textController,
-      updateContentCallback: (newContent) {
-        contentText = newContent;
-        // 觸發 segmentsData 更新通知
-        setState(() {});
-      },
     );
-    _isSyncing = false;
   }
 
   // 輔助方法：收集當前專案數據
   ProjectData _collectProjectData() {
-    return ProjectData(
-      baseInfoData: baseInfoData,
-      segmentsData: segmentsData,
-      outlineData: outlineData,
-      foreshadowData: foreshadowData,
-      updatePlanData: updatePlanData,
-      worldSettingsData: worldSettingsData,
-      characterData: characterData,
-      totalWords: totalWords,
-      contentText: contentText,
-    );
+    return ref.read(editorCoordinatorProvider.notifier).collectProjectData();
   }
 
   // 輔助方法：應用專案數據到狀態 (改為接收預先計算的狀態)
-  void _applyProjectData(ProjectData data, _ProjectInitialState initialState) {
-    _isApplyingProjectData = true;
+  void _applyProjectData(
+    ProjectData data,
+    EditorProjectInitialState initialState,
+  ) {
+    final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
+    final beganApplying = coordinatorNotifier.beginApplyingProjectData();
     final String? previousSelectedChapID = selectedChapID;
-    final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
 
-    baseInfoData = data.baseInfoData;
-    segmentsData = data.segmentsData;
-    outlineData = data.outlineData;
-    foreshadowData = data.foreshadowData;
-    updatePlanData = data.updatePlanData;
-    worldSettingsData = data.worldSettingsData;
-    characterData = data.characterData;
-
-    // 設定初始選擇
-    editorSelectionNotifier.setSelectionAndCursor(
-      selectedSegID: initialState.selectedSegID,
-      selectedChapID: initialState.selectedChapID,
-      cursorOffset: 0,
+    coordinatorNotifier.applyProjectData(
+      data: data,
+      initialState: initialState,
     );
+
     if (previousSelectedChapID != selectedChapID) {
       _proofreadingChapterSwitchVersion++;
     }
-    contentText = initialState.contentText;
 
-    if (initialState.hasSelection) {
-      _isSyncing = true;
-      textController.text = contentText;
-      _isSyncing = false;
-    } else {
-      _isSyncing = true;
-      textController.text = "";
-      _isSyncing = false;
+    final bool beganSync = coordinatorNotifier.beginSync();
+    try {
+      if (initialState.hasSelection) {
+        textController.text = contentText;
+      } else {
+        textController.text = "";
+      }
+    } finally {
+      if (beganSync) {
+        coordinatorNotifier.endSync();
+      }
     }
-
-    totalWords = initialState.totalWords;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      _isApplyingProjectData = false;
+      if (beganApplying) {
+        coordinatorNotifier.endApplyingProjectData();
+      }
     });
 
     // Force rebuild of all modules by using keys or ensuring state update
     // Note: Since we are replacing the data objects, didUpdateWidget in children should trigger
   }
 
-  // 輔助類別：專案初始狀態
-  static _ProjectInitialState _calculateInitialState(
-    ProjectData data,
-    WordCountMode mode,
-  ) {
-    String? segID;
-    String? chapID;
-    String content = "";
-    int words = 0;
-    bool hasSel = false;
-
-    if (data.segmentsData.isNotEmpty &&
-        data.segmentsData[0].chapters.isNotEmpty) {
-      segID = data.segmentsData[0].segmentUUID;
-      chapID = data.segmentsData[0].chapters[0].chapterUUID;
-      content = data.segmentsData[0].chapters[0].chapterContent;
-      hasSel = true;
-    }
-
-    // 優化：初始載入時不進行同步字數計算，改為後續異步更新，避免大型專案開啟時卡頓
-    words = 0;
-
-    return _ProjectInitialState(
-      selectedSegID: segID,
-      selectedChapID: chapID,
-      contentText: content,
-      totalWords: words,
-      hasSelection: hasSel,
-    );
-  }
-
   // 訊息處理
   void _showError(String message) {
-    setState(() {
-      errorMessage = message;
-      showingError = true;
-    });
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("錯誤"),
-        content: Text(errorMessage),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              setState(() => showingError = false);
-            },
-            child: const Text("確定"),
-          ),
-        ],
-      ),
-    );
+    _editorCoordinatorNotifier.pushError(message);
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    _editorCoordinatorNotifier.pushMessage(message);
   }
 }

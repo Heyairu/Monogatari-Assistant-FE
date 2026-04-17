@@ -560,6 +560,100 @@ class CharacterCodec {
     ...otherKeys,
   ];
 
+  static Map<String, dynamic> copyCharacterEntry(
+    Map<String, dynamic> source,
+  ) {
+    return source.map(
+      (key, value) => MapEntry(key, _deepCopyValue(value)),
+    );
+  }
+
+  static Map<String, Map<String, dynamic>> copyCharacterDataMap(
+    Map<String, Map<String, dynamic>> source,
+  ) {
+    return source.map(
+      (name, data) => MapEntry(name, copyCharacterEntry(data)),
+    );
+  }
+
+  static dynamic _deepCopyValue(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return copyCharacterEntry(value);
+    }
+
+    if (value is Map) {
+      return value.map(
+        (key, item) => MapEntry(key.toString(), _deepCopyValue(item)),
+      );
+    }
+
+    if (value is List) {
+      return value.map(_deepCopyValue).toList();
+    }
+
+    return value;
+  }
+
+  static List<String> _asStringList(dynamic listData) {
+    if (listData is! List) {
+      return <String>[];
+    }
+    return listData.map((item) => item.toString()).toList();
+  }
+
+  static List<double> _asDoubleList(dynamic listData) {
+    if (listData is! List) {
+      return <double>[];
+    }
+    return listData
+        .map((item) {
+          if (item is num) {
+            return item.toDouble();
+          }
+          return double.tryParse(item.toString()) ?? 0.0;
+        })
+        .toList();
+  }
+
+  static List<Map<String, String>> _asHinderEvents(dynamic rawData) {
+    if (rawData is! List) {
+      return <Map<String, String>>[];
+    }
+
+    return rawData
+        .whereType<Map>()
+        .map(
+          (event) => <String, String>{
+            "event": event["event"]?.toString() ?? "",
+            "solve": event["solve"]?.toString() ?? "",
+          },
+        )
+        .toList();
+  }
+
+  static Map<String, bool> _asBoolMap(dynamic rawData) {
+    if (rawData is! Map) {
+      return <String, bool>{};
+    }
+
+    final normalized = <String, bool>{};
+    rawData.forEach((key, value) {
+      final normalizedKey = key.toString();
+      bool normalizedValue;
+      if (value is bool) {
+        normalizedValue = value;
+      } else if (value is num) {
+        normalizedValue = value != 0;
+      } else if (value is String) {
+        normalizedValue = value.toLowerCase() == "true";
+      } else {
+        normalizedValue = false;
+      }
+      normalized[normalizedKey] = normalizedValue;
+    });
+    return normalized;
+  }
+
   /// 將角色資料序列化成 XML 格式
   static String? saveXML(Map<String, Map<String, dynamic>> characterData) {
     if (characterData.isEmpty) {
@@ -602,8 +696,7 @@ class CharacterCodec {
                 nest: () {
                   _saveStrings(builder, data, personalityKeys);
 
-                  final hinderEvents =
-                      data["hinderEvents"] as List<Map<String, String>>? ?? [];
+                  final hinderEvents = _asHinderEvents(data["hinderEvents"]);
                   if (hinderEvents.isNotEmpty) {
                     builder.element(
                       "hinderEvents",
@@ -650,8 +743,9 @@ class CharacterCodec {
                     data["unProficientToDoList"],
                   );
 
-                  final commonAbilityValues =
-                      data["commonAbilityValues"] as List<double>? ?? [];
+                  final commonAbilityValues = _asDoubleList(
+                    data["commonAbilityValues"],
+                  );
 
                   if (commonAbilityValues.isNotEmpty) {
                     builder.element(
@@ -724,8 +818,9 @@ class CharacterCodec {
                   );
 
                   // Social Item Sliders
-                  final socialItemValues =
-                      data["socialItemValues"] as List<double>? ?? [];
+                  final socialItemValues = _asDoubleList(
+                    data["socialItemValues"],
+                  );
 
                   if (socialItemValues.isNotEmpty) {
                     builder.element(
@@ -770,8 +865,9 @@ class CharacterCodec {
                   );
 
                   // Approach Style Sliders
-                  final approachValues =
-                      data["approachValues"] as List<double>? ?? [];
+                  final approachValues = _asDoubleList(
+                    data["approachValues"],
+                  );
 
                   if (approachValues.isNotEmpty) {
                     builder.element(
@@ -797,8 +893,7 @@ class CharacterCodec {
                   }
 
                   // Traits Sliders
-                  final traitsValues =
-                      data["traitsValues"] as List<double>? ?? [];
+                    final traitsValues = _asDoubleList(data["traitsValues"]);
 
                   if (traitsValues.isNotEmpty) {
                     builder.element(
@@ -864,7 +959,7 @@ class CharacterCodec {
     String tagName,
     dynamic listData,
   ) {
-    final list = listData as List<String>? ?? [];
+    final list = _asStringList(listData);
     if (list.isNotEmpty) {
       builder.element(
         tagName,
@@ -883,7 +978,7 @@ class CharacterCodec {
     List<String> keys,
   ) {
     for (final key in keys) {
-      _writeTextElement(builder, key, data[key] ?? "");
+      _writeTextElement(builder, key, data[key]?.toString() ?? "");
     }
   }
 
@@ -902,7 +997,7 @@ class CharacterCodec {
     String tagName,
     dynamic mapData,
   ) {
-    final map = mapData as Map<String, bool>? ?? {};
+    final map = _asBoolMap(mapData);
     if (map.isNotEmpty) {
       builder.element(
         tagName,
@@ -1359,7 +1454,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     });
 
     // 從提供者讀取初始資料（不直接提交，避免生命週期違規）
-    characterData = Map<String, Map<String, dynamic>>.from(
+    characterData = CharacterCodec.copyCharacterDataMap(
       ref.read(characterDataProvider),
     );
     characters = characterData.keys.toList();
@@ -1382,7 +1477,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         if (mounted) {
           setState(() {
           // 同步外部提供者更新
-          characterData = Map<String, Map<String, dynamic>>.from(next);
+          characterData = CharacterCodec.copyCharacterDataMap(next);
           characters = characterData.keys.toList();
 
           if (selectedCharacter != null &&
@@ -1566,7 +1661,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       final newMap = <String, Map<String, dynamic>>{};
       for (final name in characters) {
         if (characterData.containsKey(name)) {
-          newMap[name] = characterData[name]!;
+          newMap[name] = CharacterCodec.copyCharacterEntry(characterData[name]!);
         }
       }
       characterData = newMap;
@@ -2445,35 +2540,33 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       data[key] = _controllers[key]?.text ?? "";
     }
 
-    // Add complex data
+    // Add complex data (raw), then normalize with deep copy in a single path.
     data["alignment"] = selectedAlignment;
-    data["hinderEvents"] = List<Map<String, String>>.from(hinderEvents);
-    data["loveToDoList"] = List<String>.from(loveToDoList);
-    data["hateToDoList"] = List<String>.from(hateToDoList);
-    data["wantToDoList"] = List<String>.from(wantToDoList);
-    data["fearToDoList"] = List<String>.from(fearToDoList);
-    data["proficientToDoList"] = List<String>.from(proficientToDoList);
-    data["unProficientToDoList"] = List<String>.from(unProficientToDoList);
-    data["commonAbilityValues"] = List<double>.from(commonAbilityValues);
-    data["howToShowLove"] = Map<String, bool>.from(howToShowLove);
-    data["howToShowGoodwill"] = Map<String, bool>.from(howToShowGoodwill);
-    data["handleHatePeople"] = Map<String, bool>.from(handleHatePeople);
-    data["socialItemValues"] = List<double>.from(socialItemValues);
+    data["hinderEvents"] = hinderEvents;
+    data["loveToDoList"] = loveToDoList;
+    data["hateToDoList"] = hateToDoList;
+    data["wantToDoList"] = wantToDoList;
+    data["fearToDoList"] = fearToDoList;
+    data["proficientToDoList"] = proficientToDoList;
+    data["unProficientToDoList"] = unProficientToDoList;
+    data["commonAbilityValues"] = commonAbilityValues;
+    data["howToShowLove"] = howToShowLove;
+    data["howToShowGoodwill"] = howToShowGoodwill;
+    data["handleHatePeople"] = handleHatePeople;
+    data["socialItemValues"] = socialItemValues;
     data["relationship"] = selectedRelationship;
     data["isFindNewLove"] = isFindNewLove;
     data["isHarem"] = isHarem;
-    data["approachValues"] = List<double>.from(approachValues);
-    data["traitsValues"] = List<double>.from(traitsValues);
-    data["likeItemList"] = List<String>.from(likeItemList);
-    data["admireItemList"] = List<String>.from(admireItemList);
-    data["hateItemList"] = List<String>.from(hateItemList);
-    data["fearItemList"] = List<String>.from(fearItemList);
-    data["familiarItemList"] = List<String>.from(familiarItemList);
+    data["approachValues"] = approachValues;
+    data["traitsValues"] = traitsValues;
+    data["likeItemList"] = likeItemList;
+    data["admireItemList"] = admireItemList;
+    data["hateItemList"] = hateItemList;
+    data["fearItemList"] = fearItemList;
+    data["familiarItemList"] = familiarItemList;
 
-    final nextCharacterData = Map<String, Map<String, dynamic>>.from(
-      characterData,
-    );
-    nextCharacterData[selectedCharacter!] = data;
+    final nextCharacterData = CharacterCodec.copyCharacterDataMap(characterData);
+    nextCharacterData[selectedCharacter!] = CharacterCodec.copyCharacterEntry(data);
 
     characterData = nextCharacterData;
 
@@ -2482,6 +2575,92 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     ref.read(characterDataProvider.notifier).setCharacterData(nextCharacterData);
     widget.onDataChanged?.call(nextCharacterData);
     _isCommittingLocalChange = false;
+  }
+
+  List<String> _readStringList(Map<String, dynamic> data, String key) {
+    final raw = data[key];
+    if (raw is! List) {
+      return <String>[];
+    }
+    return raw.map((item) => item.toString()).toList();
+  }
+
+  List<Map<String, String>> _readHinderEvents(
+    Map<String, dynamic> data,
+    String key,
+  ) {
+    final raw = data[key];
+    if (raw is! List) {
+      return <Map<String, String>>[];
+    }
+
+    return raw
+        .whereType<Map>()
+        .map(
+          (item) => <String, String>{
+            "event": item["event"]?.toString() ?? "",
+            "solve": item["solve"]?.toString() ?? "",
+          },
+        )
+        .toList();
+  }
+
+  List<double> _readSliderValues(
+    Map<String, dynamic> data,
+    String key,
+    int length,
+  ) {
+    final raw = data[key];
+    if (raw is! List || raw.isEmpty) {
+      return List.filled(length, 50.0);
+    }
+
+    final typedList = raw
+        .map((item) => item is num ? item.toDouble() : double.tryParse(item.toString()) ?? 50.0)
+        .toList();
+    if (typedList.length < length) {
+      typedList.addAll(List.filled(length - typedList.length, 50.0));
+    }
+    return typedList;
+  }
+
+  bool _readBool(Map<String, dynamic> data, String key) {
+    final raw = data[key];
+    if (raw is bool) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw != 0;
+    }
+    if (raw is String) {
+      return raw.toLowerCase() == "true";
+    }
+    return false;
+  }
+
+  void _mergeBooleanMap(
+    Map<String, bool> target,
+    Map<String, dynamic> data,
+    String key,
+  ) {
+    final raw = data[key];
+    if (raw is! Map) {
+      return;
+    }
+
+    target.updateAll((entryKey, _) {
+      final dynamic value = raw[entryKey];
+      if (value is bool) {
+        return value;
+      }
+      if (value is num) {
+        return value != 0;
+      }
+      if (value is String) {
+        return value.toLowerCase() == "true";
+      }
+      return false;
+    });
   }
 
   // 載入角色資料
@@ -2498,9 +2677,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return;
     }
 
+    final normalizedData = CharacterCodec.copyCharacterEntry(data);
+
     // Load all text controllers
     for (final key in CharacterCodec.allControllerKeys) {
-      _controllers[key]?.text = data[key] ?? "";
+      _controllers[key]?.text = normalizedData[key]?.toString() ?? "";
     }
 
     // Fallback for name if empty
@@ -2508,69 +2689,54 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _controllers["name"]?.text = characterName;
     }
 
-    // Helper to ensure list length to prevent RangeError
-    List<double> ensureList(String key, int length) {
-      final list = data[key] as List<dynamic>?;
-      if (list == null || list.isEmpty) {
-        return List.filled(length, 50.0);
-      }
-      final typedList = List<double>.from(list);
-      if (typedList.length < length) {
-        typedList.addAll(List.filled(length - typedList.length, 50.0));
-      }
-      return typedList;
-    }
+    selectedAlignment = normalizedData["alignment"]
+        ?.toString()
+        .replaceAll("\r\n", "\n");
+    hinderEvents = _readHinderEvents(normalizedData, "hinderEvents");
 
-    selectedAlignment = data["alignment"]?.toString().replaceAll("\r\n", "\n");
-    hinderEvents = List<Map<String, String>>.from(data["hinderEvents"] ?? []);
-
-    loveToDoList = List<String>.from(data["loveToDoList"] ?? []);
-    hateToDoList = List<String>.from(data["hateToDoList"] ?? []);
-    wantToDoList = List<String>.from(data["wantToDoList"] ?? []);
-    fearToDoList = List<String>.from(data["fearToDoList"] ?? []);
-    proficientToDoList = List<String>.from(data["proficientToDoList"] ?? []);
-    unProficientToDoList = List<String>.from(
-      data["unProficientToDoList"] ?? [],
+    loveToDoList = _readStringList(normalizedData, "loveToDoList");
+    hateToDoList = _readStringList(normalizedData, "hateToDoList");
+    wantToDoList = _readStringList(normalizedData, "wantToDoList");
+    fearToDoList = _readStringList(normalizedData, "fearToDoList");
+    proficientToDoList = _readStringList(normalizedData, "proficientToDoList");
+    unProficientToDoList = _readStringList(
+      normalizedData,
+      "unProficientToDoList",
     );
-    commonAbilityValues = ensureList(
+    commonAbilityValues = _readSliderValues(
+      normalizedData,
       "commonAbilityValues",
       TraitDefinitions.commonAbilities.length,
     );
 
-    if (data["howToShowLove"] != null) {
-      howToShowLove.updateAll(
-        (key, value) => data["howToShowLove"][key] ?? false,
-      );
-    }
-    if (data["howToShowGoodwill"] != null) {
-      howToShowGoodwill.updateAll(
-        (key, value) => data["howToShowGoodwill"][key] ?? false,
-      );
-    }
-    if (data["handleHatePeople"] != null) {
-      handleHatePeople.updateAll(
-        (key, value) => data["handleHatePeople"][key] ?? false,
-      );
-    }
+    _mergeBooleanMap(howToShowLove, normalizedData, "howToShowLove");
+    _mergeBooleanMap(howToShowGoodwill, normalizedData, "howToShowGoodwill");
+    _mergeBooleanMap(handleHatePeople, normalizedData, "handleHatePeople");
 
-    socialItemValues = ensureList(
+    socialItemValues = _readSliderValues(
+      normalizedData,
       "socialItemValues",
       TraitDefinitions.socialItems.length,
     );
-    selectedRelationship = data["relationship"];
-    isFindNewLove = data["isFindNewLove"] ?? false;
-    isHarem = data["isHarem"] ?? false;
-    approachValues = ensureList(
+    selectedRelationship = normalizedData["relationship"]?.toString();
+    isFindNewLove = _readBool(normalizedData, "isFindNewLove");
+    isHarem = _readBool(normalizedData, "isHarem");
+    approachValues = _readSliderValues(
+      normalizedData,
       "approachValues",
       TraitDefinitions.approaches.length,
     );
-    traitsValues = ensureList("traitsValues", TraitDefinitions.traits.length);
+    traitsValues = _readSliderValues(
+      normalizedData,
+      "traitsValues",
+      TraitDefinitions.traits.length,
+    );
 
-    likeItemList = List<String>.from(data["likeItemList"] ?? []);
-    admireItemList = List<String>.from(data["admireItemList"] ?? []);
-    hateItemList = List<String>.from(data["hateItemList"] ?? []);
-    fearItemList = List<String>.from(data["fearItemList"] ?? []);
-    familiarItemList = List<String>.from(data["familiarItemList"] ?? []);
+    likeItemList = _readStringList(normalizedData, "likeItemList");
+    admireItemList = _readStringList(normalizedData, "admireItemList");
+    hateItemList = _readStringList(normalizedData, "hateItemList");
+    fearItemList = _readStringList(normalizedData, "fearItemList");
+    familiarItemList = _readStringList(normalizedData, "familiarItemList");
 
     _isLoading = false;
   }
@@ -2638,7 +2804,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
       // 如果 characterData 中有舊名稱的資料,需要轉移到新名稱
       if (characterData.containsKey(oldName)) {
-        final data = characterData[oldName]!;
+        final data = CharacterCodec.copyCharacterEntry(characterData[oldName]!);
         characterData.remove(oldName);
         characterData[trimmedName] = data;
       }
@@ -2669,7 +2835,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
       // 初始化新角色資料並通知更新
       characterData[name] = {"name": name};
-      widget.onDataChanged?.call(characterData);
+      widget.onDataChanged?.call(CharacterCodec.copyCharacterDataMap(characterData));
 
       _newCharacterController.clear();
       // 自動選取新增的角色
@@ -2690,7 +2856,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characterData.remove(characterName);
 
       // 通知更新
-      widget.onDataChanged?.call(characterData);
+      widget.onDataChanged?.call(CharacterCodec.copyCharacterDataMap(characterData));
 
       // 如果刪除的是當前選中的角色
       if (selectedCharacterIndex == index) {

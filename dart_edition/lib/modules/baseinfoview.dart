@@ -27,6 +27,8 @@ final _log = Logger("BaseInfoView");
 
 // MARK: - Model
 
+const Object _baseInfoUnset = Object();
+
 class BaseInfoData {
   String bookName = "";
   String author = "";
@@ -39,6 +41,31 @@ class BaseInfoData {
   int nowWords = 0; // 由 content（非空白字元數）計算
 
   BaseInfoData();
+
+  BaseInfoData copyWith({
+    String? bookName,
+    String? author,
+    String? purpose,
+    String? toRecap,
+    String? storyType,
+    String? intro,
+    List<String>? tags,
+    Object? latestSave = _baseInfoUnset,
+    int? nowWords,
+  }) {
+    return BaseInfoData()
+      ..bookName = bookName ?? this.bookName
+      ..author = author ?? this.author
+      ..purpose = purpose ?? this.purpose
+      ..toRecap = toRecap ?? this.toRecap
+      ..storyType = storyType ?? this.storyType
+      ..intro = intro ?? this.intro
+      ..tags = List<String>.from(tags ?? this.tags)
+      ..latestSave = identical(latestSave, _baseInfoUnset)
+          ? this.latestSave
+          : latestSave as DateTime?
+      ..nowWords = nowWords ?? this.nowWords;
+  }
 
   void recalcNowWords(
     String content, {
@@ -175,15 +202,9 @@ class BaseInfoCodec {
   }) {
     if (data.isEffectivelyEmpty) return null;
 
-    var snapshot = BaseInfoData()
-      ..bookName = data.bookName
-      ..author = data.author
-      ..purpose = data.purpose
-      ..toRecap = data.toRecap
-      ..storyType = data.storyType
-      ..intro = data.intro
-      ..tags = List.from(data.tags)
-      ..latestSave = updateLatestSave ? DateTime.now() : data.latestSave;
+    var snapshot = data.copyWith(
+      latestSave: updateLatestSave ? DateTime.now() : data.latestSave,
+    );
 
     snapshot.recalcNowWords(contentText, mode: wordCountMode);
 
@@ -350,7 +371,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   @override
   void initState() {
     super.initState();
-    _data = _cloneData(ref.read(baseInfoDataProvider));
+    _data = ref.read(baseInfoDataProvider).copyWith();
     _syncNowWords(commitToProvider: false);
 
     // 初始化各個文字欄位的 controller
@@ -445,28 +466,15 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   }
 
   void _notifyDataChanged({bool notifyParent = true}) {
-    final snapshot = _cloneData(_data);
+    final snapshot = _data.copyWith();
     ref.read(baseInfoDataProvider.notifier).setBaseInfoData(snapshot);
     if (notifyParent) {
       widget.onDataChanged?.call(snapshot);
     }
   }
 
-  BaseInfoData _cloneData(BaseInfoData source) {
-    return BaseInfoData()
-      ..bookName = source.bookName
-      ..author = source.author
-      ..purpose = source.purpose
-      ..toRecap = source.toRecap
-      ..storyType = source.storyType
-      ..intro = source.intro
-      ..tags = List.from(source.tags)
-      ..latestSave = source.latestSave
-      ..nowWords = source.nowWords;
-  }
-
   void _syncFromProvider(BaseInfoData source) {
-    final nextData = _cloneData(source);
+    final nextData = source.copyWith();
     setState(() {
       _isUpdating = true;
       _data = nextData;

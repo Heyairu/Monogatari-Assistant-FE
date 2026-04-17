@@ -64,6 +64,25 @@ class ChapterData {
        chapterUUID =
            chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 
+  ChapterData copyWith({
+    String? chapterName,
+    String? chapterContent,
+    String? chapterUUID,
+  }) {
+    final nextContent = chapterContent ?? _chapterContent;
+    final next = ChapterData(
+      chapterName: chapterName ?? this.chapterName,
+      chapterContent: nextContent,
+      chapterUUID: chapterUUID ?? this.chapterUUID,
+    );
+
+    if (chapterContent == null || chapterContent == _chapterContent) {
+      next._cachedWordCount = _cachedWordCount;
+      next._cachedMode = _cachedMode;
+    }
+    return next;
+  }
+
   String get chapterContent => _chapterContent;
 
   set chapterContent(String value) {
@@ -121,6 +140,19 @@ class SegmentData {
   }) : chapters = chapters ?? [],
        segmentUUID =
            segmentUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+  SegmentData copyWith({
+    String? segmentName,
+    List<ChapterData>? chapters,
+    String? segmentUUID,
+  }) {
+    final nextChapters = chapters ?? this.chapters;
+    return SegmentData(
+      segmentName: segmentName ?? this.segmentName,
+      chapters: nextChapters.map((chapter) => chapter.copyWith()).toList(),
+      segmentUUID: segmentUUID ?? this.segmentUUID,
+    );
+  }
 
   String get id => segmentUUID;
 
@@ -414,7 +446,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           return;
         }
         setState(() {
-          _segments = _cloneSegments(next);
+          _segments = _copySegments(next);
           _initializeIfEmpty();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -587,27 +619,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   // MARK: - Helper 方法
 
   void _initializeSegments() {
-    _segments = _cloneSegments(ref.read(segmentsDataProvider));
+    _segments = _copySegments(ref.read(segmentsDataProvider));
   }
 
-  List<SegmentData> _cloneSegments(List<SegmentData> source) {
-    return List.from(
-      source.map(
-        (seg) => SegmentData(
-          segmentName: seg.segmentName,
-          chapters: List.from(
-            seg.chapters.map(
-              (ch) => ChapterData(
-                chapterName: ch.chapterName,
-                chapterContent: ch.chapterContent,
-                chapterUUID: ch.chapterUUID,
-              ),
-            ),
-          ),
-          segmentUUID: seg.segmentUUID,
-        ),
-      ),
-    );
+  List<SegmentData> _copySegments(List<SegmentData> source) {
+    return source.map((segment) => segment.copyWith()).toList();
   }
 
   void _initializeIfEmpty() {
@@ -683,7 +699,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }
 
   void _notifySegmentsChanged() {
-    final snapshot = _cloneSegments(_segments);
+    final snapshot = _copySegments(_segments);
     _isCommittingLocalChange = true;
     ref.read(segmentsDataProvider.notifier).setSegmentsData(snapshot);
     widget.onSegmentsChanged?.call(snapshot);

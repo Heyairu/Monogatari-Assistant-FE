@@ -66,6 +66,29 @@ class StorylineData {
        chapterUUID =
            chapterUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
 
+  StorylineData copyWith({
+    String? storylineName,
+    String? storylineType,
+    List<StoryEventData>? scenes,
+    String? memo,
+    String? conflictPoint,
+    List<String>? people,
+    List<String>? item,
+    String? chapterUUID,
+  }) {
+    final nextScenes = scenes ?? this.scenes;
+    return StorylineData(
+      storylineName: storylineName ?? this.storylineName,
+      storylineType: storylineType ?? this.storylineType,
+      scenes: nextScenes.map((event) => event.copyWith()).toList(),
+      memo: memo ?? this.memo,
+      conflictPoint: conflictPoint ?? this.conflictPoint,
+      people: List<String>.from(people ?? this.people),
+      item: List<String>.from(item ?? this.item),
+      chapterUUID: chapterUUID ?? this.chapterUUID,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -100,6 +123,27 @@ class StoryEventData {
        item = item ?? [],
        storyEventUUID =
            storyEventUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+  StoryEventData copyWith({
+    String? storyEvent,
+    List<SceneData>? scenes,
+    String? memo,
+    String? conflictPoint,
+    List<String>? people,
+    List<String>? item,
+    String? storyEventUUID,
+  }) {
+    final nextScenes = scenes ?? this.scenes;
+    return StoryEventData(
+      storyEvent: storyEvent ?? this.storyEvent,
+      scenes: nextScenes.map((scene) => scene.copyWith()).toList(),
+      memo: memo ?? this.memo,
+      conflictPoint: conflictPoint ?? this.conflictPoint,
+      people: List<String>.from(people ?? this.people),
+      item: List<String>.from(item ?? this.item),
+      storyEventUUID: storyEventUUID ?? this.storyEventUUID,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -141,6 +185,32 @@ class SceneData {
        doingThings = doingThings ?? [],
        sceneUUID =
            sceneUUID ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+  SceneData copyWith({
+    String? sceneName,
+    String? time,
+    String? location,
+    String? focusPoint,
+    String? conflictPoint,
+    List<String>? people,
+    List<String>? item,
+    List<String>? doingThings,
+    String? memo,
+    String? sceneUUID,
+  }) {
+    return SceneData(
+      sceneName: sceneName ?? this.sceneName,
+      time: time ?? this.time,
+      location: location ?? this.location,
+      focusPoint: focusPoint ?? this.focusPoint,
+      conflictPoint: conflictPoint ?? this.conflictPoint,
+      people: List<String>.from(people ?? this.people),
+      item: List<String>.from(item ?? this.item),
+      doingThings: List<String>.from(doingThings ?? this.doingThings),
+      memo: memo ?? this.memo,
+      sceneUUID: sceneUUID ?? this.sceneUUID,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -683,7 +753,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   @override
   void initState() {
     super.initState();
-    _storylines = _cloneStorylines(ref.read(outlineDataProvider));
+    _storylines = _copyStorylines(ref.read(outlineDataProvider));
     _initializeSelection();
 
     // Add listeners
@@ -710,7 +780,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
           return;
         }
         setState(() {
-          _storylines = _cloneStorylines(next);
+          _storylines = _copyStorylines(next);
           _initializeSelection();
         });
       },
@@ -1037,55 +1107,15 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _notifyChange() {
-    final snapshot = _cloneStorylines(storylines);
+    final snapshot = _copyStorylines(storylines);
     _isCommittingLocalChange = true;
     ref.read(outlineDataProvider.notifier).setOutlineData(snapshot);
     widget.onStorylineChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }
 
-  List<StorylineData> _cloneStorylines(List<StorylineData> source) {
-    return source
-        .map(
-          (sl) => StorylineData(
-            storylineName: sl.storylineName,
-            storylineType: sl.storylineType,
-            chapterUUID: sl.chapterUUID,
-            memo: sl.memo,
-            conflictPoint: sl.conflictPoint,
-            people: List<String>.from(sl.people),
-            item: List<String>.from(sl.item),
-            scenes: sl.scenes
-                .map(
-                  (ev) => StoryEventData(
-                    storyEvent: ev.storyEvent,
-                    storyEventUUID: ev.storyEventUUID,
-                    memo: ev.memo,
-                    conflictPoint: ev.conflictPoint,
-                    people: List<String>.from(ev.people),
-                    item: List<String>.from(ev.item),
-                    scenes: ev.scenes
-                        .map(
-                          (sc) => SceneData(
-                            sceneName: sc.sceneName,
-                            sceneUUID: sc.sceneUUID,
-                            time: sc.time,
-                            location: sc.location,
-                            focusPoint: sc.focusPoint,
-                            conflictPoint: sc.conflictPoint,
-                            memo: sc.memo,
-                            people: List<String>.from(sc.people),
-                            item: List<String>.from(sc.item),
-                            doingThings: List<String>.from(sc.doingThings),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                )
-                .toList(),
-          ),
-        )
-        .toList();
+  List<StorylineData> _copyStorylines(List<StorylineData> source) {
+    return source.map((storyline) => storyline.copyWith()).toList();
   }
 
   // MARK: - 自動滾動方法
@@ -2611,8 +2641,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       scenes: [],
       memo: "",
       conflictPoint: "",
-      people: List.from(storylines[si].people), // 繼承大箱
-      item: List.from(storylines[si].item), // 繼承大箱
+      people: const [],
+      item: const [],
+    ).copyWith(
+      people: storylines[si].people, // 繼承大箱
+      item: storylines[si].item, // 繼承大箱
     );
 
     setState(() {
@@ -2640,8 +2673,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       sceneName: finalName,
       focusPoint: "",
       conflictPoint: "",
-      people: List.from(storylines[si].scenes[ei].people), // 繼承中箱
-      item: List.from(storylines[si].scenes[ei].item), // 繼承中箱
+      people: const [],
+      item: const [],
+    ).copyWith(
+      people: storylines[si].scenes[ei].people, // 繼承中箱
+      item: storylines[si].scenes[ei].item, // 繼承中箱
     );
 
     setState(() {
