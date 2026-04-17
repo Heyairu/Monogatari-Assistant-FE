@@ -23,6 +23,16 @@ Remove remaining legacy listener chains and reduce high-risk `setState` hotspots
 - `flutter test test/glossaryview_test.dart test/planview_test.dart test/characterview_test_simple.dart test/chapterselectionview_test.dart test/outlineview_test.dart test/worldsettingsview_test.dart`
 - `flutter analyze lib/modules/glossaryview.dart lib/main.dart lib/presentation/providers/project_state_providers.dart`
 
+## Phase 5 Addendum (Aggregation + Cleanup)
+- Added aggregation verification test:
+  - `test/project_data_provider_aggregation_test.dart`
+  - Validates `projectDataProvider` still aggregates all migrated source providers after Notifier migration.
+- Global cleanup search completed for old write style:
+  - No remaining `ref.read(...notifier).state = ...` write-sites.
+  - No remaining `StateProvider<...>` declarations in runtime project-state provider layer.
+- Additional validation run:
+  - `flutter test test/project_data_provider_aggregation_test.dart test/editor_text_box_test.dart test/phase2_widget_interaction_test.dart test/glossary_phase3_regression_test.dart`
+
 ## Residual Non-Blocking Items
 - Analyze may still report style/info-level issues unrelated to migration behavior.
 - These can be handled in a follow-up lint-cleaning pass without changing runtime logic.
