@@ -643,15 +643,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }
 
   void _setSelection({String? segmentID, String? chapterID}) {
-    final current = ref.read(editorSelectionProvider);
-    ref.read(editorSelectionProvider.notifier).state = current.copyWith(
+    ref.read(editorSelectionProvider.notifier).setSelection(
       selectedSegID: segmentID,
       selectedChapID: chapterID,
     );
   }
 
   void _setEditorContent(String value) {
-    ref.read(editorContentProvider.notifier).state = value;
+    ref.read(editorContentProvider.notifier).setContent(value);
   }
 
   void _selectSegment(String segID) {
@@ -686,7 +685,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   void _notifySegmentsChanged() {
     final snapshot = _cloneSegments(_segments);
     _isCommittingLocalChange = true;
-    ref.read(segmentsDataProvider.notifier).state = snapshot;
+    ref.read(segmentsDataProvider.notifier).setSegmentsData(snapshot);
     widget.onSegmentsChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }

@@ -1039,7 +1039,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   void _notifyChange() {
     final snapshot = _cloneStorylines(storylines);
     _isCommittingLocalChange = true;
-    ref.read(outlineDataProvider.notifier).state = snapshot;
+    ref.read(outlineDataProvider.notifier).setOutlineData(snapshot);
     widget.onStorylineChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }

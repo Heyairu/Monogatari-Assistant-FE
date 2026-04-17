@@ -198,7 +198,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 主編輯器文字
   String get contentText => ref.read(editorContentProvider);
   set contentText(String value) {
-    ref.read(editorContentProvider.notifier).state = value;
+    ref.read(editorContentProvider.notifier).setContent(value);
   }
 
   final HighlightTextEditingController textController =
@@ -229,76 +229,70 @@ class _ContentViewState extends ConsumerState<ContentView>
   BaseInfoModule.BaseInfoData get baseInfoData =>
       ref.read(baseInfoDataProvider);
   set baseInfoData(BaseInfoModule.BaseInfoData value) {
-    ref.read(baseInfoDataProvider.notifier).state = value;
+    ref.read(baseInfoDataProvider.notifier).setBaseInfoData(value);
   }
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
   set segmentsData(List<ChapterModule.SegmentData> value) {
-    ref.read(segmentsDataProvider.notifier).state = value;
+    ref.read(segmentsDataProvider.notifier).setSegmentsData(value);
   }
 
   List<OutlineModule.StorylineData> get outlineData =>
       ref.read(outlineDataProvider);
   set outlineData(List<OutlineModule.StorylineData> value) {
-    ref.read(outlineDataProvider.notifier).state = value;
+    ref.read(outlineDataProvider.notifier).setOutlineData(value);
   }
 
   List<LocationData> get worldSettingsData =>
       ref.read(worldSettingsDataProvider);
   set worldSettingsData(List<LocationData> value) {
-    ref.read(worldSettingsDataProvider.notifier).state = value;
+    ref.read(worldSettingsDataProvider.notifier).setWorldSettingsData(value);
   }
 
   Map<String, Map<String, dynamic>> get characterData =>
       ref.read(characterDataProvider);
   set characterData(Map<String, Map<String, dynamic>> value) {
-    ref.read(characterDataProvider.notifier).state = value;
+    ref.read(characterDataProvider.notifier).setCharacterData(value);
   }
 
   List<PlanModule.ForeshadowItem> get foreshadowData =>
       ref.read(foreshadowDataProvider);
   set foreshadowData(List<PlanModule.ForeshadowItem> value) {
-    ref.read(foreshadowDataProvider.notifier).state = value;
+    ref.read(foreshadowDataProvider.notifier).setForeshadowData(value);
   }
 
   List<PlanModule.UpdatePlanItem> get updatePlanData =>
       ref.read(updatePlanDataProvider);
   set updatePlanData(List<PlanModule.UpdatePlanItem> value) {
-    ref.read(updatePlanDataProvider.notifier).state = value;
+    ref.read(updatePlanDataProvider.notifier).setUpdatePlanData(value);
   }
 
   // 選取狀態
   String? get selectedSegID => ref.read(editorSelectionProvider).selectedSegID;
   set selectedSegID(String? value) {
-    final current = ref.read(editorSelectionProvider);
-    ref.read(editorSelectionProvider.notifier).state =
-        current.copyWith(selectedSegID: value);
+    ref.read(editorSelectionProvider.notifier).setSelectedSegID(value);
   }
 
   String? get selectedChapID => ref.read(editorSelectionProvider).selectedChapID;
   set selectedChapID(String? value) {
-    final current = ref.read(editorSelectionProvider);
-    ref.read(editorSelectionProvider.notifier).state =
-        current.copyWith(selectedChapID: value);
+    ref.read(editorSelectionProvider.notifier).setSelectedChapID(value);
   }
 
   int _proofreadingChapterSwitchVersion = 0;
   int get totalWords => ref.read(totalWordsProvider);
   set totalWords(int value) {
-    ref.read(totalWordsProvider.notifier).state = value;
+    ref.read(totalWordsProvider.notifier).setTotalWords(value);
   }
 
   int get _cursorOffset => ref.read(editorSelectionProvider).cursorOffset;
   set _cursorOffset(int value) {
-    final current = ref.read(editorSelectionProvider);
-    ref.read(editorSelectionProvider.notifier).state =
-        current.copyWith(cursorOffset: value);
+    ref.read(editorSelectionProvider.notifier).setCursorOffset(value);
   }
 
   ProjectFile? get currentProject => ref.read(currentProjectFileProvider);
   set currentProject(ProjectFile? value) {
-    ref.read(currentProjectFileProvider.notifier).state = value;
+    ref.read(currentProjectFileProvider.notifier).setCurrentProjectFile(value);
   }
 
   // 檔案狀態
@@ -352,6 +346,9 @@ class _ContentViewState extends ConsumerState<ContentView>
   void initState() {
     super.initState();
 
+    final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
+    final editorContentNotifier = ref.read(editorContentProvider.notifier);
+
     // 註冊視窗監聽器並設置視窗選項
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -377,14 +374,12 @@ class _ContentViewState extends ConsumerState<ContentView>
       if (!mounted) {
         return;
       }
-      final currentSelection = ref.read(editorSelectionProvider);
-      ref.read(editorSelectionProvider.notifier).state = currentSelection
-          .copyWith(
-            selectedSegID: initialSegID,
-            selectedChapID: initialChapID,
-            cursorOffset: 0,
-          );
-      ref.read(editorContentProvider.notifier).state = initialContent;
+      editorSelectionNotifier.setSelectionAndCursor(
+        selectedSegID: initialSegID,
+        selectedChapID: initialChapID,
+        cursorOffset: 0,
+      );
+      editorContentNotifier.setContent(initialContent);
     });
 
     // 監聽文字變化
@@ -397,8 +392,8 @@ class _ContentViewState extends ConsumerState<ContentView>
 
       // 只有當文字真的改變且不在同步狀態時才更新
       if (!_isSyncing && contentText != textController.text) {
-        contentText = textController.text;
-        _cursorOffset = normalizedOffset;
+        editorContentNotifier.setContent(textController.text);
+        editorSelectionNotifier.setCursorOffset(normalizedOffset);
 
         // Trigger async incremental update instead of full sync recalculation
         _debouncedWordCountUpdate();
@@ -415,8 +410,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           });
         }
       } else if (_cursorOffset != normalizedOffset) {
+        editorSelectionNotifier.setCursorOffset(normalizedOffset);
         setState(() {
-          _cursorOffset = normalizedOffset;
+          // Trigger UI refresh for cursor/line-column display.
         });
       }
     });
@@ -2021,6 +2017,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   void _applyProjectData(ProjectData data, _ProjectInitialState initialState) {
     _isApplyingProjectData = true;
     final String? previousSelectedChapID = selectedChapID;
+    final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
 
     baseInfoData = data.baseInfoData;
     segmentsData = data.segmentsData;
@@ -2031,8 +2028,11 @@ class _ContentViewState extends ConsumerState<ContentView>
     characterData = data.characterData;
 
     // 設定初始選擇
-    selectedSegID = initialState.selectedSegID;
-    selectedChapID = initialState.selectedChapID;
+    editorSelectionNotifier.setSelectionAndCursor(
+      selectedSegID: initialState.selectedSegID,
+      selectedChapID: initialState.selectedChapID,
+      cursorOffset: 0,
+    );
     if (previousSelectedChapID != selectedChapID) {
       _proofreadingChapterSwitchVersion++;
     }

@@ -446,7 +446,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
   void _notifyDataChanged({bool notifyParent = true}) {
     final snapshot = _cloneData(_data);
-    ref.read(baseInfoDataProvider.notifier).state = snapshot;
+    ref.read(baseInfoDataProvider.notifier).setBaseInfoData(snapshot);
     if (notifyParent) {
       widget.onDataChanged?.call(snapshot);
     }

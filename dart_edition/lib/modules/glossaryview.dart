@@ -640,7 +640,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     _isCommittingLocalChange = true;
-    ref.read(glossaryStateProvider.notifier).state = snapshot;
+    ref.read(glossaryStateProvider.notifier).setGlossaryState(snapshot);
     _isCommittingLocalChange = false;
   }
 

@@ -565,7 +565,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   void _notifyChange() {
     final snapshot = _cloneLocations(_locations);
     _isCommittingLocalChange = true;
-    ref.read(worldSettingsDataProvider.notifier).state = snapshot;
+    ref.read(worldSettingsDataProvider.notifier).setWorldSettingsData(snapshot);
     widget.onChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }

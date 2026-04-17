@@ -573,8 +573,12 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final updatePlanSnapshot = _cloneUpdatePlanItems(_updatePlanItems);
 
     _isCommittingLocalChange = true;
-    ref.read(foreshadowDataProvider.notifier).state = foreshadowSnapshot;
-    ref.read(updatePlanDataProvider.notifier).state = updatePlanSnapshot;
+    ref.read(foreshadowDataProvider.notifier).setForeshadowData(
+      foreshadowSnapshot,
+    );
+    ref.read(updatePlanDataProvider.notifier).setUpdatePlanData(
+      updatePlanSnapshot,
+    );
     widget.onChanged?.call(foreshadowSnapshot, updatePlanSnapshot);
     _isCommittingLocalChange = false;
   }

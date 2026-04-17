@@ -2479,7 +2479,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     // 寫入提供者並通知外部。標記本地提交，避免立刻被 provider 回流重載輸入框。
     _isCommittingLocalChange = true;
-    ref.read(characterDataProvider.notifier).state = nextCharacterData;
+    ref.read(characterDataProvider.notifier).setCharacterData(nextCharacterData);
     widget.onDataChanged?.call(nextCharacterData);
     _isCommittingLocalChange = false;
   }
