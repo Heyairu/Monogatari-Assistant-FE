@@ -28,7 +28,10 @@ import "package:xml/xml.dart" as xml;
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../models/character_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+
+export "../models/character_data.dart";
 
 final _log = Logger("CharacterView");
 
@@ -492,106 +495,21 @@ class TraitDefinitions {
 // MARK: - CharacterCodec for XML Save/Load
 
 class CharacterCodec {
-  static const basicKeys = [
-    "name",
-    "nickname",
-    "age",
-    "gender",
-    "occupation",
-    "birthday",
-    "native",
-    "live",
-    "address",
-  ];
+  static const basicKeys = CharacterDataKeys.basicKeys;
+  static const appearanceKeys = CharacterDataKeys.appearanceKeys;
+  static const personalityKeys = CharacterDataKeys.personalityKeys;
+  static const socialKeys = CharacterDataKeys.socialKeys;
+  static const otherKeys = CharacterDataKeys.otherKeys;
+  static const allControllerKeys = CharacterDataKeys.allControllerKeys;
 
-  static const appearanceKeys = [
-    "height",
-    "weight",
-    "blood",
-    "hair",
-    "eye",
-    "skin",
-    "faceFeatures",
-    "eyeFeatures",
-    "earFeatures",
-    "noseFeatures",
-    "mouthFeatures",
-    "eyebrowFeatures",
-    "body",
-    "dress",
-  ];
-
-  static const personalityKeys = [
-    "mbti",
-    "personality",
-    "language",
-    "interest",
-    "habit",
-    "alignment",
-    "belief",
-    "limit",
-    "future",
-    "cherish",
-    "disgust",
-    "fear",
-    "curious",
-    "expect",
-    "intention",
-    "otherValues",
-  ];
-
-  static const socialKeys = [
-    "impression",
-    "likable",
-    "family",
-    "otherShowLove",
-    "otherGoodwill",
-    "otherHatePeople",
-    "otherRelationship",
-  ];
-
-  static const otherKeys = ["originalName", "otherText"];
-
-  static const allControllerKeys = [
-    ...basicKeys,
-    ...appearanceKeys,
-    ...personalityKeys,
-    ...socialKeys,
-    ...otherKeys,
-  ];
-
-  static Map<String, dynamic> copyCharacterEntry(
-    Map<String, dynamic> source,
-  ) {
-    return source.map(
-      (key, value) => MapEntry(key, _deepCopyValue(value)),
-    );
+  static CharacterEntryData copyCharacterEntry(CharacterEntryData source) {
+    return source.deepCopy();
   }
 
-  static Map<String, Map<String, dynamic>> copyCharacterDataMap(
-    Map<String, Map<String, dynamic>> source,
+  static Map<String, CharacterEntryData> copyCharacterDataMap(
+    Map<String, CharacterEntryData> source,
   ) {
-    return source.map(
-      (name, data) => MapEntry(name, copyCharacterEntry(data)),
-    );
-  }
-
-  static dynamic _deepCopyValue(dynamic value) {
-    if (value is Map<String, dynamic>) {
-      return copyCharacterEntry(value);
-    }
-
-    if (value is Map) {
-      return value.map(
-        (key, item) => MapEntry(key.toString(), _deepCopyValue(item)),
-      );
-    }
-
-    if (value is List) {
-      return value.map(_deepCopyValue).toList();
-    }
-
-    return value;
+    return source.map((name, data) => MapEntry(name, copyCharacterEntry(data)));
   }
 
   static List<String> _asStringList(dynamic listData) {
@@ -605,14 +523,12 @@ class CharacterCodec {
     if (listData is! List) {
       return <double>[];
     }
-    return listData
-        .map((item) {
-          if (item is num) {
-            return item.toDouble();
-          }
-          return double.tryParse(item.toString()) ?? 0.0;
-        })
-        .toList();
+    return listData.map((item) {
+      if (item is num) {
+        return item.toDouble();
+      }
+      return double.tryParse(item.toString()) ?? 0.0;
+    }).toList();
   }
 
   static List<Map<String, String>> _asHinderEvents(dynamic rawData) {
@@ -655,7 +571,7 @@ class CharacterCodec {
   }
 
   /// 將角色資料序列化成 XML 格式
-  static String? saveXML(Map<String, Map<String, dynamic>> characterData) {
+  static String? saveXML(Map<String, CharacterEntryData> characterData) {
     if (characterData.isEmpty) {
       return null;
     }
@@ -668,7 +584,7 @@ class CharacterCodec {
 
         for (final entry in characterData.entries) {
           final characterName = entry.key;
-          final data = entry.value;
+          final data = entry.value.toLegacyMap();
 
           builder.element(
             "Character",
@@ -865,9 +781,7 @@ class CharacterCodec {
                   );
 
                   // Approach Style Sliders
-                  final approachValues = _asDoubleList(
-                    data["approachValues"],
-                  );
+                  final approachValues = _asDoubleList(data["approachValues"]);
 
                   if (approachValues.isNotEmpty) {
                     builder.element(
@@ -893,7 +807,7 @@ class CharacterCodec {
                   }
 
                   // Traits Sliders
-                    final traitsValues = _asDoubleList(data["traitsValues"]);
+                  final traitsValues = _asDoubleList(data["traitsValues"]);
 
                   if (traitsValues.isNotEmpty) {
                     builder.element(
@@ -1029,7 +943,7 @@ class CharacterCodec {
   }
 
   /// 從 XML 載入角色資料
-  static Map<String, Map<String, dynamic>>? loadXML(String content) {
+  static Map<String, CharacterEntryData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
 
@@ -1039,7 +953,7 @@ class CharacterCodec {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "Characters") return null;
 
-      final characterData = <String, Map<String, dynamic>>{};
+      final characterData = <String, CharacterEntryData>{};
 
       for (final charNode in typeElement.findAllElements("Character")) {
         final characterName = charNode.getAttribute("Name") ?? "";
@@ -1125,7 +1039,10 @@ class CharacterCodec {
           data["otherText"] = _getText(other, "otherText");
         }
 
-        characterData[characterName] = data;
+        characterData[characterName] = CharacterEntryData.fromLegacyMap(
+          data,
+          fallbackName: characterName,
+        );
       }
 
       return characterData.isNotEmpty ? characterData : null;
@@ -1265,7 +1182,7 @@ class CharacterCodec {
 }
 
 class CharacterView extends ConsumerStatefulWidget {
-  final ValueChanged<Map<String, Map<String, dynamic>>>? onDataChanged;
+  final ValueChanged<Map<String, CharacterEntryData>>? onDataChanged;
 
   const CharacterView({super.key, this.onDataChanged});
 
@@ -1290,7 +1207,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   int? selectedCharacterIndex;
 
   // Character Data Storage - 每個角色的完整資料
-  Map<String, Map<String, dynamic>> characterData = {};
+  Map<String, CharacterEntryData> characterData = {};
 
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
@@ -1406,7 +1323,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   bool _isLoading = false;
   Timer? _debounceTimer;
-  ProviderSubscription<Map<String, Map<String, dynamic>>>? _characterDataSubscription;
+  ProviderSubscription<Map<String, CharacterEntryData>>?
+  _characterDataSubscription;
   bool _isCommittingLocalChange = false;
 
   void _markAsModified() {
@@ -1467,35 +1385,35 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     // 設置提供者訂閱以同步外部變化
-    _characterDataSubscription =
-        ref.listenManual<Map<String, Map<String, dynamic>>>(
-      characterDataProvider,
-      (prev, next) {
-        if (_isLoading || _isCommittingLocalChange) {
-          return;
-        }
-        if (mounted) {
-          setState(() {
-          // 同步外部提供者更新
-          characterData = CharacterCodec.copyCharacterDataMap(next);
-          characters = characterData.keys.toList();
-
-          if (selectedCharacter != null &&
-              characters.contains(selectedCharacter)) {
-            // 保留當前選擇
-            _loadCharacterData(selectedCharacter!);
-          } else if (characters.isNotEmpty) {
-            // 選取第一個
-            selectedCharacterIndex = 0;
-            selectedCharacter = characters[0];
-            _loadCharacterData(selectedCharacter!);
-          } else {
-            _clearAllFields();
+    _characterDataSubscription = ref
+        .listenManual<Map<String, CharacterEntryData>>(characterDataProvider, (
+          prev,
+          next,
+        ) {
+          if (_isLoading || _isCommittingLocalChange) {
+            return;
           }
-          });
-        }
-      },
-    );
+          if (mounted) {
+            setState(() {
+              // 同步外部提供者更新
+              characterData = CharacterCodec.copyCharacterDataMap(next);
+              characters = characterData.keys.toList();
+
+              if (selectedCharacter != null &&
+                  characters.contains(selectedCharacter)) {
+                // 保留當前選擇
+                _loadCharacterData(selectedCharacter!);
+              } else if (characters.isNotEmpty) {
+                // 選取第一個
+                selectedCharacterIndex = 0;
+                selectedCharacter = characters[0];
+                _loadCharacterData(selectedCharacter!);
+              } else {
+                _clearAllFields();
+              }
+            });
+          }
+        });
   }
 
   @override
@@ -1658,10 +1576,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       }
 
       // Reorder Map to match List order
-      final newMap = <String, Map<String, dynamic>>{};
+      final newMap = <String, CharacterEntryData>{};
       for (final name in characters) {
         if (characterData.containsKey(name)) {
-          newMap[name] = CharacterCodec.copyCharacterEntry(characterData[name]!);
+          newMap[name] = CharacterCodec.copyCharacterEntry(
+            characterData[name]!,
+          );
         }
       }
       characterData = newMap;
@@ -2061,7 +1981,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SmallTitle(icon: Icons.sentiment_very_dissatisfied, text: "如何應對討厭的人？"),
+                SmallTitle(
+                  icon: Icons.sentiment_very_dissatisfied,
+                  text: "如何應對討厭的人？",
+                ),
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
@@ -2565,14 +2488,21 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     data["fearItemList"] = fearItemList;
     data["familiarItemList"] = familiarItemList;
 
-    final nextCharacterData = CharacterCodec.copyCharacterDataMap(characterData);
-    nextCharacterData[selectedCharacter!] = CharacterCodec.copyCharacterEntry(data);
+    final nextCharacterData = CharacterCodec.copyCharacterDataMap(
+      characterData,
+    );
+    nextCharacterData[selectedCharacter!] = CharacterEntryData.fromLegacyMap(
+      data,
+      fallbackName: selectedCharacter,
+    );
 
     characterData = nextCharacterData;
 
     // 寫入提供者並通知外部。標記本地提交，避免立刻被 provider 回流重載輸入框。
     _isCommittingLocalChange = true;
-    ref.read(characterDataProvider.notifier).setCharacterData(nextCharacterData);
+    ref
+        .read(characterDataProvider.notifier)
+        .updateCharacterData((_) => nextCharacterData);
     widget.onDataChanged?.call(nextCharacterData);
     _isCommittingLocalChange = false;
   }
@@ -2616,7 +2546,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     final typedList = raw
-        .map((item) => item is num ? item.toDouble() : double.tryParse(item.toString()) ?? 50.0)
+        .map(
+          (item) => item is num
+              ? item.toDouble()
+              : double.tryParse(item.toString()) ?? 50.0,
+        )
         .toList();
     if (typedList.length < length) {
       typedList.addAll(List.filled(length - typedList.length, 50.0));
@@ -2677,7 +2611,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return;
     }
 
-    final normalizedData = CharacterCodec.copyCharacterEntry(data);
+    final normalizedData = data.toLegacyMap();
 
     // Load all text controllers
     for (final key in CharacterCodec.allControllerKeys) {
@@ -2689,9 +2623,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _controllers["name"]?.text = characterName;
     }
 
-    selectedAlignment = normalizedData["alignment"]
-        ?.toString()
-        .replaceAll("\r\n", "\n");
+    selectedAlignment = normalizedData["alignment"]?.toString().replaceAll(
+      "\r\n",
+      "\n",
+    );
     hinderEvents = _readHinderEvents(normalizedData, "hinderEvents");
 
     loveToDoList = _readStringList(normalizedData, "loveToDoList");
@@ -2804,7 +2739,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
       // 如果 characterData 中有舊名稱的資料,需要轉移到新名稱
       if (characterData.containsKey(oldName)) {
-        final data = CharacterCodec.copyCharacterEntry(characterData[oldName]!);
+        final data = CharacterCodec.copyCharacterEntry(
+          characterData[oldName]!,
+        ).withTextField("name", trimmedName);
         characterData.remove(oldName);
         characterData[trimmedName] = data;
       }
@@ -2834,8 +2771,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characters.add(name);
 
       // 初始化新角色資料並通知更新
-      characterData[name] = {"name": name};
-      widget.onDataChanged?.call(CharacterCodec.copyCharacterDataMap(characterData));
+      characterData[name] = CharacterEntryData.withName(name);
+      widget.onDataChanged?.call(
+        CharacterCodec.copyCharacterDataMap(characterData),
+      );
 
       _newCharacterController.clear();
       // 自動選取新增的角色
@@ -2856,7 +2795,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characterData.remove(characterName);
 
       // 通知更新
-      widget.onDataChanged?.call(CharacterCodec.copyCharacterDataMap(characterData));
+      widget.onDataChanged?.call(
+        CharacterCodec.copyCharacterDataMap(characterData),
+      );
 
       // 如果刪除的是當前選中的角色
       if (selectedCharacterIndex == index) {

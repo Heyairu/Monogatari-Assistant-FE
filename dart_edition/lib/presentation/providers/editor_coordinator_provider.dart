@@ -4,8 +4,12 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../bin/file.dart" as file_module;
 import "../../bin/file.dart";
 import "../../bin/settings_manager.dart";
+import "../../models/character_data.dart" as character_model;
+import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/outlineview.dart" as outline_module;
+import "../../modules/planview.dart" as plan_module;
+import "../../modules/worldsettingsview.dart" as world_settings_module;
 import "global_state_providers.dart";
 import "project_io_providers.dart";
 import "project_state_providers.dart";
@@ -374,15 +378,41 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         .toList(growable: false);
   }
 
+  List<plan_module.ForeshadowItem> _snapshotForeshadowData(
+    List<plan_module.ForeshadowItem> source,
+  ) {
+    return source.map((item) => item.copyWith()).toList(growable: false);
+  }
+
+  List<plan_module.UpdatePlanItem> _snapshotUpdatePlanData(
+    List<plan_module.UpdatePlanItem> source,
+  ) {
+    return source.map((item) => item.copyWith()).toList(growable: false);
+  }
+
+  List<world_settings_module.LocationData> _snapshotWorldSettingsData(
+    List<world_settings_module.LocationData> source,
+  ) {
+    return source
+        .map((location) => location.deepCopy())
+        .toList(growable: false);
+  }
+
+  Map<String, character_model.CharacterEntryData> _snapshotCharacterData(
+    Map<String, character_model.CharacterEntryData> source,
+  ) {
+    return character_model.copyCharacterDataMap(source);
+  }
+
   file_module.ProjectData _snapshotProjectData(file_module.ProjectData source) {
     return file_module.ProjectData(
       baseInfoData: _snapshotBaseInfo(source.baseInfoData),
       segmentsData: _snapshotSegments(source.segmentsData),
       outlineData: _snapshotOutline(source.outlineData),
-      foreshadowData: source.foreshadowData,
-      updatePlanData: source.updatePlanData,
-      worldSettingsData: source.worldSettingsData,
-      characterData: source.characterData,
+      foreshadowData: _snapshotForeshadowData(source.foreshadowData),
+      updatePlanData: _snapshotUpdatePlanData(source.updatePlanData),
+      worldSettingsData: _snapshotWorldSettingsData(source.worldSettingsData),
+      characterData: _snapshotCharacterData(source.characterData),
       totalWords: source.totalWords,
       contentText: source.contentText,
       isDirty: source.isDirty,
@@ -422,16 +452,16 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         .updateOutlineData((_) => snapshot.outlineData);
     ref
         .read(foreshadowDataProvider.notifier)
-        .setForeshadowData(snapshot.foreshadowData);
+        .updateForeshadowData((_) => snapshot.foreshadowData);
     ref
         .read(updatePlanDataProvider.notifier)
-        .setUpdatePlanData(snapshot.updatePlanData);
+        .updateUpdatePlanData((_) => snapshot.updatePlanData);
     ref
         .read(worldSettingsDataProvider.notifier)
-        .setWorldSettingsData(snapshot.worldSettingsData);
+        .updateWorldSettingsData((_) => snapshot.worldSettingsData);
     ref
         .read(characterDataProvider.notifier)
-        .setCharacterData(snapshot.characterData);
+        .updateCharacterData((_) => snapshot.characterData);
 
     ref
         .read(editorSelectionProvider.notifier)

@@ -864,7 +864,7 @@ class ProjectData {
   List<PlanModule.ForeshadowItem> foreshadowData;
   List<PlanModule.UpdatePlanItem> updatePlanData;
   List<LocationData> worldSettingsData;
-  Map<String, Map<String, dynamic>> characterData;
+  Map<String, CharacterEntryData> characterData;
 
   // 狀態變數（需要被保存或重建的）
   int totalWords;
@@ -1003,7 +1003,7 @@ class _ProjectParser {
     List<PlanModule.ForeshadowItem>? loadedForeshadow;
     List<PlanModule.UpdatePlanItem>? loadedUpdatePlans;
     List<LocationData>? loadedWorldSettings;
-    Map<String, Map<String, dynamic>>? loadedCharacterData;
+    Map<String, CharacterEntryData>? loadedCharacterData;
 
     // 計算 contentText 和 totalWords
     String contentText = "";
@@ -1353,7 +1353,7 @@ class _ProjectMerger {
 
   /// 生成 Character Markdown
   static String generateCharacterMD(
-    Map<String, Map<String, dynamic>> characters,
+    Map<String, CharacterEntryData> characters,
   ) {
     // Mapping keys to UI titles
     final Map<String, String> keyTitleMap = {
@@ -1449,7 +1449,8 @@ class _ProjectMerger {
     buffer.writeln("# 角色設定 (Characters)");
     buffer.writeln();
 
-    characters.forEach((id, charData) {
+    characters.forEach((id, entryData) {
+      final charData = entryData.toLegacyMap();
       buffer.writeln("## ${charData["name"] ?? "未命名"}");
 
       // Helper for simple fields

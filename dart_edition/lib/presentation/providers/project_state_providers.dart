@@ -1,9 +1,10 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/file.dart" as file_module;
+import "../../models/character_data.dart" as character_model;
+import "../../models/glossary_data.dart" as glossary_model;
 import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
-import "../../modules/glossaryview.dart" as glossary_module;
 import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/planview.dart" as plan_module;
 import "../../modules/worldsettingsview.dart";
@@ -182,13 +183,25 @@ final outlineDataProvider =
     );
 
 class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
+  List<LocationData> _createSnapshot(List<LocationData> source) {
+    return List<LocationData>.unmodifiable(
+      source.map((location) => location.deepCopy()).toList(growable: false),
+    );
+  }
+
   @override
   List<LocationData> build() {
-    return file_module.ProjectData.empty().worldSettingsData;
+    return _createSnapshot(file_module.ProjectData.empty().worldSettingsData);
   }
 
   void setWorldSettingsData(List<LocationData> value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateWorldSettingsData(
+    List<LocationData> Function(List<LocationData> current) update,
+  ) {
+    setWorldSettingsData(update(state));
   }
 }
 
@@ -198,31 +211,65 @@ final worldSettingsDataProvider =
     );
 
 class CharacterDataNotifier
-    extends Notifier<Map<String, Map<String, dynamic>>> {
-  @override
-  Map<String, Map<String, dynamic>> build() {
-    return file_module.ProjectData.empty().characterData;
+    extends Notifier<Map<String, character_model.CharacterEntryData>> {
+  Map<String, character_model.CharacterEntryData> _createSnapshot(
+    Map<String, character_model.CharacterEntryData> source,
+  ) {
+    final copied = character_model.copyCharacterDataMap(source);
+    return Map<String, character_model.CharacterEntryData>.unmodifiable(copied);
   }
 
-  void setCharacterData(Map<String, Map<String, dynamic>> value) {
-    state = value;
+  @override
+  Map<String, character_model.CharacterEntryData> build() {
+    return _createSnapshot(file_module.ProjectData.empty().characterData);
+  }
+
+  void setCharacterData(Map<String, character_model.CharacterEntryData> value) {
+    state = _createSnapshot(value);
+  }
+
+  void updateCharacterData(
+    Map<String, character_model.CharacterEntryData> Function(
+      Map<String, character_model.CharacterEntryData> current,
+    )
+    update,
+  ) {
+    setCharacterData(update(state));
   }
 }
 
 final characterDataProvider =
-    NotifierProvider<CharacterDataNotifier, Map<String, Map<String, dynamic>>>(
-      CharacterDataNotifier.new,
-    );
+    NotifierProvider<
+      CharacterDataNotifier,
+      Map<String, character_model.CharacterEntryData>
+    >(CharacterDataNotifier.new);
 
 class ForeshadowDataNotifier
     extends Notifier<List<plan_module.ForeshadowItem>> {
+  List<plan_module.ForeshadowItem> _createSnapshot(
+    List<plan_module.ForeshadowItem> source,
+  ) {
+    return List<plan_module.ForeshadowItem>.unmodifiable(
+      source.map((item) => item.copyWith()).toList(growable: false),
+    );
+  }
+
   @override
   List<plan_module.ForeshadowItem> build() {
-    return file_module.ProjectData.empty().foreshadowData;
+    return _createSnapshot(file_module.ProjectData.empty().foreshadowData);
   }
 
   void setForeshadowData(List<plan_module.ForeshadowItem> value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateForeshadowData(
+    List<plan_module.ForeshadowItem> Function(
+      List<plan_module.ForeshadowItem> current,
+    )
+    update,
+  ) {
+    setForeshadowData(update(state));
   }
 }
 
@@ -233,13 +280,30 @@ final foreshadowDataProvider =
 
 class UpdatePlanDataNotifier
     extends Notifier<List<plan_module.UpdatePlanItem>> {
+  List<plan_module.UpdatePlanItem> _createSnapshot(
+    List<plan_module.UpdatePlanItem> source,
+  ) {
+    return List<plan_module.UpdatePlanItem>.unmodifiable(
+      source.map((item) => item.copyWith()).toList(growable: false),
+    );
+  }
+
   @override
   List<plan_module.UpdatePlanItem> build() {
-    return file_module.ProjectData.empty().updatePlanData;
+    return _createSnapshot(file_module.ProjectData.empty().updatePlanData);
   }
 
   void setUpdatePlanData(List<plan_module.UpdatePlanItem> value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateUpdatePlanData(
+    List<plan_module.UpdatePlanItem> Function(
+      List<plan_module.UpdatePlanItem> current,
+    )
+    update,
+  ) {
+    setUpdatePlanData(update(state));
   }
 }
 
@@ -249,8 +313,8 @@ final updatePlanDataProvider =
     );
 
 class GlossaryStateData {
-  final List<glossary_module.GlossaryCategory> categoryTree;
-  final Map<String, glossary_module.GlossaryEntry> entryIndex;
+  final List<glossary_model.GlossaryCategory> categoryTree;
+  final Map<String, glossary_model.GlossaryEntry> entryIndex;
 
   const GlossaryStateData({
     required this.categoryTree,
@@ -259,13 +323,35 @@ class GlossaryStateData {
 }
 
 class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
+  GlossaryStateData _createSnapshot(GlossaryStateData value) {
+    final categoryTree = List<glossary_model.GlossaryCategory>.unmodifiable(
+      glossary_model.copyGlossaryCategoryTree(value.categoryTree),
+    );
+    final entryIndex = Map<String, glossary_model.GlossaryEntry>.unmodifiable(
+      glossary_model.copyGlossaryEntryIndex(value.entryIndex),
+    );
+
+    return GlossaryStateData(
+      categoryTree: categoryTree,
+      entryIndex: entryIndex,
+    );
+  }
+
   @override
   GlossaryStateData build() {
-    return const GlossaryStateData(categoryTree: [], entryIndex: {});
+    return _createSnapshot(
+      const GlossaryStateData(categoryTree: [], entryIndex: {}),
+    );
   }
 
   void setGlossaryState(GlossaryStateData value) {
-    state = value;
+    state = _createSnapshot(value);
+  }
+
+  void updateGlossaryState(
+    GlossaryStateData Function(GlossaryStateData current) update,
+  ) {
+    setGlossaryState(update(state));
   }
 }
 

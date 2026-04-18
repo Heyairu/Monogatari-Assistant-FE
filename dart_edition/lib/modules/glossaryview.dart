@@ -24,325 +24,13 @@ import "dart:collection";
 import "dart:convert";
 import "dart:io";
 import "../bin/ui_library.dart";
+import "../models/glossary_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+
+export "../models/glossary_data.dart";
 
 const String _glossaryAssetPath = "assets/jsons/glossary.json";
 const String _legacyGlossaryPrefsKey = "glossary_json_v1";
-
-enum GlossaryPolarity { positive, negative, neutral }
-
-GlossaryPolarity parseGlossaryPolarity(String? raw) {
-  switch ((raw ?? "").toLowerCase()) {
-    case "positive":
-      return GlossaryPolarity.positive;
-    case "negative":
-      return GlossaryPolarity.negative;
-    case "neutral":
-    default:
-      return GlossaryPolarity.neutral;
-  }
-}
-
-extension GlossaryPolarityX on GlossaryPolarity {
-  String get rawValue {
-    switch (this) {
-      case GlossaryPolarity.positive:
-        return "positive";
-      case GlossaryPolarity.negative:
-        return "negative";
-      case GlossaryPolarity.neutral:
-        return "neutral";
-    }
-  }
-
-  String get label {
-    switch (this) {
-      case GlossaryPolarity.positive:
-        return "正面";
-      case GlossaryPolarity.negative:
-        return "負面";
-      case GlossaryPolarity.neutral:
-        return "中性";
-    }
-  }
-
-  IconData get icon {
-    switch (this) {
-      case GlossaryPolarity.positive:
-        return Icons.sentiment_satisfied_alt;
-      case GlossaryPolarity.negative:
-        return Icons.sentiment_dissatisfied;
-      case GlossaryPolarity.neutral:
-        return Icons.sentiment_neutral;
-    }
-  }
-
-  Color color(ColorScheme scheme) {
-    switch (this) {
-      case GlossaryPolarity.positive:
-        return scheme.primary;
-      case GlossaryPolarity.negative:
-        return scheme.error;
-      case GlossaryPolarity.neutral:
-        return scheme.tertiary;
-    }
-  }
-}
-
-enum GlossaryPartOfSpeech {
-  noun,
-  verb,
-  adjective,
-  adverb,
-  pronoun,
-  custom,
-  unspecified,
-}
-
-GlossaryPartOfSpeech parseGlossaryPartOfSpeech(String? raw) {
-  switch ((raw ?? "").toLowerCase()) {
-    case "noun":
-      return GlossaryPartOfSpeech.noun;
-    case "verb":
-      return GlossaryPartOfSpeech.verb;
-    case "adjective":
-      return GlossaryPartOfSpeech.adjective;
-    case "adverb":
-      return GlossaryPartOfSpeech.adverb;
-    case "pronoun":
-      return GlossaryPartOfSpeech.pronoun;
-    case "custom":
-      return GlossaryPartOfSpeech.custom;
-    case "unspecified":
-    default:
-      return GlossaryPartOfSpeech.unspecified;
-  }
-}
-
-extension GlossaryPartOfSpeechX on GlossaryPartOfSpeech {
-  String get rawValue {
-    switch (this) {
-      case GlossaryPartOfSpeech.noun:
-        return "noun";
-      case GlossaryPartOfSpeech.verb:
-        return "verb";
-      case GlossaryPartOfSpeech.adjective:
-        return "adjective";
-      case GlossaryPartOfSpeech.adverb:
-        return "adverb";
-      case GlossaryPartOfSpeech.pronoun:
-        return "pronoun";
-      case GlossaryPartOfSpeech.custom:
-        return "custom";
-      case GlossaryPartOfSpeech.unspecified:
-        return "unspecified";
-    }
-  }
-
-  String get label {
-    switch (this) {
-      case GlossaryPartOfSpeech.noun:
-        return "名詞";
-      case GlossaryPartOfSpeech.verb:
-        return "動詞";
-      case GlossaryPartOfSpeech.adjective:
-        return "形容詞";
-      case GlossaryPartOfSpeech.adverb:
-        return "副詞";
-      case GlossaryPartOfSpeech.pronoun:
-        return "代詞";
-      case GlossaryPartOfSpeech.custom:
-        return "自訂";
-      case GlossaryPartOfSpeech.unspecified:
-        return "未指定";
-    }
-  }
-}
-
-class GlossaryPair {
-  String meaning;
-  String example;
-
-  GlossaryPair({this.meaning = "", this.example = ""});
-
-  GlossaryPair copyWith({
-    String? meaning,
-    String? example,
-  }) {
-    return GlossaryPair(
-      meaning: meaning ?? this.meaning,
-      example: example ?? this.example,
-    );
-  }
-
-  factory GlossaryPair.fromJson(Map<String, dynamic> json) {
-    return GlossaryPair(
-      meaning: json["meaning"] as String? ?? "",
-      example: json["example"] as String? ?? "",
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {"meaning": meaning, "example": example};
-  }
-}
-
-class GlossaryEntry {
-  String id;
-  String term;
-  GlossaryPartOfSpeech partOfSpeech;
-  String customPartOfSpeech;
-  GlossaryPolarity polarity;
-  List<GlossaryPair> pairs;
-
-  GlossaryEntry({
-    required this.id,
-    required this.term,
-    required this.partOfSpeech,
-    required this.customPartOfSpeech,
-    required this.polarity,
-    required this.pairs,
-  });
-
-  factory GlossaryEntry.fromJson(Map<String, dynamic> json) {
-    final List<GlossaryPair> parsedPairs = [];
-    final dynamic pairsRaw = json["pairs"];
-
-    if (pairsRaw is List<dynamic>) {
-      for (final dynamic item in pairsRaw) {
-        if (item is Map<String, dynamic>) {
-          parsedPairs.add(GlossaryPair.fromJson(item));
-        }
-      }
-    }
-
-    // 相容舊格式：meanings/examples 兩個獨立陣列。
-    if (parsedPairs.isEmpty) {
-      final List<String> meanings =
-          (json["meanings"] as List<dynamic>? ?? <dynamic>[])
-              .map((e) => e.toString())
-              .toList();
-      final List<String> examples =
-          (json["examples"] as List<dynamic>? ?? <dynamic>[])
-              .map((e) => e.toString())
-              .toList();
-      final int pairCount = meanings.length > examples.length
-          ? meanings.length
-          : examples.length;
-      for (int i = 0; i < pairCount; i++) {
-        final String meaning = i < meanings.length ? meanings[i] : "";
-        final String example = i < examples.length ? examples[i] : "";
-        if (meaning.trim().isNotEmpty || example.trim().isNotEmpty) {
-          parsedPairs.add(GlossaryPair(meaning: meaning, example: example));
-        }
-      }
-    }
-
-    if (parsedPairs.isEmpty) {
-      parsedPairs.add(GlossaryPair());
-    }
-
-    return GlossaryEntry(
-      id: json["id"] as String? ?? "",
-      term: json["term"] as String? ?? "",
-      partOfSpeech: parseGlossaryPartOfSpeech(json["partOfSpeech"] as String?),
-      customPartOfSpeech: json["customPartOfSpeech"] as String? ?? "",
-      polarity: parseGlossaryPolarity(json["polarity"] as String?),
-      pairs: parsedPairs,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      "id": id,
-      "term": term,
-      "partOfSpeech": partOfSpeech.rawValue,
-      "customPartOfSpeech": customPartOfSpeech,
-      "polarity": polarity.rawValue,
-      "pairs": pairs.map((e) => e.toJson()).toList(),
-    };
-  }
-
-  GlossaryEntry copyWith({
-    String? id,
-    String? term,
-    GlossaryPartOfSpeech? partOfSpeech,
-    String? customPartOfSpeech,
-    GlossaryPolarity? polarity,
-    List<GlossaryPair>? pairs,
-  }) {
-    final List<GlossaryPair> copiedPairs = (pairs ?? this.pairs)
-        .map((pair) => pair.copyWith())
-        .toList();
-
-    return GlossaryEntry(
-      id: id ?? this.id,
-      term: term ?? this.term,
-      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
-      customPartOfSpeech: customPartOfSpeech ?? this.customPartOfSpeech,
-      polarity: polarity ?? this.polarity,
-      pairs: copiedPairs,
-    );
-  }
-}
-
-class GlossaryCategory {
-  final String id;
-  String name;
-  List<String> entryIds;
-  List<GlossaryCategory> children;
-
-  GlossaryCategory({
-    required this.id,
-    required this.name,
-    required this.entryIds,
-    required this.children,
-  });
-
-  factory GlossaryCategory.fromJson(Map<String, dynamic> json) {
-    return GlossaryCategory(
-      id: json["id"] as String? ?? "",
-      name: json["name"] as String? ?? "",
-      entryIds: (json["entryIds"] as List<dynamic>? ?? <dynamic>[])
-          .map((e) => e.toString())
-          .toList(),
-      children: (json["children"] as List<dynamic>? ?? <dynamic>[])
-          .whereType<Map<String, dynamic>>()
-          .map(GlossaryCategory.fromJson)
-          .toList(),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      "id": id,
-      "name": name,
-      "entryIds": entryIds,
-      "children": children.map((e) => e.toJson()).toList(),
-    };
-  }
-
-  GlossaryCategory copyWith({
-    String? id,
-    String? name,
-    List<String>? entryIds,
-    List<GlossaryCategory>? children,
-  }) {
-    final List<String> copiedEntryIds = List<String>.from(
-      entryIds ?? this.entryIds,
-    );
-    final List<GlossaryCategory> copiedChildren = (children ?? this.children)
-        .map((child) => child.copyWith())
-        .toList();
-
-    return GlossaryCategory(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      entryIds: copiedEntryIds,
-      children: copiedChildren,
-    );
-  }
-}
 
 class _GlossaryCategoryDragData {
   final String categoryId;
@@ -465,7 +153,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     final initialState = ref.read(glossaryStateProvider);
-    if (initialState.categoryTree.isNotEmpty || initialState.entryIndex.isNotEmpty) {
+    if (initialState.categoryTree.isNotEmpty ||
+        initialState.entryIndex.isNotEmpty) {
       _applyProviderState(initialState);
       _isLoading = false;
     } else {
@@ -593,10 +282,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           final String resolvedId = parsed.id.isNotEmpty
               ? parsed.id
               : entry.key;
-          parsed.id = resolvedId;
-          entryIndex[entry.key] = parsed;
+          final GlossaryEntry resolved = parsed.copyWith(id: resolvedId);
+          entryIndex[entry.key] = resolved;
           if (resolvedId != entry.key) {
-            entryIndex[resolvedId] = parsed;
+            entryIndex[resolvedId] = resolved;
           }
         }
       }
@@ -623,16 +312,54 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   }
 
   List<GlossaryCategory> _copyCategoryTree(List<GlossaryCategory> nodes) {
-    return nodes.map((node) => node.copyWith()).toList();
+    return copyGlossaryCategoryTree(nodes);
   }
 
   HashMap<String, GlossaryEntry> _copyEntryIndex(
     Map<String, GlossaryEntry> source,
   ) {
-    final HashMap<String, GlossaryEntry> copied = HashMap();
-    for (final MapEntry<String, GlossaryEntry> entry in source.entries) {
-      copied[entry.key] = entry.value.copyWith();
+    return copyGlossaryEntryIndex(source);
+  }
+
+  Set<String> _collectReferencedEntryIdsFromTree(List<GlossaryCategory> tree) {
+    final Set<String> refs = <String>{};
+
+    void walk(List<GlossaryCategory> nodes) {
+      for (final GlossaryCategory node in nodes) {
+        refs.addAll(node.entryIds);
+        walk(node.children);
+      }
     }
+
+    walk(tree);
+    return refs;
+  }
+
+  HashMap<String, GlossaryEntry>? _copyEntryIndexReplacingEntry(
+    String entryId,
+    GlossaryEntry Function(GlossaryEntry current) transform,
+  ) {
+    final GlossaryEntry? current = _entryIndex[entryId];
+    if (current == null) {
+      return null;
+    }
+
+    final HashMap<String, GlossaryEntry> copied = _copyEntryIndex(_entryIndex);
+    final GlossaryEntry updated = transform(current.deepCopy());
+    bool replaced = false;
+
+    for (final String key in copied.keys.toList(growable: false)) {
+      final GlossaryEntry? item = copied[key];
+      if (item != null && item.id == entryId) {
+        copied[key] = updated.deepCopy();
+        replaced = true;
+      }
+    }
+
+    if (!replaced) {
+      copied[entryId] = updated;
+    }
+
     return copied;
   }
 
@@ -642,7 +369,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     if (_selectedCategoryId != null &&
         _findCategoryById(_selectedCategoryId!, _categoryTree) == null) {
-      _selectedCategoryId = _categoryTree.isNotEmpty ? _categoryTree.first.id : null;
+      _selectedCategoryId = _categoryTree.isNotEmpty
+          ? _categoryTree.first.id
+          : null;
     }
 
     if (_selectedCategoryId != null) {
@@ -669,7 +398,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     _isCommittingLocalChange = true;
-    ref.read(glossaryStateProvider.notifier).setGlossaryState(snapshot);
+    ref
+        .read(glossaryStateProvider.notifier)
+        .updateGlossaryState((_) => snapshot);
     _isCommittingLocalChange = false;
   }
 
@@ -732,6 +463,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
 
     setState(() {
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
       GlossaryCategory? sourceNode;
 
       bool removeNode(List<GlossaryCategory> nodes) {
@@ -748,7 +480,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         return false;
       }
 
-      final bool removed = removeNode(_categoryTree);
+      final bool removed = removeNode(nextTree);
       if (!removed || sourceNode == null) return;
 
       bool inserted = false;
@@ -766,7 +498,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           return false;
         }
 
-        inserted = insertAsChild(_categoryTree);
+        inserted = insertAsChild(nextTree);
       } else {
         bool insertAsSibling(List<GlossaryCategory> nodes) {
           for (int i = 0; i < nodes.length; i++) {
@@ -784,14 +516,16 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           return false;
         }
 
-        inserted = insertAsSibling(_categoryTree);
+        inserted = insertAsSibling(nextTree);
       }
 
       if (!inserted) {
-        _categoryTree.add(sourceNode!);
+        nextTree.add(sourceNode!);
       } else {
         _expandedCategoryIds.add(targetId);
       }
+
+      _categoryTree = nextTree;
     });
 
     _schedulePersist();
@@ -862,20 +596,6 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return category?.name ?? "未知類別";
   }
 
-  Set<String> _collectReferencedEntryIds() {
-    final Set<String> refs = <String>{};
-
-    void walk(List<GlossaryCategory> nodes) {
-      for (final GlossaryCategory node in nodes) {
-        refs.addAll(node.entryIds);
-        walk(node.children);
-      }
-    }
-
-    walk(_categoryTree);
-    return refs;
-  }
-
   String _normalizeTerm(String value) {
     return value.trim().toLowerCase();
   }
@@ -906,7 +626,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return null;
   }
 
-  void _rewriteCategoryEntryReferences(Map<String, String> replacements) {
+  void _rewriteCategoryEntryReferences(
+    List<GlossaryCategory> categoryTree,
+    Map<String, String> replacements,
+  ) {
     if (replacements.isEmpty) return;
 
     void walk(List<GlossaryCategory> nodes) {
@@ -926,19 +649,20 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       }
     }
 
-    walk(_categoryTree);
+    walk(categoryTree);
   }
 
   void _deduplicateEntriesByTerm(
     List<GlossaryCategory> categoryTree,
     HashMap<String, GlossaryEntry> entryIndex,
   ) {
-    final List<String> primaryEntryIds = entryIndex.entries
-        .where((item) => item.key == item.value.id)
-        .map((item) => item.value.id)
-        .toSet()
-        .toList()
-      ..sort();
+    final List<String> primaryEntryIds =
+        entryIndex.entries
+            .where((item) => item.key == item.value.id)
+            .map((item) => item.value.id)
+            .toSet()
+            .toList()
+          ..sort();
 
     final Map<String, String> canonicalByTerm = {};
     final Map<String, String> replacements = {};
@@ -982,8 +706,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     walk(categoryTree);
     entryIndex.removeWhere(
-      (key, value) => replacements.containsKey(key) ||
-          replacements.containsKey(value.id),
+      (key, value) =>
+          replacements.containsKey(key) || replacements.containsKey(value.id),
     );
   }
 
@@ -1078,11 +802,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     List<GlossaryCategory>? childrenOverride,
   }) {
     return source.copyWith(
-      children: childrenOverride ?? source.children.map(_copyCategoryNode).toList(),
+      entryIds: List<String>.from(source.entryIds),
+      children:
+          childrenOverride ?? source.children.map(_copyCategoryNode).toList(),
     );
   }
 
-  List<GlossaryCategory> _buildExportTreeForSelectedCategory(String categoryId) {
+  List<GlossaryCategory> _buildExportTreeForSelectedCategory(
+    String categoryId,
+  ) {
     final List<GlossaryCategory>? path = _findCategoryPathById(
       categoryId,
       _categoryTree,
@@ -1200,13 +928,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       return;
     }
 
-    final List<GlossaryCategory> exportTree = _buildExportTreeForSelectedCategory(
-      _selectedCategoryId!,
-    );
+    final List<GlossaryCategory> exportTree =
+        _buildExportTreeForSelectedCategory(_selectedCategoryId!);
     if (exportTree.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("找不到選取類別"), duration: Duration(seconds: 1)),
+        const SnackBar(
+          content: Text("找不到選取類別"),
+          duration: Duration(seconds: 1),
+        ),
       );
       return;
     }
@@ -1283,7 +1013,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           targetNodes.add(existing);
           newCategoryCount++;
           if (newCategorySamples.length < 6) {
-            newCategorySamples.add(incoming.name.trim().isEmpty ? "(未命名分類)" : incoming.name);
+            newCategorySamples.add(
+              incoming.name.trim().isEmpty ? "(未命名分類)" : incoming.name,
+            );
           }
         } else {
           mergedCategoryCount++;
@@ -1395,7 +1127,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("匯入檔案格式錯誤"), duration: Duration(seconds: 1)),
+        const SnackBar(
+          content: Text("匯入檔案格式錯誤"),
+          duration: Duration(seconds: 1),
+        ),
       );
       return;
     }
@@ -1411,83 +1146,102 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     int reusedEntryCount = 0;
     int linkedEntryCount = 0;
 
-    GlossaryEntry cloneEntry(GlossaryEntry source, String newId) {
-      return GlossaryEntry(
-        id: newId,
-        term: source.term,
-        partOfSpeech: source.partOfSpeech,
-        customPartOfSpeech: source.customPartOfSpeech,
-        polarity: source.polarity,
-        pairs: source.pairs
-            .map((p) => GlossaryPair(meaning: p.meaning, example: p.example))
-            .toList(),
-      );
-    }
-
-    void mergeNodes(
-      List<GlossaryCategory> incomingNodes,
-      List<GlossaryCategory> targetNodes,
-    ) {
-      for (final GlossaryCategory incoming in incomingNodes) {
-        GlossaryCategory? existing;
-        for (final GlossaryCategory candidate in targetNodes) {
-          if (candidate.name.trim() == incoming.name.trim()) {
-            existing = candidate;
-            break;
-          }
-        }
-
-        if (existing == null) {
-          existing = GlossaryCategory(
-            id: _createId(),
-            name: incoming.name,
-            entryIds: [],
-            children: [],
-          );
-          targetNodes.add(existing);
-          createdCategoryCount++;
-        }
-
-        for (final String importedEntryId in incoming.entryIds) {
-          final GlossaryEntry? importedEntry =
-              imported.entryIndex[importedEntryId];
-          if (importedEntry == null) continue;
-
-          String resolvedEntryId;
-          final String? existingEntryId = _findEntryIdByTerm(importedEntry.term);
-          if (existingEntryId != null) {
-            resolvedEntryId = existingEntryId;
-            reusedEntryCount++;
-          } else {
-            resolvedEntryId = _createId();
-            _entryIndex[resolvedEntryId] = cloneEntry(importedEntry, resolvedEntryId);
-            createdEntryCount++;
-          }
-
-          if (!existing.entryIds.contains(resolvedEntryId)) {
-            existing.entryIds.add(resolvedEntryId);
-            linkedEntryCount++;
-          }
-        }
-
-        mergeNodes(incoming.children, existing.children);
-      }
-    }
-
     setState(() {
-      mergeNodes(imported.categoryTree, _categoryTree);
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+      final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
+        _entryIndex,
+      );
 
-      if (_selectedCategoryId == null && _categoryTree.isNotEmpty) {
-        _selectedCategoryId = _categoryTree.first.id;
+      GlossaryEntry cloneEntry(GlossaryEntry source, String newId) {
+        return source.deepCopy().copyWith(id: newId);
+      }
+
+      String? findEntryIdByTermInIndex(String term) {
+        final String normalizedTerm = _normalizeTerm(term);
+        if (normalizedTerm.isEmpty) {
+          return null;
+        }
+        for (final MapEntry<String, GlossaryEntry> item
+            in nextEntryIndex.entries) {
+          if (item.key != item.value.id) continue;
+          if (_normalizeTerm(item.value.term) == normalizedTerm) {
+            return item.value.id;
+          }
+        }
+        return null;
+      }
+
+      void mergeNodes(
+        List<GlossaryCategory> incomingNodes,
+        List<GlossaryCategory> targetNodes,
+      ) {
+        for (final GlossaryCategory incoming in incomingNodes) {
+          GlossaryCategory? existing;
+          for (final GlossaryCategory candidate in targetNodes) {
+            if (candidate.name.trim() == incoming.name.trim()) {
+              existing = candidate;
+              break;
+            }
+          }
+
+          if (existing == null) {
+            existing = GlossaryCategory(
+              id: _createId(),
+              name: incoming.name,
+              entryIds: [],
+              children: [],
+            );
+            targetNodes.add(existing);
+            createdCategoryCount++;
+          }
+
+          for (final String importedEntryId in incoming.entryIds) {
+            final GlossaryEntry? importedEntry =
+                imported.entryIndex[importedEntryId];
+            if (importedEntry == null) continue;
+
+            String resolvedEntryId;
+            final String? existingEntryId = findEntryIdByTermInIndex(
+              importedEntry.term,
+            );
+            if (existingEntryId != null) {
+              resolvedEntryId = existingEntryId;
+              reusedEntryCount++;
+            } else {
+              resolvedEntryId = _createId();
+              nextEntryIndex[resolvedEntryId] = cloneEntry(
+                importedEntry,
+                resolvedEntryId,
+              );
+              createdEntryCount++;
+            }
+
+            if (!existing.entryIds.contains(resolvedEntryId)) {
+              existing.entryIds.add(resolvedEntryId);
+              linkedEntryCount++;
+            }
+          }
+
+          mergeNodes(incoming.children, existing.children);
+        }
+      }
+
+      mergeNodes(imported.categoryTree, nextTree);
+
+      _categoryTree = nextTree;
+      _entryIndex = nextEntryIndex;
+
+      if (_selectedCategoryId == null && nextTree.isNotEmpty) {
+        _selectedCategoryId = nextTree.first.id;
       }
       if (_selectedCategoryId != null) {
         final List<_CategoryEntryRef> refs = _collectEntryRefs(
           _selectedCategoryId!,
-          _categoryTree,
+          nextTree,
         );
         _selectedEntryId = null;
         for (final _CategoryEntryRef ref in refs) {
-          if (_entryIndex.containsKey(ref.entryId)) {
+          if (nextEntryIndex.containsKey(ref.entryId)) {
             _selectedEntryId = ref.entryId;
             break;
           }
@@ -1549,20 +1303,19 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     setState(() {
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
       if (parentId == null) {
-        _categoryTree.add(newNode);
+        nextTree.add(newNode);
       } else {
-        final GlossaryCategory? parent = _findCategoryById(
-          parentId,
-          _categoryTree,
-        );
+        final GlossaryCategory? parent = _findCategoryById(parentId, nextTree);
         if (parent != null) {
           parent.children.add(newNode);
           _expandedCategoryIds.add(parent.id);
         } else {
-          _categoryTree.add(newNode);
+          nextTree.add(newNode);
         }
       }
+      _categoryTree = nextTree;
       _selectedCategoryId = newNode.id;
       _selectedEntryId = null;
     });
@@ -1589,32 +1342,34 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final TextEditingController? controller = _categoryRenameController;
 
     bool changed = false;
+    List<GlossaryCategory>? nextTree;
     if (editingId != null && controller != null) {
-      final GlossaryCategory? category = _findCategoryById(
-        editingId,
-        _categoryTree,
-      );
-      if (category != null) {
-        final String nextName = controller.text.trim();
-        if (nextName.isNotEmpty && category.name != nextName) {
+      final String nextName = controller.text.trim();
+      if (nextName.isNotEmpty) {
+        nextTree = _copyCategoryTree(_categoryTree);
+        final GlossaryCategory? category = _findCategoryById(
+          editingId,
+          nextTree,
+        );
+        if (category != null && category.name != nextName) {
           category.name = nextName;
           changed = true;
         }
       }
     }
 
-    _cancelEditingCategory();
-    if (changed) {
-      _schedulePersist();
-    }
-  }
-
-  void _cancelEditingCategory() {
     setState(() {
       _editingCategoryId = null;
       _categoryRenameController?.dispose();
       _categoryRenameController = null;
+      if (changed && nextTree != null) {
+        _categoryTree = nextTree;
+      }
     });
+
+    if (changed) {
+      _schedulePersist();
+    }
   }
 
   Future<void> _deleteCategory(String categoryId) async {
@@ -1645,24 +1400,30 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
 
     setState(() {
-      removeNode(_categoryTree);
-      final Set<String> refs = _collectReferencedEntryIds();
-      _entryIndex.removeWhere((key, _) => !refs.contains(key));
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+      final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
+        _entryIndex,
+      );
+
+      removeNode(nextTree);
+      final Set<String> refs = _collectReferencedEntryIdsFromTree(nextTree);
+      nextEntryIndex.removeWhere((key, _) => !refs.contains(key));
+
+      _categoryTree = nextTree;
+      _entryIndex = nextEntryIndex;
 
       if (_selectedCategoryId == categoryId) {
-        _selectedCategoryId = _categoryTree.isNotEmpty
-            ? _categoryTree.first.id
-            : null;
+        _selectedCategoryId = nextTree.isNotEmpty ? nextTree.first.id : null;
       }
 
       if (_selectedCategoryId != null) {
         final List<_CategoryEntryRef> refsForSelected = _collectEntryRefs(
           _selectedCategoryId!,
-          _categoryTree,
+          nextTree,
         );
         _selectedEntryId = null;
         for (final _CategoryEntryRef ref in refsForSelected) {
-          if (_entryIndex.containsKey(ref.entryId)) {
+          if (nextEntryIndex.containsKey(ref.entryId)) {
             _selectedEntryId = ref.entryId;
             break;
           }
@@ -1691,9 +1452,17 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       final bool alreadyLinked = category.entryIds.contains(existingEntryId);
 
       setState(() {
-        if (!alreadyLinked) {
-          category.entryIds.add(existingEntryId);
+        final List<GlossaryCategory> nextTree = _copyCategoryTree(
+          _categoryTree,
+        );
+        final GlossaryCategory? nextCategory = _findCategoryById(
+          _selectedCategoryId!,
+          nextTree,
+        );
+        if (nextCategory != null && !alreadyLinked) {
+          nextCategory.entryIds.add(existingEntryId);
         }
+        _categoryTree = nextTree;
         _selectedEntryId = existingEntryId;
       });
 
@@ -1723,8 +1492,23 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     setState(() {
-      _entryIndex[entryId] = entry;
-      category.entryIds.add(entryId);
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+      final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
+        _entryIndex,
+      );
+      final GlossaryCategory? nextCategory = _findCategoryById(
+        _selectedCategoryId!,
+        nextTree,
+      );
+      if (nextCategory == null) {
+        return;
+      }
+
+      nextEntryIndex[entryId] = entry;
+      nextCategory.entryIds.add(entryId);
+
+      _categoryTree = nextTree;
+      _entryIndex = nextEntryIndex;
       _selectedEntryId = entryId;
     });
 
@@ -1744,26 +1528,34 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     if (!confirmed) return;
 
     setState(() {
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+      final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
+        _entryIndex,
+      );
+
       final GlossaryCategory? source = _findCategoryById(
         ref.sourceCategoryId,
-        _categoryTree,
+        nextTree,
       );
       source?.entryIds.remove(ref.entryId);
 
-      final Set<String> allRefs = _collectReferencedEntryIds();
+      final Set<String> allRefs = _collectReferencedEntryIdsFromTree(nextTree);
       if (!allRefs.contains(ref.entryId)) {
-        _entryIndex.remove(ref.entryId);
+        nextEntryIndex.remove(ref.entryId);
       }
+
+      _categoryTree = nextTree;
+      _entryIndex = nextEntryIndex;
 
       if (_selectedEntryId == ref.entryId) {
         _selectedEntryId = null;
         if (_selectedCategoryId != null) {
           final List<_CategoryEntryRef> refs = _collectEntryRefs(
             _selectedCategoryId!,
-            _categoryTree,
+            nextTree,
           );
           for (final _CategoryEntryRef candidate in refs) {
-            if (_entryIndex.containsKey(candidate.entryId)) {
+            if (nextEntryIndex.containsKey(candidate.entryId)) {
               _selectedEntryId = candidate.entryId;
               break;
             }
@@ -1796,39 +1588,54 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     bool changed = false;
     setState(() {
+      final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+      final GlossaryCategory? nextSource = _findCategoryById(
+        sourceCategoryId,
+        nextTree,
+      );
+      final GlossaryCategory? nextTarget = _findCategoryById(
+        targetCategoryId,
+        nextTree,
+      );
+      if (nextSource == null || nextTarget == null) {
+        return;
+      }
+
       if (sourceCategoryId == targetCategoryId) {
         if (targetInsertIndex == null) return;
 
         int insertIndex = targetInsertIndex;
         if (insertIndex < 0) insertIndex = 0;
-        if (insertIndex > source.entryIds.length) {
-          insertIndex = source.entryIds.length;
+        if (insertIndex > nextSource.entryIds.length) {
+          insertIndex = nextSource.entryIds.length;
         }
 
         if (insertIndex == fromIndex || insertIndex == fromIndex + 1) {
           return;
         }
 
-        source.entryIds.removeAt(fromIndex);
+        nextSource.entryIds.removeAt(fromIndex);
         if (insertIndex > fromIndex) {
           insertIndex -= 1;
         }
-        source.entryIds.insert(insertIndex, entryId);
+        nextSource.entryIds.insert(insertIndex, entryId);
+        _categoryTree = nextTree;
         changed = true;
         return;
       }
 
-      final bool removed = source.entryIds.remove(entryId);
+      final bool removed = nextSource.entryIds.remove(entryId);
       if (!removed) return;
 
-      if (!target.entryIds.contains(entryId)) {
-        int insertIndex = targetInsertIndex ?? target.entryIds.length;
+      if (!nextTarget.entryIds.contains(entryId)) {
+        int insertIndex = targetInsertIndex ?? nextTarget.entryIds.length;
         if (insertIndex < 0) insertIndex = 0;
-        if (insertIndex > target.entryIds.length) {
-          insertIndex = target.entryIds.length;
+        if (insertIndex > nextTarget.entryIds.length) {
+          insertIndex = nextTarget.entryIds.length;
         }
-        target.entryIds.insert(insertIndex, entryId);
+        nextTarget.entryIds.insert(insertIndex, entryId);
       }
+      _categoryTree = nextTree;
       changed = true;
     });
 
@@ -1853,10 +1660,20 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
     if (targetEntryId != null) {
       setState(() {
-        _rewriteCategoryEntryReferences({entry.id: targetEntryId});
-        _entryIndex.removeWhere(
+        final List<GlossaryCategory> nextTree = _copyCategoryTree(
+          _categoryTree,
+        );
+        final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
+          _entryIndex,
+        );
+
+        _rewriteCategoryEntryReferences(nextTree, {entry.id: targetEntryId});
+        nextEntryIndex.removeWhere(
           (key, item) => key == entry.id || item.id == entry.id,
         );
+
+        _categoryTree = nextTree;
+        _entryIndex = nextEntryIndex;
         _selectedEntryId = targetEntryId;
       });
       _schedulePersist();
@@ -1870,8 +1687,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       return;
     }
 
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(
+          entry.id,
+          (current) => current.copyWith(term: value),
+        );
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.term = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1942,8 +1766,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final GlossaryEntry? entry = _selectedEntry;
     if (entry == null || entry.polarity == value) return;
 
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(
+          entry.id,
+          (current) => current.copyWith(polarity: value),
+        );
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.polarity = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1952,8 +1783,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final GlossaryEntry? entry = _selectedEntry;
     if (entry == null || entry.partOfSpeech == value) return;
 
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(
+          entry.id,
+          (current) => current.copyWith(partOfSpeech: value),
+        );
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.partOfSpeech = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1963,8 +1801,16 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     if (entry == null) return;
 
     if (entry.customPartOfSpeech == value) return;
+
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(
+          entry.id,
+          (current) => current.copyWith(customPartOfSpeech: value),
+        );
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.customPartOfSpeech = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1974,8 +1820,19 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     if (entry == null || index < 0 || index >= entry.pairs.length) return;
 
     if (entry.pairs[index].meaning == value) return;
+
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(entry.id, (current) {
+          final List<GlossaryPair> pairs = current.pairs
+              .map((pair) => pair.deepCopy())
+              .toList(growable: false);
+          pairs[index] = pairs[index].copyWith(meaning: value);
+          return current.copyWith(pairs: pairs);
+        });
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.pairs[index].meaning = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1985,8 +1842,19 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     if (entry == null || index < 0 || index >= entry.pairs.length) return;
 
     if (entry.pairs[index].example == value) return;
+
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(entry.id, (current) {
+          final List<GlossaryPair> pairs = current.pairs
+              .map((pair) => pair.deepCopy())
+              .toList(growable: false);
+          pairs[index] = pairs[index].copyWith(example: value);
+          return current.copyWith(pairs: pairs);
+        });
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.pairs[index].example = value;
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -1995,8 +1863,18 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final GlossaryEntry? entry = _selectedEntry;
     if (entry == null) return;
 
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(entry.id, (current) {
+          final List<GlossaryPair> pairs = current.pairs
+              .map((pair) => pair.deepCopy())
+              .toList();
+          pairs.add(GlossaryPair());
+          return current.copyWith(pairs: pairs);
+        });
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.pairs.add(GlossaryPair());
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -2006,8 +1884,18 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     if (entry == null || index < 0 || index >= entry.pairs.length) return;
     if (entry.pairs.length <= 1) return;
 
+    final HashMap<String, GlossaryEntry>? nextEntryIndex =
+        _copyEntryIndexReplacingEntry(entry.id, (current) {
+          final List<GlossaryPair> pairs = current.pairs
+              .map((pair) => pair.deepCopy())
+              .toList();
+          pairs.removeAt(index);
+          return current.copyWith(pairs: pairs);
+        });
+    if (nextEntryIndex == null) return;
+
     setState(() {
-      entry.pairs.removeAt(index);
+      _entryIndex = nextEntryIndex;
     });
     _schedulePersist();
   }
@@ -2415,11 +2303,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       selectedColor: isSelected
           ? scheme.primaryContainer.withValues(alpha: 0.82)
           : sourceColor,
-      leading: Icon(
-        entry.polarity.icon,
-        color: entry.polarity.color(scheme),
+      leading: Icon(entry.polarity.icon, color: entry.polarity.color(scheme)),
+      title: Text(
+        entry.term,
+        style: const TextStyle(fontWeight: FontWeight.w700),
       ),
-      title: Text(entry.term, style: const TextStyle(fontWeight: FontWeight.w700)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2431,7 +2319,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           ),
           const SizedBox(height: 2),
           Text(
-            ref.isLocal ? "來源：本目錄" : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
+            ref.isLocal
+                ? "來源：本目錄"
+                : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -2575,7 +2465,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   }
                 },
               ),
-              if (selectedEntry.partOfSpeech == GlossaryPartOfSpeech.custom) ...[
+              if (selectedEntry.partOfSpeech ==
+                  GlossaryPartOfSpeech.custom) ...[
                 const SizedBox(height: 12),
                 TextFormField(
                   key: ValueKey("custom_pos_${selectedEntry.id}"),

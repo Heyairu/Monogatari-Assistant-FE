@@ -23,7 +23,10 @@ import "package:xml/xml.dart" as xml;
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../models/world_settings_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+
+export "../models/world_settings_data.dart";
 
 final _log = Logger("WorldSettingsView");
 
@@ -36,35 +39,7 @@ class LocationDragData {
   LocationDragData({required this.locationId, required this.locationName});
 }
 
-enum WorldNodeType { location, organization, rule, item }
-
-extension WorldNodeTypeX on WorldNodeType {
-  String get xmlValue {
-    switch (this) {
-      case WorldNodeType.location:
-        return "location";
-      case WorldNodeType.organization:
-        return "organization";
-      case WorldNodeType.rule:
-        return "rule";
-      case WorldNodeType.item:
-        return "item";
-    }
-  }
-
-  String get label {
-    switch (this) {
-      case WorldNodeType.location:
-        return "地點";
-      case WorldNodeType.organization:
-        return "組織";
-      case WorldNodeType.rule:
-        return "規則";
-      case WorldNodeType.item:
-        return "物品";
-    }
-  }
-
+extension WorldNodeTypeUiX on WorldNodeType {
   IconData get icon {
     switch (this) {
       case WorldNodeType.location:
@@ -76,176 +51,6 @@ extension WorldNodeTypeX on WorldNodeType {
       case WorldNodeType.item:
         return Icons.inventory_2_outlined;
     }
-  }
-}
-
-WorldNodeType parseWorldNodeType(String? raw) {
-  switch ((raw ?? "").trim().toLowerCase()) {
-    case "organization":
-    case "組織":
-      return WorldNodeType.organization;
-    case "rule":
-    case "規則":
-      return WorldNodeType.rule;
-    case "item":
-    case "物品":
-      return WorldNodeType.item;
-    case "location":
-    case "地點":
-    default:
-      // 舊版檔案沒有 NodeType 時，預設視為地點。
-      return WorldNodeType.location;
-  }
-}
-
-// MARK: - 資料結構
-
-class LocationCustomize {
-  String id;
-  String key;
-  String val;
-
-  LocationCustomize({String? id, this.key = "", this.val = ""})
-    : id = id ?? Uuid().v4();
-
-  Map<String, dynamic> toJson() {
-    return {"id": id, "key": key, "val": val};
-  }
-
-  factory LocationCustomize.fromJson(Map<String, dynamic> json) {
-    return LocationCustomize(
-      id: json["id"] as String?,
-      key: json["key"] as String? ?? "",
-      val: json["val"] as String? ?? "",
-    );
-  }
-
-  LocationCustomize copyWith({
-    String? id,
-    String? key,
-    String? val,
-  }) {
-    return LocationCustomize(
-      id: id ?? this.id,
-      key: key ?? this.key,
-      val: val ?? this.val,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is LocationCustomize &&
-        other.id == id &&
-        other.key == key &&
-        other.val == val;
-  }
-
-  @override
-  int get hashCode => id.hashCode ^ key.hashCode ^ val.hashCode;
-}
-
-class LocationData {
-  String id;
-  String localName;
-  String localType;
-  WorldNodeType nodeType;
-  List<LocationCustomize> customVal;
-  String note;
-  List<LocationData> child;
-
-  LocationData({
-    String? id,
-    this.localName = "",
-    this.localType = "",
-    this.nodeType = WorldNodeType.location,
-    List<LocationCustomize>? customVal,
-    this.note = "",
-    List<LocationData>? child,
-  }) : id = id ?? Uuid().v4(),
-       customVal = customVal ?? [],
-       child = child ?? [];
-
-  Map<String, dynamic> toJson() {
-    return {
-      "id": id,
-      "localName": localName,
-      "localType": localType,
-      "nodeType": nodeType.xmlValue,
-      "customVal": customVal.map((e) => e.toJson()).toList(),
-      "note": note,
-      "child": child.map((e) => e.toJson()).toList(),
-    };
-  }
-
-  factory LocationData.fromJson(Map<String, dynamic> json) {
-    return LocationData(
-      id: json["id"] as String?,
-      localName: json["localName"] as String? ?? "",
-      localType: json["localType"] as String? ?? "",
-      nodeType: parseWorldNodeType(json["nodeType"]?.toString()),
-      customVal: (json["customVal"] as List<dynamic>?)
-          ?.map((e) => LocationCustomize.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      note: json["note"] as String? ?? "",
-      child: (json["child"] as List<dynamic>?)
-          ?.map((e) => LocationData.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  LocationData copyWith({
-    String? id,
-    String? localName,
-    String? localType,
-    WorldNodeType? nodeType,
-    List<LocationCustomize>? customVal,
-    String? note,
-    List<LocationData>? child,
-  }) {
-    final List<LocationCustomize> copiedCustomVal = (customVal ?? this.customVal)
-        .map((item) => item.copyWith())
-        .toList();
-    final List<LocationData> copiedChild = (child ?? this.child)
-        .map((item) => item.copyWith())
-        .toList();
-
-    return LocationData(
-      id: id ?? this.id,
-      localName: localName ?? this.localName,
-      localType: localType ?? this.localType,
-      nodeType: nodeType ?? this.nodeType,
-      customVal: copiedCustomVal,
-      note: note ?? this.note,
-      child: copiedChild,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is LocationData && other.id == id;
-  }
-
-  @override
-  int get hashCode => id.hashCode;
-
-  // 用於除錯或需要內容比對時
-  bool isContentEqual(LocationData other) {
-    return other.localName == localName &&
-        other.localType == localType &&
-        other.nodeType == nodeType &&
-        _listEquals(other.customVal, customVal) &&
-        other.note == note &&
-        _listEquals(other.child, child);
-  }
-
-  bool _listEquals<T>(List<T> a, List<T> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 }
 
@@ -446,33 +251,41 @@ class WorldSettingsCodec {
   }
 
   static LocationData _parseLocation(xml.XmlElement node) {
-    final loc = LocationData();
-    loc.localName = _readElementText(
+    final localName = _readElementText(
       node.findAllElements("LocalName").firstOrNull,
     );
-    loc.nodeType = parseWorldNodeType(
+    final nodeType = parseWorldNodeType(
       _readElementText(node.findAllElements("NodeType").firstOrNull),
     );
-    loc.localType = _readElementText(
+    final localType = _readElementText(
       node.findAllElements("LocalType").firstOrNull,
     );
-    loc.note = _readElementText(node.findAllElements("Memo").firstOrNull);
+    final note = _readElementText(node.findAllElements("Memo").firstOrNull);
+    final customVal = <LocationCustomize>[];
+    final child = <LocationData>[];
 
     // Parse custom values (Key)
     // Keys are direct children of Location
     for (final keyNode in node.findElements("Key")) {
       final key = keyNode.getAttribute("Name") ?? "";
       final val = _readElementText(keyNode);
-      loc.customVal.add(LocationCustomize(key: key, val: val));
+      customVal.add(LocationCustomize(key: key, val: val));
     }
 
     // Parse children locations
     // We must use findElements to only get direct children, otherwise we might grab grandchildren
     for (final childNode in node.findElements("Location")) {
-      loc.child.add(_parseLocation(childNode));
+      child.add(_parseLocation(childNode));
     }
 
-    return loc;
+    return LocationData(
+      localName: localName,
+      localType: localType,
+      nodeType: nodeType,
+      customVal: customVal,
+      note: note,
+      child: child,
+    );
   }
 }
 
@@ -481,10 +294,7 @@ class WorldSettingsCodec {
 class WorldSettingsView extends ConsumerStatefulWidget {
   final ValueChanged<List<LocationData>>? onChanged;
 
-  const WorldSettingsView({
-    super.key,
-    this.onChanged,
-  });
+  const WorldSettingsView({super.key, this.onChanged});
 
   @override
   ConsumerState<WorldSettingsView> createState() => _WorldSettingsViewState();
@@ -516,6 +326,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   final TextEditingController locationNameController = TextEditingController();
   final TextEditingController locationTypeController = TextEditingController();
   final TextEditingController locationNoteController = TextEditingController();
+  final ScrollController _pageScrollController = ScrollController();
+  final ScrollController _treeScrollController = ScrollController();
+  final ScrollController _detailScrollController = ScrollController();
 
   @override
   void initState() {
@@ -570,47 +383,182 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     locationNameController.dispose();
     locationTypeController.dispose();
     locationNoteController.dispose();
+    _pageScrollController.dispose();
+    _treeScrollController.dispose();
+    _detailScrollController.dispose();
     super.dispose();
   }
 
   void _onNameChanged() {
-    if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, _locations);
-    if (location != null && location.localName != locationNameController.text) {
-      location.localName = locationNameController.text;
-      _notifyChange();
-      setState(() {});
+    final nodeId = selectedNodeId;
+    if (nodeId == null) return;
+    final location = _getLocation(nodeId, _locations);
+    if (location == null || location.localName == locationNameController.text) {
+      return;
     }
+
+    _updateLocationById(
+      nodeId,
+      (current) => current.copyWith(localName: locationNameController.text),
+    );
   }
 
   void _onTypeChanged() {
-    if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, _locations);
-    if (location != null && location.localType != locationTypeController.text) {
-      location.localType = locationTypeController.text;
-      _notifyChange();
+    final nodeId = selectedNodeId;
+    if (nodeId == null) return;
+    final location = _getLocation(nodeId, _locations);
+    if (location == null || location.localType == locationTypeController.text) {
+      return;
     }
+
+    _updateLocationById(
+      nodeId,
+      (current) => current.copyWith(localType: locationTypeController.text),
+    );
   }
 
   void _onNoteChanged() {
-    if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, _locations);
-    if (location != null && location.note != locationNoteController.text) {
-      location.note = locationNoteController.text;
-      _notifyChange();
+    final nodeId = selectedNodeId;
+    if (nodeId == null) return;
+    final location = _getLocation(nodeId, _locations);
+    if (location == null || location.note == locationNoteController.text) {
+      return;
     }
+
+    _updateLocationById(
+      nodeId,
+      (current) => current.copyWith(note: locationNoteController.text),
+    );
   }
 
   void _notifyChange() {
     final snapshot = _copyLocations(_locations);
     _isCommittingLocalChange = true;
-    ref.read(worldSettingsDataProvider.notifier).setWorldSettingsData(snapshot);
+    ref
+        .read(worldSettingsDataProvider.notifier)
+        .updateWorldSettingsData((_) => snapshot);
     widget.onChanged?.call(snapshot);
     _isCommittingLocalChange = false;
   }
 
   List<LocationData> _copyLocations(List<LocationData> source) {
-    return source.map((location) => location.copyWith()).toList();
+    return source.map((location) => location.deepCopy()).toList();
+  }
+
+  void _updateLocationById(
+    String id,
+    LocationData Function(LocationData current) update,
+  ) {
+    var changed = false;
+    setState(() {
+      final next = _copyLocations(_locations);
+      changed = _updateLocationByIdRecursive(id, next, update);
+      if (changed) {
+        _locations = next;
+        _rebuildFlatList();
+        _syncDetailControllers();
+      }
+    });
+
+    if (changed) {
+      _notifyChange();
+    }
+  }
+
+  bool _updateLocationByIdRecursive(
+    String id,
+    List<LocationData> nodes,
+    LocationData Function(LocationData current) update,
+  ) {
+    for (var index = 0; index < nodes.length; index++) {
+      final node = nodes[index];
+      if (node.id == id) {
+        final updated = update(node);
+        if (updated == node) {
+          return false;
+        }
+        nodes[index] = updated;
+        return true;
+      }
+      if (_updateLocationByIdRecursive(id, node.child, update)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _removeCustomValue(String locationId, int customValueIndex) {
+    _updateLocationById(locationId, (current) {
+      if (customValueIndex < 0 ||
+          customValueIndex >= current.customVal.length) {
+        return current;
+      }
+      final nextCustomValues = [...current.customVal]
+        ..removeAt(customValueIndex);
+      return current.copyWith(customVal: nextCustomValues);
+    });
+  }
+
+  void _addCustomValue(String locationId, String key, String value) {
+    final trimmedKey = key.trim();
+    if (trimmedKey.isEmpty) return;
+
+    _updateLocationById(locationId, (current) {
+      final nextCustomValues = [
+        ...current.customVal,
+        LocationCustomize(key: trimmedKey, val: value),
+      ];
+      return current.copyWith(customVal: nextCustomValues);
+    });
+
+    setState(() {
+      tempCustomKey = "";
+      tempCustomVal = "";
+      tempKeyController.clear();
+      tempValController.clear();
+    });
+  }
+
+  void _updateCustomValueKey(
+    String locationId,
+    int customValueIndex,
+    String key,
+  ) {
+    _updateLocationById(locationId, (current) {
+      if (customValueIndex < 0 ||
+          customValueIndex >= current.customVal.length) {
+        return current;
+      }
+      final existing = current.customVal[customValueIndex];
+      if (existing.key == key) {
+        return current;
+      }
+
+      final nextCustomValues = [...current.customVal];
+      nextCustomValues[customValueIndex] = existing.copyWith(key: key);
+      return current.copyWith(customVal: nextCustomValues);
+    });
+  }
+
+  void _updateCustomValueVal(
+    String locationId,
+    int customValueIndex,
+    String value,
+  ) {
+    _updateLocationById(locationId, (current) {
+      if (customValueIndex < 0 ||
+          customValueIndex >= current.customVal.length) {
+        return current;
+      }
+      final existing = current.customVal[customValueIndex];
+      if (existing.val == value) {
+        return current;
+      }
+
+      final nextCustomValues = [...current.customVal];
+      nextCustomValues[customValueIndex] = existing.copyWith(val: value);
+      return current.copyWith(customVal: nextCustomValues);
+    });
   }
 
   // MARK: - UI 介面建構
@@ -625,6 +573,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
+            controller: _pageScrollController,
+            primary: false,
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: Padding(
@@ -744,6 +694,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                               }
 
                               return ListView.builder(
+                                controller: _treeScrollController,
+                                primary: false,
                                 padding: const EdgeInsets.all(8),
                                 itemCount: _flatList.length,
                                 itemBuilder: (context, index) {
@@ -987,6 +939,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     }
 
     return SingleChildScrollView(
+      controller: _detailScrollController,
+      primary: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1020,7 +974,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                     (p) => p.name == selectedPresetName,
                     orElse: () => templatePresets.first,
                   );
-                  _applyTemplateTo(location, preset);
+                  _applyTemplateTo(location.id, preset);
                 },
                 child: const Text("確定"),
               ),
@@ -1063,11 +1017,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                 .toList(),
             onChanged: (value) {
               if (value == null || value == location.nodeType) return;
-              setState(() {
-                location.nodeType = value;
-                _rebuildFlatList();
-              });
-              _notifyChange();
+              _updateLocationById(
+                location.id,
+                (current) => current.copyWith(nodeType: value),
+              );
             },
           ),
           const SizedBox(height: 16),
@@ -1081,12 +1034,14 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             return _CustomValueRow(
               key: ValueKey(item.id),
               item: item,
-              onChange: _notifyChange,
+              onKeyChanged: (value) {
+                _updateCustomValueKey(location.id, index, value);
+              },
+              onValChanged: (value) {
+                _updateCustomValueVal(location.id, index, value);
+              },
               onRemove: () {
-                setState(() {
-                  location.customVal.removeAt(index);
-                });
-                _notifyChange();
+                _removeCustomValue(location.id, index);
               },
             );
           }),
@@ -1132,19 +1087,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                 onPressed: tempCustomKey.isEmpty
                     ? null
                     : () {
-                        setState(() {
-                          location.customVal.add(
-                            LocationCustomize(
-                              key: tempCustomKey,
-                              val: tempCustomVal,
-                            ),
-                          );
-                          tempCustomKey = "";
-                          tempCustomVal = "";
-                          tempKeyController.clear();
-                          tempValController.clear();
-                        });
-                        _notifyChange();
+                        _addCustomValue(
+                          location.id,
+                          tempCustomKey,
+                          tempCustomVal,
+                        );
                       },
                 icon: Icon(
                   Icons.add_circle,
@@ -1178,16 +1125,18 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         .firstOrNull;
   }
 
-  void _applyTemplateTo(LocationData location, TemplatePreset preset) {
-    setState(() {
-      location.localType = preset.type;
-      location.localName = preset.name;
-      location.customVal = preset.keys
+  void _applyTemplateTo(String locationId, TemplatePreset preset) {
+    _updateLocationById(locationId, (current) {
+      final nextCustomValues = preset.keys
           .map((key) => LocationCustomize(key: key, val: ""))
           .toList();
-      _syncDetailControllers();
+
+      return current.copyWith(
+        localType: preset.type,
+        localName: preset.name,
+        customVal: nextCustomValues,
+      );
     });
-    _notifyChange();
   }
 
   void _saveCurrentAsPreset() {
@@ -1490,23 +1439,26 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     name = name.trim();
     if (name.isEmpty) return;
 
-    // 根據是否有選中節點來決定添加位置
-    if (selectedNodeId != null) {
-      // 有選中節點：作為選中節點的子節點添加
-      _addChild(selectedNodeId!, name);
-    } else {
-      // 沒有選中節點：作為頂層節點添加
-      setState(() {
-        _locations.add(LocationData(localName: name));
-        _rebuildFlatList(); // 必須重建扁平化列表，否則視圖不會更新
-      });
-      _notifyChange();
-    }
+    final parentId = selectedNodeId;
+    setState(() {
+      final next = _copyLocations(_locations);
+      if (parentId != null) {
+        _addChildRecursive(parentId, name, next);
+      } else {
+        next.add(LocationData(localName: name));
+      }
+
+      _locations = next;
+      _rebuildFlatList();
+    });
+    _notifyChange();
   }
 
   void _addChild(String parentId, String name) {
-    _addChildRecursive(parentId, name, _locations);
     setState(() {
+      final next = _copyLocations(_locations);
+      _addChildRecursive(parentId, name, next);
+      _locations = next;
       _rebuildFlatList();
     });
     _notifyChange();
@@ -1527,9 +1479,14 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _renameNode(String id, String newName) {
-    _renameNodeRecursive(id, newName, _locations);
+    setState(() {
+      final next = _copyLocations(_locations);
+      _renameNodeRecursive(id, newName, next);
+      _locations = next;
+      _rebuildFlatList();
+      _syncDetailControllers();
+    });
     _notifyChange();
-    setState(() {});
   }
 
   void _renameNodeRecursive(
@@ -1537,9 +1494,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     String newName,
     List<LocationData> locations,
   ) {
-    for (final location in locations) {
+    for (var index = 0; index < locations.length; index++) {
+      final location = locations[index];
       if (location.id == id) {
-        location.localName = newName;
+        locations[index] = location.copyWith(localName: newName);
         return;
       }
       _renameNodeRecursive(id, newName, location.child);
@@ -1597,6 +1555,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     }
 
     setState(() {
+      final next = _copyLocations(_locations);
+
       // 1. 找到並移除源節點
       LocationData? sourceNode;
 
@@ -1614,7 +1574,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         return false;
       }
 
-      removeFromTree(_locations);
+      removeFromTree(next);
 
       if (sourceNode == null) return;
 
@@ -1636,7 +1596,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           return false;
         }
 
-        success = addAsChild(_locations);
+        success = addAsChild(next);
       } else {
         // before 或 after: 在同級列表中插入
         bool insertInList(List<LocationData> nodes) {
@@ -1657,27 +1617,38 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           return false;
         }
 
-        success = insertInList(_locations);
+        success = insertInList(next);
       }
 
       if (!success) {
         // 如果沒找到目標，恢復原節點
-        _locations.add(sourceNode!);
+        next.add(sourceNode!);
       }
 
+      _locations = next;
       _rebuildFlatList();
-      _notifyChange();
     });
+    _notifyChange();
   }
 
   void _deleteNode(String id) {
-    if (_removeNodeRecursive(id, _locations)) {
-      setState(() {
-        if (selectedNodeId == id) {
-          selectedNodeId = null;
-        }
-        _rebuildFlatList();
-      });
+    var removed = false;
+    setState(() {
+      final next = _copyLocations(_locations);
+      removed = _removeNodeRecursive(id, next);
+      if (!removed) {
+        return;
+      }
+
+      _locations = next;
+      if (selectedNodeId == id) {
+        selectedNodeId = null;
+      }
+      _rebuildFlatList();
+      _syncDetailControllers();
+    });
+
+    if (removed) {
       _notifyChange();
     }
   }
@@ -1756,13 +1727,15 @@ class _FlatNode {
 class _CustomValueRow extends StatefulWidget {
   final LocationCustomize item;
   final VoidCallback onRemove;
-  final VoidCallback onChange;
+  final ValueChanged<String> onKeyChanged;
+  final ValueChanged<String> onValChanged;
 
   const _CustomValueRow({
     super.key,
     required this.item,
     required this.onRemove,
-    required this.onChange,
+    required this.onKeyChanged,
+    required this.onValChanged,
   });
 
   @override
@@ -1783,17 +1756,13 @@ class _CustomValueRowState extends State<_CustomValueRow> {
   }
 
   void _onKeyChanged() {
-    if (widget.item.key != keyController.text) {
-      widget.item.key = keyController.text;
-      widget.onChange();
-    }
+    if (widget.item.key == keyController.text) return;
+    widget.onKeyChanged(keyController.text);
   }
 
   void _onValChanged() {
-    if (widget.item.val != valController.text) {
-      widget.item.val = valController.text;
-      widget.onChange();
-    }
+    if (widget.item.val == valController.text) return;
+    widget.onValChanged(valController.text);
   }
 
   @override
