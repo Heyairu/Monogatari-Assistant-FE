@@ -256,11 +256,7 @@ class ProjectManager {
   }
 
   /// 檢查是否有未儲存的變更
-  static bool hasUnsavedChanges(
-    bool hasUnsavedChanges,
-    ProjectFile? currentProject,
-  ) {
-    if (currentProject == null) return false;
+  static bool hasUnsavedChanges(bool hasUnsavedChanges) {
     return hasUnsavedChanges;
   }
 

@@ -1385,6 +1385,19 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     if (selectedCharacter == null || !next.containsKey(selectedCharacter)) {
+      // During rename, provider update can arrive before local selected key
+      // is committed; prefer the current name field text if it exists.
+      final pendingName = _controllers["name"]?.text.trim() ?? "";
+      if (pendingName.isNotEmpty && next.containsKey(pendingName)) {
+        final pendingIndex = names.indexOf(pendingName);
+        setState(() {
+          selectedCharacter = pendingName;
+          selectedCharacterIndex = pendingIndex >= 0 ? pendingIndex : 0;
+          _loadCharacterData(selectedCharacter!);
+        });
+        return;
+      }
+
       setState(() {
         selectedCharacter = names.first;
         selectedCharacterIndex = 0;
@@ -2780,6 +2793,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         nextCharacterData[name] = CharacterCodec.copyCharacterEntry(entry);
       }
     }
+
+    // Update local selection first to avoid listener race that may fallback to
+    // index 0 before the renamed key is observed.
+    selectedCharacter = trimmedName;
+    selectedCharacterIndex = currentIndex;
 
     _characterNotifier.setCharacterData(nextCharacterData);
     _emitCharacterDataChanged();

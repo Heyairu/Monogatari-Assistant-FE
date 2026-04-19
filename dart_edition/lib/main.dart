@@ -128,14 +128,8 @@ class MainApp extends ConsumerWidget {
 
     return MaterialApp(
       title: "物語Assistant",
-      theme: AppTheme.getLightTheme(
-        fontSize,
-        themeColor,
-      ),
-      darkTheme: AppTheme.getDarkTheme(
-        fontSize,
-        themeColor,
-      ),
+      theme: AppTheme.getLightTheme(fontSize, themeColor),
+      darkTheme: AppTheme.getDarkTheme(fontSize, themeColor),
       themeMode: _convertThemeMode(themeMode),
       home: const ContentView(),
     );
@@ -182,8 +176,7 @@ class ContentView extends ConsumerStatefulWidget {
   ConsumerState<ContentView> createState() => _ContentViewState();
 }
 
-class _ContentViewState extends ConsumerState<ContentView>
-    with WindowListener {
+class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   // 狀態變數
   int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
@@ -236,7 +229,8 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 選取狀態
   String? get selectedSegID => ref.read(editorSelectionProvider).selectedSegID;
 
-  String? get selectedChapID => ref.read(editorSelectionProvider).selectedChapID;
+  String? get selectedChapID =>
+      ref.read(editorSelectionProvider).selectedChapID;
 
   int _proofreadingChapterSwitchVersion = 0;
   int get totalWords => ref.read(totalWordsProvider);
@@ -315,7 +309,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         initialContent.length,
       );
 
-      final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
+      final editorSelectionNotifier = ref.read(
+        editorSelectionProvider.notifier,
+      );
       editorSelectionNotifier.setSelectionAndCursor(
         selectedSegID: selectedSegID,
         selectedChapID: selectedChapID,
@@ -355,7 +351,8 @@ class _ContentViewState extends ConsumerState<ContentView>
         selectionOffset,
         textController.text.length,
       );
-      final bool contentChanged = !_isSyncing && contentText != textController.text;
+      final bool contentChanged =
+          !_isSyncing && contentText != textController.text;
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
       if (contentChanged) {
@@ -397,7 +394,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           next,
         );
 
-        final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
+        final coordinatorNotifier = ref.read(
+          editorCoordinatorProvider.notifier,
+        );
         final beganSync = coordinatorNotifier.beginSync();
         try {
           textController.value = textController.value.copyWith(
@@ -866,7 +865,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         : projectName;
 
     String saveTimeStr = lastSavedTime != null
-      ? DateFormat("HH:mm").format(lastSavedTime)
+        ? DateFormat("HH:mm").format(lastSavedTime)
         : "--:--";
 
     final ({int line, int column}) cursorPos = _lineColumnFromOffset(
@@ -1294,9 +1293,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
-    return BaseInfoModule.BaseInfoView(
-      onChanged: _commitModuleChange,
-    );
+    return BaseInfoModule.BaseInfoView(onChanged: _commitModuleChange);
   }
 
   Widget _buildChapterSelectionView() {
@@ -1318,15 +1315,11 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildWorldSettingsView() {
-    return WorldSettingsView(
-      onChanged: (_) => _commitModuleChange(),
-    );
+    return WorldSettingsView(onChanged: (_) => _commitModuleChange());
   }
 
   Widget _buildCharacterSettingsView() {
-    return CharacterView(
-      onDataChanged: (_) => _commitModuleChange(),
-    );
+    return CharacterView(onDataChanged: (_) => _commitModuleChange());
   }
 
   Widget _buildTimelineView() {
@@ -1348,9 +1341,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildPlanView() {
-    return PlanModule.PlanView(
-      onChanged: (_, __) => _commitModuleChange(),
-    );
+    return PlanModule.PlanView(onChanged: (_, __) => _commitModuleChange());
   }
 
   Widget _buildGlossaryView() {
@@ -1599,7 +1590,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         currentProject?.nameWithoutExtension ?? "MonogatariExport";
 
     try {
-      await ref.read(projectIoControllerProvider.notifier).exportSelective(
+      await ref
+          .read(projectIoControllerProvider.notifier)
+          .exportSelective(
             currentData: currentData,
             defaultFileName: defaultName,
             selectedModules: modules,
@@ -1753,7 +1746,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   /// 檢查是否有未儲存的變更
   bool _hasUnsavedChanges() {
     _syncEditorToSelectedChapter();
-    return _editorCoordinatorNotifier.hasUnsavedChanges(currentProject);
+    return _editorCoordinatorNotifier.hasUnsavedChanges();
   }
 
   /// 處理退出請求
@@ -1762,10 +1755,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       context,
       showExitWarning: _settingsState.showExitWarning,
       hasUnsavedChanges: _hasUnsavedChanges(),
-      onDontShowAgainChanged: (val) async =>
-          await ref
-              .read(settingsStateProvider.notifier)
-              .setShowExitWarning(!val),
+      onDontShowAgainChanged: (val) async => await ref
+          .read(settingsStateProvider.notifier)
+          .setShowExitWarning(!val),
       onSave: () async {
         await _saveProject();
         // Check if save successful (dirty flag cleared)
@@ -1791,15 +1783,13 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
 
     try {
-      final result =
-          await ref.read(projectIoControllerProvider.notifier).createNewProject();
+      final result = await ref
+          .read(projectIoControllerProvider.notifier)
+          .createNewProject();
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
-          .calculateInitialState(
-        result.data,
-        _settingsState.wordCountMode,
-      );
+          .calculateInitialState(result.data, _settingsState.wordCountMode);
 
       setState(() {
         currentProject = result.projectFile;
@@ -1829,13 +1819,16 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
 
     try {
-      final projectFile =
-          await ref.read(projectIoControllerProvider.notifier).pickProjectFile();
+      final projectFile = await ref
+          .read(projectIoControllerProvider.notifier)
+          .pickProjectFile();
       if (projectFile == null) {
         return;
       }
 
-      final openedVersion = FileService.extractProjectVersion(projectFile.content);
+      final openedVersion = FileService.extractProjectVersion(
+        projectFile.content,
+      );
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
       );
@@ -1844,11 +1837,12 @@ class _ContentViewState extends ConsumerState<ContentView>
         if (!mounted) {
           return;
         }
-        final shouldContinue = await ProjectManager.showVersionCompatibilityDialog(
-          context,
-          fileVersion: openedVersion ?? "unknown",
-          supportedVersion: FileService.projectVersion,
-        );
+        final shouldContinue =
+            await ProjectManager.showVersionCompatibilityDialog(
+              context,
+              fileVersion: openedVersion ?? "unknown",
+              supportedVersion: FileService.projectVersion,
+            );
         if (!shouldContinue) {
           _showError("已取消開啟較新版本檔案。");
           return;
@@ -1861,10 +1855,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
-          .calculateInitialState(
-        data,
-        _settingsState.wordCountMode,
-      );
+          .calculateInitialState(data, _settingsState.wordCountMode);
 
       setState(() {
         currentProject = projectFile;
@@ -1905,7 +1896,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           .read(projectIoControllerProvider.notifier)
           .openProjectFromPath(entry.filePath!, accessToken: entry.uri);
 
-      final openedVersion = FileService.extractProjectVersion(projectFile.content);
+      final openedVersion = FileService.extractProjectVersion(
+        projectFile.content,
+      );
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
       );
@@ -1914,11 +1907,12 @@ class _ContentViewState extends ConsumerState<ContentView>
         if (!mounted) {
           return;
         }
-        final shouldContinue = await ProjectManager.showVersionCompatibilityDialog(
-          context,
-          fileVersion: openedVersion ?? "unknown",
-          supportedVersion: FileService.projectVersion,
-        );
+        final shouldContinue =
+            await ProjectManager.showVersionCompatibilityDialog(
+              context,
+              fileVersion: openedVersion ?? "unknown",
+              supportedVersion: FileService.projectVersion,
+            );
         if (!shouldContinue) {
           _showError("已取消開啟較新版本檔案。");
           return;
@@ -1931,10 +1925,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
-          .calculateInitialState(
-        data,
-        _settingsState.wordCountMode,
-      );
+          .calculateInitialState(data, _settingsState.wordCountMode);
 
       setState(() {
         currentProject = projectFile;
@@ -1950,7 +1941,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       final message = e.toString();
       _showError("開啟最近專案失敗：$message");
       if (message.contains("檔案不存在")) {
-        unawaited(ref.read(settingsStateProvider.notifier).removeRecentProject(entry));
+        unawaited(
+          ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
+        );
       }
     }
   }
@@ -1965,7 +1958,9 @@ class _ContentViewState extends ConsumerState<ContentView>
     final currentData = _collectProjectData();
 
     try {
-      final savedProject = await ref.read(projectIoControllerProvider.notifier).saveProject(
+      final savedProject = await ref
+          .read(projectIoControllerProvider.notifier)
+          .saveProject(
             currentProject: currentProject,
             currentData: currentData,
             forceSaveAs: false,
@@ -1984,7 +1979,9 @@ class _ContentViewState extends ConsumerState<ContentView>
     final currentData = _collectProjectData();
 
     try {
-      final savedProject = await ref.read(projectIoControllerProvider.notifier).saveProject(
+      final savedProject = await ref
+          .read(projectIoControllerProvider.notifier)
+          .saveProject(
             currentProject: currentProject,
             currentData: currentData,
             forceSaveAs: true,
@@ -2005,7 +2002,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         currentProject?.nameWithoutExtension ?? "MonogatariExport";
 
     try {
-      await ref.read(projectIoControllerProvider.notifier).exportAs(
+      await ref
+          .read(projectIoControllerProvider.notifier)
+          .exportAs(
             extension: extension,
             currentData: currentData,
             defaultFileName: defaultName,
@@ -2018,9 +2017,9 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 同步編輯器內容到選中的章節（先存的部分）
   void _syncEditorToSelectedChapter() {
-    ref.read(editorCoordinatorProvider.notifier).syncEditorToSelectedChapter(
-      textController: textController,
-    );
+    ref
+        .read(editorCoordinatorProvider.notifier)
+        .syncEditorToSelectedChapter(textController: textController);
   }
 
   // 輔助方法：收集當前專案數據

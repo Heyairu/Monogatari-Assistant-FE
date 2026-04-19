@@ -1,7 +1,6 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/file.dart";
-import "../../models/character_data.dart" as character_model;
 import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/characterview.dart";
@@ -9,6 +8,7 @@ import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/planview.dart" as plan_module;
 import "../../modules/worldsettingsview.dart";
 import "core_providers.dart";
+import "project_snapshot_utils.dart";
 import "project_state_providers.dart";
 
 enum ProjectIoOperation {
@@ -39,98 +39,6 @@ class ProjectLoadResult {
 }
 
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
-  base_info_module.BaseInfoData _snapshotBaseInfo(
-    base_info_module.BaseInfoData value,
-  ) {
-    return value.copyWith(tags: [...value.tags]);
-  }
-
-  List<chapter_module.SegmentData> _snapshotSegments(
-    List<chapter_module.SegmentData> source,
-  ) {
-    return source
-        .map(
-          (segment) => segment.copyWith(
-            chapters: segment.chapters
-                .map((chapter) => chapter.copyWith())
-                .toList(growable: false),
-          ),
-        )
-        .toList(growable: false);
-  }
-
-  List<outline_module.StorylineData> _snapshotOutline(
-    List<outline_module.StorylineData> source,
-  ) {
-    return source
-        .map(
-          (storyline) => storyline.copyWith(
-            people: [...storyline.people],
-            item: [...storyline.item],
-            scenes: storyline.scenes
-                .map(
-                  (event) => event.copyWith(
-                    people: [...event.people],
-                    item: [...event.item],
-                    scenes: event.scenes
-                        .map(
-                          (scene) => scene.copyWith(
-                            people: [...scene.people],
-                            item: [...scene.item],
-                            doingThings: [...scene.doingThings],
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                )
-                .toList(growable: false),
-          ),
-        )
-        .toList(growable: false);
-  }
-
-  List<plan_module.ForeshadowItem> _snapshotForeshadowData(
-    List<plan_module.ForeshadowItem> source,
-  ) {
-    return source.map((item) => item.copyWith()).toList(growable: false);
-  }
-
-  List<plan_module.UpdatePlanItem> _snapshotUpdatePlanData(
-    List<plan_module.UpdatePlanItem> source,
-  ) {
-    return source.map((item) => item.copyWith()).toList(growable: false);
-  }
-
-  List<LocationData> _snapshotWorldSettingsData(List<LocationData> source) {
-    return source
-        .map((location) => location.deepCopy())
-        .toList(growable: false);
-  }
-
-  Map<String, character_model.CharacterEntryData> _snapshotCharacterData(
-    Map<String, character_model.CharacterEntryData> source,
-  ) {
-    return character_model.copyCharacterDataMap(source);
-  }
-
-  ProjectData _snapshotProjectData(
-    ProjectData source, {
-    base_info_module.BaseInfoData? baseInfoOverride,
-  }) {
-    return ProjectData(
-      baseInfoData: _snapshotBaseInfo(baseInfoOverride ?? source.baseInfoData),
-      segmentsData: _snapshotSegments(source.segmentsData),
-      outlineData: _snapshotOutline(source.outlineData),
-      foreshadowData: _snapshotForeshadowData(source.foreshadowData),
-      updatePlanData: _snapshotUpdatePlanData(source.updatePlanData),
-      worldSettingsData: _snapshotWorldSettingsData(source.worldSettingsData),
-      characterData: _snapshotCharacterData(source.characterData),
-      totalWords: source.totalWords,
-      contentText: source.contentText,
-      isDirty: source.isDirty,
-    );
-  }
-
   @override
   Future<ProjectIoStatus> build() async {
     return const ProjectIoStatus.idle();
@@ -141,7 +49,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectFile = await useCase.createNewProject();
-      final data = _snapshotProjectData(ProjectData.empty());
+      final data = snapshotProjectData(ProjectData.empty());
       state = const AsyncData(
         ProjectIoStatus(
           operation: ProjectIoOperation.newProject,
@@ -196,7 +104,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final data = await useCase.loadProjectFromXml(projectFile);
-      final snapshot = _snapshotProjectData(data);
+      final snapshot = snapshotProjectData(data);
       state = const AsyncData(
         ProjectIoStatus(operation: ProjectIoOperation.openProject),
       );
@@ -226,7 +134,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           .read(baseInfoDataProvider.notifier)
           .updateBaseInfoData((_) => baseInfoSnapshot);
 
-      final snapshotData = _snapshotProjectData(
+      final snapshotData = snapshotProjectData(
         currentData,
         baseInfoOverride: baseInfoSnapshot,
       );
@@ -263,7 +171,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }) async {
     state = const AsyncLoading();
     try {
-      final snapshotData = _snapshotProjectData(currentData);
+      final snapshotData = snapshotProjectData(currentData);
       final buffer = StringBuffer();
       for (final segment in snapshotData.segmentsData) {
         buffer.writeln("# ${segment.segmentName}");
@@ -304,7 +212,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }) async {
     state = const AsyncLoading();
     try {
-      final snapshotData = _snapshotProjectData(currentData);
+      final snapshotData = snapshotProjectData(currentData);
       final buffer = StringBuffer();
 
       if (format == "xml") {
