@@ -110,22 +110,33 @@ class MainApp extends ConsumerWidget {
       );
     }
 
-    final themeState = ref.watch(themeStateProvider).valueOrNull ??
-        const AppThemeStateData();
-    final settingsState = ref.watch(settingsStateProvider).valueOrNull ??
-        const AppSettingsStateData();
+    final themeColor = ref.watch(
+      themeStateProvider.select(
+        (state) => state.valueOrNull?.themeColor ?? Colors.lightBlue,
+      ),
+    );
+    final themeMode = ref.watch(
+      themeStateProvider.select(
+        (state) => state.valueOrNull?.themeMode ?? AppThemeMode.system,
+      ),
+    );
+    final fontSize = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.fontSize ?? 12.0,
+      ),
+    );
 
     return MaterialApp(
       title: "物語Assistant",
       theme: AppTheme.getLightTheme(
-        settingsState.fontSize,
-        themeState.themeColor,
+        fontSize,
+        themeColor,
       ),
       darkTheme: AppTheme.getDarkTheme(
-        settingsState.fontSize,
-        themeState.themeColor,
+        fontSize,
+        themeColor,
       ),
-      themeMode: _convertThemeMode(themeState.themeMode),
+      themeMode: _convertThemeMode(themeMode),
       home: const ContentView(),
     );
   }
@@ -278,12 +289,53 @@ class _ContentViewState extends ConsumerState<ContentView>
     );
   }
 
+  void _bootstrapEditorSelectionFromProviderState() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final selectionState = ref.read(editorSelectionProvider);
+      final segments = ref.read(segmentsDataProvider);
+
+      String? selectedSegID = selectionState.selectedSegID;
+      String? selectedChapID = selectionState.selectedChapID;
+      String initialContent = ref.read(editorContentProvider);
+
+      if ((selectedSegID == null || selectedChapID == null) &&
+          segments.isNotEmpty &&
+          segments[0].chapters.isNotEmpty) {
+        selectedSegID = segments[0].segmentUUID;
+        selectedChapID = segments[0].chapters[0].chapterUUID;
+        initialContent = segments[0].chapters[0].chapterContent;
+      }
+
+      final int cursorOffset = _clampOffset(
+        selectionState.cursorOffset,
+        initialContent.length,
+      );
+
+      final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
+      editorSelectionNotifier.setSelectionAndCursor(
+        selectedSegID: selectedSegID,
+        selectedChapID: selectedChapID,
+        cursorOffset: cursorOffset,
+      );
+
+      final editorContentNotifier = ref.read(editorContentProvider.notifier);
+      if (ref.read(editorContentProvider) != initialContent) {
+        editorContentNotifier.setContent(initialContent);
+      }
+
+      if (textController.text != initialContent) {
+        textController.text = initialContent;
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-
-    final editorSelectionNotifier = ref.read(editorSelectionProvider.notifier);
-    final editorContentNotifier = ref.read(editorContentProvider.notifier);
 
     // 註冊視窗監聽器並設置視窗選項
     if (!kIsWeb &&
@@ -294,29 +346,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       _initWindowManager();
     }
 
-    // 初始化選取項目和編輯器內容
-    String? initialSegID;
-    String? initialChapID;
-    String initialContent = "";
-    if (segmentsData.isNotEmpty && segmentsData[0].chapters.isNotEmpty) {
-      initialSegID = segmentsData[0].segmentUUID;
-      initialChapID = segmentsData[0].chapters[0].chapterUUID;
-      initialContent = segmentsData[0].chapters[0].chapterContent;
-    }
-
-    // 避免在 widget 初始化生命週期中直接修改 provider。
-    textController.text = initialContent;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      editorSelectionNotifier.setSelectionAndCursor(
-        selectedSegID: initialSegID,
-        selectedChapID: initialChapID,
-        cursorOffset: 0,
-      );
-      editorContentNotifier.setContent(initialContent);
-    });
+    _bootstrapEditorSelectionFromProviderState();
 
     // 監聽文字變化
     textController.addListener(() {
@@ -618,8 +648,27 @@ class _ContentViewState extends ConsumerState<ContentView>
   // MARK: 主體建構方法
   @override
   Widget build(BuildContext context) {
-    ref.watch(settingsStateProvider);
-    ref.watch(editorCoordinatorProvider);
+    final fontSize = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.fontSize ?? 12.0,
+      ),
+    );
+    final wordCountMode = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.valueOrNull?.wordCountMode ??
+            WordCountMode.wordsAndCharacters,
+      ),
+    );
+    final isLoading = ref.watch(
+      editorCoordinatorProvider.select((state) => state.isLoading),
+    );
+    final hasUnsavedChanges = ref.watch(
+      editorCoordinatorProvider.select((state) => state.hasUnsavedChanges),
+    );
+    final lastSavedTime = ref.watch(
+      editorCoordinatorProvider.select((state) => state.lastSavedTime),
+    );
 
     // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
     final bool isApple =
@@ -680,7 +729,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           },
           child: Scaffold(
             appBar: MonogatariTopAppBar(
-              iconSize: _settingsState.fontSize + 8,
+              iconSize: fontSize + 8,
               isLoading: isLoading,
               showPunctuationPanel: showPunctuationPanel,
               showFindReplaceWindow: showFindReplaceWindow,
@@ -693,9 +742,19 @@ class _ContentViewState extends ConsumerState<ContentView>
               builder: (context, constraints) {
                 // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
                 if (constraints.maxWidth < 800) {
-                  return _buildMobileLayout();
+                  return _buildMobileLayout(
+                    fontSize: fontSize,
+                    wordCountMode: wordCountMode,
+                    hasUnsavedChanges: hasUnsavedChanges,
+                    lastSavedTime: lastSavedTime,
+                  );
                 } else {
-                  return _buildDesktopLayout();
+                  return _buildDesktopLayout(
+                    fontSize: fontSize,
+                    wordCountMode: wordCountMode,
+                    hasUnsavedChanges: hasUnsavedChanges,
+                    lastSavedTime: lastSavedTime,
+                  );
                 }
               },
             ),
@@ -726,15 +785,25 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   // 手機佈局（使用 BottomNavigationBar）
-  Widget _buildMobileLayout() {
+  Widget _buildMobileLayout({
+    required double fontSize,
+    required WordCountMode wordCountMode,
+    required bool hasUnsavedChanges,
+    required DateTime? lastSavedTime,
+  }) {
     // 檢查是否在編輯器頁面（slidePageIndexNow > (slidePageCounts - 1) 表示編輯器）
     bool isEditorMode = slidePageIndexNow > (slidePageCounts - 1);
 
     return MonogatariMobileLayout(
       isEditorMode: isEditorMode,
-      functionPage: _buildMobileFunctionPage(),
+      functionPage: _buildMobileFunctionPage(fontSize: fontSize),
       editorPage: _buildEditor(),
-      statusBar: _buildMobileStatusBar(),
+      statusBar: _buildMobileStatusBar(
+        fontSize: fontSize,
+        wordCountMode: wordCountMode,
+        hasUnsavedChanges: hasUnsavedChanges,
+        lastSavedTime: lastSavedTime,
+      ),
       onDestinationSelected: (index) {
         _syncEditorToSelectedChapter();
 
@@ -752,16 +821,37 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   // 手機狀態列 - 顯示專案資訊
-  Widget _buildMobileStatusBar() {
+  Widget _buildMobileStatusBar({
+    required double fontSize,
+    required WordCountMode wordCountMode,
+    required bool hasUnsavedChanges,
+    required DateTime? lastSavedTime,
+  }) {
+    final statusContentText = ref.watch(editorContentProvider);
+    final statusSelection = ref.watch(
+      editorSelectionProvider.select(
+        (state) => (
+          selectedSegID: state.selectedSegID,
+          selectedChapID: state.selectedChapID,
+          cursorOffset: state.cursorOffset,
+        ),
+      ),
+    );
+    final statusSegments = ref.watch(
+      segmentsDataProvider.select((segments) => segments),
+    );
+    final statusTotalWords = ref.watch(totalWordsProvider);
+
     String projectName = currentProject?.nameWithoutExtension ?? "未命名專案";
     if (hasUnsavedChanges) projectName += "*";
 
     String currentPosition = "";
-    if (selectedSegID != null && selectedChapID != null) {
-      for (final seg in segmentsData) {
-        if (seg.segmentUUID == selectedSegID) {
+    if (statusSelection.selectedSegID != null &&
+        statusSelection.selectedChapID != null) {
+      for (final seg in statusSegments) {
+        if (seg.segmentUUID == statusSelection.selectedSegID) {
           for (final chap in seg.chapters) {
-            if (chap.chapterUUID == selectedChapID) {
+            if (chap.chapterUUID == statusSelection.selectedChapID) {
               currentPosition = "${seg.segmentName} / ${chap.chapterName}";
               break;
             }
@@ -775,18 +865,18 @@ class _ContentViewState extends ConsumerState<ContentView>
         ? "$projectName | $currentPosition"
         : projectName;
 
-    String saveTimeStr = _lastSavedTime != null
-        ? DateFormat("HH:mm").format(_lastSavedTime!)
+    String saveTimeStr = lastSavedTime != null
+      ? DateFormat("HH:mm").format(lastSavedTime)
         : "--:--";
 
     final ({int line, int column}) cursorPos = _lineColumnFromOffset(
-      contentText,
-      _cursorOffset,
+      statusContentText,
+      statusSelection.cursorOffset,
     );
 
     final int currentWords = ContentManager.calculateWordCount(
-      contentText,
-      mode: _settingsState.wordCountMode,
+      statusContentText,
+      mode: wordCountMode,
     );
 
     return MonogatariStatusBar(
@@ -795,13 +885,13 @@ class _ContentViewState extends ConsumerState<ContentView>
       cursorLine: cursorPos.line,
       cursorColumn: cursorPos.column,
       currentWords: currentWords,
-      totalWords: totalWords,
-      iconSize: _settingsState.fontSize,
+      totalWords: statusTotalWords,
+      iconSize: fontSize,
     );
   }
 
   // 手機功能頁面（包含功能切換和內容）
-  Widget _buildMobileFunctionPage() {
+  Widget _buildMobileFunctionPage({required double fontSize}) {
     return MonogatariMobileFunctionPage(
       showPunctuationPanel: showPunctuationPanel,
       onInsertPunctuation: _insertText,
@@ -812,7 +902,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       },
       pageCount: slidePageCounts,
       selectedIndex: slidePageIndexNow,
-      fontSize: _settingsState.fontSize,
+      fontSize: fontSize,
       onBeforePageSwitch: _syncEditorToSelectedChapter,
       onPageSelected: (index) {
         setState(() {
@@ -860,7 +950,12 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   // 桌面佈局（使用 NavigationRail）
-  Widget _buildDesktopLayout() {
+  Widget _buildDesktopLayout({
+    required double fontSize,
+    required WordCountMode wordCountMode,
+    required bool hasUnsavedChanges,
+    required DateTime? lastSavedTime,
+  }) {
     return Column(
       children: [
         Expanded(
@@ -942,16 +1037,31 @@ class _ContentViewState extends ConsumerState<ContentView>
         ),
 
         // 桌面狀態列
-        _buildDesktopStatusBar(),
+        _buildDesktopStatusBar(
+          fontSize: fontSize,
+          wordCountMode: wordCountMode,
+          hasUnsavedChanges: hasUnsavedChanges,
+          lastSavedTime: lastSavedTime,
+        ),
       ],
     );
   }
 
   // 桌面狀態列
-  Widget _buildDesktopStatusBar() {
+  Widget _buildDesktopStatusBar({
+    required double fontSize,
+    required WordCountMode wordCountMode,
+    required bool hasUnsavedChanges,
+    required DateTime? lastSavedTime,
+  }) {
     // 復用手機版的狀態列邏輯，但為了程式碼清晰，獨立出一個方法
     // 在未來可以在這裡添加桌面版特有的資訊（如編碼格式、游標位置等）
-    return _buildMobileStatusBar();
+    return _buildMobileStatusBar(
+      fontSize: fontSize,
+      wordCountMode: wordCountMode,
+      hasUnsavedChanges: hasUnsavedChanges,
+      lastSavedTime: lastSavedTime,
+    );
   }
 
   // 獲取 NavigationRail 的選中索引

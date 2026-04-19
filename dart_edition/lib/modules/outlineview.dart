@@ -516,9 +516,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   String? selectedStorylineID;
   String? selectedEventID;
   String? selectedSceneID;
-  List<StorylineData> _storylines = [];
-  bool _isCommittingLocalChange = false;
-  ProviderSubscription<List<StorylineData>>? _outlineSubscription;
 
   String? editingStorylineID;
   String? editingEventID;
@@ -571,8 +568,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   static const Duration _autoScrollInterval = Duration(milliseconds: 50);
   static const double _scrollEdgeThreshold = 100.0;
   static const double _listScrollEdgeThreshold = 20.0;
+  bool _hasHydratedInitialOutlineData = false;
 
-  List<StorylineData> get storylines => _storylines;
+  List<StorylineData> get storylines => ref.read(outlineDataProvider);
+  OutlineDataNotifier get _outlineNotifier =>
+      ref.read(outlineDataProvider.notifier);
 
   int? get selectedStorylineIndex {
     if (selectedStorylineID == null) return null;
@@ -596,11 +596,77 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     );
   }
 
+  void _bootstrapSelectionFromProviderIfNeeded() {
+    if (_hasHydratedInitialOutlineData) {
+      return;
+    }
+    _hasHydratedInitialOutlineData = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _initializeSelection();
+      });
+    });
+  }
+
+  void _syncSelectionIfNeeded(List<StorylineData> next) {
+    bool needsSelectionSync = false;
+
+    if (next.isEmpty) {
+      needsSelectionSync =
+          selectedStorylineID != null ||
+          selectedEventID != null ||
+          selectedSceneID != null;
+    } else {
+      final hasStoryline =
+          selectedStorylineID != null &&
+          next.any((storyline) => storyline.chapterUUID == selectedStorylineID);
+      if (!hasStoryline) {
+        needsSelectionSync = true;
+      } else {
+        final storyline = next.firstWhere(
+          (item) => item.chapterUUID == selectedStorylineID,
+        );
+        if (selectedEventID == null) {
+          needsSelectionSync = storyline.scenes.isNotEmpty;
+        } else {
+          final hasEvent = storyline.scenes.any(
+            (event) => event.storyEventUUID == selectedEventID,
+          );
+          if (!hasEvent) {
+            needsSelectionSync = true;
+          } else {
+            final event = storyline.scenes.firstWhere(
+              (item) => item.storyEventUUID == selectedEventID,
+            );
+            if (selectedSceneID == null) {
+              needsSelectionSync = event.scenes.isNotEmpty;
+            } else {
+              needsSelectionSync = !event.scenes.any(
+                (scene) => scene.sceneUUID == selectedSceneID,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    if (!needsSelectionSync) {
+      return;
+    }
+
+    setState(() {
+      _initializeSelection();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _storylines = _copyStorylines(ref.read(outlineDataProvider));
-    _initializeSelection();
 
     // Add listeners
     storylineNameController.addListener(_onStorylineNameChanged);
@@ -618,19 +684,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     sceneFocusController.addListener(_onSceneFocusChanged);
     sceneConflictController.addListener(_onSceneConflictChanged);
     sceneMemoController.addListener(_onSceneMemoChanged);
-
-    _outlineSubscription = ref.listenManual<List<StorylineData>>(
-      outlineDataProvider,
-      (previous, next) {
-        if (_isCommittingLocalChange) {
-          return;
-        }
-        setState(() {
-          _storylines = _copyStorylines(next);
-          _initializeSelection();
-        });
-      },
-    );
   }
 
   void _onStorylineNameChanged() {
@@ -851,7 +904,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   @override
   void dispose() {
-    _outlineSubscription?.close();
     storylineNameController.removeListener(_onStorylineNameChanged);
     storylineTypeController.removeListener(_onStorylineTypeChanged);
     storylineConflictController.removeListener(_onStorylineConflictChanged);
@@ -1009,11 +1061,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _notifyChange() {
-    final snapshot = _copyStorylines(storylines);
-    _isCommittingLocalChange = true;
-    ref.read(outlineDataProvider.notifier).setOutlineData(snapshot);
-    widget.onStorylineChanged?.call(snapshot);
-    _isCommittingLocalChange = false;
+    widget.onStorylineChanged?.call(
+      _copyStorylines(ref.read(outlineDataProvider)),
+    );
   }
 
   List<StorylineData> _copyStorylines(List<StorylineData> source) {
@@ -1047,7 +1097,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   void _reduceStorylines(
     List<StorylineData> Function(List<StorylineData>) reduce,
   ) {
-    _storylines = reduce(_storylines);
+    _outlineNotifier.updateOutlineData((current) => reduce(current));
   }
 
   void _reduceStorylineAt(
@@ -1115,9 +1165,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   StorylineData _removeStorylineAt(int index) {
-    final nextStorylines = [..._storylines];
-    final removed = nextStorylines.removeAt(index);
-    _storylines = nextStorylines;
+    final removed = storylines[index];
+    _reduceStorylines((current) {
+      final nextStorylines = [...current];
+      nextStorylines.removeAt(index);
+      return nextStorylines;
+    });
     return removed;
   }
 
@@ -1342,6 +1395,15 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    ref.watch(outlineDataProvider);
+    _bootstrapSelectionFromProviderIfNeeded();
+    ref.listen<List<StorylineData>>(outlineDataProvider, (previous, next) {
+      if (!mounted) {
+        return;
+      }
+      _syncSelectionIfNeeded(next);
+    });
+
     return Scaffold(
       body: Listener(
         onPointerMove: (event) {

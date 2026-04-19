@@ -359,11 +359,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
   String? _draggingUpdatePlanId;
   bool _showRootDirectory = false;
   List<String> _rootLayerOrder = [];
-  List<ForeshadowItem> _foreshadowItems = [];
-  List<UpdatePlanItem> _updatePlanItems = [];
-  bool _isCommittingLocalChange = false;
-  ProviderSubscription<List<ForeshadowItem>>? _foreshadowSubscription;
-  ProviderSubscription<List<UpdatePlanItem>>? _updatePlanSubscription;
 
   final TextEditingController foreshadowTitleController =
       TextEditingController();
@@ -385,8 +380,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
   @override
   void initState() {
     super.initState();
-    _foreshadowItems = _copyForeshadowItems(ref.read(foreshadowDataProvider));
-    _updatePlanItems = _copyUpdatePlanItems(ref.read(updatePlanDataProvider));
 
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
     foreshadowNoteController.addListener(_onForeshadowNoteChanged);
@@ -395,51 +388,11 @@ class _PlanViewState extends ConsumerState<PlanView> {
     inspirationTitleController.addListener(_onInspirationTitleChanged);
     inspirationContentController.addListener(_onInspirationContentChanged);
 
-    _foreshadowSubscription = ref.listenManual<List<ForeshadowItem>>(
-      foreshadowDataProvider,
-      (previous, next) {
-        if (_isCommittingLocalChange) {
-          return;
-        }
-        setState(() {
-          _foreshadowItems = _copyForeshadowItems(next);
-          _syncSelectionAfterDataUpdate();
-        });
-      },
-    );
-
-    _updatePlanSubscription = ref.listenManual<List<UpdatePlanItem>>(
-      updatePlanDataProvider,
-      (previous, next) {
-        if (_isCommittingLocalChange) {
-          return;
-        }
-        setState(() {
-          _updatePlanItems = _copyUpdatePlanItems(next);
-          _syncSelectionAfterDataUpdate();
-        });
-      },
-    );
-
     _loadInspirationFromDisk();
-  }
-
-  void _syncSelectionAfterDataUpdate() {
-    if (_selectedForeshadow == null && selectedForeshadowId != null) {
-      selectedForeshadowId = null;
-      _syncForeshadowControllers();
-    }
-    if (_selectedUpdatePlan == null && selectedUpdatePlanId != null) {
-      selectedUpdatePlanId = null;
-      _syncUpdatePlanControllers();
-    }
   }
 
   @override
   void dispose() {
-    _foreshadowSubscription?.close();
-    _updatePlanSubscription?.close();
-
     foreshadowTitleController.removeListener(_onForeshadowTitleChanged);
     foreshadowNoteController.removeListener(_onForeshadowNoteChanged);
     updatePlanTitleController.removeListener(_onUpdatePlanTitleChanged);
@@ -455,6 +408,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     inspirationContentController.dispose();
     super.dispose();
   }
+
+  List<ForeshadowItem> get _foreshadowItems => ref.read(foreshadowDataProvider);
+
+  List<UpdatePlanItem> get _updatePlanItems => ref.read(updatePlanDataProvider);
 
   ForeshadowItem? get _selectedForeshadow {
     if (selectedForeshadowId == null) return null;
@@ -533,51 +490,73 @@ class _PlanViewState extends ConsumerState<PlanView> {
     _rootLayerOrder.insert(insertIndex, draggedKey);
   }
 
-  void _notifyProjectChanged() {
-    final foreshadowSnapshot = _copyForeshadowItems(_foreshadowItems);
-    final updatePlanSnapshot = _copyUpdatePlanItems(_updatePlanItems);
-
-    _isCommittingLocalChange = true;
-    ref
-        .read(foreshadowDataProvider.notifier)
-        .setForeshadowData(foreshadowSnapshot);
-    ref
-        .read(updatePlanDataProvider.notifier)
-        .setUpdatePlanData(updatePlanSnapshot);
-    widget.onChanged?.call(foreshadowSnapshot, updatePlanSnapshot);
-    _isCommittingLocalChange = false;
+  void _emitProjectChanged() {
+    widget.onChanged?.call(
+      ref.read(foreshadowDataProvider),
+      ref.read(updatePlanDataProvider),
+    );
   }
 
-  List<ForeshadowItem> _copyForeshadowItems(List<ForeshadowItem> source) {
-    return source.map((item) => item.copyWith()).toList();
-  }
-
-  List<UpdatePlanItem> _copyUpdatePlanItems(List<UpdatePlanItem> source) {
-    return source.map((item) => item.copyWith()).toList();
-  }
-
-  void _updateForeshadowById(
+  bool _updateForeshadowById(
     String id,
     ForeshadowItem Function(ForeshadowItem current) update,
   ) {
-    final index = _foreshadowItems.indexWhere((item) => item.id == id);
-    if (index == -1) return;
-
-    final nextItems = [..._foreshadowItems];
-    nextItems[index] = update(nextItems[index]);
-    _foreshadowItems = nextItems;
+    final didUpdate = ref
+        .read(foreshadowDataProvider.notifier)
+        .updateForeshadowById(id, update);
+    if (didUpdate) {
+      _emitProjectChanged();
+    }
+    return didUpdate;
   }
 
-  void _updateUpdatePlanById(
+  bool _updateUpdatePlanById(
     String id,
     UpdatePlanItem Function(UpdatePlanItem current) update,
   ) {
-    final index = _updatePlanItems.indexWhere((item) => item.id == id);
-    if (index == -1) return;
+    final didUpdate = ref
+        .read(updatePlanDataProvider.notifier)
+        .updateUpdatePlanById(id, update);
+    if (didUpdate) {
+      _emitProjectChanged();
+    }
+    return didUpdate;
+  }
 
-    final nextItems = [..._updatePlanItems];
-    nextItems[index] = update(nextItems[index]);
-    _updatePlanItems = nextItems;
+  bool _reorderForeshadowItems(
+    String draggedId,
+    String targetId,
+    bool isBefore,
+  ) {
+    final didUpdate = ref
+        .read(foreshadowDataProvider.notifier)
+        .reorderForeshadowByDrop(
+          draggedId: draggedId,
+          targetId: targetId,
+          isBefore: isBefore,
+        );
+    if (didUpdate) {
+      _emitProjectChanged();
+    }
+    return didUpdate;
+  }
+
+  bool _reorderUpdatePlanItems(
+    String draggedId,
+    String targetId,
+    bool isBefore,
+  ) {
+    final didUpdate = ref
+        .read(updatePlanDataProvider.notifier)
+        .reorderUpdatePlanByDrop(
+          draggedId: draggedId,
+          targetId: targetId,
+          isBefore: isBefore,
+        );
+    if (didUpdate) {
+      _emitProjectChanged();
+    }
+    return didUpdate;
   }
 
   void _syncForeshadowControllers() {
@@ -641,13 +620,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final item = _selectedForeshadow;
     if (item == null) return;
     if (item.title != foreshadowTitleController.text) {
-      setState(() {
-        _updateForeshadowById(
-          item.id,
-          (current) => current.copyWith(title: foreshadowTitleController.text),
-        );
-      });
-      _notifyProjectChanged();
+      _updateForeshadowById(
+        item.id,
+        (current) => current.copyWith(title: foreshadowTitleController.text),
+      );
     }
   }
 
@@ -655,13 +631,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final item = _selectedForeshadow;
     if (item == null) return;
     if (item.note != foreshadowNoteController.text) {
-      setState(() {
-        _updateForeshadowById(
-          item.id,
-          (current) => current.copyWith(note: foreshadowNoteController.text),
-        );
-      });
-      _notifyProjectChanged();
+      _updateForeshadowById(
+        item.id,
+        (current) => current.copyWith(note: foreshadowNoteController.text),
+      );
     }
   }
 
@@ -669,13 +642,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final item = _selectedUpdatePlan;
     if (item == null) return;
     if (item.title != updatePlanTitleController.text) {
-      setState(() {
-        _updateUpdatePlanById(
-          item.id,
-          (current) => current.copyWith(title: updatePlanTitleController.text),
-        );
-      });
-      _notifyProjectChanged();
+      _updateUpdatePlanById(
+        item.id,
+        (current) => current.copyWith(title: updatePlanTitleController.text),
+      );
     }
   }
 
@@ -683,13 +653,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final item = _selectedUpdatePlan;
     if (item == null) return;
     if (item.note != updatePlanNoteController.text) {
-      setState(() {
-        _updateUpdatePlanById(
-          item.id,
-          (current) => current.copyWith(note: updatePlanNoteController.text),
-        );
-      });
-      _notifyProjectChanged();
+      _updateUpdatePlanById(
+        item.id,
+        (current) => current.copyWith(note: updatePlanNoteController.text),
+      );
     }
   }
 
@@ -716,37 +683,36 @@ class _PlanViewState extends ConsumerState<PlanView> {
   void _addForeshadow(String title) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return;
+
+    final item = ForeshadowItem(title: trimmed);
+    ref.read(foreshadowDataProvider.notifier).addForeshadowItem(item);
     setState(() {
-      final item = ForeshadowItem(title: trimmed);
-      _foreshadowItems = [..._foreshadowItems, item];
       selectedForeshadowId = item.id;
       _syncForeshadowControllers();
     });
-    _notifyProjectChanged();
+    _emitProjectChanged();
   }
 
   void _deleteForeshadow(String id) {
-    final index = _foreshadowItems.indexWhere((e) => e.id == id);
-    if (index == -1) return;
+    final removed = ref
+        .read(foreshadowDataProvider.notifier)
+        .removeForeshadowById(id);
+    if (!removed) return;
+
     setState(() {
-      final nextItems = [..._foreshadowItems]..removeAt(index);
-      _foreshadowItems = nextItems;
       if (selectedForeshadowId == id) {
         selectedForeshadowId = null;
         _syncForeshadowControllers();
       }
     });
-    _notifyProjectChanged();
+    _emitProjectChanged();
   }
 
   void _toggleForeshadowRevealed(ForeshadowItem item, bool value) {
-    setState(() {
-      _updateForeshadowById(
-        item.id,
-        (current) => current.copyWith(isRevealed: value),
-      );
-    });
-    _notifyProjectChanged();
+    _updateForeshadowById(
+      item.id,
+      (current) => current.copyWith(isRevealed: value),
+    );
   }
 
   bool _canAcceptForeshadowDrop(
@@ -758,26 +724,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
     return pos != DropPosition.child;
   }
 
-  void _reorderForeshadowItems(
-    String draggedId,
-    String targetId,
-    bool isBefore,
-  ) {
-    final nextItems = [..._foreshadowItems];
-    final draggedIndex = nextItems.indexWhere((e) => e.id == draggedId);
-    final targetIndex = nextItems.indexWhere((e) => e.id == targetId);
-    if (draggedIndex == -1 || targetIndex == -1) return;
-
-    final draggedItem = nextItems.removeAt(draggedIndex);
-    var adjustedTarget = targetIndex;
-    if (draggedIndex < targetIndex) {
-      adjustedTarget -= 1;
-    }
-    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
-    nextItems.insert(insertIndex, draggedItem);
-    _foreshadowItems = nextItems;
-  }
-
   void _handleForeshadowDrop(
     _ForeshadowDragData data,
     ForeshadowItem target,
@@ -785,47 +731,53 @@ class _PlanViewState extends ConsumerState<PlanView> {
   ) {
     if (!_canAcceptForeshadowDrop(data, target, pos)) return;
 
+    final didReorder = _reorderForeshadowItems(
+      data.id,
+      target.id,
+      pos == DropPosition.before,
+    );
+    if (!didReorder) {
+      return;
+    }
+
     setState(() {
-      _reorderForeshadowItems(data.id, target.id, pos == DropPosition.before);
       selectedForeshadowId = data.id;
     });
-    _notifyProjectChanged();
   }
 
   void _addUpdatePlan(String title) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return;
+
+    final item = UpdatePlanItem(title: trimmed);
+    ref.read(updatePlanDataProvider.notifier).addUpdatePlanItem(item);
     setState(() {
-      final item = UpdatePlanItem(title: trimmed);
-      _updatePlanItems = [..._updatePlanItems, item];
       selectedUpdatePlanId = item.id;
       _syncUpdatePlanControllers();
     });
-    _notifyProjectChanged();
+    _emitProjectChanged();
   }
 
   void _deleteUpdatePlan(String id) {
-    final index = _updatePlanItems.indexWhere((e) => e.id == id);
-    if (index == -1) return;
+    final removed = ref
+        .read(updatePlanDataProvider.notifier)
+        .removeUpdatePlanById(id);
+    if (!removed) return;
+
     setState(() {
-      final nextItems = [..._updatePlanItems]..removeAt(index);
-      _updatePlanItems = nextItems;
       if (selectedUpdatePlanId == id) {
         selectedUpdatePlanId = null;
         _syncUpdatePlanControllers();
       }
     });
-    _notifyProjectChanged();
+    _emitProjectChanged();
   }
 
   void _toggleUpdatePlanDone(UpdatePlanItem item, bool value) {
-    setState(() {
-      _updateUpdatePlanById(
-        item.id,
-        (current) => current.copyWith(isDone: value),
-      );
-    });
-    _notifyProjectChanged();
+    _updateUpdatePlanById(
+      item.id,
+      (current) => current.copyWith(isDone: value),
+    );
   }
 
   bool _canAcceptUpdatePlanDrop(
@@ -837,26 +789,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
     return pos != DropPosition.child;
   }
 
-  void _reorderUpdatePlanItems(
-    String draggedId,
-    String targetId,
-    bool isBefore,
-  ) {
-    final nextItems = [..._updatePlanItems];
-    final draggedIndex = nextItems.indexWhere((e) => e.id == draggedId);
-    final targetIndex = nextItems.indexWhere((e) => e.id == targetId);
-    if (draggedIndex == -1 || targetIndex == -1) return;
-
-    final draggedItem = nextItems.removeAt(draggedIndex);
-    var adjustedTarget = targetIndex;
-    if (draggedIndex < targetIndex) {
-      adjustedTarget -= 1;
-    }
-    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
-    nextItems.insert(insertIndex, draggedItem);
-    _updatePlanItems = nextItems;
-  }
-
   void _handleUpdatePlanDrop(
     _UpdatePlanDragData data,
     UpdatePlanItem target,
@@ -864,11 +796,18 @@ class _PlanViewState extends ConsumerState<PlanView> {
   ) {
     if (!_canAcceptUpdatePlanDrop(data, target, pos)) return;
 
+    final didReorder = _reorderUpdatePlanItems(
+      data.id,
+      target.id,
+      pos == DropPosition.before,
+    );
+    if (!didReorder) {
+      return;
+    }
+
     setState(() {
-      _reorderUpdatePlanItems(data.id, target.id, pos == DropPosition.before);
       selectedUpdatePlanId = data.id;
     });
-    _notifyProjectChanged();
   }
 
   Future<String> _getDataDirectoryPath() async {
@@ -1255,7 +1194,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
     _saveInspirationToDisk();
   }
 
-  Widget _buildForeshadowSection() {
+  Widget _buildForeshadowSection(List<ForeshadowItem> items) {
     final selectedItem = _selectedForeshadow;
     return Card(
       elevation: 0,
@@ -1276,13 +1215,13 @@ class _PlanViewState extends ConsumerState<PlanView> {
                 borderRadius: BorderRadius.circular(8),
                 color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
-              child: _foreshadowItems.isEmpty
+              child: items.isEmpty
                   ? const Center(child: Text("尚無伏筆，請新增項目"))
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
-                      itemCount: _foreshadowItems.length,
+                      itemCount: items.length,
                       itemBuilder: (context, index) {
-                        final item = _foreshadowItems[index];
+                        final item = items[index];
                         final isSelected = item.id == selectedForeshadowId;
                         return DraggableCardNode<_ForeshadowDragData>(
                           key: ValueKey("foreshadow:${item.id}"),
@@ -1412,7 +1351,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
     );
   }
 
-  Widget _buildUpdatePlanSection() {
+  Widget _buildUpdatePlanSection(List<UpdatePlanItem> items) {
     final selectedItem = _selectedUpdatePlan;
     return Card(
       elevation: 0,
@@ -1433,13 +1372,13 @@ class _PlanViewState extends ConsumerState<PlanView> {
                 borderRadius: BorderRadius.circular(8),
                 color: Theme.of(context).colorScheme.surfaceContainerLowest,
               ),
-              child: _updatePlanItems.isEmpty
+              child: items.isEmpty
                   ? const Center(child: Text("尚無更新計畫，請新增項目"))
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
-                      itemCount: _updatePlanItems.length,
+                      itemCount: items.length,
                       itemBuilder: (context, index) {
-                        final item = _updatePlanItems[index];
+                        final item = items[index];
                         final isSelected = item.id == selectedUpdatePlanId;
                         return DraggableCardNode<_UpdatePlanDragData>(
                           key: ValueKey("update-plan:${item.id}"),
@@ -1781,6 +1720,41 @@ class _PlanViewState extends ConsumerState<PlanView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    final foreshadowItems = ref.watch(foreshadowDataProvider);
+    final updatePlanItems = ref.watch(updatePlanDataProvider);
+
+    ref.listen<List<ForeshadowItem>>(foreshadowDataProvider, (previous, next) {
+      if (!mounted) {
+        return;
+      }
+      if (selectedForeshadowId == null) {
+        return;
+      }
+      final exists = next.any((item) => item.id == selectedForeshadowId);
+      if (!exists) {
+        setState(() {
+          selectedForeshadowId = null;
+          _syncForeshadowControllers();
+        });
+      }
+    });
+
+    ref.listen<List<UpdatePlanItem>>(updatePlanDataProvider, (previous, next) {
+      if (!mounted) {
+        return;
+      }
+      if (selectedUpdatePlanId == null) {
+        return;
+      }
+      final exists = next.any((item) => item.id == selectedUpdatePlanId);
+      if (!exists) {
+        setState(() {
+          selectedUpdatePlanId = null;
+          _syncUpdatePlanControllers();
+        });
+      }
+    });
+
     return Scaffold(
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -1793,9 +1767,9 @@ class _PlanViewState extends ConsumerState<PlanView> {
             ),
 
             const SizedBox(height: 32),
-            _buildForeshadowSection(),
+            _buildForeshadowSection(foreshadowItems),
             const SizedBox(height: 12),
-            _buildUpdatePlanSection(),
+            _buildUpdatePlanSection(updatePlanItems),
             const SizedBox(height: 12),
             _buildInspirationSection(),
           ],

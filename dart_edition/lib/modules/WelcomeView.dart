@@ -371,8 +371,13 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
   Widget build(BuildContext context) {
     final List<RecentProjectEntry> recentProjects =
         widget.recentProjects ??
-        ref.watch(settingsStateProvider).valueOrNull?.recentProjects ??
-        const [];
+        ref.watch(
+          settingsStateProvider.select(
+            (state) =>
+                state.valueOrNull?.recentProjects ??
+                const <RecentProjectEntry>[],
+          ),
+        );
 
     final Set<String> supportedGenderValues = <String>{
       "all",

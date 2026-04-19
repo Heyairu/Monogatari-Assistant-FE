@@ -1,0 +1,39 @@
+name: State Policy Guard
+
+on:
+  pull_request:
+    paths:
+      - "lib/**"
+      - "tool/check_initstate_provider_assignments.dart"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/state-policy-guard.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "lib/**"
+      - "tool/check_initstate_provider_assignments.dart"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/state-policy-guard.yml"
+
+jobs:
+  initstate-provider-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Enforce initState provider assignment policy
+        run: dart run tool/check_initstate_provider_assignments.dart

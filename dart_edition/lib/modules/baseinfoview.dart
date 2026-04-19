@@ -301,15 +301,14 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   @override
   void initState() {
     super.initState();
-    final initialData = ref.read(baseInfoDataProvider);
 
-    // 初始化各個文字欄位的 controller
-    _bookNameController = TextEditingController(text: initialData.bookName);
-    _authorController = TextEditingController(text: initialData.author);
-    _purposeController = TextEditingController(text: initialData.purpose);
-    _toRecapController = TextEditingController(text: initialData.toRecap);
-    _storyTypeController = TextEditingController(text: initialData.storyType);
-    _introController = TextEditingController(text: initialData.intro);
+    // 初始化 controller；內容同步完全由 provider listener 驅動。
+    _bookNameController = TextEditingController();
+    _authorController = TextEditingController();
+    _purposeController = TextEditingController();
+    _toRecapController = TextEditingController();
+    _storyTypeController = TextEditingController();
+    _introController = TextEditingController();
 
     // 添加監聽器
     _bookNameController.addListener(() {
@@ -386,6 +385,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       if (!mounted) {
         return;
       }
+      _syncControllersFromProvider(ref.read(baseInfoDataProvider));
       _syncNowWords();
     });
   }
@@ -479,7 +479,16 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
   @override
   Widget build(BuildContext context) {
-    final baseInfo = ref.watch(baseInfoDataProvider);
+    final latestSave = ref.watch(
+      baseInfoDataProvider.select((state) => state.latestSave),
+    );
+    final nowWords = ref.watch(
+      baseInfoDataProvider.select((state) => state.nowWords),
+    );
+    ref.watch(
+      baseInfoDataProvider.select((state) => Object.hashAll(state.tags)),
+    );
+    final tags = ref.read(baseInfoDataProvider).tags;
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -553,7 +562,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                     const SizedBox(height: 24),
 
                     // 標籤區域
-                    _buildTagsSection(baseInfo),
+                    _buildTagsSection(tags),
 
                     const SizedBox(height: 24),
 
@@ -563,7 +572,10 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                     const SizedBox(height: 24),
 
                     // 統計資訊
-                    _buildStatsSection(baseInfo),
+                    _buildStatsSection(
+                      latestSave: latestSave,
+                      nowWords: nowWords,
+                    ),
                   ],
                 ),
               ),
@@ -599,11 +611,11 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  Widget _buildTagsSection(BaseInfoData baseInfo) {
+  Widget _buildTagsSection(List<String> tags) {
     return CardList(
       title: "標籤",
       icon: Icons.local_offer,
-      items: baseInfo.tags,
+      items: tags,
       onAdd: _addTag,
       onRemove: _removeTag,
     );
@@ -630,7 +642,10 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  Widget _buildStatsSection(BaseInfoData baseInfo) {
+  Widget _buildStatsSection({
+    required DateTime? latestSave,
+    required int nowWords,
+  }) {
     final totalWords = ref.watch(totalWordsProvider);
 
     return Card(
@@ -658,8 +673,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             // 最後儲存時間
             _buildStatRow(
               "最後儲存時間",
-              baseInfo.latestSave != null
-                  ? _dateFormatter.format(baseInfo.latestSave!)
+              latestSave != null
+                  ? _dateFormatter.format(latestSave)
                   : "--:--:--",
               Icons.access_time,
             ),
@@ -671,7 +686,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             const Divider(height: 16),
 
             // 本章字數
-            _buildStatRow("本章字數", "${baseInfo.nowWords} 字", Icons.article),
+            _buildStatRow("本章字數", "$nowWords 字", Icons.article),
           ],
         ),
       ),

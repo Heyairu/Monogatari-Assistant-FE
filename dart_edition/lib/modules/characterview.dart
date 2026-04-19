@@ -1202,12 +1202,15 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   late TabController _tabController;
 
   // Character List
-  List<String> characters = [];
   String? selectedCharacter;
   int? selectedCharacterIndex;
 
-  // Character Data Storage - 每個角色的完整資料
-  Map<String, CharacterEntryData> characterData = {};
+  List<String> get characters =>
+      ref.read(characterDataProvider).keys.toList(growable: false);
+  Map<String, CharacterEntryData> get characterData =>
+      ref.read(characterDataProvider);
+  CharacterDataNotifier get _characterNotifier =>
+      ref.read(characterDataProvider.notifier);
 
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
@@ -1323,9 +1326,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   bool _isLoading = false;
   Timer? _debounceTimer;
-  ProviderSubscription<Map<String, CharacterEntryData>>?
-  _characterDataSubscription;
-  bool _isCommittingLocalChange = false;
+  bool _hasHydratedInitialCharacterData = false;
 
   void _markAsModified() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
@@ -1360,6 +1361,66 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
   }
 
+  void _emitCharacterDataChanged() {
+    widget.onDataChanged?.call(
+      CharacterCodec.copyCharacterDataMap(ref.read(characterDataProvider)),
+    );
+  }
+
+  void _syncSelectionFromProviderIfNeeded(
+    Map<String, CharacterEntryData> next, {
+    bool forceLoadSelected = false,
+  }) {
+    final names = next.keys.toList(growable: false);
+
+    if (names.isEmpty) {
+      if (selectedCharacter != null || selectedCharacterIndex != null) {
+        setState(() {
+          selectedCharacter = null;
+          selectedCharacterIndex = null;
+          _clearAllFields();
+        });
+      }
+      return;
+    }
+
+    if (selectedCharacter == null || !next.containsKey(selectedCharacter)) {
+      setState(() {
+        selectedCharacter = names.first;
+        selectedCharacterIndex = 0;
+        _loadCharacterData(selectedCharacter!);
+      });
+      return;
+    }
+
+    final nextIndex = names.indexOf(selectedCharacter!);
+    if (selectedCharacterIndex != nextIndex || forceLoadSelected) {
+      setState(() {
+        selectedCharacterIndex = nextIndex;
+        if (forceLoadSelected) {
+          _loadCharacterData(selectedCharacter!);
+        }
+      });
+    }
+  }
+
+  void _hydrateInitialCharacterDataIfNeeded() {
+    if (_hasHydratedInitialCharacterData) {
+      return;
+    }
+    _hasHydratedInitialCharacterData = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _syncSelectionFromProviderIfNeeded(
+        ref.read(characterDataProvider),
+        forceLoadSelected: true,
+      );
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1370,50 +1431,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         setState(() {});
       }
     });
-
-    // 從提供者讀取初始資料（不直接提交，避免生命週期違規）
-    characterData = CharacterCodec.copyCharacterDataMap(
-      ref.read(characterDataProvider),
-    );
-    characters = characterData.keys.toList();
-
-    // 如果有角色，選取第一個
-    if (characters.isNotEmpty) {
-      selectedCharacterIndex = 0;
-      selectedCharacter = characters[0];
-      _loadCharacterData(selectedCharacter!);
-    }
-
-    // 設置提供者訂閱以同步外部變化
-    _characterDataSubscription = ref
-        .listenManual<Map<String, CharacterEntryData>>(characterDataProvider, (
-          prev,
-          next,
-        ) {
-          if (_isLoading || _isCommittingLocalChange) {
-            return;
-          }
-          if (mounted) {
-            setState(() {
-              // 同步外部提供者更新
-              characterData = CharacterCodec.copyCharacterDataMap(next);
-              characters = characterData.keys.toList();
-
-              if (selectedCharacter != null &&
-                  characters.contains(selectedCharacter)) {
-                // 保留當前選擇
-                _loadCharacterData(selectedCharacter!);
-              } else if (characters.isNotEmpty) {
-                // 選取第一個
-                selectedCharacterIndex = 0;
-                selectedCharacter = characters[0];
-                _loadCharacterData(selectedCharacter!);
-              } else {
-                _clearAllFields();
-              }
-            });
-          }
-        });
   }
 
   @override
@@ -1422,7 +1439,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _debounceTimer!.cancel();
       _saveCurrentCharacterData();
     }
-    _characterDataSubscription?.close();
     _tabController.dispose();
     _newCharacterController.dispose();
 
@@ -1441,6 +1457,18 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(characterDataProvider);
+    _hydrateInitialCharacterDataIfNeeded();
+    ref.listen<Map<String, CharacterEntryData>>(characterDataProvider, (
+      previous,
+      next,
+    ) {
+      if (!mounted || _isLoading) {
+        return;
+      }
+      _syncSelectionFromProviderIfNeeded(next);
+    });
+
     return Column(
       children: [
         // Main Content
@@ -1558,42 +1586,36 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   void _moveCharacter(int oldIndex, int newIndex) {
+    final currentData = characterData;
+    if (oldIndex < 0 || oldIndex >= currentData.length) {
+      return;
+    }
+
+    final boundedNewIndex = newIndex.clamp(0, currentData.length - 1);
+    if (oldIndex == boundedNewIndex) {
+      return;
+    }
+
+    final orderedNames = currentData.keys.toList(growable: true);
+    final movedName = orderedNames.removeAt(oldIndex);
+    orderedNames.insert(boundedNewIndex, movedName);
+
+    final reorderedData = <String, CharacterEntryData>{};
+    for (final name in orderedNames) {
+      final entry = currentData[name];
+      if (entry != null) {
+        reorderedData[name] = CharacterCodec.copyCharacterEntry(entry);
+      }
+    }
+
+    _characterNotifier.setCharacterData(reorderedData);
+    _emitCharacterDataChanged();
+
     setState(() {
-      final item = characters.removeAt(oldIndex);
-      characters.insert(newIndex, item);
-
-      // Update Selection
-      if (selectedCharacterIndex == oldIndex) {
-        selectedCharacterIndex = newIndex;
-      } else if (selectedCharacterIndex != null) {
-        if (oldIndex < selectedCharacterIndex! &&
-            newIndex >= selectedCharacterIndex!) {
-          selectedCharacterIndex = selectedCharacterIndex! - 1;
-        } else if (oldIndex > selectedCharacterIndex! &&
-            newIndex <= selectedCharacterIndex!) {
-          selectedCharacterIndex = selectedCharacterIndex! + 1;
-        }
+      if (selectedCharacter != null) {
+        selectedCharacterIndex = orderedNames.indexOf(selectedCharacter!);
       }
-
-      // Reorder Map to match List order
-      final newMap = <String, CharacterEntryData>{};
-      for (final name in characters) {
-        if (characterData.containsKey(name)) {
-          newMap[name] = CharacterCodec.copyCharacterEntry(
-            characterData[name]!,
-          );
-        }
-      }
-      characterData = newMap;
     });
-
-    // 這裡直接通知更新而不是透過 _markAsModified，
-    // 因為位置變更應該立即生效，不需要等 Debounce (Debounce 是為了保存文字輸入)
-    // 當然如果要統一也可以用 _saveCurrentCharacterData
-
-    // 但 _saveCurrentCharacterData 會讀取當前控制器的值覆蓋回來，
-    // 如果剛好在輸入中這是期望的。
-    _markAsModified();
   }
 
   Widget _buildCharacterEditSection() {
@@ -2488,23 +2510,17 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     data["fearItemList"] = fearItemList;
     data["familiarItemList"] = familiarItemList;
 
-    final nextCharacterData = CharacterCodec.copyCharacterDataMap(
-      characterData,
-    );
-    nextCharacterData[selectedCharacter!] = CharacterEntryData.fromLegacyMap(
-      data,
-      fallbackName: selectedCharacter,
+    final didUpdate = _characterNotifier.setCharacterEntry(
+      name: selectedCharacter!,
+      entry: CharacterEntryData.fromLegacyMap(
+        data,
+        fallbackName: selectedCharacter,
+      ),
     );
 
-    characterData = nextCharacterData;
-
-    // 寫入提供者並通知外部。標記本地提交，避免立刻被 provider 回流重載輸入框。
-    _isCommittingLocalChange = true;
-    ref
-        .read(characterDataProvider.notifier)
-        .updateCharacterData((_) => nextCharacterData);
-    widget.onDataChanged?.call(nextCharacterData);
-    _isCommittingLocalChange = false;
+    if (didUpdate) {
+      _emitCharacterDataChanged();
+    }
   }
 
   List<String> _readStringList(Map<String, dynamic> data, String key) {
@@ -2731,23 +2747,46 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return;
     }
 
-    setState(() {
-      final oldName = selectedCharacter!;
+    final oldName = selectedCharacter!;
+    if (oldName == trimmedName) {
+      return;
+    }
 
-      // 更新列表中的角色名稱
-      characters[selectedCharacterIndex!] = trimmedName;
+    final currentData = characterData;
+    final oldEntry = currentData[oldName];
+    if (oldEntry == null) {
+      return;
+    }
 
-      // 如果 characterData 中有舊名稱的資料,需要轉移到新名稱
-      if (characterData.containsKey(oldName)) {
-        final data = CharacterCodec.copyCharacterEntry(
-          characterData[oldName]!,
-        ).withTextField("name", trimmedName);
-        characterData.remove(oldName);
-        characterData[trimmedName] = data;
+    final orderedNames = currentData.keys.toList(growable: true);
+    final currentIndex = orderedNames.indexOf(oldName);
+    if (currentIndex < 0) {
+      return;
+    }
+    orderedNames[currentIndex] = trimmedName;
+
+    final renamedEntry = CharacterCodec.copyCharacterEntry(
+      oldEntry,
+    ).withTextField("name", trimmedName);
+    final nextCharacterData = <String, CharacterEntryData>{};
+    for (final name in orderedNames) {
+      if (name == trimmedName) {
+        nextCharacterData[name] = renamedEntry;
+        continue;
       }
 
-      // 更新當前選中的角色名稱
+      final entry = currentData[name];
+      if (entry != null) {
+        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(entry);
+      }
+    }
+
+    _characterNotifier.setCharacterData(nextCharacterData);
+    _emitCharacterDataChanged();
+
+    setState(() {
       selectedCharacter = trimmedName;
+      selectedCharacterIndex = currentIndex;
     });
   }
 
@@ -2767,22 +2806,27 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _saveCurrentCharacterData();
     }
 
+    final added = _characterNotifier.setCharacterEntry(
+      name: name,
+      entry: CharacterEntryData.withName(name),
+    );
+    if (!added) {
+      return;
+    }
+    _emitCharacterDataChanged();
+
     setState(() {
-      characters.add(name);
-
-      // 初始化新角色資料並通知更新
-      characterData[name] = CharacterEntryData.withName(name);
-      widget.onDataChanged?.call(
-        CharacterCodec.copyCharacterDataMap(characterData),
-      );
-
       _newCharacterController.clear();
-      // 自動選取新增的角色
-      _selectCharacter(characters.length - 1);
+      selectedCharacter = name;
+      selectedCharacterIndex = characters.indexOf(name);
+      _loadCharacterData(name);
     });
   }
 
   void _deleteCharacter(int index) {
+    if (index < 0 || index >= characters.length) {
+      return;
+    }
     final characterName = characters[index];
 
     // 確保現有更動被儲存
@@ -2790,24 +2834,29 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _saveCurrentCharacterData();
     }
 
+    final removed = _characterNotifier.removeCharacterEntry(characterName);
+    if (!removed) {
+      return;
+    }
+    _emitCharacterDataChanged();
+
+    final nextCharacters = characters;
+
     setState(() {
-      characters.removeAt(index);
-      characterData.remove(characterName);
-
-      // 通知更新
-      widget.onDataChanged?.call(
-        CharacterCodec.copyCharacterDataMap(characterData),
-      );
-
-      // 如果刪除的是當前選中的角色
-      if (selectedCharacterIndex == index) {
+      if (nextCharacters.isEmpty) {
         selectedCharacterIndex = null;
         selectedCharacter = null;
         _clearAllFields();
-      } else if (selectedCharacterIndex != null &&
-          selectedCharacterIndex! > index) {
-        // 調整索引
-        selectedCharacterIndex = selectedCharacterIndex! - 1;
+        return;
+      }
+
+      if (selectedCharacter == characterName) {
+        final nextIndex = index.clamp(0, nextCharacters.length - 1);
+        selectedCharacterIndex = nextIndex;
+        selectedCharacter = nextCharacters[nextIndex];
+        _loadCharacterData(selectedCharacter!);
+      } else if (selectedCharacter != null) {
+        selectedCharacterIndex = nextCharacters.indexOf(selectedCharacter!);
       }
     });
   }

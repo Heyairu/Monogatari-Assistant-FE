@@ -115,10 +115,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   bool _isLoading = true;
   String? _loadError;
 
-  List<GlossaryCategory> get _categoryTree =>
-    ref.read(glossaryStateProvider).categoryTree;
-  Map<String, GlossaryEntry> get _entryIndex =>
-    ref.read(glossaryStateProvider).entryIndex;
+  List<GlossaryCategory> _readCategoryTree() =>
+      ref.read(glossaryStateProvider.select((state) => state.categoryTree));
+  Map<String, GlossaryEntry> _readEntryIndex() =>
+      ref.read(glossaryStateProvider.select((state) => state.entryIndex));
   GlossaryStateNotifier get _glossaryNotifier =>
     ref.read(glossaryStateProvider.notifier);
 
@@ -134,9 +134,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   TextEditingController? _categoryRenameController;
   final Set<String> _expandedCategoryIds = <String>{};
 
-  @override
-  void initState() {
-    super.initState();
+  void _bootstrapFromProviderState() {
     final initialState = ref.read(glossaryStateProvider);
     if (initialState.categoryTree.isNotEmpty ||
         initialState.entryIndex.isNotEmpty) {
@@ -151,6 +149,17 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     } else {
       unawaited(_loadGlossary());
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _bootstrapFromProviderState();
+    });
   }
 
   @override
@@ -356,8 +365,12 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return null;
   }
 
-  bool _isDescendantCategory(String sourceId, String targetId) {
-    final GlossaryCategory? source = _findCategoryById(sourceId, _categoryTree);
+  bool _isDescendantCategory(
+    String sourceId,
+    String targetId,
+    List<GlossaryCategory> categoryTree,
+  ) {
+    final GlossaryCategory? source = _findCategoryById(sourceId, categoryTree);
     if (source == null) return false;
 
     bool walk(GlossaryCategory node) {
@@ -402,7 +415,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
   }
 
-  List<_VisibleCategoryRow> _collectVisibleCategories() {
+  List<_VisibleCategoryRow> _collectVisibleCategories(
+    List<GlossaryCategory> categoryTree,
+  ) {
     final List<_VisibleCategoryRow> rows = [];
 
     void walk(List<GlossaryCategory> nodes, int depth) {
@@ -415,7 +430,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       }
     }
 
-    walk(_categoryTree, 0);
+    walk(categoryTree, 0);
     return rows;
   }
 
@@ -459,10 +474,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return total;
   }
 
-  String _categoryName(String categoryId) {
+  String _categoryName(String categoryId, List<GlossaryCategory> categoryTree) {
     final GlossaryCategory? category = _findCategoryById(
       categoryId,
-      _categoryTree,
+      categoryTree,
     );
     return category?.name ?? "未知類別";
   }
@@ -639,10 +654,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   List<GlossaryCategory> _buildExportTreeForSelectedCategory(
     String categoryId,
+    List<GlossaryCategory> categoryTree,
   ) {
     final List<GlossaryCategory>? path = _findCategoryPathById(
       categoryId,
-      _categoryTree,
+      categoryTree,
     );
     if (path == null || path.isEmpty) {
       return [];
@@ -670,9 +686,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return refs;
   }
 
-  Map<String, GlossaryEntry> _collectPrimaryEntries() {
+  Map<String, GlossaryEntry> _collectPrimaryEntries(
+    Map<String, GlossaryEntry> entryIndex,
+  ) {
     final Map<String, GlossaryEntry> result = {};
-    for (final MapEntry<String, GlossaryEntry> entry in _entryIndex.entries) {
+    for (final MapEntry<String, GlossaryEntry> entry in entryIndex.entries) {
       if (entry.key == entry.value.id) {
         result[entry.key] = entry.value;
       }
@@ -691,7 +709,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     required List<GlossaryCategory> exportTree,
   }) async {
     final Set<String> refs = _collectEntryIdsFromTree(exportTree);
-    final Map<String, GlossaryEntry> primaryEntries = _collectPrimaryEntries();
+    final Map<String, GlossaryEntry> primaryEntries = _collectPrimaryEntries(
+      _readEntryIndex(),
+    );
 
     final Map<String, dynamic> payload = {
       "version": 1,
@@ -742,9 +762,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   }
 
   Future<void> _exportAllGlossary() async {
+    final List<GlossaryCategory> categoryTree = _readCategoryTree();
     await _exportGlossaryData(
       defaultName: "glossary_all.json",
-      exportTree: _categoryTree.map(_copyCategoryNode).toList(),
+      exportTree: categoryTree.map(_copyCategoryNode).toList(),
     );
   }
 
@@ -757,8 +778,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       return;
     }
 
+    final List<GlossaryCategory> categoryTree = _readCategoryTree();
+
     final List<GlossaryCategory> exportTree =
-        _buildExportTreeForSelectedCategory(_selectedCategoryId!);
+        _buildExportTreeForSelectedCategory(_selectedCategoryId!, categoryTree);
     if (exportTree.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -771,7 +794,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
 
     final String categoryName = _sanitizeFileNamePart(
-      _categoryName(_selectedCategoryId!),
+      _categoryName(_selectedCategoryId!, categoryTree),
     );
     await _exportGlossaryData(
       defaultName: "glossary_$categoryName.json",
@@ -782,12 +805,14 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   _GlossaryImportPreviewSummary _buildImportPreviewSummary(
     _GlossaryDecoded imported,
   ) {
-    final List<GlossaryCategory> previewTree = _categoryTree
+    final List<GlossaryCategory> categoryTree = _readCategoryTree();
+    final Map<String, GlossaryEntry> entryIndex = _readEntryIndex();
+    final List<GlossaryCategory> previewTree = categoryTree
         .map(_copyCategoryNode)
         .toList();
     final Map<String, String> termToResolvedId = {
       for (final MapEntry<String, GlossaryEntry> entry
-          in _collectPrimaryEntries().entries)
+          in _collectPrimaryEntries(entryIndex).entries)
         _normalizeTerm(entry.value.term): entry.key,
     };
 
@@ -975,9 +1000,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     int reusedEntryCount = 0;
     int linkedEntryCount = 0;
 
-    final List<GlossaryCategory> nextTree = _copyCategoryTree(_categoryTree);
+    final List<GlossaryCategory> nextTree = _copyCategoryTree(
+      _readCategoryTree(),
+    );
     final HashMap<String, GlossaryEntry> nextEntryIndex = _copyEntryIndex(
-      _entryIndex,
+      _readEntryIndex(),
     );
 
     GlossaryEntry cloneEntry(GlossaryEntry source, String newId) {
@@ -1089,14 +1116,17 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       _submitEditingCategory();
     }
 
+    final List<GlossaryCategory> categoryTree = _readCategoryTree();
+    final Map<String, GlossaryEntry> entryIndex = _readEntryIndex();
+
     final List<_CategoryEntryRef> refs = _collectEntryRefs(
       categoryId,
-      _categoryTree,
+      categoryTree,
     );
 
     String? nextEntryId;
     for (final _CategoryEntryRef ref in refs) {
-      if (_entryIndex.containsKey(ref.entryId)) {
+      if (entryIndex.containsKey(ref.entryId)) {
         nextEntryId = ref.entryId;
         break;
       }
@@ -1147,7 +1177,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   void _startEditingCategory(String categoryId) {
     final GlossaryCategory? category = _findCategoryById(
       categoryId,
-      _categoryTree,
+      _readCategoryTree(),
     );
     if (category == null) return;
 
@@ -1187,7 +1217,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   Future<void> _deleteCategory(String categoryId) async {
     final GlossaryCategory? category = _findCategoryById(
       categoryId,
-      _categoryTree,
+      _readCategoryTree(),
     );
     if (category == null) return;
 
@@ -1240,13 +1270,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   }
 
   Future<void> _removeEntryFromCategory(_CategoryEntryRef entryRef) async {
-    final GlossaryEntry? entry = _entryIndex[entryRef.entryId];
+    final GlossaryEntry? entry = _readEntryIndex()[entryRef.entryId];
     if (entry == null) return;
+
+    final List<GlossaryCategory> categoryTree = _readCategoryTree();
 
     final bool confirmed = await _showConfirmDialog(
       title: "移除詞條",
       message:
-          "確定要從「${_categoryName(entryRef.sourceCategoryId)}」移除「${entry.term}」嗎？",
+          "確定要從「${_categoryName(entryRef.sourceCategoryId, categoryTree)}」移除「${entry.term}」嗎？",
     );
     if (!mounted) return;
     if (!confirmed) return;
@@ -1282,7 +1314,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   GlossaryEntry? get _selectedEntry {
     if (_selectedEntryId == null) return null;
-    return _entryIndex[_selectedEntryId!];
+    return _readEntryIndex()[_selectedEntryId!];
   }
 
   void _updateTerm(String value) {
@@ -1467,9 +1499,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  Widget _buildCategoryTreeCard() {
+  Widget _buildCategoryTreeCard(List<GlossaryCategory> categoryTree) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<_VisibleCategoryRow> rows = _collectVisibleCategories();
+    final List<_VisibleCategoryRow> rows = _collectVisibleCategories(
+      categoryTree,
+    );
     final TextStyle menuTextStyle =
         Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
 
@@ -1549,7 +1583,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               Text("尚無詞語類別", style: Theme.of(context).textTheme.bodyMedium)
             else
               Column(
-                children: rows.map((row) => _buildCategoryRow(row)).toList(),
+                children: rows
+                    .map((row) => _buildCategoryRow(row, categoryTree))
+                    .toList(),
               ),
           ],
         ),
@@ -1557,7 +1593,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  Widget _buildCategoryRow(_VisibleCategoryRow row) {
+  Widget _buildCategoryRow(
+    _VisibleCategoryRow row,
+    List<GlossaryCategory> categoryTree,
+  ) {
     final GlossaryCategory category = row.category;
     final bool isSelected = _selectedCategoryId == category.id;
     final bool hasChildren = category.children.isNotEmpty;
@@ -1658,7 +1697,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       isThisDragging: _draggingCategoryId == category.id,
       isDragForbidden:
           _draggingCategoryId != null &&
-          _isDescendantCategory(_draggingCategoryId!, category.id),
+          _isDescendantCategory(_draggingCategoryId!, category.id, categoryTree),
       onClicked: () => _selectCategory(category.id),
       onDragStarted: () {
         if (_editingCategoryId != null) {
@@ -1682,7 +1721,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       onWillAccept: (data, position) {
         if (data is _GlossaryCategoryDragData) {
           if (data.categoryId == category.id) return false;
-          if (_isDescendantCategory(data.categoryId, category.id)) return false;
+          if (_isDescendantCategory(data.categoryId, category.id, categoryTree)) {
+            return false;
+          }
           return true;
         }
         if (data is _GlossaryEntryDragData) {
@@ -1740,7 +1781,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  Widget _buildEntryListCard() {
+  Widget _buildEntryListCard(
+    List<GlossaryCategory> categoryTree,
+    Map<String, GlossaryEntry> entryIndex,
+  ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
     if (_selectedCategoryId == null) {
@@ -1763,10 +1807,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     final List<_CategoryEntryRef> refs = _collectEntryRefs(
       _selectedCategoryId!,
-      _categoryTree,
+      categoryTree,
     );
     final List<_CategoryEntryRef> visibleRefs = refs
-        .where((ref) => _entryIndex.containsKey(ref.entryId))
+        .where((ref) => entryIndex.containsKey(ref.entryId))
         .toList();
 
     return Card(
@@ -1796,7 +1840,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                           .map(
                             (ref) => Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: _buildEntryRow(ref),
+                              child: _buildEntryRow(
+                                ref,
+                                categoryTree,
+                                entryIndex,
+                              ),
                             ),
                           )
                           .toList(),
@@ -1815,9 +1863,13 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  Widget _buildEntryRow(_CategoryEntryRef ref) {
+  Widget _buildEntryRow(
+    _CategoryEntryRef ref,
+    List<GlossaryCategory> categoryTree,
+    Map<String, GlossaryEntry> entryIndex,
+  ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final GlossaryEntry? entry = _entryIndex[ref.entryId];
+    final GlossaryEntry? entry = entryIndex[ref.entryId];
     if (entry == null) {
       return const SizedBox.shrink();
     }
@@ -1863,7 +1915,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           Text(
             ref.isLocal
                 ? "來源：本目錄"
-                : "來源：子目錄 ${_categoryName(ref.sourceCategoryId)}",
+                : "來源：子目錄 ${_categoryName(ref.sourceCategoryId, categoryTree)}",
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -1917,7 +1969,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
         final GlossaryCategory? targetCategory = _findCategoryById(
           ref.sourceCategoryId,
-          _categoryTree,
+          categoryTree,
         );
         if (targetCategory == null) return;
 
@@ -1936,7 +1988,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         );
 
         if (moved) {
-          final String destination = _categoryName(ref.sourceCategoryId);
+          final String destination = _categoryName(
+            ref.sourceCategoryId,
+            categoryTree,
+          );
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("「${data.entryTerm}」已移動到「$destination」"),
@@ -1952,9 +2007,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  Widget _buildEntryEditorCard() {
+  Widget _buildEntryEditorCard(Map<String, GlossaryEntry> entryIndex) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final GlossaryEntry? selectedEntry = _selectedEntry;
+    final GlossaryEntry? selectedEntry = _selectedEntryId == null
+        ? null
+        : entryIndex[_selectedEntryId!];
 
     return Card(
       elevation: 0,
@@ -2088,7 +2145,14 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
-    ref.watch(glossaryStateProvider);
+    final List<GlossaryCategory> categoryTree = ref.watch(
+      glossaryStateProvider.select(
+        (glossaryState) => glossaryState.categoryTree,
+      ),
+    );
+    final Map<String, GlossaryEntry> entryIndex = ref.watch(
+      glossaryStateProvider.select((glossaryState) => glossaryState.entryIndex),
+    );
 
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -2139,11 +2203,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             const SizedBox(height: 32),
             _buildWarningCard(),
             const SizedBox(height: 20),
-            _buildCategoryTreeCard(),
+            _buildCategoryTreeCard(categoryTree),
             const SizedBox(height: 12),
-            _buildEntryListCard(),
+            _buildEntryListCard(categoryTree, entryIndex),
             const SizedBox(height: 12),
-            _buildEntryEditorCard(),
+            _buildEntryEditorCard(entryIndex),
           ],
         ),
       ),

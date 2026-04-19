@@ -244,6 +244,18 @@ class ChapterSelectionView extends ConsumerStatefulWidget {
       _ChapterSelectionViewState();
 }
 
+class _SelectionSnapshot {
+  final String? segmentID;
+  final String? chapterID;
+  final int? segmentIndex;
+
+  const _SelectionSnapshot({
+    required this.segmentID,
+    required this.chapterID,
+    required this.segmentIndex,
+  });
+}
+
 class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   List<SegmentData> get _segments => ref.read(segmentsDataProvider);
   SegmentsDataNotifier get _segmentsNotifier =>
@@ -284,31 +296,48 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
   }
 
-  WordCountMode get _wordCountMode {
-    return ref.read(settingsStateProvider).valueOrNull?.wordCountMode ??
-        WordCountMode.wordsAndCharacters;
-  }
-
-  int get _totalWordCount {
-    return _segments.fold(
+  int _totalWordCountForMode(
+    List<SegmentData> segments,
+    WordCountMode wordCountMode,
+  ) {
+    return segments.fold(
       0,
       (sum, seg) =>
           sum +
-          seg.chapters.fold(0, (s, c) => s + c.getWordCount(_wordCountMode)),
+          seg.chapters.fold(0, (s, c) => s + c.getWordCount(wordCountMode)),
     );
   }
 
-  String? get _selectedSegmentID =>
-      ref.read(editorSelectionProvider).selectedSegID;
-
-  String? get _selectedChapterID =>
-      ref.read(editorSelectionProvider).selectedChapID;
-
   String get _contentText => ref.read(editorContentProvider);
 
-  int? get _selectedSegmentIndex {
-    if (_selectedSegmentID == null) return null;
-    return _segments.indexWhere((seg) => seg.segmentUUID == _selectedSegmentID);
+  _SelectionSnapshot _selectionSnapshotFromValues({
+    required List<SegmentData> segments,
+    required String? segmentID,
+    required String? chapterID,
+  }) {
+    if (segmentID == null) {
+      return _SelectionSnapshot(
+        segmentID: segmentID,
+        chapterID: chapterID,
+        segmentIndex: null,
+      );
+    }
+
+    final int idx = segments.indexWhere((seg) => seg.segmentUUID == segmentID);
+    return _SelectionSnapshot(
+      segmentID: segmentID,
+      chapterID: chapterID,
+      segmentIndex: idx >= 0 ? idx : null,
+    );
+  }
+
+  _SelectionSnapshot _readSelectionSnapshot([List<SegmentData>? segments]) {
+    final selectionState = ref.read(editorSelectionProvider);
+    return _selectionSnapshotFromValues(
+      segments: segments ?? _segments,
+      segmentID: selectionState.selectedSegID,
+      chapterID: selectionState.selectedChapID,
+    );
   }
 
   // MARK: - 生命週期方法
@@ -523,9 +552,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // MARK: - Helper：保存/選取
 
-  void _commitCurrentEditorToSelectedChapter() {
-    final si = _selectedSegmentIndex;
-    final cid = _selectedChapterID;
+  void _commitCurrentEditorToSelectedChapter(_SelectionSnapshot selection) {
+    final si = selection.segmentIndex;
+    final cid = selection.chapterID;
     if (si != null && cid != null) {
       _segmentsNotifier.updateChapterContent(
         segmentID: _segments[si].segmentUUID,
@@ -545,9 +574,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     ref.read(editorContentProvider.notifier).setContent(value);
   }
 
-  void _selectSegment(String segID) {
-    _commitCurrentEditorToSelectedChapter();
-    _setSelection(segmentID: segID, chapterID: _selectedChapterID);
+  void _applySegmentSelection(String segID, {required String? previousChapterID}) {
+    _setSelection(segmentID: segID, chapterID: previousChapterID);
 
     final si = _segments.indexWhere((seg) => seg.segmentUUID == segID);
     if (si >= 0) {
@@ -562,8 +590,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
   }
 
-  void _selectChapter(int segIdx, String chapterID) {
-    _commitCurrentEditorToSelectedChapter();
+  void _applyChapterSelection(int segIdx, String chapterID) {
     _setSelection(
       segmentID: _segments[segIdx].segmentUUID,
       chapterID: chapterID,
@@ -577,14 +604,28 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
   }
 
+  void _selectSegment(String segID, _SelectionSnapshot selection) {
+    _commitCurrentEditorToSelectedChapter(selection);
+    _applySegmentSelection(segID, previousChapterID: selection.chapterID);
+  }
+
+  void _selectChapter(
+    int segIdx,
+    String chapterID,
+    _SelectionSnapshot selection,
+  ) {
+    _commitCurrentEditorToSelectedChapter(selection);
+    _applyChapterSelection(segIdx, chapterID);
+  }
+
   void _notifySegmentsChanged() {
     widget.onChanged?.call();
   }
 
   // MARK: - 新增方法
 
-  void _addSegment(String name) {
-    _commitCurrentEditorToSelectedChapter();
+  void _addSegment(String name, _SelectionSnapshot selection) {
+    _commitCurrentEditorToSelectedChapter(selection);
 
     name = name.trim();
     final finalName = name.isEmpty ? "Seg ${_segments.length + 1}" : name;
@@ -600,11 +641,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _appendSegment(newSegment);
     _notifySegmentsChanged();
 
-    _selectSegment(newSegment.segmentUUID);
+    _applySegmentSelection(
+      newSegment.segmentUUID,
+      previousChapterID: selection.chapterID,
+    );
   }
 
-  void _addChapter(int segIdx, String name) {
-    _commitCurrentEditorToSelectedChapter();
+  void _addChapter(int segIdx, String name, _SelectionSnapshot selection) {
+    _commitCurrentEditorToSelectedChapter(selection);
 
     name = name.trim();
     final finalName = name.isEmpty
@@ -615,12 +659,12 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _appendChapterToSegment(segIdx, newChapter);
     _notifySegmentsChanged();
 
-    _selectChapter(segIdx, newChapter.chapterUUID);
+    _applyChapterSelection(segIdx, newChapter.chapterUUID);
   }
 
   // MARK: - 刪除方法
 
-  void _deleteSegment(String segmentID) {
+  void _deleteSegment(String segmentID, _SelectionSnapshot selection) {
     final segIdx = _segments.indexWhere((seg) => seg.segmentUUID == segmentID);
     if (segIdx < 0 || _segments.length <= 1) return;
 
@@ -629,8 +673,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     if (remainingChapters <= 0) return;
 
     // 如果要刪除的是當前選中的區段，先保存編輯器內容
-    if (_selectedSegmentID == segmentID) {
-      _commitCurrentEditorToSelectedChapter();
+    if (selection.segmentID == segmentID) {
+      _commitCurrentEditorToSelectedChapter(selection);
     }
 
     _removeSegmentAt(segIdx);
@@ -641,7 +685,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       final firstSeg = _segments.first;
       _setSelection(
         segmentID: firstSeg.segmentUUID,
-        chapterID: _selectedChapterID,
+        chapterID: selection.chapterID,
       );
       final firstChapter = firstSeg.chapters.isNotEmpty
           ? firstSeg.chapters.first
@@ -662,7 +706,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
   }
 
-  void _deleteChapter(int segIdx, String chapterID) {
+  void _deleteChapter(
+    int segIdx,
+    String chapterID,
+    _SelectionSnapshot selection,
+  ) {
     if (segIdx < 0 || segIdx >= _segments.length) return;
 
     final chapterIdx = _segments[segIdx].chapters.indexWhere(
@@ -671,8 +719,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     if (chapterIdx < 0 || _totalChaptersCount <= 1) return;
 
     // 如果要刪除的是當前選中的章節，先保存編輯器內容
-    if (_selectedChapterID == chapterID) {
-      _commitCurrentEditorToSelectedChapter();
+    if (selection.chapterID == chapterID) {
+      _commitCurrentEditorToSelectedChapter(selection);
     }
 
     _removeChapterFromSegment(segIdx, chapterIdx);
@@ -701,7 +749,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           final firstSeg = _segments.first;
           _setSelection(
             segmentID: firstSeg.segmentUUID,
-            chapterID: _selectedChapterID,
+            chapterID: selection.chapterID,
           );
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
@@ -722,11 +770,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         }
 
         // 如果刪除的區段是當前選中的區段，重新選擇
-        if (_selectedSegmentID == removedSegID && _segments.isNotEmpty) {
+        if (selection.segmentID == removedSegID && _segments.isNotEmpty) {
           final firstSeg = _segments.first;
           _setSelection(
             segmentID: firstSeg.segmentUUID,
-            chapterID: _selectedChapterID,
+            chapterID: selection.chapterID,
           );
           final firstChapter = firstSeg.chapters.isNotEmpty
               ? firstSeg.chapters.first
@@ -747,20 +795,29 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // MARK: - 移動/拖放方法
 
-  void _moveSegmentByDrag(int fromIndex, int toIndex) {
+  void _moveSegmentByDrag(
+    int fromIndex,
+    int toIndex,
+    _SelectionSnapshot selection,
+  ) {
     if (fromIndex == toIndex) return;
 
-    _commitCurrentEditorToSelectedChapter();
+    _commitCurrentEditorToSelectedChapter(selection);
 
     _segmentsNotifier.moveSegment(fromIndex: fromIndex, toIndex: toIndex);
     _notifySegmentsChanged();
   }
 
-  void _moveChapterByDrag(int segIdx, int fromIndex, int toIndex) {
+  void _moveChapterByDrag(
+    int segIdx,
+    int fromIndex,
+    int toIndex,
+    _SelectionSnapshot selection,
+  ) {
     if (segIdx < 0 || segIdx >= _segments.length) return;
     if (fromIndex == toIndex) return;
 
-    _commitCurrentEditorToSelectedChapter();
+    _commitCurrentEditorToSelectedChapter(selection);
 
     _segmentsNotifier.moveChapterWithinSegment(
       segmentID: _segments[segIdx].segmentUUID,
@@ -770,8 +827,12 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _notifySegmentsChanged();
   }
 
-  void _moveChapterToSegment(String chapterUUID, String toSegmentUUID) {
-    _commitCurrentEditorToSelectedChapter();
+  void _moveChapterToSegment(
+    String chapterUUID,
+    String toSegmentUUID,
+    _SelectionSnapshot selection,
+  ) {
+    _commitCurrentEditorToSelectedChapter(selection);
 
     // 找到來源章節
     int? sourceSegIdx;
@@ -822,7 +883,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       _segmentsNotifier.removeSegmentById(sourceSegID);
 
       // 如果刪除的區段是當前選中的區段，重新選擇
-      if (_selectedSegmentID == sourceSegID) {
+      if (selection.segmentID == sourceSegID) {
         final firstSeg = _segments.firstWhere(
           (seg) => seg.segmentUUID == toSegmentUUID,
           orElse: () => _segments.isNotEmpty ? _segments.first : SegmentData(),
@@ -842,9 +903,31 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(settingsStateProvider);
-    ref.watch(editorSelectionProvider);
-    ref.watch(segmentsDataProvider);
+    final wordCountMode = ref.watch(
+      settingsStateProvider.select(
+        (settingsState) =>
+            settingsState.valueOrNull?.wordCountMode ??
+            WordCountMode.wordsAndCharacters,
+      ),
+    );
+    final selectedSegmentID = ref.watch(
+      editorSelectionProvider.select(
+        (selectionState) => selectionState.selectedSegID,
+      ),
+    );
+    final selectedChapterID = ref.watch(
+      editorSelectionProvider.select(
+        (selectionState) => selectionState.selectedChapID,
+      ),
+    );
+    final segments = ref.watch(
+      segmentsDataProvider.select((segmentsState) => segmentsState),
+    );
+    final selectionSnapshot = _selectionSnapshotFromValues(
+      segments: segments,
+      segmentID: selectedSegmentID,
+      chapterID: selectedChapterID,
+    );
 
     // 初始化檢查（類似 SwiftUI 的 onAppear），但只執行一次
     if (!_hasPerformedInitialSetup) {
@@ -898,7 +981,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          "全書共 $_totalWordCount 字",
+                          "全書共 ${_totalWordCountForMode(segments, wordCountMode)} 字",
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ],
@@ -913,11 +996,19 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // 上方：區段列表
-                  _buildSegmentsList(),
+                  _buildSegmentsList(
+                    segments,
+                    wordCountMode,
+                    selectionSnapshot,
+                  ),
                   const SizedBox(height: 24),
 
                   // 下方：章節列表
-                  _buildChaptersList(),
+                  _buildChaptersList(
+                    segments,
+                    wordCountMode,
+                    selectionSnapshot,
+                  ),
                 ],
               ),
             ],
@@ -935,25 +1026,39 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
     _initializeIfEmpty();
 
-    if (_selectedSegmentID == null && _segments.isNotEmpty) {
+    var selection = _readSelectionSnapshot(_segments);
+
+    if ((selection.segmentID == null || selection.segmentIndex == null) &&
+        _segments.isNotEmpty) {
       _setSelection(
         segmentID: _segments.first.segmentUUID,
-        chapterID: _selectedChapterID,
+        chapterID: selection.chapterID,
+      );
+      selection = _SelectionSnapshot(
+        segmentID: _segments.first.segmentUUID,
+        chapterID: selection.chapterID,
+        segmentIndex: 0,
       );
     }
 
-    if (_selectedChapterID == null) {
-      final si = _selectedSegmentIndex;
+    if (selection.chapterID == null) {
+      final si = selection.segmentIndex;
       if (si != null && _segments[si].chapters.isNotEmpty) {
         _setSelection(
           segmentID: _segments[si].segmentUUID,
           chapterID: _segments[si].chapters.first.chapterUUID,
         );
+        selection = _SelectionSnapshot(
+          segmentID: _segments[si].segmentUUID,
+          chapterID: _segments[si].chapters.first.chapterUUID,
+          segmentIndex: si,
+        );
       }
     }
 
-    final si = _selectedSegmentIndex;
-    final cid = _selectedChapterID;
+    final resolvedSelection = _readSelectionSnapshot(_segments);
+    final si = resolvedSelection.segmentIndex;
+    final cid = resolvedSelection.chapterID;
     if (si != null && cid != null) {
       final ci = _segments[si].chapters.indexWhere(
         (ch) => ch.chapterUUID == cid,
@@ -971,7 +1076,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
   }
 
-  Widget _buildSegmentsList() {
+  Widget _buildSegmentsList(
+    List<SegmentData> segments,
+    WordCountMode wordCountMode,
+    _SelectionSnapshot selection,
+  ) {
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -998,11 +1107,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                 final dragData = details.data;
                 if (dragData.type == DragType.segment) {
                   final fromIndex = dragData.currentIndex;
-                  final toIndex = _segments.length - 1; // 移動到最後
+                  final toIndex = segments.length - 1; // 移動到最後
                   if (fromIndex >= 0 &&
-                      fromIndex < _segments.length &&
+                      fromIndex < segments.length &&
                       fromIndex != toIndex) {
-                    _moveSegmentByDrag(fromIndex, toIndex);
+                    _moveSegmentByDrag(fromIndex, toIndex, selection);
                   }
                 }
               },
@@ -1030,9 +1139,13 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                   ),
                   child: ListView.builder(
                     controller: _segmentListScrollController,
-                    itemCount: _segments.length,
-                    itemBuilder: (context, index) =>
-                        _buildSegmentItem(_segments[index], index),
+                    itemCount: segments.length,
+                    itemBuilder: (context, index) => _buildSegmentItem(
+                      segments[index],
+                      index,
+                      wordCountMode,
+                      selection,
+                    ),
                   ),
                 );
               },
@@ -1040,15 +1153,22 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             const SizedBox(height: 16),
 
             // 新增區段
-            AddItemInput(title: "區段", onAdd: _addSegment),
+            AddItemInput(
+              title: "區段",
+              onAdd: (name) => _addSegment(name, selection),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildChaptersList() {
-    final selectedSegIdx = _selectedSegmentIndex;
+  Widget _buildChaptersList(
+    List<SegmentData> segments,
+    WordCountMode wordCountMode,
+    _SelectionSnapshot selection,
+  ) {
+    final selectedSegIdx = selection.segmentIndex;
 
     return Card(
       elevation: 0,
@@ -1095,7 +1215,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                     dragData.type == DragType.chapter) {
                   _moveChapterToSegment(
                     dragData.id,
-                    _segments[selectedSegIdx].segmentUUID,
+                    segments[selectedSegIdx].segmentUUID,
+                    selection,
                   );
                 }
               },
@@ -1124,11 +1245,13 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                   child: selectedSegIdx != null && selectedSegIdx >= 0
                       ? ListView.builder(
                           controller: _chapterListScrollController,
-                          itemCount: _segments[selectedSegIdx].chapters.length,
+                          itemCount: segments[selectedSegIdx].chapters.length,
                           itemBuilder: (context, index) => _buildChapterItem(
-                            _segments[selectedSegIdx].chapters[index],
+                            segments[selectedSegIdx].chapters[index],
                             selectedSegIdx,
                             index,
+                            wordCountMode,
+                            selection,
                           ),
                         )
                       : Center(
@@ -1153,7 +1276,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               enabled: selectedSegIdx != null,
               onAdd: (val) {
                 if (selectedSegIdx != null) {
-                  _addChapter(selectedSegIdx, val);
+                  _addChapter(selectedSegIdx, val, selection);
                 }
               },
             ),
@@ -1224,8 +1347,13 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // MARK: - Row builders
 
-  Widget _buildSegmentItem(SegmentData segment, int index) {
-    final isSelected = _selectedSegmentID == segment.segmentUUID;
+  Widget _buildSegmentItem(
+    SegmentData segment,
+    int index,
+    WordCountMode wordCountMode,
+    _SelectionSnapshot selection,
+  ) {
+    final isSelected = selection.segmentID == segment.segmentUUID;
     final isEditing = _editingSegmentID == segment.segmentUUID;
 
     return DraggableCardNode<DragData>(
@@ -1272,7 +1400,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               ),
             ),
       subtitle: Text(
-        "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(_wordCountMode))} 字",
+        "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(wordCountMode))} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       leading: Icon(
@@ -1291,13 +1419,15 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: () {
-              if (_segments.length > 1) _deleteSegment(segment.segmentUUID);
+              if (_segments.length > 1) {
+                _deleteSegment(segment.segmentUUID, selection);
+              }
             },
             tooltip: "刪除此 Seg",
           ),
         ],
       ),
-      onClicked: () => _selectSegment(segment.segmentUUID),
+      onClicked: () => _selectSegment(segment.segmentUUID, selection),
 
       onDragStarted: () {
         setState(() {
@@ -1338,9 +1468,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           final fromIndex = data.currentIndex;
           if (fromIndex < toIndex) toIndex--;
 
-          _moveSegmentByDrag(fromIndex, toIndex);
+          _moveSegmentByDrag(fromIndex, toIndex, selection);
         } else if (data.type == DragType.chapter && pos == DropPosition.child) {
-          _moveChapterToSegment(data.id, segment.segmentUUID);
+          _moveChapterToSegment(data.id, segment.segmentUUID, selection);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("章節已移動到「${segment.segmentName}」"),
@@ -1352,8 +1482,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     );
   }
 
-  Widget _buildChapterItem(ChapterData chapter, int segIdx, int chapterIdx) {
-    final isSelected = _selectedChapterID == chapter.chapterUUID;
+  Widget _buildChapterItem(
+    ChapterData chapter,
+    int segIdx,
+    int chapterIdx,
+    WordCountMode wordCountMode,
+    _SelectionSnapshot selection,
+  ) {
+    final isSelected = selection.chapterID == chapter.chapterUUID;
     final isEditing = _editingChapterID == chapter.chapterUUID;
 
     return DraggableCardNode<DragData>(
@@ -1403,7 +1539,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               ),
             ),
       subtitle: Text(
-        "${chapter.getWordCount(_wordCountMode)} 字",
+        "${chapter.getWordCount(wordCountMode)} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
       leading: Icon(
@@ -1425,14 +1561,15 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             icon: const Icon(Icons.delete),
             color: Theme.of(context).colorScheme.error,
             onPressed: () {
-              if (_totalChaptersCount > 1)
-                _deleteChapter(segIdx, chapter.chapterUUID);
+              if (_totalChaptersCount > 1) {
+                _deleteChapter(segIdx, chapter.chapterUUID, selection);
+              }
             },
             tooltip: "刪除此章節",
           ),
         ],
       ),
-      onClicked: () => _selectChapter(segIdx, chapter.chapterUUID),
+      onClicked: () => _selectChapter(segIdx, chapter.chapterUUID, selection),
 
       onDragStarted: () {
         setState(() {
@@ -1471,7 +1608,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           final fromIndex = data.currentIndex;
           if (fromIndex < toIndex) toIndex--;
 
-          _moveChapterByDrag(segIdx, fromIndex, toIndex);
+          _moveChapterByDrag(segIdx, fromIndex, toIndex, selection);
         }
       },
     );

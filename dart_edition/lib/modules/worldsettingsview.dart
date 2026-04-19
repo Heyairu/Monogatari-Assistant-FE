@@ -301,7 +301,7 @@ class WorldSettingsView extends ConsumerStatefulWidget {
 }
 
 class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
-  List<LocationData> _locations = [];
+  List<LocationData> get _locations => ref.read(worldSettingsDataProvider);
   String? selectedNodeId;
   String? lastSelectedNodeId; // 記錄上次選取的節點
   String? editingNodeId;
@@ -311,14 +311,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   String selectedPresetName = "空白";
   String renamePresetText = "";
 
-  // 扁平化緩存列表
-  List<_FlatNode> _flatList = [];
-
   // 拖動狀態與游標資訊
   bool _isDragging = false;
   String? _draggingLocationId;
-  bool _isCommittingLocalChange = false;
-  ProviderSubscription<List<LocationData>>? _worldSettingsSubscription;
 
   // 控制器
   final TextEditingController tempKeyController = TextEditingController();
@@ -333,8 +328,6 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   @override
   void initState() {
     super.initState();
-    _locations = _copyLocations(ref.read(worldSettingsDataProvider));
-    _rebuildFlatList();
     tempKeyController.text = tempCustomKey;
     tempValController.text = tempCustomVal;
 
@@ -343,38 +336,23 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     locationNameController.addListener(_onNameChanged);
     locationTypeController.addListener(_onTypeChanged);
     locationNoteController.addListener(_onNoteChanged);
-
-    _worldSettingsSubscription = ref.listenManual<List<LocationData>>(
-      worldSettingsDataProvider,
-      (previous, next) {
-        if (_isCommittingLocalChange) {
-          return;
-        }
-
-        setState(() {
-          _locations = _copyLocations(next);
-          _rebuildFlatList();
-          _syncDetailControllers();
-        });
-      },
-    );
   }
 
-  void _rebuildFlatList() {
-    _flatList.clear();
+  List<_FlatNode> _buildFlatList(List<LocationData> locations) {
+    final flatList = <_FlatNode>[];
     void flatten(List<LocationData> nodes, int depth) {
       for (var node in nodes) {
-        _flatList.add(_FlatNode(node, depth));
+        flatList.add(_FlatNode(node, depth));
         flatten(node.child, depth + 1);
       }
     }
 
-    flatten(_locations, 0);
+    flatten(locations, 0);
+    return flatList;
   }
 
   @override
   void dispose() {
-    _worldSettingsSubscription?.close();
     locationNameController.removeListener(_onNameChanged);
     locationTypeController.removeListener(_onTypeChanged);
     locationNoteController.removeListener(_onNoteChanged);
@@ -390,7 +368,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _onNameChanged() {
-    final nodeId = selectedNodeId;
+    final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
     final location = _getLocation(nodeId, _locations);
     if (location == null || location.localName == locationNameController.text) {
@@ -404,7 +382,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _onTypeChanged() {
-    final nodeId = selectedNodeId;
+    final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
     final location = _getLocation(nodeId, _locations);
     if (location == null || location.localType == locationTypeController.text) {
@@ -418,7 +396,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _onNoteChanged() {
-    final nodeId = selectedNodeId;
+    final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
     final location = _getLocation(nodeId, _locations);
     if (location == null || location.note == locationNoteController.text) {
@@ -433,12 +411,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   void _notifyChange() {
     final snapshot = _copyLocations(_locations);
-    _isCommittingLocalChange = true;
-    ref
-        .read(worldSettingsDataProvider.notifier)
-        .updateWorldSettingsData((_) => snapshot);
     widget.onChanged?.call(snapshot);
-    _isCommittingLocalChange = false;
   }
 
   List<LocationData> _copyLocations(List<LocationData> source) {
@@ -449,42 +422,16 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     String id,
     LocationData Function(LocationData current) update,
   ) {
-    var changed = false;
-    setState(() {
-      final next = _copyLocations(_locations);
-      changed = _updateLocationByIdRecursive(id, next, update);
-      if (changed) {
-        _locations = next;
-        _rebuildFlatList();
-        _syncDetailControllers();
-      }
-    });
+    final changed = ref
+        .read(worldSettingsDataProvider.notifier)
+        .updateLocationById(id, update);
 
-    if (changed) {
-      _notifyChange();
+    if (!changed) {
+      return;
     }
-  }
 
-  bool _updateLocationByIdRecursive(
-    String id,
-    List<LocationData> nodes,
-    LocationData Function(LocationData current) update,
-  ) {
-    for (var index = 0; index < nodes.length; index++) {
-      final node = nodes[index];
-      if (node.id == id) {
-        final updated = update(node);
-        if (updated == node) {
-          return false;
-        }
-        nodes[index] = updated;
-        return true;
-      }
-      if (_updateLocationByIdRecursive(id, node.child, update)) {
-        return true;
-      }
-    }
-    return false;
+    _syncDetailControllers();
+    _notifyChange();
   }
 
   void _removeCustomValue(String locationId, int customValueIndex) {
@@ -564,7 +511,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
-    ref.watch(worldSettingsDataProvider);
+    final locations = ref.watch(worldSettingsDataProvider);
+    final flatList = _buildFlatList(locations);
     final viewportHeight = MediaQuery.sizeOf(context).height;
     const listMinHeight = 320.0;
     final listHeight = math.max(viewportHeight * 0.4, listMinHeight);
@@ -682,7 +630,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                           ),
                           child: Builder(
                             builder: (context) {
-                              if (_locations.isEmpty) {
+                              if (locations.isEmpty) {
                                 return Center(
                                   child: Text(
                                     "尚無地點，請新增第一個地點",
@@ -697,9 +645,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                                 controller: _treeScrollController,
                                 primary: false,
                                 padding: const EdgeInsets.all(8),
-                                itemCount: _flatList.length,
+                                itemCount: flatList.length,
                                 itemBuilder: (context, index) {
-                                  final item = _flatList[index];
+                                  final item = flatList[index];
                                   return _buildLocationRow(
                                     item.node,
                                     item.depth,
@@ -1436,115 +1384,54 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   // TreeView 操作
   void _addLocation(String name) {
-    name = name.trim();
-    if (name.isEmpty) return;
-
-    final parentId = selectedNodeId;
-    setState(() {
-      final next = _copyLocations(_locations);
-      if (parentId != null) {
-        _addChildRecursive(parentId, name, next);
-      } else {
-        next.add(LocationData(localName: name));
-      }
-
-      _locations = next;
-      _rebuildFlatList();
-    });
-    _notifyChange();
-  }
-
-  void _addChild(String parentId, String name) {
-    setState(() {
-      final next = _copyLocations(_locations);
-      _addChildRecursive(parentId, name, next);
-      _locations = next;
-      _rebuildFlatList();
-    });
-    _notifyChange();
-  }
-
-  void _addChildRecursive(
-    String parentId,
-    String name,
-    List<LocationData> locations,
-  ) {
-    for (final location in locations) {
-      if (location.id == parentId) {
-        location.child.add(LocationData(localName: name));
-        return;
-      }
-      _addChildRecursive(parentId, name, location.child);
+    final added = ref
+        .read(worldSettingsDataProvider.notifier)
+        .addLocation(name: name, parentId: selectedNodeId);
+    if (!added) {
+      return;
     }
+
+    _notifyChange();
   }
 
   void _renameNode(String id, String newName) {
-    setState(() {
-      final next = _copyLocations(_locations);
-      _renameNodeRecursive(id, newName, next);
-      _locations = next;
-      _rebuildFlatList();
-      _syncDetailControllers();
-    });
-    _notifyChange();
-  }
-
-  void _renameNodeRecursive(
-    String id,
-    String newName,
-    List<LocationData> locations,
-  ) {
-    for (var index = 0; index < locations.length; index++) {
-      final location = locations[index];
-      if (location.id == id) {
-        locations[index] = location.copyWith(localName: newName);
-        return;
-      }
-      _renameNodeRecursive(id, newName, location.child);
-    }
+    _updateLocationById(id, (current) => current.copyWith(localName: newName));
   }
 
   // MARK: - 拖動相關方法
 
-  // 檢查 targetId 是否為 sourceId 的後代
   bool _isDescendant(String sourceId, String targetId) {
-    bool checkDescendant(LocationData node) {
+    final sourceNode = _getLocation(sourceId, _locations);
+    if (sourceNode == null) {
+      return false;
+    }
+
+    bool walk(LocationData node) {
       if (node.id == targetId) {
         return true;
       }
-      for (var child in node.child) {
-        if (checkDescendant(child)) {
+      for (final child in node.child) {
+        if (walk(child)) {
           return true;
         }
       }
       return false;
     }
 
-    LocationData? sourceNode = _findLocationById(sourceId);
-    if (sourceNode == null) return false;
-
-    return checkDescendant(sourceNode);
-  }
-
-  // 查找節點
-  LocationData? _findLocationById(String id) {
-    LocationData? search(List<LocationData> nodes) {
-      for (var node in nodes) {
-        if (node.id == id) return node;
-        var found = search(node.child);
-        if (found != null) return found;
-      }
-      return null;
-    }
-
-    return search(_locations);
+    return walk(sourceNode);
   }
 
   // 移動節點到目標位置
   // position: "before" (排序至該項目上), "child" (設為副目錄), "after" (排序至該項目下)
   void _moveLocationTo(String sourceId, String targetId, String position) {
-    // 防止拖到自己或自己的後代
-    if (sourceId == targetId || _isDescendant(sourceId, targetId)) {
+    final moved = ref
+        .read(worldSettingsDataProvider.notifier)
+        .moveLocation(
+          sourceId: sourceId,
+          targetId: targetId,
+          position: position,
+        );
+    if (!moved) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("無法移動到自己或自己的後代節點"),
@@ -1554,116 +1441,30 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
-    setState(() {
-      final next = _copyLocations(_locations);
-
-      // 1. 找到並移除源節點
-      LocationData? sourceNode;
-
-      bool removeFromTree(List<LocationData> nodes) {
-        for (int i = 0; i < nodes.length; i++) {
-          if (nodes[i].id == sourceId) {
-            sourceNode = nodes[i];
-            nodes.removeAt(i);
-            return true;
-          }
-          if (removeFromTree(nodes[i].child)) {
-            return true;
-          }
-        }
-        return false;
-      }
-
-      removeFromTree(next);
-
-      if (sourceNode == null) return;
-
-      // 2. 根據 position 添加到目標位置
-      bool success = false;
-
-      if (position == "child") {
-        // 作為子節點添加
-        bool addAsChild(List<LocationData> nodes) {
-          for (var node in nodes) {
-            if (node.id == targetId) {
-              node.child.add(sourceNode!);
-              return true;
-            }
-            if (addAsChild(node.child)) {
-              return true;
-            }
-          }
-          return false;
-        }
-
-        success = addAsChild(next);
-      } else {
-        // before 或 after: 在同級列表中插入
-        bool insertInList(List<LocationData> nodes) {
-          for (int i = 0; i < nodes.length; i++) {
-            if (nodes[i].id == targetId) {
-              if (position == "before") {
-                nodes.insert(i, sourceNode!);
-              } else {
-                // after
-                nodes.insert(i + 1, sourceNode!);
-              }
-              return true;
-            }
-            if (insertInList(nodes[i].child)) {
-              return true;
-            }
-          }
-          return false;
-        }
-
-        success = insertInList(next);
-      }
-
-      if (!success) {
-        // 如果沒找到目標，恢復原節點
-        next.add(sourceNode!);
-      }
-
-      _locations = next;
-      _rebuildFlatList();
-    });
     _notifyChange();
   }
 
   void _deleteNode(String id) {
-    var removed = false;
-    setState(() {
-      final next = _copyLocations(_locations);
-      removed = _removeNodeRecursive(id, next);
-      if (!removed) {
-        return;
-      }
-
-      _locations = next;
-      if (selectedNodeId == id) {
-        selectedNodeId = null;
-      }
-      _rebuildFlatList();
-      _syncDetailControllers();
-    });
-
-    if (removed) {
-      _notifyChange();
+    final removed = ref
+        .read(worldSettingsDataProvider.notifier)
+        .removeLocationById(id);
+    if (!removed) {
+      return;
     }
-  }
 
-  bool _removeNodeRecursive(String id, List<LocationData> locations) {
-    for (int i = 0; i < locations.length; i++) {
-      if (locations[i].id == id) {
-        locations.removeAt(i);
-        return true;
-      }
-      if (_removeNodeRecursive(id, locations[i].child)) {
-        return true;
-      }
+    if (selectedNodeId == id || lastSelectedNodeId == id) {
+      setState(() {
+        if (selectedNodeId == id) {
+          selectedNodeId = null;
+        }
+        if (lastSelectedNodeId == id) {
+          lastSelectedNodeId = null;
+        }
+      });
     }
-    return false;
+
+    _syncDetailControllers();
+    _notifyChange();
   }
 
   LocationData? _getLocation(String id, List<LocationData> locations) {
@@ -1676,13 +1477,24 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _syncDetailControllers() {
-    if (selectedNodeId == null) return;
-    final location = _getLocation(selectedNodeId!, _locations);
+    final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
+    if (displayNodeId == null) {
+      locationNameController.clear();
+      locationTypeController.clear();
+      locationNoteController.clear();
+      return;
+    }
+    final location = _getLocation(displayNodeId, _locations);
     if (location != null) {
       locationNameController.text = location.localName;
       locationTypeController.text = location.localType;
       locationNoteController.text = location.note;
+      return;
     }
+
+    locationNameController.clear();
+    locationTypeController.clear();
+    locationNoteController.clear();
   }
 
   void _showErrorDialog(String message) {

@@ -357,12 +357,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
   Timer? _scheduledAutoCheckTimer;
   ProviderSubscription<String>? _editorContentSubscription;
-  late String _lastObservedText;
+  String _lastObservedText = "";
 
   @override
   void initState() {
     super.initState();
-    _lastObservedText = ref.read(editorContentProvider);
     _editorContentSubscription = ref.listenManual<String>(
       editorContentProvider,
       (previous, next) {

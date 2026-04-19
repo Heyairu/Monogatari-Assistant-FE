@@ -524,6 +524,151 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     );
   }
 
+  List<LocationData> _copyLocations(List<LocationData> source) {
+    return source.map((location) => location.deepCopy()).toList();
+  }
+
+  bool _updateLocationByIdRecursive(
+    String id,
+    List<LocationData> nodes,
+    LocationData Function(LocationData current) update,
+  ) {
+    for (int index = 0; index < nodes.length; index++) {
+      final node = nodes[index];
+      if (node.id == id) {
+        final updated = update(node);
+        if (updated == node) {
+          return false;
+        }
+        nodes[index] = updated;
+        return true;
+      }
+
+      if (_updateLocationByIdRecursive(id, node.child, update)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _addChildRecursive(
+    String parentId,
+    String name,
+    List<LocationData> nodes,
+  ) {
+    for (final node in nodes) {
+      if (node.id == parentId) {
+        node.child.add(LocationData(localName: name));
+        return true;
+      }
+
+      if (_addChildRecursive(parentId, name, node.child)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _removeNodeRecursive(String id, List<LocationData> nodes) {
+    for (int index = 0; index < nodes.length; index++) {
+      if (nodes[index].id == id) {
+        nodes.removeAt(index);
+        return true;
+      }
+
+      if (_removeNodeRecursive(id, nodes[index].child)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  LocationData? _findLocationByIdRecursive(
+    String id,
+    List<LocationData> nodes,
+  ) {
+    for (final node in nodes) {
+      if (node.id == id) {
+        return node;
+      }
+
+      final child = _findLocationByIdRecursive(id, node.child);
+      if (child != null) {
+        return child;
+      }
+    }
+
+    return null;
+  }
+
+  bool _containsNodeById(LocationData node, String targetId) {
+    if (node.id == targetId) {
+      return true;
+    }
+
+    for (final child in node.child) {
+      if (_containsNodeById(child, targetId)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _insertNodeByPosition({
+    required List<LocationData> nodes,
+    required String targetId,
+    required String position,
+    required LocationData sourceNode,
+  }) {
+    if (position == "child") {
+      for (final node in nodes) {
+        if (node.id == targetId) {
+          node.child.add(sourceNode);
+          return true;
+        }
+        if (_insertNodeByPosition(
+          nodes: node.child,
+          targetId: targetId,
+          position: position,
+          sourceNode: sourceNode,
+        )) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    for (int index = 0; index < nodes.length; index++) {
+      if (nodes[index].id == targetId) {
+        if (position == "before") {
+          nodes.insert(index, sourceNode);
+          return true;
+        }
+        if (position == "after") {
+          nodes.insert(index + 1, sourceNode);
+          return true;
+        }
+        return false;
+      }
+
+      if (_insertNodeByPosition(
+        nodes: nodes[index].child,
+        targetId: targetId,
+        position: position,
+        sourceNode: sourceNode,
+      )) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   @override
   List<LocationData> build() {
     return _createSnapshot(file_module.ProjectData.empty().worldSettingsData);
@@ -537,6 +682,90 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     List<LocationData> Function(List<LocationData> current) update,
   ) {
     setWorldSettingsData(update(state));
+  }
+
+  bool updateLocationById(
+    String id,
+    LocationData Function(LocationData current) update,
+  ) {
+    final next = _copyLocations(state);
+    final changed = _updateLocationByIdRecursive(id, next, update);
+    if (!changed) {
+      return false;
+    }
+    setWorldSettingsData(next);
+    return true;
+  }
+
+  bool addLocation({required String name, String? parentId}) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+
+    final next = _copyLocations(state);
+    final changed = parentId == null
+        ? () {
+            next.add(LocationData(localName: trimmed));
+            return true;
+          }()
+        : _addChildRecursive(parentId, trimmed, next);
+
+    if (!changed) {
+      return false;
+    }
+
+    setWorldSettingsData(next);
+    return true;
+  }
+
+  bool removeLocationById(String id) {
+    final next = _copyLocations(state);
+    final removed = _removeNodeRecursive(id, next);
+    if (!removed) {
+      return false;
+    }
+
+    setWorldSettingsData(next);
+    return true;
+  }
+
+  bool moveLocation({
+    required String sourceId,
+    required String targetId,
+    required String position,
+  }) {
+    if (sourceId == targetId) {
+      return false;
+    }
+
+    final next = _copyLocations(state);
+    final sourceNode = _findLocationByIdRecursive(sourceId, next);
+    if (sourceNode == null) {
+      return false;
+    }
+
+    if (_containsNodeById(sourceNode, targetId)) {
+      return false;
+    }
+
+    final removed = _removeNodeRecursive(sourceId, next);
+    if (!removed) {
+      return false;
+    }
+
+    final inserted = _insertNodeByPosition(
+      nodes: next,
+      targetId: targetId,
+      position: position,
+      sourceNode: sourceNode,
+    );
+    if (!inserted) {
+      next.add(sourceNode);
+    }
+
+    setWorldSettingsData(next);
+    return true;
   }
 }
 
@@ -570,6 +799,91 @@ class CharacterDataNotifier
     update,
   ) {
     setCharacterData(update(state));
+  }
+
+  bool setCharacterEntry({
+    required String name,
+    required character_model.CharacterEntryData entry,
+  }) {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      return false;
+    }
+
+    final current = state[normalizedName];
+    if (current == entry) {
+      return false;
+    }
+
+    final next = character_model.copyCharacterDataMap(state);
+    next[normalizedName] = entry.deepCopy();
+    setCharacterData(next);
+    return true;
+  }
+
+  bool updateCharacterEntry(
+    String name,
+    character_model.CharacterEntryData Function(
+      character_model.CharacterEntryData current,
+    )
+    update,
+  ) {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      return false;
+    }
+
+    final current = state[normalizedName];
+    if (current == null) {
+      return false;
+    }
+
+    final updated = update(current.deepCopy());
+    if (updated == current) {
+      return false;
+    }
+
+    final next = character_model.copyCharacterDataMap(state);
+    next[normalizedName] = updated.deepCopy();
+    setCharacterData(next);
+    return true;
+  }
+
+  bool removeCharacterEntry(String name) {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty || !state.containsKey(normalizedName)) {
+      return false;
+    }
+
+    final next = character_model.copyCharacterDataMap(state)
+      ..remove(normalizedName);
+    setCharacterData(next);
+    return true;
+  }
+
+  bool renameCharacterEntry({
+    required String oldName,
+    required String newName,
+  }) {
+    final normalizedOldName = oldName.trim();
+    final normalizedNewName = newName.trim();
+    if (normalizedOldName.isEmpty || normalizedNewName.isEmpty) {
+      return false;
+    }
+    if (normalizedOldName == normalizedNewName) {
+      return false;
+    }
+
+    final entry = state[normalizedOldName];
+    if (entry == null || state.containsKey(normalizedNewName)) {
+      return false;
+    }
+
+    final next = character_model.copyCharacterDataMap(state)
+      ..remove(normalizedOldName)
+      ..[normalizedNewName] = entry.deepCopy();
+    setCharacterData(next);
+    return true;
   }
 }
 
@@ -606,6 +920,74 @@ class ForeshadowDataNotifier
   ) {
     setForeshadowData(update(state));
   }
+
+  void addForeshadowItem(plan_module.ForeshadowItem item) {
+    setForeshadowData([...state, item]);
+  }
+
+  bool updateForeshadowById(
+    String id,
+    plan_module.ForeshadowItem Function(plan_module.ForeshadowItem current)
+    update,
+  ) {
+    final index = state.indexWhere((item) => item.id == id);
+    if (index == -1) {
+      return false;
+    }
+
+    final next = [...state];
+    final current = next[index];
+    final updated = update(current);
+    if (updated == current) {
+      return false;
+    }
+
+    next[index] = updated;
+    setForeshadowData(next);
+    return true;
+  }
+
+  bool removeForeshadowById(String id) {
+    final next = state.where((item) => item.id != id).toList(growable: false);
+    if (next.length == state.length) {
+      return false;
+    }
+    setForeshadowData(next);
+    return true;
+  }
+
+  bool reorderForeshadowByDrop({
+    required String draggedId,
+    required String targetId,
+    required bool isBefore,
+  }) {
+    if (draggedId == targetId) {
+      return false;
+    }
+
+    final next = [...state];
+    final draggedIndex = next.indexWhere((item) => item.id == draggedId);
+    final targetIndex = next.indexWhere((item) => item.id == targetId);
+    if (draggedIndex == -1 || targetIndex == -1) {
+      return false;
+    }
+
+    final draggedItem = next.removeAt(draggedIndex);
+    var adjustedTarget = targetIndex;
+    if (draggedIndex < targetIndex) {
+      adjustedTarget -= 1;
+    }
+
+    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
+    if (insertIndex == draggedIndex) {
+      return false;
+    }
+
+    final boundedIndex = insertIndex.clamp(0, next.length);
+    next.insert(boundedIndex, draggedItem);
+    setForeshadowData(next);
+    return true;
+  }
 }
 
 final foreshadowDataProvider =
@@ -639,6 +1021,74 @@ class UpdatePlanDataNotifier
     update,
   ) {
     setUpdatePlanData(update(state));
+  }
+
+  void addUpdatePlanItem(plan_module.UpdatePlanItem item) {
+    setUpdatePlanData([...state, item]);
+  }
+
+  bool updateUpdatePlanById(
+    String id,
+    plan_module.UpdatePlanItem Function(plan_module.UpdatePlanItem current)
+    update,
+  ) {
+    final index = state.indexWhere((item) => item.id == id);
+    if (index == -1) {
+      return false;
+    }
+
+    final next = [...state];
+    final current = next[index];
+    final updated = update(current);
+    if (updated == current) {
+      return false;
+    }
+
+    next[index] = updated;
+    setUpdatePlanData(next);
+    return true;
+  }
+
+  bool removeUpdatePlanById(String id) {
+    final next = state.where((item) => item.id != id).toList(growable: false);
+    if (next.length == state.length) {
+      return false;
+    }
+    setUpdatePlanData(next);
+    return true;
+  }
+
+  bool reorderUpdatePlanByDrop({
+    required String draggedId,
+    required String targetId,
+    required bool isBefore,
+  }) {
+    if (draggedId == targetId) {
+      return false;
+    }
+
+    final next = [...state];
+    final draggedIndex = next.indexWhere((item) => item.id == draggedId);
+    final targetIndex = next.indexWhere((item) => item.id == targetId);
+    if (draggedIndex == -1 || targetIndex == -1) {
+      return false;
+    }
+
+    final draggedItem = next.removeAt(draggedIndex);
+    var adjustedTarget = targetIndex;
+    if (draggedIndex < targetIndex) {
+      adjustedTarget -= 1;
+    }
+
+    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
+    if (insertIndex == draggedIndex) {
+      return false;
+    }
+
+    final boundedIndex = insertIndex.clamp(0, next.length);
+    next.insert(boundedIndex, draggedItem);
+    setUpdatePlanData(next);
+    return true;
   }
 }
 
@@ -703,10 +1153,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
     );
   }
 
-  void _setIfChanged(
-    GlossaryStateData value, {
-    required bool schedulePersist,
-  }) {
+  void _setIfChanged(GlossaryStateData value, {required bool schedulePersist}) {
     final snapshot = _createSnapshot(value);
     state = snapshot;
     if (schedulePersist) {
@@ -966,8 +1413,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
   void updateGlossaryState(
     GlossaryStateData Function(GlossaryStateData current) update, {
     bool persist = true,
-  }
-  ) {
+  }) {
     setGlossaryState(update(state), persist: persist);
   }
 
@@ -1180,10 +1626,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
       if (linked) {
         category.entryIds.add(existingEntryId);
         _setIfChanged(
-          GlossaryStateData(
-            categoryTree: nextTree,
-            entryIndex: nextEntryIndex,
-          ),
+          GlossaryStateData(categoryTree: nextTree, entryIndex: nextEntryIndex),
           schedulePersist: true,
         );
       }

@@ -165,12 +165,15 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 
   @override
   Widget build(BuildContext context) {
-    final settingsState = ref.watch(settingsStateProvider).valueOrNull ??
-        const AppSettingsStateData();
+    final fontSize = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.fontSize ?? 12.0,
+      ),
+    );
     final colorScheme = Theme.of(context).colorScheme;
     final textStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
       height: 1.6,
-      fontSize: settingsState.fontSize,
+      fontSize: fontSize,
     );
     final editorBackground = colorScheme.surfaceContainerLowest;
 
