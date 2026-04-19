@@ -275,17 +275,16 @@ class BaseInfoCodec {
 // MARK: - View
 
 class BaseInfoView extends ConsumerStatefulWidget {
-  final ValueChanged<BaseInfoData>? onDataChanged;
+  final VoidCallback? onChanged;
 
-  const BaseInfoView({super.key, this.onDataChanged});
+  const BaseInfoView({super.key, this.onChanged});
 
   @override
   ConsumerState<BaseInfoView> createState() => _BaseInfoViewState();
 }
 
 class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
-  late BaseInfoData _data;
-  bool _isUpdating = false;
+  bool _isSyncingControllers = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
   ProviderSubscription<BaseInfoData>? _baseInfoSubscription;
   ProviderSubscription<String>? _contentSubscription;
@@ -302,57 +301,62 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   @override
   void initState() {
     super.initState();
-    _data = ref.read(baseInfoDataProvider);
-    _syncNowWords(commitToProvider: false);
+    final initialData = ref.read(baseInfoDataProvider);
 
     // 初始化各個文字欄位的 controller
-    _bookNameController = TextEditingController(text: _data.bookName);
-    _authorController = TextEditingController(text: _data.author);
-    _purposeController = TextEditingController(text: _data.purpose);
-    _toRecapController = TextEditingController(text: _data.toRecap);
-    _storyTypeController = TextEditingController(text: _data.storyType);
-    _introController = TextEditingController(text: _data.intro);
+    _bookNameController = TextEditingController(text: initialData.bookName);
+    _authorController = TextEditingController(text: initialData.author);
+    _purposeController = TextEditingController(text: initialData.purpose);
+    _toRecapController = TextEditingController(text: initialData.toRecap);
+    _storyTypeController = TextEditingController(text: initialData.storyType);
+    _introController = TextEditingController(text: initialData.intro);
 
     // 添加監聽器
     _bookNameController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange((data) => data.copyWith(bookName: _bookNameController.text));
+      if (_isSyncingControllers) return;
+      ref.read(baseInfoDataProvider.notifier).setBookName(_bookNameController.text);
+      _notifyDataChanged();
     });
 
     _authorController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange((data) => data.copyWith(author: _authorController.text));
+      if (_isSyncingControllers) return;
+      ref.read(baseInfoDataProvider.notifier).setAuthor(_authorController.text);
+      _notifyDataChanged();
     });
 
     _purposeController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange((data) => data.copyWith(purpose: _purposeController.text));
+      if (_isSyncingControllers) return;
+      ref.read(baseInfoDataProvider.notifier).setPurpose(_purposeController.text);
+      _notifyDataChanged();
     });
 
     _toRecapController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange((data) => data.copyWith(toRecap: _toRecapController.text));
+      if (_isSyncingControllers) return;
+      ref.read(baseInfoDataProvider.notifier).setToRecap(_toRecapController.text);
+      _notifyDataChanged();
     });
 
     _storyTypeController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange(
-        (data) => data.copyWith(storyType: _storyTypeController.text),
-      );
+      if (_isSyncingControllers) return;
+      ref
+          .read(baseInfoDataProvider.notifier)
+          .setStoryType(_storyTypeController.text);
+      _notifyDataChanged();
     });
 
     _introController.addListener(() {
-      if (_isUpdating) return;
-      _applyChange((data) => data.copyWith(intro: _introController.text));
+      if (_isSyncingControllers) return;
+      ref.read(baseInfoDataProvider.notifier).setIntro(_introController.text);
+      _notifyDataChanged();
     });
 
     _baseInfoSubscription = ref.listenManual<BaseInfoData>(
       baseInfoDataProvider,
       (previous, next) {
-        if (_isUpdating || previous == next) {
+        if (previous == next) {
           return;
         }
-        _syncFromProvider(next);
+        _syncControllersFromProvider(next);
       },
     );
 
@@ -377,6 +381,13 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         _syncNowWords();
       },
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _syncNowWords();
+    });
   }
 
   @override
@@ -393,27 +404,22 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     super.dispose();
   }
 
-  void _notifyDataChanged({bool notifyParent = true}) {
-    final snapshot = _data.copyWith();
-    ref.read(baseInfoDataProvider.notifier).setBaseInfoData(snapshot);
-    if (notifyParent) {
-      widget.onDataChanged?.call(snapshot);
-    }
+  void _notifyDataChanged() {
+    widget.onChanged?.call();
   }
 
-  void _syncFromProvider(BaseInfoData source) {
-    final nextData = source.copyWith();
-    setState(() {
-      _isUpdating = true;
-      _data = nextData;
-      _syncControllerText(_bookNameController, _data.bookName);
-      _syncControllerText(_authorController, _data.author);
-      _syncControllerText(_purposeController, _data.purpose);
-      _syncControllerText(_toRecapController, _data.toRecap);
-      _syncControllerText(_storyTypeController, _data.storyType);
-      _syncControllerText(_introController, _data.intro);
-      _isUpdating = false;
-    });
+  void _syncControllersFromProvider(BaseInfoData source) {
+    _isSyncingControllers = true;
+    try {
+      _syncControllerText(_bookNameController, source.bookName);
+      _syncControllerText(_authorController, source.author);
+      _syncControllerText(_purposeController, source.purpose);
+      _syncControllerText(_toRecapController, source.toRecap);
+      _syncControllerText(_storyTypeController, source.storyType);
+      _syncControllerText(_introController, source.intro);
+    } finally {
+      _isSyncingControllers = false;
+    }
   }
 
   void _syncControllerText(TextEditingController controller, String nextText) {
@@ -450,52 +456,30 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  void _syncNowWords({bool commitToProvider = true}) {
+  void _syncNowWords() {
     final settingsState = ref.read(settingsStateProvider).valueOrNull;
     final contentText = ref.read(editorContentProvider);
     final wordCountMode =
         settingsState?.wordCountMode ?? WordCountMode.wordsAndCharacters;
 
-    setState(() {
-      _data = _data.withRecalculatedNowWords(contentText, mode: wordCountMode);
-    });
-    if (commitToProvider) {
-      _notifyDataChanged(notifyParent: false);
-    }
-  }
-
-  void _applyChange(BaseInfoData Function(BaseInfoData data) update) {
-    setState(() {
-      _data = update(_data);
-    });
-    _notifyDataChanged();
+    ref
+        .read(baseInfoDataProvider.notifier)
+        .recalculateNowWords(contentText: contentText, mode: wordCountMode);
   }
 
   void _addTag(String tagText) {
-    tagText = tagText.trim();
-    if (tagText.isEmpty || _data.tags.contains(tagText)) {
-      return;
-    }
-
-    setState(() {
-      _data = _data.copyWith(tags: [..._data.tags, tagText]);
-    });
+    ref.read(baseInfoDataProvider.notifier).addTag(tagText);
     _notifyDataChanged();
   }
 
   void _removeTag(int index) {
-    final nextTags = [..._data.tags]..removeAt(index);
-    setState(() {
-      _data = _data.copyWith(tags: nextTags);
-    });
+    ref.read(baseInfoDataProvider.notifier).removeTagAt(index);
     _notifyDataChanged();
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(baseInfoDataProvider);
-    ref.watch(editorContentProvider);
-    ref.watch(settingsStateProvider);
+    final baseInfo = ref.watch(baseInfoDataProvider);
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -569,7 +553,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                     const SizedBox(height: 24),
 
                     // 標籤區域
-                    _buildTagsSection(),
+                    _buildTagsSection(baseInfo),
 
                     const SizedBox(height: 24),
 
@@ -579,7 +563,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                     const SizedBox(height: 24),
 
                     // 統計資訊
-                    _buildStatsSection(),
+                    _buildStatsSection(baseInfo),
                   ],
                 ),
               ),
@@ -615,11 +599,11 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  Widget _buildTagsSection() {
+  Widget _buildTagsSection(BaseInfoData baseInfo) {
     return CardList(
       title: "標籤",
       icon: Icons.local_offer,
-      items: _data.tags,
+      items: baseInfo.tags,
       onAdd: _addTag,
       onRemove: _removeTag,
     );
@@ -646,7 +630,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  Widget _buildStatsSection() {
+  Widget _buildStatsSection(BaseInfoData baseInfo) {
     final totalWords = ref.watch(totalWordsProvider);
 
     return Card(
@@ -674,8 +658,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             // 最後儲存時間
             _buildStatRow(
               "最後儲存時間",
-              _data.latestSave != null
-                  ? _dateFormatter.format(_data.latestSave!)
+              baseInfo.latestSave != null
+                  ? _dateFormatter.format(baseInfo.latestSave!)
                   : "--:--:--",
               Icons.access_time,
             ),
@@ -687,7 +671,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             const Divider(height: 16),
 
             // 本章字數
-            _buildStatRow("本章字數", "${_data.nowWords} 字", Icons.article),
+            _buildStatRow("本章字數", "${baseInfo.nowWords} 字", Icons.article),
           ],
         ),
       ),

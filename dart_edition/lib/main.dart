@@ -1185,13 +1185,13 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
     return BaseInfoModule.BaseInfoView(
-      onDataChanged: (_) => _commitModuleChange(),
+      onChanged: _commitModuleChange,
     );
   }
 
   Widget _buildChapterSelectionView() {
     return ChapterModule.ChapterSelectionView(
-      onSegmentsChanged: (_) {
+      onChanged: () {
         _commitModuleChange(() {
           setState(() {
             totalWords = _recalculateSumFast();

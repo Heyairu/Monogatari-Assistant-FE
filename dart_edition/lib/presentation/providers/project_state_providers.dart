@@ -1,6 +1,13 @@
+import "dart:async";
+import "dart:collection";
+import "dart:convert";
+import "dart:io";
+
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:path_provider/path_provider.dart";
 
 import "../../bin/file.dart" as file_module;
+import "../../bin/settings_manager.dart";
 import "../../models/character_data.dart" as character_model;
 import "../../models/glossary_data.dart" as glossary_model;
 import "../../modules/baseinfoview.dart" as base_info_module;
@@ -60,13 +67,21 @@ class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
     return value.copyWith(tags: [...value.tags]);
   }
 
+  void _setIfChanged(base_info_module.BaseInfoData value) {
+    final snapshot = _createSnapshot(value);
+    if (snapshot == state) {
+      return;
+    }
+    state = snapshot;
+  }
+
   @override
   base_info_module.BaseInfoData build() {
     return _createSnapshot(file_module.ProjectData.empty().baseInfoData);
   }
 
   void setBaseInfoData(base_info_module.BaseInfoData value) {
-    state = _createSnapshot(value);
+    _setIfChanged(value);
   }
 
   void updateBaseInfoData(
@@ -75,7 +90,58 @@ class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
     )
     update,
   ) {
-    setBaseInfoData(update(state));
+    _setIfChanged(update(state));
+  }
+
+  void setBookName(String value) {
+    updateBaseInfoData((current) => current.copyWith(bookName: value));
+  }
+
+  void setAuthor(String value) {
+    updateBaseInfoData((current) => current.copyWith(author: value));
+  }
+
+  void setPurpose(String value) {
+    updateBaseInfoData((current) => current.copyWith(purpose: value));
+  }
+
+  void setToRecap(String value) {
+    updateBaseInfoData((current) => current.copyWith(toRecap: value));
+  }
+
+  void setStoryType(String value) {
+    updateBaseInfoData((current) => current.copyWith(storyType: value));
+  }
+
+  void setIntro(String value) {
+    updateBaseInfoData((current) => current.copyWith(intro: value));
+  }
+
+  void addTag(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || state.tags.contains(trimmed)) {
+      return;
+    }
+    updateBaseInfoData(
+      (current) => current.copyWith(tags: [...current.tags, trimmed]),
+    );
+  }
+
+  void removeTagAt(int index) {
+    if (index < 0 || index >= state.tags.length) {
+      return;
+    }
+    final nextTags = [...state.tags]..removeAt(index);
+    updateBaseInfoData((current) => current.copyWith(tags: nextTags));
+  }
+
+  void recalculateNowWords({
+    required String contentText,
+    required WordCountMode mode,
+  }) {
+    updateBaseInfoData(
+      (current) => current.withRecalculatedNowWords(contentText, mode: mode),
+    );
   }
 }
 
@@ -101,13 +167,35 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     );
   }
 
+  void _setIfChanged(List<chapter_module.SegmentData> value) {
+    final snapshot = _createSnapshot(value);
+    if (snapshot == state) {
+      return;
+    }
+    state = snapshot;
+  }
+
+  int _segmentIndexById(
+    String segmentID,
+    List<chapter_module.SegmentData> segments,
+  ) {
+    return segments.indexWhere((segment) => segment.segmentUUID == segmentID);
+  }
+
+  int _chapterIndexById(
+    String chapterID,
+    List<chapter_module.ChapterData> chapters,
+  ) {
+    return chapters.indexWhere((chapter) => chapter.chapterUUID == chapterID);
+  }
+
   @override
   List<chapter_module.SegmentData> build() {
     return _createSnapshot(file_module.ProjectData.empty().segmentsData);
   }
 
   void setSegmentsData(List<chapter_module.SegmentData> value) {
-    state = _createSnapshot(value);
+    _setIfChanged(value);
   }
 
   void updateSegmentsData(
@@ -117,6 +205,253 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     update,
   ) {
     setSegmentsData(update(state));
+  }
+
+  void addSegment(chapter_module.SegmentData segment) {
+    updateSegmentsData((current) => [...current, segment]);
+  }
+
+  void insertSegmentAt(int index, chapter_module.SegmentData segment) {
+    updateSegmentsData((current) {
+      final next = [...current];
+      final insertIndex = index.clamp(0, next.length);
+      next.insert(insertIndex, segment);
+      return next;
+    });
+  }
+
+  void removeSegmentById(String segmentID) {
+    updateSegmentsData(
+      (current) =>
+          current.where((segment) => segment.segmentUUID != segmentID).toList(),
+    );
+  }
+
+  void renameSegment({required String segmentID, required String name}) {
+    updateSegmentsData((current) {
+      final index = _segmentIndexById(segmentID, current);
+      if (index < 0) {
+        return current;
+      }
+
+      final next = [...current];
+      final target = next[index];
+      next[index] = target.copyWith(segmentName: name);
+      return next;
+    });
+  }
+
+  void moveSegment({required int fromIndex, required int toIndex}) {
+    updateSegmentsData((current) {
+      if (fromIndex < 0 || fromIndex >= current.length) {
+        return current;
+      }
+
+      final normalizedTarget = toIndex.clamp(0, current.length - 1);
+      if (fromIndex == normalizedTarget) {
+        return current;
+      }
+
+      final next = [...current];
+      final moving = next.removeAt(fromIndex);
+      next.insert(normalizedTarget, moving);
+      return next;
+    });
+  }
+
+  void addChapter({
+    required String segmentID,
+    required chapter_module.ChapterData chapter,
+  }) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final next = [...current];
+      final segment = next[segmentIndex];
+      next[segmentIndex] = segment.copyWith(
+        chapters: [...segment.chapters, chapter],
+      );
+      return next;
+    });
+  }
+
+  void insertChapter({
+    required String segmentID,
+    required int chapterIndex,
+    required chapter_module.ChapterData chapter,
+  }) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final next = [...current];
+      final segment = next[segmentIndex];
+      final chapters = [...segment.chapters];
+      final insertIndex = chapterIndex.clamp(0, chapters.length);
+      chapters.insert(insertIndex, chapter);
+      next[segmentIndex] = segment.copyWith(chapters: chapters);
+      return next;
+    });
+  }
+
+  void renameChapter({
+    required String segmentID,
+    required String chapterID,
+    required String name,
+  }) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final segment = current[segmentIndex];
+      final chapterIndex = _chapterIndexById(chapterID, segment.chapters);
+      if (chapterIndex < 0) {
+        return current;
+      }
+
+      final next = [...current];
+      final chapters = [...segment.chapters];
+      final target = chapters[chapterIndex];
+      chapters[chapterIndex] = target.copyWith(chapterName: name);
+      next[segmentIndex] = segment.copyWith(chapters: chapters);
+      return next;
+    });
+  }
+
+  void updateChapterContent({
+    required String segmentID,
+    required String chapterID,
+    required String content,
+  }) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final segment = current[segmentIndex];
+      final chapterIndex = _chapterIndexById(chapterID, segment.chapters);
+      if (chapterIndex < 0) {
+        return current;
+      }
+
+      final next = [...current];
+      final chapters = [...segment.chapters];
+      final target = chapters[chapterIndex];
+      chapters[chapterIndex] = target.copyWith(chapterContent: content);
+      next[segmentIndex] = segment.copyWith(chapters: chapters);
+      return next;
+    });
+  }
+
+  void removeChapter({required String segmentID, required String chapterID}) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final segment = current[segmentIndex];
+      final chapters = segment.chapters
+          .where((chapter) => chapter.chapterUUID != chapterID)
+          .toList();
+
+      if (chapters.length == segment.chapters.length) {
+        return current;
+      }
+
+      final next = [...current];
+      next[segmentIndex] = segment.copyWith(chapters: chapters);
+      return next;
+    });
+  }
+
+  void moveChapterWithinSegment({
+    required String segmentID,
+    required int fromIndex,
+    required int toIndex,
+  }) {
+    updateSegmentsData((current) {
+      final segmentIndex = _segmentIndexById(segmentID, current);
+      if (segmentIndex < 0) {
+        return current;
+      }
+
+      final segment = current[segmentIndex];
+      if (fromIndex < 0 || fromIndex >= segment.chapters.length) {
+        return current;
+      }
+
+      final normalizedTarget = toIndex.clamp(0, segment.chapters.length - 1);
+      if (fromIndex == normalizedTarget) {
+        return current;
+      }
+
+      final chapters = [...segment.chapters];
+      final moving = chapters.removeAt(fromIndex);
+      chapters.insert(normalizedTarget, moving);
+
+      final next = [...current];
+      next[segmentIndex] = segment.copyWith(chapters: chapters);
+      return next;
+    });
+  }
+
+  void moveChapterToSegment({
+    required String chapterID,
+    required String targetSegmentID,
+  }) {
+    updateSegmentsData((current) {
+      int sourceSegmentIndex = -1;
+      int sourceChapterIndex = -1;
+
+      for (
+        int segmentIndex = 0;
+        segmentIndex < current.length;
+        segmentIndex++
+      ) {
+        final chapterIndex = _chapterIndexById(
+          chapterID,
+          current[segmentIndex].chapters,
+        );
+        if (chapterIndex >= 0) {
+          sourceSegmentIndex = segmentIndex;
+          sourceChapterIndex = chapterIndex;
+          break;
+        }
+      }
+
+      final targetSegmentIndex = _segmentIndexById(targetSegmentID, current);
+      if (sourceSegmentIndex < 0 ||
+          sourceChapterIndex < 0 ||
+          targetSegmentIndex < 0 ||
+          sourceSegmentIndex == targetSegmentIndex) {
+        return current;
+      }
+
+      final next = [...current];
+      final sourceSegment = next[sourceSegmentIndex];
+      final targetSegment = next[targetSegmentIndex];
+
+      final sourceChapters = [...sourceSegment.chapters];
+      final movingChapter = sourceChapters.removeAt(sourceChapterIndex);
+      final targetChapters = [...targetSegment.chapters, movingChapter];
+
+      next[sourceSegmentIndex] = sourceSegment.copyWith(
+        chapters: sourceChapters,
+      );
+      next[targetSegmentIndex] = targetSegment.copyWith(
+        chapters: targetChapters,
+      );
+      return next;
+    });
   }
 }
 
@@ -322,7 +657,38 @@ class GlossaryStateData {
   });
 }
 
+enum GlossaryCategoryDropPosition { before, child, after }
+
+class GlossaryAddEntryResult {
+  final String entryId;
+  final bool createdNewEntry;
+  final bool linkedToCategory;
+
+  const GlossaryAddEntryResult({
+    required this.entryId,
+    required this.createdNewEntry,
+    required this.linkedToCategory,
+  });
+}
+
+class GlossaryUpdateTermResult {
+  final bool changed;
+  final String entryId;
+  final String? mergedIntoEntryId;
+
+  const GlossaryUpdateTermResult({
+    required this.changed,
+    required this.entryId,
+    this.mergedIntoEntryId,
+  });
+}
+
 class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
+  static const Duration _persistDebounceDuration = Duration(milliseconds: 240);
+  static const String _glossaryFileName = "Glossary.json";
+
+  Timer? _persistDebounce;
+
   GlossaryStateData _createSnapshot(GlossaryStateData value) {
     final categoryTree = List<glossary_model.GlossaryCategory>.unmodifiable(
       glossary_model.copyGlossaryCategoryTree(value.categoryTree),
@@ -337,21 +703,780 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
     );
   }
 
+  void _setIfChanged(
+    GlossaryStateData value, {
+    required bool schedulePersist,
+  }) {
+    final snapshot = _createSnapshot(value);
+    state = snapshot;
+    if (schedulePersist) {
+      _schedulePersist();
+    }
+  }
+
+  HashMap<String, glossary_model.GlossaryEntry> _copyEntryIndex(
+    Map<String, glossary_model.GlossaryEntry> source,
+  ) {
+    return glossary_model.copyGlossaryEntryIndex(source);
+  }
+
+  List<glossary_model.GlossaryCategory> _copyCategoryTree(
+    List<glossary_model.GlossaryCategory> source,
+  ) {
+    return glossary_model.copyGlossaryCategoryTree(source);
+  }
+
+  String _normalizeTerm(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  glossary_model.GlossaryCategory? _findCategoryById(
+    String id,
+    List<glossary_model.GlossaryCategory> nodes,
+  ) {
+    for (final glossary_model.GlossaryCategory node in nodes) {
+      if (node.id == id) {
+        return node;
+      }
+
+      final glossary_model.GlossaryCategory? child = _findCategoryById(
+        id,
+        node.children,
+      );
+      if (child != null) {
+        return child;
+      }
+    }
+
+    return null;
+  }
+
+  bool _isDescendantCategory(
+    String sourceId,
+    String targetId,
+    List<glossary_model.GlossaryCategory> tree,
+  ) {
+    final glossary_model.GlossaryCategory? source = _findCategoryById(
+      sourceId,
+      tree,
+    );
+    if (source == null) {
+      return false;
+    }
+
+    bool walk(glossary_model.GlossaryCategory node) {
+      if (node.id == targetId) {
+        return true;
+      }
+
+      for (final glossary_model.GlossaryCategory child in node.children) {
+        if (walk(child)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    return walk(source);
+  }
+
+  Set<String> _collectReferencedEntryIdsFromTree(
+    List<glossary_model.GlossaryCategory> tree,
+  ) {
+    final Set<String> refs = <String>{};
+
+    void walk(List<glossary_model.GlossaryCategory> nodes) {
+      for (final glossary_model.GlossaryCategory node in nodes) {
+        refs.addAll(node.entryIds);
+        walk(node.children);
+      }
+    }
+
+    walk(tree);
+    return refs;
+  }
+
+  String? _findEntryIdByTerm(
+    String term,
+    Map<String, glossary_model.GlossaryEntry> entryIndex, {
+    String? excludeEntryId,
+  }) {
+    final String normalizedTerm = _normalizeTerm(term);
+    if (normalizedTerm.isEmpty) {
+      return null;
+    }
+
+    for (final MapEntry<String, glossary_model.GlossaryEntry> item
+        in entryIndex.entries) {
+      if (item.key != item.value.id) {
+        continue;
+      }
+      if (excludeEntryId != null && item.value.id == excludeEntryId) {
+        continue;
+      }
+      if (_normalizeTerm(item.value.term) == normalizedTerm) {
+        return item.value.id;
+      }
+    }
+
+    return null;
+  }
+
+  void _rewriteCategoryEntryReferences(
+    List<glossary_model.GlossaryCategory> categoryTree,
+    Map<String, String> replacements,
+  ) {
+    if (replacements.isEmpty) {
+      return;
+    }
+
+    void walk(List<glossary_model.GlossaryCategory> nodes) {
+      for (final glossary_model.GlossaryCategory node in nodes) {
+        final List<String> rewrittenIds = [];
+        final Set<String> seen = <String>{};
+
+        for (final String entryId in node.entryIds) {
+          final String resolvedId = replacements[entryId] ?? entryId;
+          if (seen.add(resolvedId)) {
+            rewrittenIds.add(resolvedId);
+          }
+        }
+
+        node.entryIds = rewrittenIds;
+        walk(node.children);
+      }
+    }
+
+    walk(categoryTree);
+  }
+
+  bool _replaceEntryInIndex({
+    required String entryId,
+    required HashMap<String, glossary_model.GlossaryEntry> entryIndex,
+    required glossary_model.GlossaryEntry updated,
+  }) {
+    bool replaced = false;
+    for (final String key in entryIndex.keys.toList(growable: false)) {
+      final glossary_model.GlossaryEntry? current = entryIndex[key];
+      if (current != null && current.id == entryId) {
+        entryIndex[key] = updated.deepCopy();
+        replaced = true;
+      }
+    }
+
+    if (!replaced) {
+      entryIndex[entryId] = updated.deepCopy();
+      replaced = true;
+    }
+
+    return replaced;
+  }
+
+  bool _updateEntry(
+    String entryId,
+    glossary_model.GlossaryEntry Function(glossary_model.GlossaryEntry current)
+    transform,
+  ) {
+    final glossary_model.GlossaryEntry? current = state.entryIndex[entryId];
+    if (current == null) {
+      return false;
+    }
+
+    final glossary_model.GlossaryEntry updated = transform(current.deepCopy());
+    if (updated == current) {
+      return false;
+    }
+
+    final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
+        _copyEntryIndex(state.entryIndex);
+    final bool replaced = _replaceEntryInIndex(
+      entryId: entryId,
+      entryIndex: nextEntryIndex,
+      updated: updated,
+    );
+    if (!replaced) {
+      return false;
+    }
+
+    _setIfChanged(
+      GlossaryStateData(
+        categoryTree: _copyCategoryTree(state.categoryTree),
+        entryIndex: nextEntryIndex,
+      ),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  Future<String> _glossaryFilePath() async {
+    final Directory appDir = await getApplicationSupportDirectory();
+    final Directory dataDir = Directory("${appDir.path}/Data");
+    if (!await dataDir.exists()) {
+      await dataDir.create(recursive: true);
+    }
+    return "${dataDir.path}/$_glossaryFileName";
+  }
+
+  void _schedulePersist() {
+    _persistDebounce?.cancel();
+    final GlossaryStateData snapshot = _createSnapshot(state);
+    _persistDebounce = Timer(_persistDebounceDuration, () {
+      unawaited(_persistGlossaryNow(snapshot));
+    });
+  }
+
+  Future<void> _persistGlossaryNow(GlossaryStateData snapshot) async {
+    final String filePath = await _glossaryFilePath();
+    final File file = File(filePath);
+    final Map<String, dynamic> payload = {
+      "version": 1,
+      "categoryTree": snapshot.categoryTree
+          .map((category) => category.toJson())
+          .toList(growable: false),
+      "entries": {
+        for (final MapEntry<String, glossary_model.GlossaryEntry> entry
+            in snapshot.entryIndex.entries)
+          entry.key: entry.value.toJson(),
+      },
+    };
+    await file.writeAsString(jsonEncode(payload));
+  }
+
   @override
   GlossaryStateData build() {
+    ref.onDispose(() {
+      _persistDebounce?.cancel();
+      _persistDebounce = null;
+    });
+
     return _createSnapshot(
       const GlossaryStateData(categoryTree: [], entryIndex: {}),
     );
   }
 
-  void setGlossaryState(GlossaryStateData value) {
-    state = _createSnapshot(value);
+  void setGlossaryState(GlossaryStateData value, {bool persist = true}) {
+    _setIfChanged(value, schedulePersist: persist);
+  }
+
+  void hydrateFromStorage(GlossaryStateData value) {
+    setGlossaryState(value, persist: false);
   }
 
   void updateGlossaryState(
-    GlossaryStateData Function(GlossaryStateData current) update,
+    GlossaryStateData Function(GlossaryStateData current) update, {
+    bool persist = true,
+  }
   ) {
-    setGlossaryState(update(state));
+    setGlossaryState(update(state), persist: persist);
+  }
+
+  bool addCategory({
+    required glossary_model.GlossaryCategory category,
+    String? parentCategoryId,
+  }) {
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+
+    if (parentCategoryId == null) {
+      nextTree.add(category);
+    } else {
+      final glossary_model.GlossaryCategory? parent = _findCategoryById(
+        parentCategoryId,
+        nextTree,
+      );
+      if (parent == null) {
+        return false;
+      }
+      parent.children.add(category);
+    }
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: state.entryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  bool renameCategory({required String categoryId, required String name}) {
+    final String nextName = name.trim();
+    if (nextName.isEmpty) {
+      return false;
+    }
+
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    final glossary_model.GlossaryCategory? category = _findCategoryById(
+      categoryId,
+      nextTree,
+    );
+    if (category == null || category.name == nextName) {
+      return false;
+    }
+
+    category.name = nextName;
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: state.entryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  bool deleteCategory(String categoryId) {
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
+        _copyEntryIndex(state.entryIndex);
+
+    bool removed = false;
+
+    bool removeNode(List<glossary_model.GlossaryCategory> nodes) {
+      for (int i = 0; i < nodes.length; i++) {
+        if (nodes[i].id == categoryId) {
+          nodes.removeAt(i);
+          removed = true;
+          return true;
+        }
+
+        if (removeNode(nodes[i].children)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    removeNode(nextTree);
+    if (!removed) {
+      return false;
+    }
+
+    final Set<String> refs = _collectReferencedEntryIdsFromTree(nextTree);
+    nextEntryIndex.removeWhere((_, entry) => !refs.contains(entry.id));
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: nextEntryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  bool moveCategoryTo({
+    required String sourceId,
+    required String targetId,
+    required GlossaryCategoryDropPosition position,
+  }) {
+    if (sourceId == targetId) {
+      return false;
+    }
+
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    if (_isDescendantCategory(sourceId, targetId, nextTree)) {
+      return false;
+    }
+
+    glossary_model.GlossaryCategory? sourceNode;
+
+    bool removeNode(List<glossary_model.GlossaryCategory> nodes) {
+      for (int i = 0; i < nodes.length; i++) {
+        if (nodes[i].id == sourceId) {
+          sourceNode = nodes[i];
+          nodes.removeAt(i);
+          return true;
+        }
+        if (removeNode(nodes[i].children)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final bool removed = removeNode(nextTree);
+    if (!removed || sourceNode == null) {
+      return false;
+    }
+
+    bool inserted = false;
+
+    if (position == GlossaryCategoryDropPosition.child) {
+      bool insertAsChild(List<glossary_model.GlossaryCategory> nodes) {
+        for (final glossary_model.GlossaryCategory node in nodes) {
+          if (node.id == targetId) {
+            node.children.add(sourceNode!);
+            return true;
+          }
+          if (insertAsChild(node.children)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      inserted = insertAsChild(nextTree);
+    } else {
+      bool insertAsSibling(List<glossary_model.GlossaryCategory> nodes) {
+        for (int i = 0; i < nodes.length; i++) {
+          if (nodes[i].id == targetId) {
+            final int targetIndex =
+                position == GlossaryCategoryDropPosition.before ? i : i + 1;
+            nodes.insert(targetIndex, sourceNode!);
+            return true;
+          }
+          if (insertAsSibling(nodes[i].children)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      inserted = insertAsSibling(nextTree);
+    }
+
+    if (!inserted) {
+      nextTree.add(sourceNode!);
+    }
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: state.entryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  GlossaryAddEntryResult? addEntryByTermToCategory({
+    required String categoryId,
+    required String term,
+    required String newEntryId,
+  }) {
+    final String trimmedTerm = term.trim();
+    if (trimmedTerm.isEmpty) {
+      return null;
+    }
+
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
+        _copyEntryIndex(state.entryIndex);
+
+    final glossary_model.GlossaryCategory? category = _findCategoryById(
+      categoryId,
+      nextTree,
+    );
+    if (category == null) {
+      return null;
+    }
+
+    final String? existingEntryId = _findEntryIdByTerm(
+      trimmedTerm,
+      nextEntryIndex,
+    );
+    if (existingEntryId != null) {
+      final bool linked = !category.entryIds.contains(existingEntryId);
+      if (linked) {
+        category.entryIds.add(existingEntryId);
+        _setIfChanged(
+          GlossaryStateData(
+            categoryTree: nextTree,
+            entryIndex: nextEntryIndex,
+          ),
+          schedulePersist: true,
+        );
+      }
+
+      return GlossaryAddEntryResult(
+        entryId: existingEntryId,
+        createdNewEntry: false,
+        linkedToCategory: linked,
+      );
+    }
+
+    final glossary_model.GlossaryEntry entry = glossary_model.GlossaryEntry(
+      id: newEntryId,
+      term: trimmedTerm,
+      partOfSpeech: glossary_model.GlossaryPartOfSpeech.unspecified,
+      customPartOfSpeech: "",
+      polarity: glossary_model.GlossaryPolarity.neutral,
+      pairs: [glossary_model.GlossaryPair()],
+    );
+
+    nextEntryIndex[newEntryId] = entry;
+    category.entryIds.add(newEntryId);
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: nextEntryIndex),
+      schedulePersist: true,
+    );
+
+    return GlossaryAddEntryResult(
+      entryId: newEntryId,
+      createdNewEntry: true,
+      linkedToCategory: true,
+    );
+  }
+
+  bool removeEntryFromCategory({
+    required String sourceCategoryId,
+    required String entryId,
+  }) {
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
+        _copyEntryIndex(state.entryIndex);
+
+    final glossary_model.GlossaryCategory? source = _findCategoryById(
+      sourceCategoryId,
+      nextTree,
+    );
+    if (source == null) {
+      return false;
+    }
+
+    final bool removed = source.entryIds.remove(entryId);
+    if (!removed) {
+      return false;
+    }
+
+    final Set<String> allRefs = _collectReferencedEntryIdsFromTree(nextTree);
+    if (!allRefs.contains(entryId)) {
+      nextEntryIndex.removeWhere((_, entry) => entry.id == entryId);
+    }
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: nextEntryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  bool moveEntryToCategory({
+    required String entryId,
+    required String sourceCategoryId,
+    required String targetCategoryId,
+    int? targetInsertIndex,
+  }) {
+    final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+      state.categoryTree,
+    );
+    final glossary_model.GlossaryCategory? source = _findCategoryById(
+      sourceCategoryId,
+      nextTree,
+    );
+    final glossary_model.GlossaryCategory? target = _findCategoryById(
+      targetCategoryId,
+      nextTree,
+    );
+    if (source == null || target == null) {
+      return false;
+    }
+
+    final int fromIndex = source.entryIds.indexOf(entryId);
+    if (fromIndex < 0) {
+      return false;
+    }
+
+    bool changed = false;
+    if (sourceCategoryId == targetCategoryId) {
+      if (targetInsertIndex == null) {
+        return false;
+      }
+
+      int insertIndex = targetInsertIndex;
+      if (insertIndex < 0) {
+        insertIndex = 0;
+      }
+      if (insertIndex > source.entryIds.length) {
+        insertIndex = source.entryIds.length;
+      }
+
+      if (insertIndex == fromIndex || insertIndex == fromIndex + 1) {
+        return false;
+      }
+
+      source.entryIds.removeAt(fromIndex);
+      if (insertIndex > fromIndex) {
+        insertIndex -= 1;
+      }
+      source.entryIds.insert(insertIndex, entryId);
+      changed = true;
+    } else {
+      final bool removed = source.entryIds.remove(entryId);
+      if (!removed) {
+        return false;
+      }
+
+      if (!target.entryIds.contains(entryId)) {
+        int insertIndex = targetInsertIndex ?? target.entryIds.length;
+        if (insertIndex < 0) {
+          insertIndex = 0;
+        }
+        if (insertIndex > target.entryIds.length) {
+          insertIndex = target.entryIds.length;
+        }
+        target.entryIds.insert(insertIndex, entryId);
+      }
+      changed = true;
+    }
+
+    if (!changed) {
+      return false;
+    }
+
+    _setIfChanged(
+      GlossaryStateData(categoryTree: nextTree, entryIndex: state.entryIndex),
+      schedulePersist: true,
+    );
+    return true;
+  }
+
+  GlossaryUpdateTermResult updateEntryTerm({
+    required String entryId,
+    required String term,
+  }) {
+    final glossary_model.GlossaryEntry? current = state.entryIndex[entryId];
+    if (current == null || current.term == term) {
+      return GlossaryUpdateTermResult(changed: false, entryId: entryId);
+    }
+
+    final String? mergeTargetId = _findEntryIdByTerm(
+      term,
+      state.entryIndex,
+      excludeEntryId: entryId,
+    );
+
+    if (mergeTargetId != null) {
+      final List<glossary_model.GlossaryCategory> nextTree = _copyCategoryTree(
+        state.categoryTree,
+      );
+      final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
+          _copyEntryIndex(state.entryIndex);
+
+      _rewriteCategoryEntryReferences(nextTree, {entryId: mergeTargetId});
+      nextEntryIndex.removeWhere(
+        (key, item) => key == entryId || item.id == entryId,
+      );
+
+      _setIfChanged(
+        GlossaryStateData(categoryTree: nextTree, entryIndex: nextEntryIndex),
+        schedulePersist: true,
+      );
+
+      return GlossaryUpdateTermResult(
+        changed: true,
+        entryId: entryId,
+        mergedIntoEntryId: mergeTargetId,
+      );
+    }
+
+    final bool changed = _updateEntry(
+      entryId,
+      (entry) => entry.copyWith(term: term),
+    );
+    return GlossaryUpdateTermResult(changed: changed, entryId: entryId);
+  }
+
+  bool setEntryPolarity({
+    required String entryId,
+    required glossary_model.GlossaryPolarity polarity,
+  }) {
+    return _updateEntry(entryId, (entry) => entry.copyWith(polarity: polarity));
+  }
+
+  bool setEntryPartOfSpeech({
+    required String entryId,
+    required glossary_model.GlossaryPartOfSpeech partOfSpeech,
+  }) {
+    return _updateEntry(
+      entryId,
+      (entry) => entry.copyWith(partOfSpeech: partOfSpeech),
+    );
+  }
+
+  bool setEntryCustomPartOfSpeech({
+    required String entryId,
+    required String customPartOfSpeech,
+  }) {
+    return _updateEntry(
+      entryId,
+      (entry) => entry.copyWith(customPartOfSpeech: customPartOfSpeech),
+    );
+  }
+
+  bool updateEntryPairMeaning({
+    required String entryId,
+    required int pairIndex,
+    required String meaning,
+  }) {
+    return _updateEntry(entryId, (entry) {
+      if (pairIndex < 0 || pairIndex >= entry.pairs.length) {
+        return entry;
+      }
+
+      final List<glossary_model.GlossaryPair> pairs = entry.pairs
+          .map((pair) => pair.deepCopy())
+          .toList(growable: false);
+      pairs[pairIndex] = pairs[pairIndex].copyWith(meaning: meaning);
+      return entry.copyWith(pairs: pairs);
+    });
+  }
+
+  bool updateEntryPairExample({
+    required String entryId,
+    required int pairIndex,
+    required String example,
+  }) {
+    return _updateEntry(entryId, (entry) {
+      if (pairIndex < 0 || pairIndex >= entry.pairs.length) {
+        return entry;
+      }
+
+      final List<glossary_model.GlossaryPair> pairs = entry.pairs
+          .map((pair) => pair.deepCopy())
+          .toList(growable: false);
+      pairs[pairIndex] = pairs[pairIndex].copyWith(example: example);
+      return entry.copyWith(pairs: pairs);
+    });
+  }
+
+  bool addEntryPair(String entryId) {
+    return _updateEntry(entryId, (entry) {
+      final List<glossary_model.GlossaryPair> pairs = entry.pairs
+          .map((pair) => pair.deepCopy())
+          .toList();
+      pairs.add(glossary_model.GlossaryPair());
+      return entry.copyWith(pairs: pairs);
+    });
+  }
+
+  bool removeEntryPair({required String entryId, required int pairIndex}) {
+    return _updateEntry(entryId, (entry) {
+      if (pairIndex < 0 || pairIndex >= entry.pairs.length) {
+        return entry;
+      }
+      if (entry.pairs.length <= 1) {
+        return entry;
+      }
+
+      final List<glossary_model.GlossaryPair> pairs = entry.pairs
+          .map((pair) => pair.deepCopy())
+          .toList();
+      pairs.removeAt(pairIndex);
+      return entry.copyWith(pairs: pairs);
+    });
+  }
+
+  Future<void> flushGlossaryPersistence() async {
+    final Timer? timer = _persistDebounce;
+    if (timer != null) {
+      timer.cancel();
+      _persistDebounce = null;
+    }
+    await _persistGlossaryNow(_createSnapshot(state));
   }
 }
 
