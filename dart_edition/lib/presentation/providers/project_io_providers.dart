@@ -5,7 +5,6 @@ import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/characterview.dart";
 import "../../modules/outlineview.dart" as outline_module;
-import "../../modules/planview.dart" as plan_module;
 import "../../modules/worldsettingsview.dart";
 import "core_providers.dart";
 import "project_snapshot_utils.dart";

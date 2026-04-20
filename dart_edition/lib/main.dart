@@ -222,6 +222,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   ProviderSubscription<EditorCoordinatorState>? _editorCoordinatorSubscription;
   ProviderSubscription<String>? _editorContentSubscription;
+  ProviderSubscription<List<ChapterModule.SegmentData>>?
+  _segmentsDataSubscription;
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
@@ -412,6 +414,24 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       },
     );
 
+    _segmentsDataSubscription = ref
+        .listenManual<List<ChapterModule.SegmentData>>(segmentsDataProvider, (
+          previous,
+          next,
+        ) {
+          if (!mounted || previous == null || previous == next) {
+            return;
+          }
+
+          if (ref.read(editorCoordinatorProvider).isApplyingProjectData) {
+            return;
+          }
+
+          setState(() {
+            totalWords = _recalculateSumFast();
+          });
+        });
+
     _editorCoordinatorSubscription = ref.listenManual<EditorCoordinatorState>(
       editorCoordinatorProvider,
       (previous, next) {
@@ -481,6 +501,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _wordCountDebounce?.cancel(); // Cancel timer
     _editorCoordinatorSubscription?.close();
     _editorContentSubscription?.close();
+    _segmentsDataSubscription?.close();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -1293,33 +1314,23 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 各個頁面的建構方法（符合 Material Design）
   Widget _buildBaseInfoView() {
-    return BaseInfoModule.BaseInfoView(onChanged: _commitModuleChange);
+    return const BaseInfoModule.BaseInfoView();
   }
 
   Widget _buildChapterSelectionView() {
-    return ChapterModule.ChapterSelectionView(
-      onChanged: () {
-        _commitModuleChange(() {
-          setState(() {
-            totalWords = _recalculateSumFast();
-          });
-        });
-      },
-    );
+    return const ChapterModule.ChapterSelectionView();
   }
 
   Widget _buildOutlineView() {
-    return OutlineModule.OutlineAdjustView(
-      onStorylineChanged: (_) => _commitModuleChange(),
-    );
+    return const OutlineModule.OutlineAdjustView();
   }
 
   Widget _buildWorldSettingsView() {
-    return WorldSettingsView(onChanged: (_) => _commitModuleChange());
+    return const WorldSettingsView();
   }
 
   Widget _buildCharacterSettingsView() {
-    return CharacterView(onDataChanged: (_) => _commitModuleChange());
+    return const CharacterView();
   }
 
   Widget _buildTimelineView() {
@@ -1341,7 +1352,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildPlanView() {
-    return PlanModule.PlanView(onChanged: (_, __) => _commitModuleChange());
+    return const PlanModule.PlanView();
   }
 
   Widget _buildGlossaryView() {
@@ -1725,18 +1736,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   // MARK: - 檔案操作
 
   // 變更追蹤和退出處理
-
-  /// Module callback entrypoint: avoid writing provider in main.
-  /// Optional UI-only side effects (e.g., aggregated counters) can run before dirty mark.
-  void _commitModuleChange([VoidCallback? beforeMarkModified]) {
-    beforeMarkModified?.call();
-    _markAsModified();
-  }
-
-  /// 標記內容已修改
-  void _markAsModified() {
-    _editorCoordinatorNotifier.markAsModified();
-  }
 
   /// 標記內容已儲存
   void _markAsSaved() {

@@ -1,4 +1,5 @@
 import "package:flutter/material.dart";
+import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/file.dart" as file_module;
@@ -93,6 +94,175 @@ class EditorCoordinatorState {
 const Object _editorCoordinatorUnset = Object();
 
 class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
+  bool _isSameStringList(List<String> left, List<String> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (int index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _hasPersistedBaseInfoChanged(dynamic previous, dynamic next) {
+    return previous.bookName != next.bookName ||
+        previous.author != next.author ||
+        previous.purpose != next.purpose ||
+        previous.toRecap != next.toRecap ||
+        previous.storyType != next.storyType ||
+        previous.intro != next.intro ||
+        !_isSameStringList(
+          (previous.tags as List).cast<String>(),
+          (next.tags as List).cast<String>(),
+        );
+  }
+
+  bool _isSameOutlineData(List<dynamic> left, List<dynamic> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (int index = 0; index < left.length; index++) {
+      if (!_isSameStoryline(left[index], right[index])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _isSameStoryline(dynamic left, dynamic right) {
+    return left.chapterUUID == right.chapterUUID &&
+        left.storylineName == right.storylineName &&
+        left.storylineType == right.storylineType &&
+        left.memo == right.memo &&
+        left.conflictPoint == right.conflictPoint &&
+        listEquals(left.people, right.people) &&
+        listEquals(left.item, right.item) &&
+        _isSameStoryEventList(left.scenes, right.scenes);
+  }
+
+  bool _isSameStoryEventList(List<dynamic> left, List<dynamic> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (int index = 0; index < left.length; index++) {
+      if (!_isSameStoryEvent(left[index], right[index])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _isSameStoryEvent(dynamic left, dynamic right) {
+    return left.storyEventUUID == right.storyEventUUID &&
+        left.storyEvent == right.storyEvent &&
+        left.memo == right.memo &&
+        left.conflictPoint == right.conflictPoint &&
+        listEquals(left.people, right.people) &&
+        listEquals(left.item, right.item) &&
+        _isSameSceneList(left.scenes, right.scenes);
+  }
+
+  bool _isSameSceneList(List<dynamic> left, List<dynamic> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (int index = 0; index < left.length; index++) {
+      if (!_isSameScene(left[index], right[index])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _isSameScene(dynamic left, dynamic right) {
+    return left.sceneUUID == right.sceneUUID &&
+        left.sceneName == right.sceneName &&
+        left.time == right.time &&
+        left.location == right.location &&
+        left.focusPoint == right.focusPoint &&
+        left.conflictPoint == right.conflictPoint &&
+        left.memo == right.memo &&
+        listEquals(left.people, right.people) &&
+        listEquals(left.item, right.item) &&
+        listEquals(left.doingThings, right.doingThings);
+  }
+
+  void _markProjectDataChanged() {
+    if (state.isApplyingProjectData || state.isSyncing) {
+      return;
+    }
+
+    markAsModified();
+  }
+
+  void _setupProjectDirtyListeners() {
+    ref.listen(baseInfoDataProvider, (previous, next) {
+      if (previous == null || !_hasPersistedBaseInfoChanged(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(segmentsDataProvider, (previous, next) {
+      if (previous == null || listEquals(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(outlineDataProvider, (previous, next) {
+      if (previous == null || _isSameOutlineData(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(worldSettingsDataProvider, (previous, next) {
+      if (previous == null || listEquals(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(characterDataProvider, (previous, next) {
+      if (previous == null || mapEquals(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(foreshadowDataProvider, (previous, next) {
+      if (previous == null || listEquals(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+
+    ref.listen(updatePlanDataProvider, (previous, next) {
+      if (previous == null || listEquals(previous, next)) {
+        return;
+      }
+
+      _markProjectDataChanged();
+    });
+  }
+
   @override
   EditorCoordinatorState build() {
     final bool initialLoading = ref.read(projectIoControllerProvider).isLoading;
@@ -133,6 +303,8 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         );
       }
     });
+
+    _setupProjectDirtyListeners();
 
     return EditorCoordinatorState(
       isLoading: initialLoading,

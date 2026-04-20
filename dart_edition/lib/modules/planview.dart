@@ -337,9 +337,7 @@ class PlanCodec {
 }
 
 class PlanView extends ConsumerStatefulWidget {
-  final void Function(List<ForeshadowItem>, List<UpdatePlanItem>)? onChanged;
-
-  const PlanView({super.key, this.onChanged});
+  const PlanView({super.key});
 
   @override
   ConsumerState<PlanView> createState() => _PlanViewState();
@@ -491,10 +489,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
   }
 
   void _emitProjectChanged() {
-    widget.onChanged?.call(
-      ref.read(foreshadowDataProvider),
-      ref.read(updatePlanDataProvider),
-    );
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   bool _updateForeshadowById(

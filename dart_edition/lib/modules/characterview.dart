@@ -1182,9 +1182,7 @@ class CharacterCodec {
 }
 
 class CharacterView extends ConsumerStatefulWidget {
-  final ValueChanged<Map<String, CharacterEntryData>>? onDataChanged;
-
-  const CharacterView({super.key, this.onDataChanged});
+  const CharacterView({super.key});
 
   @override
   ConsumerState<CharacterView> createState() => _CharacterViewState();
@@ -1362,9 +1360,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   void _emitCharacterDataChanged() {
-    widget.onDataChanged?.call(
-      CharacterCodec.copyCharacterDataMap(ref.read(characterDataProvider)),
-    );
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   void _syncSelectionFromProviderIfNeeded(

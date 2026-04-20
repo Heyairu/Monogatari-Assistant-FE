@@ -275,9 +275,7 @@ class BaseInfoCodec {
 // MARK: - View
 
 class BaseInfoView extends ConsumerStatefulWidget {
-  final VoidCallback? onChanged;
-
-  const BaseInfoView({super.key, this.onChanged});
+  const BaseInfoView({super.key});
 
   @override
   ConsumerState<BaseInfoView> createState() => _BaseInfoViewState();
@@ -313,7 +311,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     // 添加監聽器
     _bookNameController.addListener(() {
       if (_isSyncingControllers) return;
-      ref.read(baseInfoDataProvider.notifier).setBookName(_bookNameController.text);
+      ref
+          .read(baseInfoDataProvider.notifier)
+          .setBookName(_bookNameController.text);
       _notifyDataChanged();
     });
 
@@ -325,13 +325,17 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
     _purposeController.addListener(() {
       if (_isSyncingControllers) return;
-      ref.read(baseInfoDataProvider.notifier).setPurpose(_purposeController.text);
+      ref
+          .read(baseInfoDataProvider.notifier)
+          .setPurpose(_purposeController.text);
       _notifyDataChanged();
     });
 
     _toRecapController.addListener(() {
       if (_isSyncingControllers) return;
-      ref.read(baseInfoDataProvider.notifier).setToRecap(_toRecapController.text);
+      ref
+          .read(baseInfoDataProvider.notifier)
+          .setToRecap(_toRecapController.text);
       _notifyDataChanged();
     });
 
@@ -405,7 +409,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   }
 
   void _notifyDataChanged() {
-    widget.onChanged?.call();
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   void _syncControllersFromProvider(BaseInfoData source) {

@@ -504,9 +504,7 @@ class OutlineCodec {
 
 // MARK: - OutlineAdjustView
 class OutlineAdjustView extends ConsumerStatefulWidget {
-  final ValueChanged<List<StorylineData>>? onStorylineChanged;
-
-  const OutlineAdjustView({super.key, required this.onStorylineChanged});
+  const OutlineAdjustView({super.key});
 
   @override
   ConsumerState<OutlineAdjustView> createState() => _OutlineAdjustViewState();
@@ -1061,37 +1059,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _notifyChange() {
-    widget.onStorylineChanged?.call(
-      _copyStorylines(ref.read(outlineDataProvider)),
-    );
-  }
-
-  List<StorylineData> _copyStorylines(List<StorylineData> source) {
-    return source
-        .map(
-          (storyline) => storyline.copyWith(
-            people: [...storyline.people],
-            item: [...storyline.item],
-            scenes: storyline.scenes
-                .map(
-                  (event) => event.copyWith(
-                    people: [...event.people],
-                    item: [...event.item],
-                    scenes: event.scenes
-                        .map(
-                          (scene) => scene.copyWith(
-                            people: [...scene.people],
-                            item: [...scene.item],
-                            doingThings: [...scene.doingThings],
-                          ),
-                        )
-                        .toList(),
-                  ),
-                )
-                .toList(),
-          ),
-        )
-        .toList();
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   void _reduceStorylines(

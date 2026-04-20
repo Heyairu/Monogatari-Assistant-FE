@@ -292,9 +292,7 @@ class WorldSettingsCodec {
 // MARK: - 主視圖
 
 class WorldSettingsView extends ConsumerStatefulWidget {
-  final ValueChanged<List<LocationData>>? onChanged;
-
-  const WorldSettingsView({super.key, this.onChanged});
+  const WorldSettingsView({super.key});
 
   @override
   ConsumerState<WorldSettingsView> createState() => _WorldSettingsViewState();
@@ -410,12 +408,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _notifyChange() {
-    final snapshot = _copyLocations(_locations);
-    widget.onChanged?.call(snapshot);
-  }
-
-  List<LocationData> _copyLocations(List<LocationData> source) {
-    return source.map((location) => location.deepCopy()).toList();
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   void _updateLocationById(

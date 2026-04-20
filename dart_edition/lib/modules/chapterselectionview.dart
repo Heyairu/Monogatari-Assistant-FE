@@ -235,9 +235,7 @@ class ChapterSelectionCodec {
 // MARK: - View
 
 class ChapterSelectionView extends ConsumerStatefulWidget {
-  final VoidCallback? onChanged;
-
-  const ChapterSelectionView({super.key, this.onChanged});
+  const ChapterSelectionView({super.key});
 
   @override
   ConsumerState<ChapterSelectionView> createState() =>
@@ -574,7 +572,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     ref.read(editorContentProvider.notifier).setContent(value);
   }
 
-  void _applySegmentSelection(String segID, {required String? previousChapterID}) {
+  void _applySegmentSelection(
+    String segID, {
+    required String? previousChapterID,
+  }) {
     _setSelection(segmentID: segID, chapterID: previousChapterID);
 
     final si = _segments.indexWhere((seg) => seg.segmentUUID == segID);
@@ -619,7 +620,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }
 
   void _notifySegmentsChanged() {
-    widget.onChanged?.call();
+    // Dirty tracking is driven by provider listeners in coordinator.
   }
 
   // MARK: - 新增方法
