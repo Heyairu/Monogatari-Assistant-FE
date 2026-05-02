@@ -15,6 +15,7 @@ import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/planview.dart" as plan_module;
 import "../../modules/worldsettingsview.dart";
+import "project_snapshot_utils.dart";
 
 const Object _editorSelectionUnset = Object();
 
@@ -64,7 +65,7 @@ class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
   base_info_module.BaseInfoData _createSnapshot(
     base_info_module.BaseInfoData value,
   ) {
-    return value.copyWith(tags: [...value.tags]);
+    return snapshotBaseInfoData(value);
   }
 
   void _setIfChanged(base_info_module.BaseInfoData value) {
@@ -154,17 +155,7 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
   List<chapter_module.SegmentData> _createSnapshot(
     List<chapter_module.SegmentData> source,
   ) {
-    return List<chapter_module.SegmentData>.unmodifiable(
-      source
-          .map(
-            (segment) => segment.copyWith(
-              chapters: segment.chapters
-                  .map((chapter) => chapter.copyWith())
-                  .toList(growable: false),
-            ),
-          )
-          .toList(growable: false),
-    );
+    return snapshotSegmentsData(source);
   }
 
   void _setIfChanged(List<chapter_module.SegmentData> value) {
@@ -172,7 +163,24 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     if (snapshot == state) {
       return;
     }
+
+    final activeChapterIds = _collectChapterIds(snapshot);
+    chapter_module.ChapterData.pruneWordCountCacheToChapterIds(
+      activeChapterIds,
+    );
     state = snapshot;
+  }
+
+  Set<String> _collectChapterIds(List<chapter_module.SegmentData> segments) {
+    final ids = <String>{};
+
+    for (final segment in segments) {
+      for (final chapter in segment.chapters) {
+        ids.add(chapter.chapterUUID);
+      }
+    }
+
+    return ids;
   }
 
   int _segmentIndexById(
@@ -464,33 +472,7 @@ class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
   List<outline_module.StorylineData> _createSnapshot(
     List<outline_module.StorylineData> source,
   ) {
-    return List<outline_module.StorylineData>.unmodifiable(
-      source
-          .map(
-            (storyline) => storyline.copyWith(
-              people: [...storyline.people],
-              item: [...storyline.item],
-              scenes: storyline.scenes
-                  .map(
-                    (event) => event.copyWith(
-                      people: [...event.people],
-                      item: [...event.item],
-                      scenes: event.scenes
-                          .map(
-                            (scene) => scene.copyWith(
-                              people: [...scene.people],
-                              item: [...scene.item],
-                              doingThings: [...scene.doingThings],
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
-          )
-          .toList(growable: false),
-    );
+    return snapshotOutlineData(source);
   }
 
   @override
@@ -519,16 +501,14 @@ final outlineDataProvider =
 
 class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
   List<LocationData> _createSnapshot(List<LocationData> source) {
-    return List<LocationData>.unmodifiable(
-      source.map((location) => location.deepCopy()).toList(growable: false),
-    );
+    return snapshotWorldSettingsData(source);
   }
 
   List<LocationData> _copyLocations(List<LocationData> source) {
     return source.map((location) => location.deepCopy()).toList();
   }
 
-  bool _updateLocationByIdRecursive(
+  ({List<LocationData> nodes, bool changed}) _updateLocationByIdRecursive(
     String id,
     List<LocationData> nodes,
     LocationData Function(LocationData current) update,
@@ -538,52 +518,69 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
       if (node.id == id) {
         final updated = update(node);
         if (updated == node) {
-          return false;
+          return (nodes: nodes, changed: false);
         }
-        nodes[index] = updated;
-        return true;
+        final next = [...nodes];
+        next[index] = updated;
+        return (nodes: next, changed: true);
       }
 
-      if (_updateLocationByIdRecursive(id, node.child, update)) {
-        return true;
+      final childResult = _updateLocationByIdRecursive(id, node.child, update);
+      if (childResult.changed) {
+        final next = [...nodes];
+        next[index] = node.copyWith(child: childResult.nodes);
+        return (nodes: next, changed: true);
       }
     }
 
-    return false;
+    return (nodes: nodes, changed: false);
   }
 
-  bool _addChildRecursive(
+  ({List<LocationData> nodes, bool changed}) _addChildRecursive(
     String parentId,
     String name,
     List<LocationData> nodes,
   ) {
-    for (final node in nodes) {
+    for (int index = 0; index < nodes.length; index++) {
+      final node = nodes[index];
       if (node.id == parentId) {
-        node.child.add(LocationData(localName: name));
-        return true;
+        final nextChildren = [...node.child, LocationData(localName: name)];
+        final next = [...nodes];
+        next[index] = node.copyWith(child: nextChildren);
+        return (nodes: next, changed: true);
       }
 
-      if (_addChildRecursive(parentId, name, node.child)) {
-        return true;
+      final childResult = _addChildRecursive(parentId, name, node.child);
+      if (childResult.changed) {
+        final next = [...nodes];
+        next[index] = node.copyWith(child: childResult.nodes);
+        return (nodes: next, changed: true);
       }
     }
 
-    return false;
+    return (nodes: nodes, changed: false);
   }
 
-  bool _removeNodeRecursive(String id, List<LocationData> nodes) {
+  ({List<LocationData> nodes, bool removed}) _removeNodeRecursive(
+    String id,
+    List<LocationData> nodes,
+  ) {
     for (int index = 0; index < nodes.length; index++) {
-      if (nodes[index].id == id) {
-        nodes.removeAt(index);
-        return true;
+      final node = nodes[index];
+      if (node.id == id) {
+        final next = [...nodes]..removeAt(index);
+        return (nodes: next, removed: true);
       }
 
-      if (_removeNodeRecursive(id, nodes[index].child)) {
-        return true;
+      final childResult = _removeNodeRecursive(id, node.child);
+      if (childResult.removed) {
+        final next = [...nodes];
+        next[index] = node.copyWith(child: childResult.nodes);
+        return (nodes: next, removed: true);
       }
     }
 
-    return false;
+    return (nodes: nodes, removed: false);
   }
 
   LocationData? _findLocationByIdRecursive(
@@ -618,55 +615,49 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     return false;
   }
 
-  bool _insertNodeByPosition({
+  ({List<LocationData> nodes, bool inserted}) _insertNodeByPosition({
     required List<LocationData> nodes,
     required String targetId,
     required String position,
     required LocationData sourceNode,
   }) {
-    if (position == "child") {
-      for (final node in nodes) {
-        if (node.id == targetId) {
-          node.child.add(sourceNode);
-          return true;
-        }
-        if (_insertNodeByPosition(
-          nodes: node.child,
-          targetId: targetId,
-          position: position,
-          sourceNode: sourceNode,
-        )) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
     for (int index = 0; index < nodes.length; index++) {
-      if (nodes[index].id == targetId) {
+      final node = nodes[index];
+      if (node.id == targetId) {
+        if (position == "child") {
+          final nextChildren = [...node.child, sourceNode];
+          final next = [...nodes];
+          next[index] = node.copyWith(child: nextChildren);
+          return (nodes: next, inserted: true);
+        }
+
         if (position == "before") {
-          nodes.insert(index, sourceNode);
-          return true;
+          final next = [...nodes]..insert(index, sourceNode);
+          return (nodes: next, inserted: true);
         }
+
         if (position == "after") {
-          nodes.insert(index + 1, sourceNode);
-          return true;
+          final next = [...nodes]..insert(index + 1, sourceNode);
+          return (nodes: next, inserted: true);
         }
-        return false;
+
+        return (nodes: nodes, inserted: false);
       }
 
-      if (_insertNodeByPosition(
-        nodes: nodes[index].child,
+      final childResult = _insertNodeByPosition(
+        nodes: node.child,
         targetId: targetId,
         position: position,
         sourceNode: sourceNode,
-      )) {
-        return true;
+      );
+      if (childResult.inserted) {
+        final next = [...nodes];
+        next[index] = node.copyWith(child: childResult.nodes);
+        return (nodes: next, inserted: true);
       }
     }
 
-    return false;
+    return (nodes: nodes, inserted: false);
   }
 
   @override
@@ -688,12 +679,15 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     String id,
     LocationData Function(LocationData current) update,
   ) {
-    final next = _copyLocations(state);
-    final changed = _updateLocationByIdRecursive(id, next, update);
-    if (!changed) {
+    final result = _updateLocationByIdRecursive(
+      id,
+      _copyLocations(state),
+      update,
+    );
+    if (!result.changed) {
       return false;
     }
-    setWorldSettingsData(next);
+    setWorldSettingsData(result.nodes);
     return true;
   }
 
@@ -703,30 +697,29 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
       return false;
     }
 
-    final next = _copyLocations(state);
-    final changed = parentId == null
-        ? () {
-            next.add(LocationData(localName: trimmed));
-            return true;
-          }()
-        : _addChildRecursive(parentId, trimmed, next);
+    if (parentId == null) {
+      final next = [..._copyLocations(state), LocationData(localName: trimmed)];
+      setWorldSettingsData(next);
+      return true;
+    }
 
-    if (!changed) {
+    final result = _addChildRecursive(parentId, trimmed, _copyLocations(state));
+
+    if (!result.changed) {
       return false;
     }
 
-    setWorldSettingsData(next);
+    setWorldSettingsData(result.nodes);
     return true;
   }
 
   bool removeLocationById(String id) {
-    final next = _copyLocations(state);
-    final removed = _removeNodeRecursive(id, next);
-    if (!removed) {
+    final result = _removeNodeRecursive(id, _copyLocations(state));
+    if (!result.removed) {
       return false;
     }
 
-    setWorldSettingsData(next);
+    setWorldSettingsData(result.nodes);
     return true;
   }
 
@@ -749,22 +742,23 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
       return false;
     }
 
-    final removed = _removeNodeRecursive(sourceId, next);
-    if (!removed) {
+    final removedResult = _removeNodeRecursive(sourceId, next);
+    if (!removedResult.removed) {
       return false;
     }
 
-    final inserted = _insertNodeByPosition(
-      nodes: next,
+    final insertedResult = _insertNodeByPosition(
+      nodes: removedResult.nodes,
       targetId: targetId,
       position: position,
       sourceNode: sourceNode,
     );
-    if (!inserted) {
-      next.add(sourceNode);
-    }
 
-    setWorldSettingsData(next);
+    final resultNodes = insertedResult.inserted
+        ? insertedResult.nodes
+        : [...removedResult.nodes, sourceNode];
+
+    setWorldSettingsData(resultNodes);
     return true;
   }
 }
@@ -779,8 +773,7 @@ class CharacterDataNotifier
   Map<String, character_model.CharacterEntryData> _createSnapshot(
     Map<String, character_model.CharacterEntryData> source,
   ) {
-    final copied = character_model.copyCharacterDataMap(source);
-    return Map<String, character_model.CharacterEntryData>.unmodifiable(copied);
+    return snapshotCharacterData(source);
   }
 
   @override
@@ -898,9 +891,7 @@ class ForeshadowDataNotifier
   List<plan_module.ForeshadowItem> _createSnapshot(
     List<plan_module.ForeshadowItem> source,
   ) {
-    return List<plan_module.ForeshadowItem>.unmodifiable(
-      source.map((item) => item.copyWith()).toList(growable: false),
-    );
+    return snapshotForeshadowData(source);
   }
 
   @override
@@ -1000,9 +991,7 @@ class UpdatePlanDataNotifier
   List<plan_module.UpdatePlanItem> _createSnapshot(
     List<plan_module.UpdatePlanItem> source,
   ) {
-    return List<plan_module.UpdatePlanItem>.unmodifiable(
-      source.map((item) => item.copyWith()).toList(growable: false),
-    );
+    return snapshotUpdatePlanData(source);
   }
 
   @override

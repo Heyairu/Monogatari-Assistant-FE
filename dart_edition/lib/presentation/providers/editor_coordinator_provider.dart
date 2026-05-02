@@ -5,9 +5,9 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../bin/file.dart" as file_module;
 import "../../bin/file.dart";
 import "../../bin/settings_manager.dart";
+import "../../modules/chapterselectionview.dart" as chapter_module;
 import "global_state_providers.dart";
 import "project_io_providers.dart";
-import "project_snapshot_utils.dart";
 import "project_state_providers.dart";
 
 class EditorProjectInitialState {
@@ -493,18 +493,16 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
   }
 
   file_module.ProjectData collectProjectData() {
-    return snapshotProjectData(
-      file_module.ProjectData(
-        baseInfoData: ref.read(baseInfoDataProvider),
-        segmentsData: ref.read(segmentsDataProvider),
-        outlineData: ref.read(outlineDataProvider),
-        foreshadowData: ref.read(foreshadowDataProvider),
-        updatePlanData: ref.read(updatePlanDataProvider),
-        worldSettingsData: ref.read(worldSettingsDataProvider),
-        characterData: ref.read(characterDataProvider),
-        totalWords: ref.read(totalWordsProvider),
-        contentText: ref.read(editorContentProvider),
-      ),
+    return file_module.ProjectData(
+      baseInfoData: ref.read(baseInfoDataProvider),
+      segmentsData: ref.read(segmentsDataProvider),
+      outlineData: ref.read(outlineDataProvider),
+      foreshadowData: ref.read(foreshadowDataProvider),
+      updatePlanData: ref.read(updatePlanDataProvider),
+      worldSettingsData: ref.read(worldSettingsDataProvider),
+      characterData: ref.read(characterDataProvider),
+      totalWords: ref.read(totalWordsProvider),
+      contentText: ref.read(editorContentProvider),
     );
   }
 
@@ -512,29 +510,33 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     required file_module.ProjectData data,
     required EditorProjectInitialState initialState,
   }) {
-    final snapshot = snapshotProjectData(data);
+    // Project switch should reset chapter word-count cache to avoid retaining
+    // stale entries from the previous project session.
+    chapter_module.ChapterData.clearAllWordCountCache();
+
+    final snapshot = data;
 
     ref
-        .read(baseInfoDataProvider.notifier)
-        .updateBaseInfoData((_) => snapshot.baseInfoData);
+      .read(baseInfoDataProvider.notifier)
+      .updateBaseInfoData((_) => snapshot.baseInfoData);
     ref
-        .read(segmentsDataProvider.notifier)
-        .updateSegmentsData((_) => snapshot.segmentsData);
+      .read(segmentsDataProvider.notifier)
+      .updateSegmentsData((_) => snapshot.segmentsData);
     ref
-        .read(outlineDataProvider.notifier)
-        .updateOutlineData((_) => snapshot.outlineData);
+      .read(outlineDataProvider.notifier)
+      .updateOutlineData((_) => snapshot.outlineData);
     ref
-        .read(foreshadowDataProvider.notifier)
-        .updateForeshadowData((_) => snapshot.foreshadowData);
+      .read(foreshadowDataProvider.notifier)
+      .updateForeshadowData((_) => snapshot.foreshadowData);
     ref
-        .read(updatePlanDataProvider.notifier)
-        .updateUpdatePlanData((_) => snapshot.updatePlanData);
+      .read(updatePlanDataProvider.notifier)
+      .updateUpdatePlanData((_) => snapshot.updatePlanData);
     ref
-        .read(worldSettingsDataProvider.notifier)
-        .updateWorldSettingsData((_) => snapshot.worldSettingsData);
+      .read(worldSettingsDataProvider.notifier)
+      .updateWorldSettingsData((_) => snapshot.worldSettingsData);
     ref
-        .read(characterDataProvider.notifier)
-        .updateCharacterData((_) => snapshot.characterData);
+      .read(characterDataProvider.notifier)
+      .updateCharacterData((_) => snapshot.characterData);
 
     ref
         .read(editorSelectionProvider.notifier)
@@ -560,7 +562,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
     try {
       final editorSelection = ref.read(editorSelectionProvider);
-      final copiedSegments = snapshotSegmentsData(
+      final copiedSegments = List<chapter_module.SegmentData>.from(
         ref.read(segmentsDataProvider),
       );
 

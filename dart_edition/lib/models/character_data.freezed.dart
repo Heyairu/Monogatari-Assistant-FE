@@ -466,7 +466,7 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
     return _then(
       _$CharacterEntryDataImpl(
         textFields: null == textFields
-            ? _value.textFields
+            ? _value._textFields
             : textFields // ignore: cast_nullable_to_non_nullable
                   as Map<String, String>,
         alignment: freezed == alignment
@@ -474,51 +474,51 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
             : alignment // ignore: cast_nullable_to_non_nullable
                   as String?,
         hinderEvents: null == hinderEvents
-            ? _value.hinderEvents
+            ? _value._hinderEvents
             : hinderEvents // ignore: cast_nullable_to_non_nullable
                   as List<CharacterHinderEvent>,
         loveToDoList: null == loveToDoList
-            ? _value.loveToDoList
+            ? _value._loveToDoList
             : loveToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         hateToDoList: null == hateToDoList
-            ? _value.hateToDoList
+            ? _value._hateToDoList
             : hateToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         wantToDoList: null == wantToDoList
-            ? _value.wantToDoList
+            ? _value._wantToDoList
             : wantToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         fearToDoList: null == fearToDoList
-            ? _value.fearToDoList
+            ? _value._fearToDoList
             : fearToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         proficientToDoList: null == proficientToDoList
-            ? _value.proficientToDoList
+            ? _value._proficientToDoList
             : proficientToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         unProficientToDoList: null == unProficientToDoList
-            ? _value.unProficientToDoList
+            ? _value._unProficientToDoList
             : unProficientToDoList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         commonAbilityValues: null == commonAbilityValues
-            ? _value.commonAbilityValues
+            ? _value._commonAbilityValues
             : commonAbilityValues // ignore: cast_nullable_to_non_nullable
                   as List<double>,
         howToShowLove: null == howToShowLove
-            ? _value.howToShowLove
+            ? _value._howToShowLove
             : howToShowLove // ignore: cast_nullable_to_non_nullable
                   as Map<String, bool>,
         howToShowGoodwill: null == howToShowGoodwill
-            ? _value.howToShowGoodwill
+            ? _value._howToShowGoodwill
             : howToShowGoodwill // ignore: cast_nullable_to_non_nullable
                   as Map<String, bool>,
         handleHatePeople: null == handleHatePeople
-            ? _value.handleHatePeople
+            ? _value._handleHatePeople
             : handleHatePeople // ignore: cast_nullable_to_non_nullable
                   as Map<String, bool>,
         socialItemValues: null == socialItemValues
-            ? _value.socialItemValues
+            ? _value._socialItemValues
             : socialItemValues // ignore: cast_nullable_to_non_nullable
                   as List<double>,
         relationship: freezed == relationship
@@ -534,31 +534,31 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
             : isHarem // ignore: cast_nullable_to_non_nullable
                   as bool,
         approachValues: null == approachValues
-            ? _value.approachValues
+            ? _value._approachValues
             : approachValues // ignore: cast_nullable_to_non_nullable
                   as List<double>,
         traitsValues: null == traitsValues
-            ? _value.traitsValues
+            ? _value._traitsValues
             : traitsValues // ignore: cast_nullable_to_non_nullable
                   as List<double>,
         likeItemList: null == likeItemList
-            ? _value.likeItemList
+            ? _value._likeItemList
             : likeItemList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         admireItemList: null == admireItemList
-            ? _value.admireItemList
+            ? _value._admireItemList
             : admireItemList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         hateItemList: null == hateItemList
-            ? _value.hateItemList
+            ? _value._hateItemList
             : hateItemList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         fearItemList: null == fearItemList
-            ? _value.fearItemList
+            ? _value._fearItemList
             : fearItemList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
         familiarItemList: null == familiarItemList
-            ? _value.familiarItemList
+            ? _value._familiarItemList
             : familiarItemList // ignore: cast_nullable_to_non_nullable
                   as List<String>,
       ),
@@ -570,73 +570,177 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
 
 class _$CharacterEntryDataImpl extends _CharacterEntryData {
   const _$CharacterEntryDataImpl({
-    this.textFields = const <String, String>{},
+    final Map<String, String> textFields = const <String, String>{},
     this.alignment,
-    this.hinderEvents = const <CharacterHinderEvent>[],
-    this.loveToDoList = const <String>[],
-    this.hateToDoList = const <String>[],
-    this.wantToDoList = const <String>[],
-    this.fearToDoList = const <String>[],
-    this.proficientToDoList = const <String>[],
-    this.unProficientToDoList = const <String>[],
-    this.commonAbilityValues = const <double>[],
-    this.howToShowLove = const <String, bool>{},
-    this.howToShowGoodwill = const <String, bool>{},
-    this.handleHatePeople = const <String, bool>{},
-    this.socialItemValues = const <double>[],
+    final List<CharacterHinderEvent> hinderEvents =
+        const <CharacterHinderEvent>[],
+    final List<String> loveToDoList = const <String>[],
+    final List<String> hateToDoList = const <String>[],
+    final List<String> wantToDoList = const <String>[],
+    final List<String> fearToDoList = const <String>[],
+    final List<String> proficientToDoList = const <String>[],
+    final List<String> unProficientToDoList = const <String>[],
+    final List<double> commonAbilityValues = const <double>[],
+    final Map<String, bool> howToShowLove = const <String, bool>{},
+    final Map<String, bool> howToShowGoodwill = const <String, bool>{},
+    final Map<String, bool> handleHatePeople = const <String, bool>{},
+    final List<double> socialItemValues = const <double>[],
     this.relationship,
     this.isFindNewLove = false,
     this.isHarem = false,
-    this.approachValues = const <double>[],
-    this.traitsValues = const <double>[],
-    this.likeItemList = const <String>[],
-    this.admireItemList = const <String>[],
-    this.hateItemList = const <String>[],
-    this.fearItemList = const <String>[],
-    this.familiarItemList = const <String>[],
-  }) : super._();
+    final List<double> approachValues = const <double>[],
+    final List<double> traitsValues = const <double>[],
+    final List<String> likeItemList = const <String>[],
+    final List<String> admireItemList = const <String>[],
+    final List<String> hateItemList = const <String>[],
+    final List<String> fearItemList = const <String>[],
+    final List<String> familiarItemList = const <String>[],
+  }) : _textFields = textFields,
+       _hinderEvents = hinderEvents,
+       _loveToDoList = loveToDoList,
+       _hateToDoList = hateToDoList,
+       _wantToDoList = wantToDoList,
+       _fearToDoList = fearToDoList,
+       _proficientToDoList = proficientToDoList,
+       _unProficientToDoList = unProficientToDoList,
+       _commonAbilityValues = commonAbilityValues,
+       _howToShowLove = howToShowLove,
+       _howToShowGoodwill = howToShowGoodwill,
+       _handleHatePeople = handleHatePeople,
+       _socialItemValues = socialItemValues,
+       _approachValues = approachValues,
+       _traitsValues = traitsValues,
+       _likeItemList = likeItemList,
+       _admireItemList = admireItemList,
+       _hateItemList = hateItemList,
+       _fearItemList = fearItemList,
+       _familiarItemList = familiarItemList,
+       super._();
+
+  final Map<String, String> _textFields;
+  @override
+  @JsonKey()
+  Map<String, String> get textFields {
+    if (_textFields is EqualUnmodifiableMapView) return _textFields;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_textFields);
+  }
 
   @override
-  @JsonKey()
-  final Map<String, String> textFields;
-  @override
   final String? alignment;
+  final List<CharacterHinderEvent> _hinderEvents;
   @override
   @JsonKey()
-  final List<CharacterHinderEvent> hinderEvents;
+  List<CharacterHinderEvent> get hinderEvents {
+    if (_hinderEvents is EqualUnmodifiableListView) return _hinderEvents;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_hinderEvents);
+  }
+
+  final List<String> _loveToDoList;
   @override
   @JsonKey()
-  final List<String> loveToDoList;
+  List<String> get loveToDoList {
+    if (_loveToDoList is EqualUnmodifiableListView) return _loveToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_loveToDoList);
+  }
+
+  final List<String> _hateToDoList;
   @override
   @JsonKey()
-  final List<String> hateToDoList;
+  List<String> get hateToDoList {
+    if (_hateToDoList is EqualUnmodifiableListView) return _hateToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_hateToDoList);
+  }
+
+  final List<String> _wantToDoList;
   @override
   @JsonKey()
-  final List<String> wantToDoList;
+  List<String> get wantToDoList {
+    if (_wantToDoList is EqualUnmodifiableListView) return _wantToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_wantToDoList);
+  }
+
+  final List<String> _fearToDoList;
   @override
   @JsonKey()
-  final List<String> fearToDoList;
+  List<String> get fearToDoList {
+    if (_fearToDoList is EqualUnmodifiableListView) return _fearToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_fearToDoList);
+  }
+
+  final List<String> _proficientToDoList;
   @override
   @JsonKey()
-  final List<String> proficientToDoList;
+  List<String> get proficientToDoList {
+    if (_proficientToDoList is EqualUnmodifiableListView)
+      return _proficientToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_proficientToDoList);
+  }
+
+  final List<String> _unProficientToDoList;
   @override
   @JsonKey()
-  final List<String> unProficientToDoList;
+  List<String> get unProficientToDoList {
+    if (_unProficientToDoList is EqualUnmodifiableListView)
+      return _unProficientToDoList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_unProficientToDoList);
+  }
+
+  final List<double> _commonAbilityValues;
   @override
   @JsonKey()
-  final List<double> commonAbilityValues;
+  List<double> get commonAbilityValues {
+    if (_commonAbilityValues is EqualUnmodifiableListView)
+      return _commonAbilityValues;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_commonAbilityValues);
+  }
+
+  final Map<String, bool> _howToShowLove;
   @override
   @JsonKey()
-  final Map<String, bool> howToShowLove;
+  Map<String, bool> get howToShowLove {
+    if (_howToShowLove is EqualUnmodifiableMapView) return _howToShowLove;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_howToShowLove);
+  }
+
+  final Map<String, bool> _howToShowGoodwill;
   @override
   @JsonKey()
-  final Map<String, bool> howToShowGoodwill;
+  Map<String, bool> get howToShowGoodwill {
+    if (_howToShowGoodwill is EqualUnmodifiableMapView)
+      return _howToShowGoodwill;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_howToShowGoodwill);
+  }
+
+  final Map<String, bool> _handleHatePeople;
   @override
   @JsonKey()
-  final Map<String, bool> handleHatePeople;
+  Map<String, bool> get handleHatePeople {
+    if (_handleHatePeople is EqualUnmodifiableMapView) return _handleHatePeople;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_handleHatePeople);
+  }
+
+  final List<double> _socialItemValues;
   @override
   @JsonKey()
-  final List<double> socialItemValues;
+  List<double> get socialItemValues {
+    if (_socialItemValues is EqualUnmodifiableListView)
+      return _socialItemValues;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_socialItemValues);
+  }
+
   @override
   final String? relationship;
   @override
@@ -645,27 +749,69 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
   @override
   @JsonKey()
   final bool isHarem;
+  final List<double> _approachValues;
   @override
   @JsonKey()
-  final List<double> approachValues;
+  List<double> get approachValues {
+    if (_approachValues is EqualUnmodifiableListView) return _approachValues;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_approachValues);
+  }
+
+  final List<double> _traitsValues;
   @override
   @JsonKey()
-  final List<double> traitsValues;
+  List<double> get traitsValues {
+    if (_traitsValues is EqualUnmodifiableListView) return _traitsValues;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_traitsValues);
+  }
+
+  final List<String> _likeItemList;
   @override
   @JsonKey()
-  final List<String> likeItemList;
+  List<String> get likeItemList {
+    if (_likeItemList is EqualUnmodifiableListView) return _likeItemList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_likeItemList);
+  }
+
+  final List<String> _admireItemList;
   @override
   @JsonKey()
-  final List<String> admireItemList;
+  List<String> get admireItemList {
+    if (_admireItemList is EqualUnmodifiableListView) return _admireItemList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_admireItemList);
+  }
+
+  final List<String> _hateItemList;
   @override
   @JsonKey()
-  final List<String> hateItemList;
+  List<String> get hateItemList {
+    if (_hateItemList is EqualUnmodifiableListView) return _hateItemList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_hateItemList);
+  }
+
+  final List<String> _fearItemList;
   @override
   @JsonKey()
-  final List<String> fearItemList;
+  List<String> get fearItemList {
+    if (_fearItemList is EqualUnmodifiableListView) return _fearItemList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_fearItemList);
+  }
+
+  final List<String> _familiarItemList;
   @override
   @JsonKey()
-  final List<String> familiarItemList;
+  List<String> get familiarItemList {
+    if (_familiarItemList is EqualUnmodifiableListView)
+      return _familiarItemList;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_familiarItemList);
+  }
 
   @override
   String toString() {
@@ -678,58 +824,58 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
         (other.runtimeType == runtimeType &&
             other is _$CharacterEntryDataImpl &&
             const DeepCollectionEquality().equals(
-              other.textFields,
-              textFields,
+              other._textFields,
+              _textFields,
             ) &&
             (identical(other.alignment, alignment) ||
                 other.alignment == alignment) &&
             const DeepCollectionEquality().equals(
-              other.hinderEvents,
-              hinderEvents,
+              other._hinderEvents,
+              _hinderEvents,
             ) &&
             const DeepCollectionEquality().equals(
-              other.loveToDoList,
-              loveToDoList,
+              other._loveToDoList,
+              _loveToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.hateToDoList,
-              hateToDoList,
+              other._hateToDoList,
+              _hateToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.wantToDoList,
-              wantToDoList,
+              other._wantToDoList,
+              _wantToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.fearToDoList,
-              fearToDoList,
+              other._fearToDoList,
+              _fearToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.proficientToDoList,
-              proficientToDoList,
+              other._proficientToDoList,
+              _proficientToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.unProficientToDoList,
-              unProficientToDoList,
+              other._unProficientToDoList,
+              _unProficientToDoList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.commonAbilityValues,
-              commonAbilityValues,
+              other._commonAbilityValues,
+              _commonAbilityValues,
             ) &&
             const DeepCollectionEquality().equals(
-              other.howToShowLove,
-              howToShowLove,
+              other._howToShowLove,
+              _howToShowLove,
             ) &&
             const DeepCollectionEquality().equals(
-              other.howToShowGoodwill,
-              howToShowGoodwill,
+              other._howToShowGoodwill,
+              _howToShowGoodwill,
             ) &&
             const DeepCollectionEquality().equals(
-              other.handleHatePeople,
-              handleHatePeople,
+              other._handleHatePeople,
+              _handleHatePeople,
             ) &&
             const DeepCollectionEquality().equals(
-              other.socialItemValues,
-              socialItemValues,
+              other._socialItemValues,
+              _socialItemValues,
             ) &&
             (identical(other.relationship, relationship) ||
                 other.relationship == relationship) &&
@@ -737,62 +883,62 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
                 other.isFindNewLove == isFindNewLove) &&
             (identical(other.isHarem, isHarem) || other.isHarem == isHarem) &&
             const DeepCollectionEquality().equals(
-              other.approachValues,
-              approachValues,
+              other._approachValues,
+              _approachValues,
             ) &&
             const DeepCollectionEquality().equals(
-              other.traitsValues,
-              traitsValues,
+              other._traitsValues,
+              _traitsValues,
             ) &&
             const DeepCollectionEquality().equals(
-              other.likeItemList,
-              likeItemList,
+              other._likeItemList,
+              _likeItemList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.admireItemList,
-              admireItemList,
+              other._admireItemList,
+              _admireItemList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.hateItemList,
-              hateItemList,
+              other._hateItemList,
+              _hateItemList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.fearItemList,
-              fearItemList,
+              other._fearItemList,
+              _fearItemList,
             ) &&
             const DeepCollectionEquality().equals(
-              other.familiarItemList,
-              familiarItemList,
+              other._familiarItemList,
+              _familiarItemList,
             ));
   }
 
   @override
   int get hashCode => Object.hashAll([
     runtimeType,
-    const DeepCollectionEquality().hash(textFields),
+    const DeepCollectionEquality().hash(_textFields),
     alignment,
-    const DeepCollectionEquality().hash(hinderEvents),
-    const DeepCollectionEquality().hash(loveToDoList),
-    const DeepCollectionEquality().hash(hateToDoList),
-    const DeepCollectionEquality().hash(wantToDoList),
-    const DeepCollectionEquality().hash(fearToDoList),
-    const DeepCollectionEquality().hash(proficientToDoList),
-    const DeepCollectionEquality().hash(unProficientToDoList),
-    const DeepCollectionEquality().hash(commonAbilityValues),
-    const DeepCollectionEquality().hash(howToShowLove),
-    const DeepCollectionEquality().hash(howToShowGoodwill),
-    const DeepCollectionEquality().hash(handleHatePeople),
-    const DeepCollectionEquality().hash(socialItemValues),
+    const DeepCollectionEquality().hash(_hinderEvents),
+    const DeepCollectionEquality().hash(_loveToDoList),
+    const DeepCollectionEquality().hash(_hateToDoList),
+    const DeepCollectionEquality().hash(_wantToDoList),
+    const DeepCollectionEquality().hash(_fearToDoList),
+    const DeepCollectionEquality().hash(_proficientToDoList),
+    const DeepCollectionEquality().hash(_unProficientToDoList),
+    const DeepCollectionEquality().hash(_commonAbilityValues),
+    const DeepCollectionEquality().hash(_howToShowLove),
+    const DeepCollectionEquality().hash(_howToShowGoodwill),
+    const DeepCollectionEquality().hash(_handleHatePeople),
+    const DeepCollectionEquality().hash(_socialItemValues),
     relationship,
     isFindNewLove,
     isHarem,
-    const DeepCollectionEquality().hash(approachValues),
-    const DeepCollectionEquality().hash(traitsValues),
-    const DeepCollectionEquality().hash(likeItemList),
-    const DeepCollectionEquality().hash(admireItemList),
-    const DeepCollectionEquality().hash(hateItemList),
-    const DeepCollectionEquality().hash(fearItemList),
-    const DeepCollectionEquality().hash(familiarItemList),
+    const DeepCollectionEquality().hash(_approachValues),
+    const DeepCollectionEquality().hash(_traitsValues),
+    const DeepCollectionEquality().hash(_likeItemList),
+    const DeepCollectionEquality().hash(_admireItemList),
+    const DeepCollectionEquality().hash(_hateItemList),
+    const DeepCollectionEquality().hash(_fearItemList),
+    const DeepCollectionEquality().hash(_familiarItemList),
   ]);
 
   /// Create a copy of CharacterEntryData

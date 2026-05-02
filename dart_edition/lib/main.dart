@@ -187,11 +187,13 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   // 主編輯器文字
   String get contentText => ref.read(editorContentProvider);
   set contentText(String value) {
+    _cancelPendingContentCommit();
     ref.read(editorContentProvider.notifier).setContent(value);
   }
 
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
+  String _lastObservedEditorText = "";
 
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
@@ -218,7 +220,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   bool get isLoading => _editorCoordinatorState.isLoading;
   bool get _isSyncing => _editorCoordinatorState.isSyncing;
   bool get hasUnsavedChanges => _editorCoordinatorState.hasUnsavedChanges;
-  DateTime? get _lastSavedTime => _editorCoordinatorState.lastSavedTime;
 
   ProviderSubscription<EditorCoordinatorState>? _editorCoordinatorSubscription;
   ProviderSubscription<String>? _editorContentSubscription;
@@ -328,6 +329,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (textController.text != initialContent) {
         textController.text = initialContent;
       }
+      _lastObservedEditorText = textController.text;
     });
   }
 
@@ -353,15 +355,16 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         selectionOffset,
         textController.text.length,
       );
-      final bool contentChanged =
-          !_isSyncing && contentText != textController.text;
+        final String currentText = textController.text;
+        final bool textChanged =
+          !_isSyncing && _lastObservedEditorText != currentText;
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
-      if (contentChanged) {
-        _editorCoordinatorNotifier.handleEditorInputChanged(
-          nextContent: textController.text,
-          cursorOffset: normalizedOffset,
-        );
+      if (textChanged) {
+        _lastObservedEditorText = currentText;
+        _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
+        _editorCoordinatorNotifier.markAsModified();
+        _scheduleContentCommit(currentText);
 
         // Trigger async incremental update instead of full sync recalculation
         _debouncedWordCountUpdate();
@@ -406,6 +409,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             selection: currentSelection,
             composing: TextRange.empty,
           );
+          _lastObservedEditorText = next;
         } finally {
           if (beganSync) {
             coordinatorNotifier.endSync();
@@ -499,6 +503,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   @override
   void dispose() {
     _wordCountDebounce?.cancel(); // Cancel timer
+    _cancelPendingContentCommit();
     _editorCoordinatorSubscription?.close();
     _editorContentSubscription?.close();
     _segmentsDataSubscription?.close();
@@ -517,6 +522,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Timer? _wordCountDebounce;
+  Timer? _contentCommitDebounce;
+  String? _pendingContentCommit;
+  static const Duration _contentCommitDelay = Duration(milliseconds: 200);
 
   void _debouncedWordCountUpdate() {
     if (_wordCountDebounce?.isActive ?? false) _wordCountDebounce!.cancel();
@@ -525,10 +533,49 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     });
   }
 
+  void _scheduleContentCommit(String nextContent) {
+    _pendingContentCommit = nextContent;
+    if (_contentCommitDebounce?.isActive ?? false) {
+      _contentCommitDebounce!.cancel();
+    }
+    _contentCommitDebounce = Timer(_contentCommitDelay, _commitPendingContent);
+  }
+
+  void _commitPendingContent() {
+    if (!mounted) {
+      return;
+    }
+
+    final pending = _pendingContentCommit;
+    _pendingContentCommit = null;
+    if (pending == null) {
+      return;
+    }
+
+    if (ref.read(editorContentProvider) == pending) {
+      return;
+    }
+
+    ref.read(editorContentProvider.notifier).setContent(pending);
+  }
+
+  void _flushPendingEditorContent() {
+    if (_contentCommitDebounce?.isActive ?? false) {
+      _contentCommitDebounce!.cancel();
+    }
+    _commitPendingContent();
+  }
+
+  void _cancelPendingContentCommit() {
+    _contentCommitDebounce?.cancel();
+    _contentCommitDebounce = null;
+    _pendingContentCommit = null;
+  }
+
   Future<void> _updateActiveWordCountAsync() async {
     if (selectedSegID == null || selectedChapID == null) return;
 
-    final text = contentText;
+    final text = textController.text;
     final mode = _settingsState.wordCountMode;
 
     // Use Isolate to calculate word count for active chapter only
@@ -847,7 +894,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     required bool hasUnsavedChanges,
     required DateTime? lastSavedTime,
   }) {
-    final statusContentText = ref.watch(editorContentProvider);
+    final statusContentText = textController.text;
     final statusSelection = ref.watch(
       editorSelectionProvider.select(
         (state) => (
@@ -2016,6 +2063,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 同步編輯器內容到選中的章節（先存的部分）
   void _syncEditorToSelectedChapter() {
+    _flushPendingEditorContent();
     ref
         .read(editorCoordinatorProvider.notifier)
         .syncEditorToSelectedChapter(textController: textController);
@@ -2023,6 +2071,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 輔助方法：收集當前專案數據
   ProjectData _collectProjectData() {
+    _flushPendingEditorContent();
     return ref.read(editorCoordinatorProvider.notifier).collectProjectData();
   }
 
@@ -2031,6 +2080,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     ProjectData data,
     EditorProjectInitialState initialState,
   ) {
+    _cancelPendingContentCommit();
     final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
     final beganApplying = coordinatorNotifier.beginApplyingProjectData();
     final String? previousSelectedChapID = selectedChapID;
@@ -2051,6 +2101,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       } else {
         textController.text = "";
       }
+      _lastObservedEditorText = textController.text;
     } finally {
       if (beganSync) {
         coordinatorNotifier.endSync();

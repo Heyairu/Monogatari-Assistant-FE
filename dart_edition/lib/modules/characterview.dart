@@ -1344,7 +1344,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (nameController != null) {
       nameController.addListener(() {
         if (_isLoading) return;
-        _syncCharacterName(nameController.text);
         _markAsModified();
       });
     }
@@ -2485,8 +2484,74 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   // 儲存當前角色資料
   void _saveCurrentCharacterData() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    if (selectedCharacter == null) return;
+    final currentName = selectedCharacter;
+    if (currentName == null) return;
 
+    final desiredName = (_controllers["name"]?.text ?? "").trim();
+    final targetName = desiredName.isEmpty ? currentName : desiredName;
+    final currentData = characterData;
+
+    if (targetName != currentName && currentData.containsKey(targetName)) {
+      _setNameFieldTextSilently(currentName);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("角色名稱已存在")));
+      }
+      return;
+    }
+
+    final nextEntry = _buildDraftCharacterEntry(targetName);
+
+    if (targetName == currentName) {
+      final didUpdate = _characterNotifier.setCharacterEntry(
+        name: currentName,
+        entry: nextEntry,
+      );
+      if (didUpdate) {
+        _emitCharacterDataChanged();
+      }
+      _setNameFieldTextSilently(targetName);
+      return;
+    }
+
+    final orderedNames = currentData.keys.toList(growable: true);
+    final currentIndex = orderedNames.indexOf(currentName);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    orderedNames[currentIndex] = targetName;
+
+    final nextCharacterData = <String, CharacterEntryData>{};
+    for (final name in orderedNames) {
+      if (name == targetName) {
+        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(nextEntry);
+        continue;
+      }
+
+      final entry = currentData[name];
+      if (entry != null) {
+        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(entry);
+      }
+    }
+
+    // Update local selection first so provider listener does not fallback-load
+    // during rename, which can reset the text field selection.
+    selectedCharacter = targetName;
+    selectedCharacterIndex = currentIndex;
+
+    _characterNotifier.setCharacterData(nextCharacterData);
+    _emitCharacterDataChanged();
+    _setNameFieldTextSilently(targetName);
+
+    setState(() {
+      selectedCharacter = targetName;
+      selectedCharacterIndex = currentIndex;
+    });
+  }
+
+  CharacterEntryData _buildDraftCharacterEntry(String fallbackName) {
     final data = <String, dynamic>{};
 
     // Save all text controllers
@@ -2519,17 +2584,21 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     data["fearItemList"] = fearItemList;
     data["familiarItemList"] = familiarItemList;
 
-    final didUpdate = _characterNotifier.setCharacterEntry(
-      name: selectedCharacter!,
-      entry: CharacterEntryData.fromLegacyMap(
-        data,
-        fallbackName: selectedCharacter,
-      ),
-    );
+    return CharacterEntryData.fromLegacyMap(
+      data,
+      fallbackName: fallbackName,
+    ).withTextField("name", fallbackName);
+  }
 
-    if (didUpdate) {
-      _emitCharacterDataChanged();
+  void _setNameFieldTextSilently(String value) {
+    final controller = _controllers["name"];
+    if (controller == null || controller.text == value) {
+      return;
     }
+
+    _isLoading = true;
+    controller.text = value;
+    _isLoading = false;
   }
 
   List<String> _readStringList(Map<String, dynamic> data, String key) {
@@ -2741,67 +2810,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     // Clear helpers
     _hinderEventController.clear();
     _solveController.clear();
-  }
-
-  // 同步角色名稱到列表
-  void _syncCharacterName(String newName) {
-    if (selectedCharacter == null || selectedCharacterIndex == null) return;
-
-    final trimmedName = newName.trim();
-    if (trimmedName.isEmpty) return;
-
-    // 檢查名稱是否與其他角色重複
-    if (trimmedName != selectedCharacter && characters.contains(trimmedName)) {
-      // 如果重複,不進行更新,可以顯示提示
-      return;
-    }
-
-    final oldName = selectedCharacter!;
-    if (oldName == trimmedName) {
-      return;
-    }
-
-    final currentData = characterData;
-    final oldEntry = currentData[oldName];
-    if (oldEntry == null) {
-      return;
-    }
-
-    final orderedNames = currentData.keys.toList(growable: true);
-    final currentIndex = orderedNames.indexOf(oldName);
-    if (currentIndex < 0) {
-      return;
-    }
-    orderedNames[currentIndex] = trimmedName;
-
-    final renamedEntry = CharacterCodec.copyCharacterEntry(
-      oldEntry,
-    ).withTextField("name", trimmedName);
-    final nextCharacterData = <String, CharacterEntryData>{};
-    for (final name in orderedNames) {
-      if (name == trimmedName) {
-        nextCharacterData[name] = renamedEntry;
-        continue;
-      }
-
-      final entry = currentData[name];
-      if (entry != null) {
-        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(entry);
-      }
-    }
-
-    // Update local selection first to avoid listener race that may fallback to
-    // index 0 before the renamed key is observed.
-    selectedCharacter = trimmedName;
-    selectedCharacterIndex = currentIndex;
-
-    _characterNotifier.setCharacterData(nextCharacterData);
-    _emitCharacterDataChanged();
-
-    setState(() {
-      selectedCharacter = trimmedName;
-      selectedCharacterIndex = currentIndex;
-    });
   }
 
   void _addCharacter() {

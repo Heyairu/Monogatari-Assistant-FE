@@ -89,7 +89,7 @@ class CharacterHinderEvent with _$CharacterHinderEvent {
   }
 }
 
-@Freezed(makeCollectionsUnmodifiable: false)
+@freezed
 class CharacterEntryData with _$CharacterEntryData {
   const CharacterEntryData._();
 

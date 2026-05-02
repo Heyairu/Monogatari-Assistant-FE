@@ -479,7 +479,7 @@ class __$$LocationDataImplCopyWithImpl<$Res>
             : nodeType // ignore: cast_nullable_to_non_nullable
                   as WorldNodeType,
         customVal: null == customVal
-            ? _value.customVal
+            ? _value._customVal
             : customVal // ignore: cast_nullable_to_non_nullable
                   as List<LocationCustomize>,
         note: null == note
@@ -487,7 +487,7 @@ class __$$LocationDataImplCopyWithImpl<$Res>
             : note // ignore: cast_nullable_to_non_nullable
                   as String,
         child: null == child
-            ? _value.child
+            ? _value._child
             : child // ignore: cast_nullable_to_non_nullable
                   as List<LocationData>,
       ),
@@ -503,10 +503,12 @@ class _$LocationDataImpl extends _LocationData {
     this.localName = "",
     this.localType = "",
     this.nodeType = WorldNodeType.location,
-    this.customVal = const <LocationCustomize>[],
+    final List<LocationCustomize> customVal = const <LocationCustomize>[],
     this.note = "",
-    this.child = const <LocationData>[],
-  }) : super._();
+    final List<LocationData> child = const <LocationData>[],
+  }) : _customVal = customVal,
+       _child = child,
+       super._();
 
   @override
   final String id;
@@ -519,15 +521,26 @@ class _$LocationDataImpl extends _LocationData {
   @override
   @JsonKey()
   final WorldNodeType nodeType;
+  final List<LocationCustomize> _customVal;
   @override
   @JsonKey()
-  final List<LocationCustomize> customVal;
+  List<LocationCustomize> get customVal {
+    if (_customVal is EqualUnmodifiableListView) return _customVal;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_customVal);
+  }
+
   @override
   @JsonKey()
   final String note;
+  final List<LocationData> _child;
   @override
   @JsonKey()
-  final List<LocationData> child;
+  List<LocationData> get child {
+    if (_child is EqualUnmodifiableListView) return _child;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_child);
+  }
 
   @override
   String toString() {
@@ -546,9 +559,12 @@ class _$LocationDataImpl extends _LocationData {
                 other.localType == localType) &&
             (identical(other.nodeType, nodeType) ||
                 other.nodeType == nodeType) &&
-            const DeepCollectionEquality().equals(other.customVal, customVal) &&
+            const DeepCollectionEquality().equals(
+              other._customVal,
+              _customVal,
+            ) &&
             (identical(other.note, note) || other.note == note) &&
-            const DeepCollectionEquality().equals(other.child, child));
+            const DeepCollectionEquality().equals(other._child, _child));
   }
 
   @override
@@ -558,9 +574,9 @@ class _$LocationDataImpl extends _LocationData {
     localName,
     localType,
     nodeType,
-    const DeepCollectionEquality().hash(customVal),
+    const DeepCollectionEquality().hash(_customVal),
     note,
-    const DeepCollectionEquality().hash(child),
+    const DeepCollectionEquality().hash(_child),
   );
 
   /// Create a copy of LocationData

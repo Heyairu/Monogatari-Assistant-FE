@@ -53,13 +53,13 @@ class ChapterSelectionCodec {
   static List<SegmentData> _createSnapshot(List<SegmentData> source) {
     return List<SegmentData>.unmodifiable(
       source
-          .map(
-            (segment) => segment.copyWith(
-              chapters: segment.chapters
-                  .map((chapter) => chapter.copyWith())
-                  .toList(growable: false),
-            ),
-          )
+          .map((segment) {
+            final chapters = List<ChapterData>.unmodifiable(segment.chapters);
+            if (identical(chapters, segment.chapters)) {
+              return segment;
+            }
+            return segment.copyWith(chapters: chapters);
+          })
           .toList(growable: false),
     );
   }

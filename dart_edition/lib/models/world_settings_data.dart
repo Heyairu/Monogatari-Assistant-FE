@@ -55,7 +55,7 @@ WorldNodeType parseWorldNodeType(String? raw) {
   }
 }
 
-@Freezed(makeCollectionsUnmodifiable: false)
+@freezed
 class LocationCustomize with _$LocationCustomize {
   const LocationCustomize._();
 
@@ -90,7 +90,7 @@ class LocationCustomize with _$LocationCustomize {
   }
 }
 
-@Freezed(makeCollectionsUnmodifiable: false)
+@freezed
 class LocationData with _$LocationData {
   const LocationData._();
 
