@@ -36,6 +36,7 @@ import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_state_providers.dart";
+import "presentation/providers/word_count_providers.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -177,12 +178,17 @@ class ContentView extends ConsumerStatefulWidget {
 }
 
 class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
+  /// 全專案字數批次重算時，同時進行的 `compute` 上限（每章仍各自 isolate）。
+  static const int _maxConcurrentChapterWordCounts = 6;
+
   // 狀態變數
   int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
   int autoSaveTime = 1;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
+
+  int _allWordCountsGen = 0;
 
   // 主編輯器文字
   String get contentText => ref.read(editorContentProvider);
@@ -223,6 +229,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   ProviderSubscription<EditorCoordinatorState>? _editorCoordinatorSubscription;
   ProviderSubscription<String>? _editorContentSubscription;
+  ProviderSubscription<EditorSelectionState>? _editorSelectionSubscription;
   ProviderSubscription<List<ChapterModule.SegmentData>>?
   _segmentsDataSubscription;
 
@@ -330,7 +337,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text = initialContent;
       }
       _lastObservedEditorText = textController.text;
+
+      _refreshActiveChapterWordCount();
     });
+  }
+
+  void _refreshActiveChapterWordCount() {
+    ref.read(activeChapterWordCountProvider.notifier).onTextChanged(
+      chapterId: selectedChapID,
+      text: textController.text,
+      mode: _settingsState.wordCountMode,
+    );
   }
 
   @override
@@ -369,6 +386,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         // Trigger async incremental update instead of full sync recalculation
         _debouncedWordCountUpdate();
 
+        _refreshActiveChapterWordCount();
+
         // 當文字內容變化時，清除所有高亮和搜尋狀態
         if (_searchMatches.isNotEmpty || _currentMatchIndex != -1) {
           setState(() {
@@ -379,9 +398,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         }
       } else if (_cursorOffset != normalizedOffset) {
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
-        setState(() {
-          // Trigger UI refresh for cursor/line-column display.
-        });
       }
     });
 
@@ -415,6 +431,22 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             coordinatorNotifier.endSync();
           }
         }
+
+        _refreshActiveChapterWordCount();
+      },
+    );
+
+    _editorSelectionSubscription = ref.listenManual<EditorSelectionState>(
+      editorSelectionProvider,
+      (previous, next) {
+        if (!mounted) {
+          return;
+        }
+        if (previous?.selectedChapID == next.selectedChapID &&
+            previous?.selectedSegID == next.selectedSegID) {
+          return;
+        }
+        _refreshActiveChapterWordCount();
       },
     );
 
@@ -506,6 +538,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _cancelPendingContentCommit();
     _editorCoordinatorSubscription?.close();
     _editorContentSubscription?.close();
+    _editorSelectionSubscription?.close();
     _segmentsDataSubscription?.close();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
@@ -608,26 +641,66 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Future<void> _updateAllWordCounts() async {
-    final mode = _settingsState.wordCountMode;
-    // Create a list of futures to calculate all in parallel (or batched)
-    final List<Future<void>> futures = [];
+    final int gen = ++_allWordCountsGen;
+    final WordCountMode mode = _settingsState.wordCountMode;
 
-    for (final seg in segmentsData) {
-      for (final chap in seg.chapters) {
-        futures.add(
-          ContentManager.calculateWordCountAsync(
-            chap.chapterContent,
-            mode: mode,
-          ).then((count) {
-            chap.updateCachedWordCount(count, mode);
-          }),
-        );
+    final List<({
+      ChapterModule.ChapterData chap,
+      String snapshotContent,
+      WordCountMode snapshotMode,
+    })> jobs = [];
+
+    for (final ChapterModule.SegmentData seg in segmentsData) {
+      for (final ChapterModule.ChapterData chap in seg.chapters) {
+        jobs.add((
+          chap: chap,
+          snapshotContent: chap.chapterContent,
+          snapshotMode: mode,
+        ),);
       }
     }
 
-    await Future.wait(futures);
+    for (var start = 0; start < jobs.length; start += _maxConcurrentChapterWordCounts) {
+      if (!mounted || gen != _allWordCountsGen) {
+        return;
+      }
 
-    if (mounted) {
+      final int end =
+          (start + _maxConcurrentChapterWordCounts).clamp(0, jobs.length).toInt();
+      final slice = jobs.sublist(start, end);
+
+      await Future.wait(slice.map((job) async {
+        if (!mounted || gen != _allWordCountsGen) {
+          return;
+        }
+
+        if (job.snapshotContent.isEmpty) {
+          job.chap.updateCachedWordCount(0, job.snapshotMode);
+          return;
+        }
+
+        final int count = await ContentManager.calculateWordCountAsync(
+          job.snapshotContent,
+          mode: job.snapshotMode,
+        );
+
+        if (!mounted || gen != _allWordCountsGen) {
+          return;
+        }
+
+        if (job.snapshotMode != _settingsState.wordCountMode) {
+          return;
+        }
+
+        if (job.chap.chapterContent != job.snapshotContent) {
+          return;
+        }
+
+        job.chap.updateCachedWordCount(count, job.snapshotMode);
+      }));
+    }
+
+    if (mounted && gen == _allWordCountsGen) {
       setState(() {
         totalWords = _recalculateSumFast();
       });
@@ -650,6 +723,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   void _onSettingsChanged() {
     // When settings change (e.g. counting mode), recalculate all
     _updateAllWordCounts();
+    _refreshActiveChapterWordCount();
   }
 
   // WindowListener 實作
@@ -941,9 +1015,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       statusSelection.cursorOffset,
     );
 
-    final int currentWords = ContentManager.calculateWordCount(
-      statusContentText,
-      mode: wordCountMode,
+    final int currentWords = ref.watch(
+      activeChapterWordCountProvider.select((state) => state.count),
     );
 
     return MonogatariStatusBar(
@@ -2116,6 +2189,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         coordinatorNotifier.endApplyingProjectData();
       }
     });
+
+    _refreshActiveChapterWordCount();
 
     // Force rebuild of all modules by using keys or ensuring state update
     // Note: Since we are replacing the data objects, didUpdateWidget in children should trigger
