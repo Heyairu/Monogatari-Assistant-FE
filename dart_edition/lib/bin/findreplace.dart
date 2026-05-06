@@ -14,6 +14,9 @@ import "package:code_text_field/code_text_field.dart";
 import "package:flutter/material.dart";
 import "package:flutter/foundation.dart"; // Added for compute
 
+// Global normalization cache for character normalization
+final Map<String, String> _normalizationCache = <String, String>{};
+
 // 搜尋選項類別
 class FindReplaceOptions {
   bool matchCase; // 大小寫相同
@@ -39,6 +42,15 @@ class FindReplaceOptions {
 class HighlightTextEditingController extends CodeController {
   HighlightTextEditingController({super.text});
 
+  @override
+  set text(String newText) {
+    super.text = newText;
+    // Rebuild precomputed indices to keep them in sync with the current text length
+    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, newText.length);
+    _punctuationIndex = _SelectionCoverageIndex.fromRaw(punctuationMatches, newText.length);
+    _fillerIndex = _SelectionCoverageIndex.fromRaw(fillerWordMatches, newText.length);
+  }
+
   List<TextSelection> searchMatches = [];
   int currentMatchIndex = -1;
   List<TextSelection> punctuationMatches = [];
@@ -48,6 +60,14 @@ class HighlightTextEditingController extends CodeController {
   Color otherMatchColor = Colors.orange;
   Color punctuationColor = Colors.purple;
   Color fillerWordColor = Colors.blue;
+
+  static const List<TextSelection> _emptySelections = <TextSelection>[];
+  static const int _MAX_SEARCH_RESULTS = 1000;
+
+  // Cached, precomputed indices to avoid recomputing during every paint
+  _SelectionCoverageIndex _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+  _SelectionCoverageIndex _punctuationIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+  _SelectionCoverageIndex _fillerIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
 
   @override
   TextSpan buildTextSpan({
@@ -61,41 +81,34 @@ class HighlightTextEditingController extends CodeController {
     // current search(red) > other search(orange) > punctuation(purple) > filler(blue).
     // Limitation: this is color-only rendering and does not support multi-layer blends
     // inside the same segment.
-    final List<TextSelection> normalizedSearch = _normalizeMatches(
+    final _SelectionCoverageIndex searchIndex = _SelectionCoverageIndex.fromRaw(
       searchMatches,
+      text.length,
     );
-    final List<TextSelection> normalizedPunctuation = _normalizeMatches(
-      punctuationMatches,
-    );
-    final List<TextSelection> normalizedFiller = _normalizeMatches(
+    final _SelectionCoverageIndex punctuationIndex =
+        _SelectionCoverageIndex.fromRaw(
+          punctuationMatches,
+          text.length,
+        );
+    final _SelectionCoverageIndex fillerIndex = _SelectionCoverageIndex.fromRaw(
       fillerWordMatches,
+      text.length,
     );
 
-    if (normalizedSearch.isEmpty &&
-        normalizedPunctuation.isEmpty &&
-        normalizedFiller.isEmpty) {
+    if (searchIndex.isEmpty && punctuationIndex.isEmpty && fillerIndex.isEmpty) {
       return TextSpan(text: text, style: style);
     }
 
     final int textLength = text.length;
     final Set<int> boundaries = <int>{0, textLength};
-    for (final TextSelection match in normalizedSearch) {
-      boundaries.add(match.start);
-      boundaries.add(match.end);
-    }
-    for (final TextSelection match in normalizedPunctuation) {
-      boundaries.add(match.start);
-      boundaries.add(match.end);
-    }
-    for (final TextSelection match in normalizedFiller) {
-      boundaries.add(match.start);
-      boundaries.add(match.end);
-    }
+    searchIndex.addBoundaries(boundaries);
+    punctuationIndex.addBoundaries(boundaries);
+    fillerIndex.addBoundaries(boundaries);
     final List<int> sortedBoundaries = boundaries.toList()..sort();
 
     final TextSelection? currentMatch =
-        currentMatchIndex >= 0 && currentMatchIndex < normalizedSearch.length
-        ? normalizedSearch[currentMatchIndex]
+        currentMatchIndex >= 0 && currentMatchIndex < searchMatches.length
+        ? _normalizeSelection(searchMatches[currentMatchIndex], textLength)
         : null;
 
     final List<TextSpan> spans = <TextSpan>[];
@@ -114,20 +127,16 @@ class HighlightTextEditingController extends CodeController {
           _isRangeCovered(currentMatch, segmentStart, segmentEnd);
       final bool isOtherMatch =
           !isCurrentMatch &&
-          _isRangeCoveredByAny(normalizedSearch, segmentStart, segmentEnd);
+          searchIndex.covers(segmentStart, segmentEnd);
       final bool isPunctuationIssue =
           !isCurrentMatch &&
           !isOtherMatch &&
-          _isRangeCoveredByAny(
-            normalizedPunctuation,
-            segmentStart,
-            segmentEnd,
-          );
+          punctuationIndex.covers(segmentStart, segmentEnd);
       final bool isFillerWord =
           !isCurrentMatch &&
           !isOtherMatch &&
           !isPunctuationIssue &&
-          _isRangeCoveredByAny(normalizedFiller, segmentStart, segmentEnd);
+          fillerIndex.covers(segmentStart, segmentEnd);
 
       if (isCurrentMatch) {
         segmentStyle = _withColor(segmentStyle, currentMatchColor);
@@ -177,17 +186,29 @@ class HighlightTextEditingController extends CodeController {
     final int textLength = text.length;
     final List<TextSelection> normalized = <TextSelection>[];
     for (final TextSelection match in rawMatches) {
-      if (!match.isValid) {
-        continue;
+      final normalizedSelection = _normalizeSelection(match, textLength);
+      if (normalizedSelection != null) {
+        normalized.add(normalizedSelection);
       }
-      final int start = match.start.clamp(0, textLength);
-      final int end = match.end.clamp(0, textLength);
-      if (end <= start) {
-        continue;
-      }
-      normalized.add(TextSelection(baseOffset: start, extentOffset: end));
     }
     return normalized;
+  }
+
+  static TextSelection? _normalizeSelection(
+    TextSelection selection,
+    int textLength,
+  ) {
+    if (!selection.isValid) {
+      return null;
+    }
+
+    final int start = selection.start.clamp(0, textLength);
+    final int end = selection.end.clamp(0, textLength);
+    if (end <= start) {
+      return null;
+    }
+
+    return TextSelection(baseOffset: start, extentOffset: end);
   }
 
   void updateSearchHighlights({
@@ -196,16 +217,26 @@ class HighlightTextEditingController extends CodeController {
     Color? otherMatch,
     Color? currentMatch,
   }) {
-    searchMatches = matches;
-    currentMatchIndex = currentIndex;
+    final List<TextSelection> capped = matches.length > _MAX_SEARCH_RESULTS
+        ? matches.sublist(0, _MAX_SEARCH_RESULTS)
+        : List<TextSelection>.of(matches);
+
+    searchMatches = capped;
+    // ensure current index is within bounds
+    currentMatchIndex = (currentIndex >= 0 && currentIndex < capped.length) ? currentIndex : -1;
     otherMatchColor = otherMatch ?? Colors.orange;
     currentMatchColor = currentMatch ?? Colors.red;
+
+    // Precompute coverage index for fast queries during paint
+    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, text.length);
+
     notifyListeners();
   }
 
   void clearSearchHighlights() {
-    searchMatches = [];
+    searchMatches = _emptySelections;
     currentMatchIndex = -1;
+    _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
     notifyListeners();
   }
 
@@ -213,13 +244,19 @@ class HighlightTextEditingController extends CodeController {
     required List<TextSelection> matches,
     Color? color,
   }) {
-    fillerWordMatches = matches;
+    final List<TextSelection> capped = matches.length > _MAX_SEARCH_RESULTS
+        ? matches.sublist(0, _MAX_SEARCH_RESULTS)
+        : List<TextSelection>.of(matches);
+
+    fillerWordMatches = capped;
     fillerWordColor = color ?? Colors.blue;
+    _fillerIndex = _SelectionCoverageIndex.fromRaw(fillerWordMatches, text.length);
     notifyListeners();
   }
 
   void clearFillerHighlights() {
-    fillerWordMatches = [];
+    fillerWordMatches = _emptySelections;
+    _fillerIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
     notifyListeners();
   }
 
@@ -227,16 +264,105 @@ class HighlightTextEditingController extends CodeController {
     required List<TextSelection> matches,
     Color? color,
   }) {
-    punctuationMatches = matches;
+    final List<TextSelection> capped = matches.length > _MAX_SEARCH_RESULTS
+        ? matches.sublist(0, _MAX_SEARCH_RESULTS)
+        : List<TextSelection>.of(matches);
+
+    punctuationMatches = capped;
     punctuationColor = color ?? Colors.purple;
+    _punctuationIndex = _SelectionCoverageIndex.fromRaw(punctuationMatches, text.length);
     notifyListeners();
   }
 
   void clearPunctuationHighlights() {
-    punctuationMatches = [];
+    punctuationMatches = _emptySelections;
+    _punctuationIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
     notifyListeners();
   }
 
+}
+
+class _SelectionCoverageIndex {
+  final List<TextSelection> _selections;
+  final List<int> _prefixMaxEnds;
+
+  const _SelectionCoverageIndex._(this._selections, this._prefixMaxEnds);
+
+  factory _SelectionCoverageIndex.fromRaw(
+    List<TextSelection> rawSelections,
+    int textLength,
+  ) {
+    final List<TextSelection> normalized = <TextSelection>[];
+    for (final TextSelection selection in rawSelections) {
+      final normalizedSelection = HighlightTextEditingController._normalizeSelection(
+        selection,
+        textLength,
+      );
+      if (normalizedSelection != null) {
+        normalized.add(normalizedSelection);
+      }
+    }
+
+    if (normalized.isEmpty) {
+      return const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    }
+
+    normalized.sort((left, right) {
+      final int compareStart = left.start.compareTo(right.start);
+      if (compareStart != 0) {
+        return compareStart;
+      }
+      return left.end.compareTo(right.end);
+    });
+
+    final List<int> prefixMaxEnds = List<int>.filled(normalized.length, 0);
+    int currentMaxEnd = 0;
+    for (int i = 0; i < normalized.length; i++) {
+      currentMaxEnd = i == 0
+          ? normalized[i].end
+          : currentMaxEnd > normalized[i].end
+              ? currentMaxEnd
+              : normalized[i].end;
+      prefixMaxEnds[i] = currentMaxEnd;
+    }
+
+    return _SelectionCoverageIndex._(normalized, prefixMaxEnds);
+  }
+
+  bool get isEmpty => _selections.isEmpty;
+
+  void addBoundaries(Set<int> boundaries) {
+    for (final TextSelection selection in _selections) {
+      boundaries.add(selection.start);
+      boundaries.add(selection.end);
+    }
+  }
+
+  bool covers(int start, int end) {
+    if (_selections.isEmpty) {
+      return false;
+    }
+
+    int left = 0;
+    int right = _selections.length - 1;
+    int candidateIndex = -1;
+
+    while (left <= right) {
+      final int mid = (left + right) >> 1;
+      if (_selections[mid].start <= start) {
+        candidateIndex = mid;
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+
+    if (candidateIndex < 0) {
+      return false;
+    }
+
+    return _prefixMaxEnds[candidateIndex] >= end;
+  }
 }
 
 // ==================== 搜尋與取代邏輯操作 ====================
@@ -720,20 +846,22 @@ bool isWhitespace(String char) {
 
 /// 檢查兩個字元是否匹配（考慮搜尋選項）
 bool charsMatch(String char1, String char2, FindReplaceOptions options) {
-  String c1 = char1;
-  String c2 = char2;
+  final String key1 = '${char1}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
+  final String key2 = '${char2}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
 
-  // 大小寫正規化
-  if (!options.matchCase) {
-    c1 = normalizeCase(c1);
-    c2 = normalizeCase(c2);
-  }
+  final String c1 = _normalizationCache.putIfAbsent(key1, () {
+    String out = char1;
+    if (!options.matchCase) out = normalizeCase(out);
+    if (!options.matchWidth) out = normalizeWidth(out);
+    return out;
+  });
 
-  // 全半形正規化
-  if (!options.matchWidth) {
-    c1 = normalizeWidth(c1);
-    c2 = normalizeWidth(c2);
-  }
+  final String c2 = _normalizationCache.putIfAbsent(key2, () {
+    String out = char2;
+    if (!options.matchCase) out = normalizeCase(out);
+    if (!options.matchWidth) out = normalizeWidth(out);
+    return out;
+  });
 
   return c1 == c2;
 }
