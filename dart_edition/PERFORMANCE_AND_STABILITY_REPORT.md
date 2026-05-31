@@ -19,7 +19,7 @@
 
 ## 具體問題與建議修正
 
-### 1) Text search / highlight 計算過重（高影響）
+### 1) Text search / highlight 計算過重（高影響） //OK
 - 位置: [lib/bin/findreplace.dart](lib/bin/findreplace.dart)
 - 問題: 每次 rebuild 或每次文字變更時，整段文本可能被 O(N*M) 的邊界檢查與規範化掃描，導致輸入延遲與 UI 卡頓。
 
@@ -42,12 +42,12 @@ String normalizeCached(String s, FindReplaceOptions opt) =>
 
 ---
 
-### 2) 字數計算與並發控制（中高）
+### 2) 字數計算與並發控制（中高）//OK
 - 位置: [lib/main.dart](lib/main.dart) 與 [lib/presentation/providers/word_count_providers.dart](lib/presentation/providers/word_count_providers.dart)
 - 問題: 雖然部分 providers 已使用 revision/debounce 機制，但 `MainApp` 的 `_updateAllWordCounts()` 與其他 async 呼叫仍存在在 widget disposed 後 `setState()` 或 race condition 的風險。
 
 建議修正 (步驟):
-- 在所有觸發長耗時計算的地方加入 **版本號 (revision/gen)** 或 CancelToken，並在更新 UI 前檢查是否仍為最新任務。
+- 在所有觸發長耗時計算的地方加入 **時間戳** 或 CancelToken，並在更新 UI 前檢查是否仍為最新任務。
 - 將大批次計算限制並行數（專案中已定 `_maxConcurrentChapterWordCounts`，請保留），並在每批次開始時檢查 `mounted` 與 `gen` 是否仍有效。
 - 在 provider 層面優先讓 providers 負責計算並保留最小的 UI 端領域去呼叫 `setState()`，採用 `ref.read(...notifier).setX()` 以減少直接在 widget 邏輯內大量 `setState()`。
 
@@ -94,19 +94,7 @@ void dispose() {
 
 ---
 
-### 5) 搜尋結果無界增長（中）
-- 位置: [lib/bin/findreplace.dart](lib/bin/findreplace.dart), `HighlightTextEditingController`
-- 問題: 搜尋結果列表可能非常大 (常用詞於長文檔)，在記憶體與 UI 處理上造成壓力。
-
-建議修正:
-- 為搜尋結果設置上限（例如 1000 條），並在 UI 上提供「顯示前 N 筆」與「顯示全部（警告）」選項。
-- 在結果極大時，改為只索引與顯示靠近 cursor 或當前 viewport 的結果。
-
-優先級: 中。
-
----
-
-### 6) 內存累積：臨時資料與快照管理（中）
+### 5) 內存累積：臨時資料與快照管理（中）
 - 位置: [lib/modules/characterview.dart](lib/modules/characterview.dart) 等多處
 - 問題: 多個物件保留大量臨時列表與過度複製，長會話導致內存峰值與 GC 頻繁。
 
@@ -119,7 +107,7 @@ void dispose() {
 
 ---
 
-### 7) 異步錯誤處理與 UI 對話框競態（低中）
+### 6) 異步錯誤處理與 UI 對話框競態（低中）
 - 位置: [lib/main.dart](lib/main.dart) 中 `showDialog` 後的 `mounted` 檢查
 - 問題: 已使用 `addPostFrameCallback` 與 `mounted` 檢查，建議在所有 await showDialog 後再檢查 `mounted`（部分情況已處理但需統一）。
 
