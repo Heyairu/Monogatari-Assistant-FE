@@ -711,9 +711,12 @@ List<TextSelection> findAllMatchesSync(
       final regexMatches = regex.allMatches(text);
 
       for (final match in regexMatches) {
-        matches.add(
-          TextSelection(baseOffset: match.start, extentOffset: match.end),
-        );
+        // 忽略零長度的匹配（如某些模式在換行間會產生空匹配），避免顯示計數與實際高亮不一致
+        if (match.end > match.start) {
+          matches.add(
+            TextSelection(baseOffset: match.start, extentOffset: match.end),
+          );
+        }
       }
 
       return matches;

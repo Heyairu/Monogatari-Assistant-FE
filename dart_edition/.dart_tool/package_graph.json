@@ -236,7 +236,7 @@
     },
     {
       "name": "characters",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": []
     },
     {
@@ -430,7 +430,7 @@
     },
     {
       "name": "meta",
-      "version": "1.16.0",
+      "version": "1.17.0",
       "dependencies": []
     },
     {
@@ -796,6 +796,16 @@
       ]
     },
     {
+      "name": "riverpod",
+      "version": "2.6.1",
+      "dependencies": [
+        "collection",
+        "meta",
+        "stack_trace",
+        "state_notifier"
+      ]
+    },
+    {
       "name": "json_annotation",
       "version": "4.10.0",
       "dependencies": [
@@ -891,7 +901,7 @@
     },
     {
       "name": "matcher",
-      "version": "0.12.17",
+      "version": "0.12.19",
       "dependencies": [
         "async",
         "meta",
@@ -902,7 +912,7 @@
     },
     {
       "name": "test_api",
-      "version": "0.7.6",
+      "version": "0.7.10",
       "dependencies": [
         "async",
         "boolean_selector",
@@ -1225,16 +1235,6 @@
       ]
     },
     {
-      "name": "riverpod",
-      "version": "2.6.1",
-      "dependencies": [
-        "collection",
-        "meta",
-        "stack_trace",
-        "state_notifier"
-      ]
-    },
-    {
       "name": "state_notifier",
       "version": "1.0.0",
       "dependencies": [
@@ -1248,7 +1248,7 @@
     },
     {
       "name": "material_color_utilities",
-      "version": "0.11.1",
+      "version": "0.13.0",
       "dependencies": [
         "collection"
       ]
