@@ -1370,8 +1370,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                 if (findText.isNotEmpty) {
                   final text = textController.text;
                   if (text.isNotEmpty) {
-                    // Async search
-                    final matches = await findAllMatchesAsync(
+                    // Async search (background isolate + precomputed index)
+                    final highlightUpdate = await findAllMatchesAsync(
                       text,
                       findText,
                       options,
@@ -1379,15 +1379,16 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                     if (!mounted) return;
 
                     setState(() {
-                      _searchMatches = matches;
+                      _searchMatches = highlightUpdate.matches;
                       // 如果當前選中的匹配項仍然有效，保持它
                       if (_currentMatchIndex >= _searchMatches.length) {
                         _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
                       }
-                      // 更新高亮顯示
+                      // 更新高亮顯示（使用預編譯的索引）
                       textController.updateSearchHighlights(
                         matches: _searchMatches,
                         currentIndex: _currentMatchIndex,
+                        precomputedIndex: highlightUpdate.buildSearchIndex(),
                       );
                     });
                   }

@@ -220,6 +220,7 @@ class HighlightTextEditingController extends CodeController {
     required int currentIndex,
     Color? otherMatch,
     Color? currentMatch,
+    _SelectionCoverageIndex? precomputedIndex,
   }) {
     final List<TextSelection> capped = matches.length > _MAX_SEARCH_RESULTS
         ? matches.sublist(0, _MAX_SEARCH_RESULTS)
@@ -231,8 +232,8 @@ class HighlightTextEditingController extends CodeController {
     otherMatchColor = otherMatch ?? Colors.orange;
     currentMatchColor = currentMatch ?? Colors.red;
 
-    // Precompute coverage index for fast queries during paint
-    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, text.length);
+    // 如果提供了預編譯的索引，直接使用；否則從匹配項構建
+    _searchIndex = precomputedIndex ?? _SelectionCoverageIndex.fromRaw(searchMatches, text.length);
 
     notifyListeners();
   }
@@ -347,6 +348,7 @@ class _SelectionCoverageIndex {
       return false;
     }
 
+    // Binary search to find the largest index where selection.start <= start
     int left = 0;
     int right = _selections.length - 1;
     int candidateIndex = -1;
@@ -365,6 +367,8 @@ class _SelectionCoverageIndex {
       return false;
     }
 
+    // Prefix-max at candidateIndex tells us the max end of all selections up to and including candidateIndex
+    // If that max is >= end, then our segment [start, end) is covered by at least one selection
     return _prefixMaxEnds[candidateIndex] >= end;
   }
 }
@@ -380,9 +384,45 @@ class _FindParams {
   _FindParams(this.text, this.findText, this.options);
 }
 
-// Isolate 執行的任務函數
-List<TextSelection> _findAllMatchesTask(_FindParams params) {
-  return findAllMatchesSync(params.text, params.findText, params.options);
+// 搜尋結果 + 預編譯索引（返回自 Isolate）
+// 包含規範化的 matches 和預計算的 prefix-max 數據供快速索引重建
+class _HighlightUpdate {
+  final List<TextSelection> matches;
+  final List<int> prefixMaxEnds;  // 預計算的 prefix-max 數據
+
+  _HighlightUpdate({
+    required this.matches,
+    required this.prefixMaxEnds,
+  });
+
+  /// 快速在主線程重建全覆蓋索引（使用預計算的 prefix-max）
+  _SelectionCoverageIndex buildSearchIndex() {
+    if (matches.isEmpty || prefixMaxEnds.isEmpty) {
+      return const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    }
+    return _SelectionCoverageIndex._(matches, prefixMaxEnds);
+  }
+}
+
+// Isolate 執行的任務函數：搜尋 + 預計算索引
+_HighlightUpdate _findAllMatchesTask(_FindParams params) {
+  final matches = findAllMatchesSync(params.text, params.findText, params.options);
+
+  // 預計算 prefix-max 數據供快速索引重建
+  final List<int> prefixMaxEnds = <int>[];
+  if (matches.isNotEmpty) {
+    int currentMaxEnd = 0;
+    for (int i = 0; i < matches.length; i++) {
+      currentMaxEnd = i == 0
+          ? matches[i].end
+          : currentMaxEnd > matches[i].end
+              ? currentMaxEnd
+              : matches[i].end;
+      prefixMaxEnds.add(currentMaxEnd);
+    }
+  }
+
+  return _HighlightUpdate(matches: matches, prefixMaxEnds: prefixMaxEnds);
 }
 
 /// 執行搜尋 (Async)
@@ -405,8 +445,9 @@ Future<void> performFind(
     return;
   }
 
-  // 找出所有匹配項 (使用 compute)
-  final searchMatches = await findAllMatchesAsync(text, findText, options);
+  // 找出所有匹配項 (使用 compute，背景執行 + 預計算索引)
+  final highlightUpdate = await findAllMatchesAsync(text, findText, options);
+  final List<TextSelection> searchMatches = highlightUpdate.matches;
 
   if (searchMatches.isEmpty) {
     textController.updateSearchHighlights(matches: [], currentIndex: -1);
@@ -450,10 +491,11 @@ Future<void> performFind(
     }
   }
 
-  // 更新高亮顯示
+  // 更新高亮顯示（傳遞預編譯的索引以避免重新計算）
   textController.updateSearchHighlights(
     matches: searchMatches,
     currentIndex: newMatchIndex,
+    precomputedIndex: highlightUpdate.buildSearchIndex(),
   );
 
   // 選中當前匹配項
@@ -614,7 +656,8 @@ Future<void> performReplaceAll(
   }
 
   // 找出所有匹配項 (Async)
-  final matches = await findAllMatchesAsync(text, findText, options);
+  final highlightUpdate = await findAllMatchesAsync(text, findText, options);
+  final List<TextSelection> matches = highlightUpdate.matches;
 
   if (matches.isEmpty) {
     return;
@@ -683,13 +726,15 @@ Future<void> performReplaceAll(
 
 // ==================== 搜尋功能函數 ====================
 
-/// 找出所有匹配項 (Async)
-Future<List<TextSelection>> findAllMatchesAsync(
+/// 找出所有匹配項 (Async) + 預編譯索引
+Future<_HighlightUpdate> findAllMatchesAsync(
   String text,
   String findText,
   FindReplaceOptions options,
 ) async {
-  if (text.isEmpty || findText.isEmpty) return [];
+  if (text.isEmpty || findText.isEmpty) {
+    return _HighlightUpdate(matches: [], prefixMaxEnds: []);
+  }
   // 使用 compute 在背景 isolate 執行計算，避免阻塞 UI
   return await compute(
     _findAllMatchesTask,
