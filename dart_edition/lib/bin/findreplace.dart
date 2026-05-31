@@ -13,9 +13,17 @@
 import "package:code_text_field/code_text_field.dart";
 import "package:flutter/material.dart";
 import "package:flutter/foundation.dart"; // Added for compute
+import 'dart:async';
 
 // Global normalization cache for character normalization
 final Map<String, String> _normalizationCache = <String, String>{};
+
+// Precompiled RegExp constants to avoid recompilation hotspots
+final RegExp _punctuationRegex = RegExp(
+  r"""[!"#\$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
+);
+
+final RegExp _whitespaceRegex = RegExp(r"\s");
 
 // 搜尋選項類別
 class FindReplaceOptions {
@@ -81,19 +89,15 @@ class HighlightTextEditingController extends CodeController {
     // current search(red) > other search(orange) > punctuation(purple) > filler(blue).
     // Limitation: this is color-only rendering and does not support multi-layer blends
     // inside the same segment.
-    final _SelectionCoverageIndex searchIndex = _SelectionCoverageIndex.fromRaw(
-      searchMatches,
-      text.length,
-    );
-    final _SelectionCoverageIndex punctuationIndex =
-        _SelectionCoverageIndex.fromRaw(
-          punctuationMatches,
-          text.length,
-        );
-    final _SelectionCoverageIndex fillerIndex = _SelectionCoverageIndex.fromRaw(
-      fillerWordMatches,
-      text.length,
-    );
+    final _SelectionCoverageIndex searchIndex = _searchIndex.isEmpty && searchMatches.isNotEmpty
+        ? _SelectionCoverageIndex.fromRaw(searchMatches, text.length)
+        : _searchIndex;
+    final _SelectionCoverageIndex punctuationIndex = _punctuationIndex.isEmpty && punctuationMatches.isNotEmpty
+        ? _SelectionCoverageIndex.fromRaw(punctuationMatches, text.length)
+        : _punctuationIndex;
+    final _SelectionCoverageIndex fillerIndex = _fillerIndex.isEmpty && fillerWordMatches.isNotEmpty
+        ? _SelectionCoverageIndex.fromRaw(fillerWordMatches, text.length)
+        : _fillerIndex;
 
     if (searchIndex.isEmpty && punctuationIndex.isEmpty && fillerIndex.isEmpty) {
       return TextSpan(text: text, style: style);
@@ -835,16 +839,13 @@ bool isWordChar(String char) {
 /// 判斷字元是否為標點符號
 bool isPunctuation(String char) {
   if (char.isEmpty) return false;
-  final punctuation = RegExp(
-    r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
-  );
-  return punctuation.hasMatch(char);
+  return _punctuationRegex.hasMatch(char);
 }
 
 /// 判斷字元是否為空白字元
 bool isWhitespace(String char) {
   if (char.isEmpty) return false;
-  return RegExp(r"\s").hasMatch(char);
+  return _whitespaceRegex.hasMatch(char);
 }
 
 /// 檢查兩個字元是否匹配（考慮搜尋選項）
@@ -880,11 +881,8 @@ bool textMatches(String text, String pattern, FindReplaceOptions options) {
   }
 
   if (options.ignorePunctuation) {
-    final punctuation = RegExp(
-      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
-    );
-    processedText = processedText.replaceAll(punctuation, "");
-    processedPattern = processedPattern.replaceAll(punctuation, "");
+    processedText = processedText.replaceAll(_punctuationRegex, "");
+    processedPattern = processedPattern.replaceAll(_punctuationRegex, "");
   }
 
   if (!options.matchCase) {
@@ -1273,6 +1271,7 @@ class FindReplaceBar extends StatefulWidget {
 class _FindReplaceBarState extends State<FindReplaceBar> {
   bool _isExpanded = false;
   bool _showOptions = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -1284,6 +1283,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   @override
   void dispose() {
     widget.findController.removeListener(_onFindTextChanged);
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -1300,10 +1300,13 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       });
     }
 
-    // 通知搜尋內容變化，讓主視窗更新高亮顯示
-    widget.onSearchChanged?.call(findText, widget.options);
+    // Debounce notifying the host to avoid excessive searches while typing
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+      widget.onSearchChanged?.call(findText, widget.options);
+    });
 
-    // 強制刷新 UI
+    // 強制刷新 UI (options/state changes should be immediate)
     if (mounted) {
       setState(() {});
     }
@@ -1333,14 +1336,11 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   bool _containsPunctuationOrSpace(String text) {
     if (text.isEmpty) return false;
 
-    if (RegExp(r"\s").hasMatch(text)) {
+    if (_whitespaceRegex.hasMatch(text)) {
       return true;
     }
 
-    final punctuation = RegExp(
-      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
-    );
-    return punctuation.hasMatch(text);
+    return _punctuationRegex.hasMatch(text);
   }
 
   @override
@@ -1774,6 +1774,7 @@ class FindReplaceFloatingWindow extends StatefulWidget {
 class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
   bool _isExpanded = false;
   bool _showOptions = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -1785,6 +1786,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
   @override
   void dispose() {
     widget.findController.removeListener(_onFindTextChanged);
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -1801,10 +1803,13 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
       });
     }
 
-    // 通知搜尋內容變化，讓主視窗更新高亮顯示
-    widget.onSearchChanged?.call(findText, widget.options);
+    // Debounce notifying the host to avoid excessive searches while typing
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+      widget.onSearchChanged?.call(findText, widget.options);
+    });
 
-    // 強制刷新 UI
+    // 強制刷新 UI (options/state changes should be immediate)
     if (mounted) {
       setState(() {});
     }
@@ -1839,15 +1844,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
     if (text.isEmpty) return false;
 
     // 檢查是否包含空白字元
-    if (RegExp(r"\s").hasMatch(text)) {
+    if (_whitespaceRegex.hasMatch(text)) {
       return true;
     }
 
     // 檢查是否包含標點符號（半形和全形）
-    final punctuation = RegExp(
-      r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
-    );
-    return punctuation.hasMatch(text);
+    return _punctuationRegex.hasMatch(text);
   }
 
   @override
