@@ -343,11 +343,13 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   void _refreshActiveChapterWordCount() {
-    ref.read(activeChapterWordCountProvider.notifier).onTextChanged(
-      chapterId: selectedChapID,
-      text: textController.text,
-      mode: _settingsState.wordCountMode,
-    );
+    ref
+        .read(activeChapterWordCountProvider.notifier)
+        .onTextChanged(
+          chapterId: selectedChapID,
+          text: textController.text,
+          mode: _settingsState.wordCountMode,
+        );
   }
 
   @override
@@ -372,8 +374,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         selectionOffset,
         textController.text.length,
       );
-        final String currentText = textController.text;
-        final bool textChanged =
+      final String currentText = textController.text;
+      final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
@@ -478,6 +480,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         if (previous?.messageEventId != next.messageEventId &&
             next.messageText != null &&
             next.messageText!.isNotEmpty) {
+          final int messageEventId = next.messageEventId;
           final snackMessage = next.messageText!;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) {
@@ -490,7 +493,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                 duration: const Duration(seconds: 3),
               ),
             );
-            _editorCoordinatorNotifier.clearMessage();
+            if (mounted &&
+                ref.read(editorCoordinatorProvider).messageEventId ==
+                    messageEventId) {
+              _editorCoordinatorNotifier.clearMessage();
+            }
           });
         }
 
@@ -501,6 +508,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         if (previous?.errorEventId != next.errorEventId &&
             next.errorMessage != null &&
             next.errorMessage!.isNotEmpty) {
+          final int errorEventId = next.errorEventId;
           final dialogMessage = next.errorMessage!;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted) {
@@ -520,7 +528,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               ),
             );
 
-            if (mounted) {
+            if (mounted &&
+                ref.read(editorCoordinatorProvider).errorEventId ==
+                    errorEventId) {
               _editorCoordinatorNotifier.clearError();
             }
           });
@@ -535,7 +545,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   @override
   void dispose() {
     _wordCountDebounce?.cancel(); // Cancel timer
+    _wordCountDebounce = null;
     _cancelPendingContentCommit();
+    _activeWordCountGen++;
+    _allWordCountsGen++;
     _editorCoordinatorSubscription?.close();
     _editorContentSubscription?.close();
     _editorSelectionSubscription?.close();
@@ -558,11 +571,23 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   Timer? _contentCommitDebounce;
   String? _pendingContentCommit;
   static const Duration _contentCommitDelay = Duration(milliseconds: 200);
+  int _activeWordCountGen = 0;
 
   void _debouncedWordCountUpdate() {
     if (_wordCountDebounce?.isActive ?? false) _wordCountDebounce!.cancel();
+    final int gen = ++_activeWordCountGen;
+    final String? selectedSegIDSnapshot = selectedSegID;
+    final String? selectedChapIDSnapshot = selectedChapID;
+    final String textSnapshot = textController.text;
+    final WordCountMode modeSnapshot = _settingsState.wordCountMode;
     _wordCountDebounce = Timer(const Duration(milliseconds: 500), () {
-      _updateActiveWordCountAsync();
+      _updateActiveWordCountAsync(
+        gen: gen,
+        selectedSegIDSnapshot: selectedSegIDSnapshot,
+        selectedChapIDSnapshot: selectedChapIDSnapshot,
+        textSnapshot: textSnapshot,
+        modeSnapshot: modeSnapshot,
+      );
     });
   }
 
@@ -605,30 +630,43 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _pendingContentCommit = null;
   }
 
-  Future<void> _updateActiveWordCountAsync() async {
-    if (selectedSegID == null || selectedChapID == null) return;
-
-    final text = textController.text;
-    final mode = _settingsState.wordCountMode;
+  Future<void> _updateActiveWordCountAsync({
+    required int gen,
+    required String? selectedSegIDSnapshot,
+    required String? selectedChapIDSnapshot,
+    required String textSnapshot,
+    required WordCountMode modeSnapshot,
+  }) async {
+    if (selectedSegIDSnapshot == null || selectedChapIDSnapshot == null) {
+      return;
+    }
 
     // Use Isolate to calculate word count for active chapter only
     final count = await ContentManager.calculateWordCountAsync(
-      text,
-      mode: mode,
+      textSnapshot,
+      mode: modeSnapshot,
     );
 
-    if (!mounted) return;
+    if (!mounted || gen != _activeWordCountGen) return;
+    if (selectedSegID != selectedSegIDSnapshot ||
+        selectedChapID != selectedChapIDSnapshot) {
+      return;
+    }
+    if (textController.text != textSnapshot ||
+        _settingsState.wordCountMode != modeSnapshot) {
+      return;
+    }
 
     setState(() {
       // Update cache for the active chapter
       for (final seg in segmentsData) {
-        if (seg.segmentUUID == selectedSegID) {
+        if (seg.segmentUUID == selectedSegIDSnapshot) {
           for (final chap in seg.chapters) {
-            if (chap.chapterUUID == selectedChapID) {
+            if (chap.chapterUUID == selectedChapIDSnapshot) {
               // Update the cached value in ChapterData
               // Note: We are updating the cache associated with the object which might have stale content string
               // but this is the correct "current" count for the UI.
-              chap.updateCachedWordCount(count, mode);
+              chap.updateCachedWordCount(count, modeSnapshot);
               break;
             }
           }
@@ -644,11 +682,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     final int gen = ++_allWordCountsGen;
     final WordCountMode mode = _settingsState.wordCountMode;
 
-    final List<({
-      ChapterModule.ChapterData chap,
-      String snapshotContent,
-      WordCountMode snapshotMode,
-    })> jobs = [];
+    final List<
+      ({
+        ChapterModule.ChapterData chap,
+        String snapshotContent,
+        WordCountMode snapshotMode,
+      })
+    >
+    jobs = [];
 
     for (final ChapterModule.SegmentData seg in segmentsData) {
       for (final ChapterModule.ChapterData chap in seg.chapters) {
@@ -656,48 +697,55 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           chap: chap,
           snapshotContent: chap.chapterContent,
           snapshotMode: mode,
-        ),);
+        ));
       }
     }
 
-    for (var start = 0; start < jobs.length; start += _maxConcurrentChapterWordCounts) {
+    for (
+      var start = 0;
+      start < jobs.length;
+      start += _maxConcurrentChapterWordCounts
+    ) {
       if (!mounted || gen != _allWordCountsGen) {
         return;
       }
 
-      final int end =
-          (start + _maxConcurrentChapterWordCounts).clamp(0, jobs.length).toInt();
+      final int end = (start + _maxConcurrentChapterWordCounts)
+          .clamp(0, jobs.length)
+          .toInt();
       final slice = jobs.sublist(start, end);
 
-      await Future.wait(slice.map((job) async {
-        if (!mounted || gen != _allWordCountsGen) {
-          return;
-        }
+      await Future.wait(
+        slice.map((job) async {
+          if (!mounted || gen != _allWordCountsGen) {
+            return;
+          }
 
-        if (job.snapshotContent.isEmpty) {
-          job.chap.updateCachedWordCount(0, job.snapshotMode);
-          return;
-        }
+          if (job.snapshotContent.isEmpty) {
+            job.chap.updateCachedWordCount(0, job.snapshotMode);
+            return;
+          }
 
-        final int count = await ContentManager.calculateWordCountAsync(
-          job.snapshotContent,
-          mode: job.snapshotMode,
-        );
+          final int count = await ContentManager.calculateWordCountAsync(
+            job.snapshotContent,
+            mode: job.snapshotMode,
+          );
 
-        if (!mounted || gen != _allWordCountsGen) {
-          return;
-        }
+          if (!mounted || gen != _allWordCountsGen) {
+            return;
+          }
 
-        if (job.snapshotMode != _settingsState.wordCountMode) {
-          return;
-        }
+          if (job.snapshotMode != _settingsState.wordCountMode) {
+            return;
+          }
 
-        if (job.chap.chapterContent != job.snapshotContent) {
-          return;
-        }
+          if (job.chap.chapterContent != job.snapshotContent) {
+            return;
+          }
 
-        job.chap.updateCachedWordCount(count, job.snapshotMode);
-      }));
+          job.chap.updateCachedWordCount(count, job.snapshotMode);
+        }),
+      );
     }
 
     if (mounted && gen == _allWordCountsGen) {
@@ -1713,6 +1761,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         );
       },
     );
+
+    if (!mounted) {
+      return;
+    }
   }
 
   Future<void> _exportSelective(Set<String> modules, String format) async {
@@ -1902,6 +1954,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       }
     }
 
+    if (!mounted) {
+      return;
+    }
+
     try {
       final result = await ref
           .read(projectIoControllerProvider.notifier)
@@ -1916,6 +1972,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _applyProjectData(result.data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      if (!mounted) {
+        return;
+      }
       _showMessage("新專案建立成功！");
 
       _updateAllWordCounts();
@@ -1936,6 +1995,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (shouldProceed == null) {
         return;
       }
+    }
+
+    if (!mounted) {
+      return;
     }
 
     try {
@@ -1963,6 +2026,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               fileVersion: openedVersion ?? "unknown",
               supportedVersion: FileService.projectVersion,
             );
+        if (!mounted) {
+          return;
+        }
         if (!shouldContinue) {
           _showError("已取消開啟較新版本檔案。");
           return;
@@ -1984,6 +2050,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
+      if (!mounted) {
+        return;
+      }
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -2011,6 +2080,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       }
     }
 
+    if (!mounted) {
+      return;
+    }
+
     try {
       final projectFile = await ref
           .read(projectIoControllerProvider.notifier)
@@ -2033,6 +2106,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               fileVersion: openedVersion ?? "unknown",
               supportedVersion: FileService.projectVersion,
             );
+        if (!mounted) {
+          return;
+        }
         if (!shouldContinue) {
           _showError("已取消開啟較新版本檔案。");
           return;
@@ -2054,6 +2130,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
+      if (!mounted) {
+        return;
+      }
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
 
       _updateAllWordCounts();
@@ -2085,9 +2164,15 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             currentData: currentData,
             forceSaveAs: false,
           );
+      if (!mounted) {
+        return;
+      }
       setState(() => currentProject = savedProject);
       _markAsSaved();
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
+      if (!mounted) {
+        return;
+      }
       _showMessage("專案儲存成功！");
     } catch (e) {
       _showError("儲存專案失敗：${e.toString()}");
@@ -2106,9 +2191,15 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             currentData: currentData,
             forceSaveAs: true,
           );
+      if (!mounted) {
+        return;
+      }
       setState(() => currentProject = savedProject);
       _markAsSaved();
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
+      if (!mounted) {
+        return;
+      }
       _showMessage("專案另存成功：${savedProject.nameWithoutExtension}");
     } catch (e) {
       _showError("另存專案失敗：${e.toString()}");
