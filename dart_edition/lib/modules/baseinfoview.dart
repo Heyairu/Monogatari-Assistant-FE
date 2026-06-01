@@ -284,9 +284,8 @@ class BaseInfoView extends ConsumerStatefulWidget {
 class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   bool _isSyncingControllers = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
-  ProviderSubscription<BaseInfoData>? _baseInfoSubscription;
-  ProviderSubscription<String>? _contentSubscription;
-  ProviderSubscription<AsyncValue<AppSettingsStateData>>? _settingsSubscription;
+  
+  final List<ProviderSubscription> _subscriptions = [];
 
   // 為每個文字欄位創建專用的 TextEditingController
   late final TextEditingController _bookNameController;
@@ -353,7 +352,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       _notifyDataChanged();
     });
 
-    _baseInfoSubscription = ref.listenManual<BaseInfoData>(
+    _subscriptions.add(ref.listenManual<BaseInfoData>(
       baseInfoDataProvider,
       (previous, next) {
         if (previous == next) {
@@ -361,9 +360,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         }
         _syncControllersFromProvider(next);
       },
-    );
+    ));
 
-    _contentSubscription = ref.listenManual<String>(editorContentProvider, (
+    _subscriptions.add(ref.listenManual<String>(editorContentProvider, (
       previous,
       next,
     ) {
@@ -371,9 +370,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         return;
       }
       _syncNowWords();
-    });
+    }));
 
-    _settingsSubscription = ref.listenManual<AsyncValue<AppSettingsStateData>>(
+    _subscriptions.add(ref.listenManual<AsyncValue<AppSettingsStateData>>(
       settingsStateProvider,
       (previous, next) {
         final previousMode = previous?.valueOrNull?.wordCountMode;
@@ -383,7 +382,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         }
         _syncNowWords();
       },
-    );
+    ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -396,9 +395,13 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
 
   @override
   void dispose() {
-    _baseInfoSubscription?.close();
-    _contentSubscription?.close();
-    _settingsSubscription?.close();
+    for (final s in _subscriptions) {
+      try {
+        s.close();
+      } catch (e) {
+        debugPrint('Failed to close subscription: $e');
+      }
+    }
     _bookNameController.dispose();
     _authorController.dispose();
     _purposeController.dispose();

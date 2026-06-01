@@ -1325,6 +1325,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   bool _isLoading = false;
   Timer? _debounceTimer;
   bool _hasHydratedInitialCharacterData = false;
+  bool _registeredCharacterDataListener = false;
 
   void _markAsModified() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
@@ -1465,17 +1466,23 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(characterDataProvider);
+    // Watch a lightweight fingerprint to avoid overly broad rebuilds while
+    // keeping the listener below for selection sync. Register the listener
+    // only once during build to avoid duplicate registrations.
+    ref.watch(characterDataProvider.select((m) => m.hashCode));
     _hydrateInitialCharacterDataIfNeeded();
-    ref.listen<Map<String, CharacterEntryData>>(characterDataProvider, (
-      previous,
-      next,
-    ) {
-      if (!mounted || _isLoading) {
-        return;
-      }
-      _syncSelectionFromProviderIfNeeded(next);
-    });
+    if (!_registeredCharacterDataListener) {
+      ref.listen<Map<String, CharacterEntryData>>(characterDataProvider, (
+        previous,
+        next,
+      ) {
+        if (!mounted || _isLoading) {
+          return;
+        }
+        _syncSelectionFromProviderIfNeeded(next);
+      });
+      _registeredCharacterDataListener = true;
+    }
 
     return Column(
       children: [

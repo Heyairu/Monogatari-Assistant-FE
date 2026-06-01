@@ -227,11 +227,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   bool get _isSyncing => _editorCoordinatorState.isSyncing;
   bool get hasUnsavedChanges => _editorCoordinatorState.hasUnsavedChanges;
 
-  ProviderSubscription<EditorCoordinatorState>? _editorCoordinatorSubscription;
-  ProviderSubscription<String>? _editorContentSubscription;
-  ProviderSubscription<EditorSelectionState>? _editorSelectionSubscription;
-  ProviderSubscription<List<ChapterModule.SegmentData>>?
-  _segmentsDataSubscription;
+  final List<ProviderSubscription> _subscriptions = [];
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
@@ -405,7 +401,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     // 啟動時不自動建立新專案，避免與使用者手動開檔流程競態。
 
-    _editorContentSubscription = ref.listenManual<String>(
+    _subscriptions.add(ref.listenManual<String>(
       editorContentProvider,
       (previous, next) {
         if (!mounted || _isSyncing || textController.text == next) {
@@ -436,9 +432,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
         _refreshActiveChapterWordCount();
       },
-    );
+    ));
 
-    _editorSelectionSubscription = ref.listenManual<EditorSelectionState>(
+    _subscriptions.add(ref.listenManual<EditorSelectionState>(
       editorSelectionProvider,
       (previous, next) {
         if (!mounted) {
@@ -450,10 +446,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         }
         _refreshActiveChapterWordCount();
       },
-    );
+    ));
 
-    _segmentsDataSubscription = ref
-        .listenManual<List<ChapterModule.SegmentData>>(segmentsDataProvider, (
+    _subscriptions.add(ref.listenManual<List<ChapterModule.SegmentData>>(
+        segmentsDataProvider, (
           previous,
           next,
         ) {
@@ -468,9 +464,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           setState(() {
             totalWords = _recalculateSumFast();
           });
-        });
+        }));
 
-    _editorCoordinatorSubscription = ref.listenManual<EditorCoordinatorState>(
+    _subscriptions.add(ref.listenManual<EditorCoordinatorState>(
       editorCoordinatorProvider,
       (previous, next) {
         if (!mounted) {
@@ -536,7 +532,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           });
         }
       },
-    );
+    ));
 
     // 監聽焦點變化
     WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
@@ -549,10 +545,13 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _cancelPendingContentCommit();
     _activeWordCountGen++;
     _allWordCountsGen++;
-    _editorCoordinatorSubscription?.close();
-    _editorContentSubscription?.close();
-    _editorSelectionSubscription?.close();
-    _segmentsDataSubscription?.close();
+    for (final s in _subscriptions) {
+      try {
+        s.close();
+      } catch (e) {
+        debugPrint('Failed to close subscription: $e');
+      }
+    }
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||

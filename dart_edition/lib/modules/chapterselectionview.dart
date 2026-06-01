@@ -254,6 +254,11 @@ class _SelectionSnapshot {
   });
 }
 
+int? _indexWhereOrNull<T>(List<T> items, bool Function(T item) test) {
+  final index = items.indexWhere(test);
+  return index == -1 ? null : index;
+}
+
 class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   List<SegmentData> get _segments => ref.read(segmentsDataProvider);
   SegmentsDataNotifier get _segmentsNotifier =>
@@ -321,11 +326,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       );
     }
 
-    final int idx = segments.indexWhere((seg) => seg.segmentUUID == segmentID);
+    final int? idx = _indexWhereOrNull(
+      segments,
+      (seg) => seg.segmentUUID == segmentID,
+    );
     return _SelectionSnapshot(
       segmentID: segmentID,
       chapterID: chapterID,
-      segmentIndex: idx >= 0 ? idx : null,
+      segmentIndex: idx,
     );
   }
 
@@ -578,8 +586,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }) {
     _setSelection(segmentID: segID, chapterID: previousChapterID);
 
-    final si = _segments.indexWhere((seg) => seg.segmentUUID == segID);
-    if (si >= 0) {
+    final si = _indexWhereOrNull(
+      _segments,
+      (seg) => seg.segmentUUID == segID,
+    );
+    if (si != null) {
       if (_segments[si].chapters.isNotEmpty) {
         final firstChapter = _segments[si].chapters.first;
         _setSelection(segmentID: segID, chapterID: firstChapter.chapterUUID);
@@ -597,10 +608,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       chapterID: chapterID,
     );
 
-    final chapterIdx = _segments[segIdx].chapters.indexWhere(
+    final chapterIdx = _indexWhereOrNull(
+      _segments[segIdx].chapters,
       (ch) => ch.chapterUUID == chapterID,
     );
-    if (chapterIdx >= 0) {
+    if (chapterIdx != null) {
       _setEditorContent(_segments[segIdx].chapters[chapterIdx].chapterContent);
     }
   }
@@ -666,11 +678,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   // MARK: - 刪除方法
 
   void _deleteSegment(String segmentID, _SelectionSnapshot selection) {
-    final segIdx = _segments.indexWhere((seg) => seg.segmentUUID == segmentID);
-    if (segIdx < 0 || _segments.length <= 1) return;
+    final segIdx = _indexWhereOrNull(
+      _segments,
+      (seg) => seg.segmentUUID == segmentID,
+    );
+    if (segIdx == null || _segments.length <= 1) return;
 
     final remainingChapters =
-        _totalChaptersCount - _segments[segIdx].chapters.length;
+      _totalChaptersCount - _segments[segIdx].chapters.length;
     if (remainingChapters <= 0) return;
 
     // 如果要刪除的是當前選中的區段，先保存編輯器內容
@@ -714,10 +729,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   ) {
     if (segIdx < 0 || segIdx >= _segments.length) return;
 
-    final chapterIdx = _segments[segIdx].chapters.indexWhere(
+    final chapterIdx = _indexWhereOrNull(
+      _segments[segIdx].chapters,
       (ch) => ch.chapterUUID == chapterID,
     );
-    if (chapterIdx < 0 || _totalChaptersCount <= 1) return;
+    if (chapterIdx == null || _totalChaptersCount <= 1) return;
 
     // 如果要刪除的是當前選中的章節，先保存編輯器內容
     if (selection.chapterID == chapterID) {
@@ -839,10 +855,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     int? sourceSegIdx;
     int? sourceChapIdx;
     for (int si = 0; si < _segments.length; si++) {
-      final ci = _segments[si].chapters.indexWhere(
+      final ci = _indexWhereOrNull(
+        _segments[si].chapters,
         (ch) => ch.chapterUUID == chapterUUID,
       );
-      if (ci >= 0) {
+      if (ci != null) {
         sourceSegIdx = si;
         sourceChapIdx = ci;
         break;
@@ -852,10 +869,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     if (sourceSegIdx == null || sourceChapIdx == null) return;
 
     // 找到目標區段
-    final targetSegIdx = _segments.indexWhere(
+    final targetSegIdx = _indexWhereOrNull(
+      _segments,
       (seg) => seg.segmentUUID == toSegmentUUID,
     );
-    if (targetSegIdx < 0 || targetSegIdx == sourceSegIdx) return;
+    if (targetSegIdx == null || targetSegIdx == sourceSegIdx) return;
 
     final sourceSegID = _segments[sourceSegIdx].segmentUUID;
     final movingChapter = _segments[sourceSegIdx].chapters[sourceChapIdx];
@@ -866,7 +884,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       targetSegmentID: toSegmentUUID,
     );
 
-    final sourceSegAfterMoveIdx = _segments.indexWhere(
+    final sourceSegAfterMoveIdx = _indexWhereOrNull(
+      _segments,
       (seg) => seg.segmentUUID == sourceSegID,
     );
 
@@ -878,7 +897,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _setEditorContent(movingChapter.chapterContent);
 
     // 如果來源區段變空，刪除它（如果有多個區段）
-    if (sourceSegAfterMoveIdx >= 0 &&
+    if (sourceSegAfterMoveIdx != null &&
         _segments[sourceSegAfterMoveIdx].chapters.isEmpty &&
         _segments.length > 1) {
       _segmentsNotifier.removeSegmentById(sourceSegID);

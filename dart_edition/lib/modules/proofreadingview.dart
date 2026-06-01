@@ -42,6 +42,12 @@ class ProofReadingView extends ConsumerStatefulWidget {
 }
 
 class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
+  final ScrollController _pairCheckScrollController = ScrollController();
+  final ScrollController _consecutiveSymbolScrollController = ScrollController();
+  final ScrollController _lineEndingScrollController = ScrollController();
+  final ScrollController _punctuationScrollController = ScrollController();
+  final ScrollController _fillerWordScrollController = ScrollController();
+
   static const String _fillerWordAssetPath = "assets/jsons/fillerwords.json";
   static const String _punctuationProfileKey =
       "proofreading_punctuation_profile";
@@ -356,18 +362,18 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   _PunctuationNormalizationResult? _punctuationResult;
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
   Timer? _scheduledAutoCheckTimer;
-  ProviderSubscription<String>? _editorContentSubscription;
+  final List<ProviderSubscription> _subscriptions = [];
   String _lastObservedText = "";
 
   @override
   void initState() {
     super.initState();
-    _editorContentSubscription = ref.listenManual<String>(
+    _subscriptions.add(ref.listenManual<String>(
       editorContentProvider,
       (previous, next) {
         _onSharedTextChanged(next);
       },
-    );
+    ));
     _loadPunctuationProfile();
     _loadFillerWords();
   }
@@ -391,8 +397,19 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   @override
   void dispose() {
-    _editorContentSubscription?.close();
+    for (final s in _subscriptions) {
+      try {
+        s.close();
+      } catch (e) {
+        debugPrint('Failed to close subscription: $e');
+      }
+    }
     _scheduledAutoCheckTimer?.cancel();
+    _pairCheckScrollController.dispose();
+    _consecutiveSymbolScrollController.dispose();
+    _lineEndingScrollController.dispose();
+    _punctuationScrollController.dispose();
+    _fillerWordScrollController.dispose();
     super.dispose();
   }
 
@@ -2265,13 +2282,16 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   Widget _buildScrollableResultArea({
     required List<Widget> children,
+    required ScrollController controller,
     double maxHeight = 200,
   }) {
     return Container(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: Scrollbar(
+        controller: controller,
         thumbVisibility: true,
         child: ListView(
+          controller: controller,
           primary: false,
           padding: EdgeInsets.zero,
           children: children,
@@ -2613,6 +2633,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
 
     return _buildScrollableResultArea(
+      controller: _pairCheckScrollController,
       children: _pairIssues.map((final _PairIssue issue) {
         final ({int line, int column}) position = _lineColumnAt(
           sourceText,
@@ -2668,6 +2689,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         Text("共偵測到 ${result.changes.length} 處可統一的標點。"),
         const SizedBox(height: 6),
         _buildScrollableResultArea(
+          controller: _punctuationScrollController,
           children: result.changes.map((final _PunctuationChange change) {
             final ({int line, int column}) position = _lineColumnAt(
               sourceText,
@@ -2735,6 +2757,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildScrollableResultArea(
+          controller: _consecutiveSymbolScrollController,
           children: [
             ..._symbolIssues.map((final _ConsecutiveSymbolIssue issue) {
               final ({int line, int column}) position = _lineColumnAt(
@@ -2854,6 +2877,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
 
     return _buildScrollableResultArea(
+      controller: _lineEndingScrollController,
       children: _lineEndingIssues.map((final _LineEndingIssue issue) {
         final ({int line, int column}) position = _lineColumnAt(
           sourceText,
@@ -2917,8 +2941,10 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             ),
           ),
           child: Scrollbar(
+            controller: _fillerWordScrollController,
             thumbVisibility: true,
             child: ListView.separated(
+              controller: _fillerWordScrollController,
               padding: const EdgeInsets.all(8),
               itemCount: topHits.length,
               separatorBuilder: (_, __) => const SizedBox(height: 6),

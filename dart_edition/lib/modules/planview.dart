@@ -344,6 +344,7 @@ class PlanView extends ConsumerStatefulWidget {
 }
 
 class _PlanViewState extends ConsumerState<PlanView> {
+  bool _registeredProviderListeners = false;
   String? selectedForeshadowId;
   String? selectedUpdatePlanId;
   String? selectedFolderId;
@@ -376,7 +377,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
   bool _isLoadingInspiration = true;
 
   @override
-  void initState() {
+   void initState() {
     super.initState();
 
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
@@ -1718,37 +1719,33 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final foreshadowItems = ref.watch(foreshadowDataProvider);
     final updatePlanItems = ref.watch(updatePlanDataProvider);
 
-    ref.listen<List<ForeshadowItem>>(foreshadowDataProvider, (previous, next) {
-      if (!mounted) {
-        return;
-      }
-      if (selectedForeshadowId == null) {
-        return;
-      }
-      final exists = next.any((item) => item.id == selectedForeshadowId);
-      if (!exists) {
-        setState(() {
-          selectedForeshadowId = null;
-          _syncForeshadowControllers();
-        });
-      }
-    });
+    if (!_registeredProviderListeners) {
+      ref.listen<List<ForeshadowItem>>(foreshadowDataProvider, (previous, next) {
+        if (!mounted) return;
+        if (selectedForeshadowId == null) return;
+        final exists = next.any((item) => item.id == selectedForeshadowId);
+        if (!exists) {
+          setState(() {
+            selectedForeshadowId = null;
+            _syncForeshadowControllers();
+          });
+        }
+      });
 
-    ref.listen<List<UpdatePlanItem>>(updatePlanDataProvider, (previous, next) {
-      if (!mounted) {
-        return;
-      }
-      if (selectedUpdatePlanId == null) {
-        return;
-      }
-      final exists = next.any((item) => item.id == selectedUpdatePlanId);
-      if (!exists) {
-        setState(() {
-          selectedUpdatePlanId = null;
-          _syncUpdatePlanControllers();
-        });
-      }
-    });
+      ref.listen<List<UpdatePlanItem>>(updatePlanDataProvider, (previous, next) {
+        if (!mounted) return;
+        if (selectedUpdatePlanId == null) return;
+        final exists = next.any((item) => item.id == selectedUpdatePlanId);
+        if (!exists) {
+          setState(() {
+            selectedUpdatePlanId = null;
+            _syncUpdatePlanControllers();
+          });
+        }
+      });
+
+      _registeredProviderListeners = true;
+    }
 
     return Scaffold(
       body: SingleChildScrollView(

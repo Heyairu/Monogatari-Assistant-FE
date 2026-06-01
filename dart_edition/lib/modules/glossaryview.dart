@@ -112,6 +112,8 @@ class GlossaryView extends ConsumerStatefulWidget {
 }
 
 class _GlossaryViewState extends ConsumerState<GlossaryView> {
+  final ScrollController _entryListScrollController = ScrollController();
+
   bool _isLoading = true;
   String? _loadError;
 
@@ -165,6 +167,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   @override
   void dispose() {
     _categoryRenameController?.dispose();
+    _entryListScrollController.dispose();
     super.dispose();
   }
 
@@ -1834,7 +1837,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 320),
                 child: Scrollbar(
+                  controller: _entryListScrollController,
                   child: SingleChildScrollView(
+                    controller: _entryListScrollController,
                     child: Column(
                       children: visibleRefs
                           .map(

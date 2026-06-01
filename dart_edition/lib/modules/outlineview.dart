@@ -568,30 +568,35 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   static const double _listScrollEdgeThreshold = 20.0;
   bool _hasHydratedInitialOutlineData = false;
 
+  bool _registeredOutlineProviderListener = false;
+
   List<StorylineData> get storylines => ref.read(outlineDataProvider);
   OutlineDataNotifier get _outlineNotifier =>
       ref.read(outlineDataProvider.notifier);
 
   int? get selectedStorylineIndex {
     if (selectedStorylineID == null) return null;
-    return storylines.indexWhere((sl) => sl.chapterUUID == selectedStorylineID);
+    final idx = storylines.indexWhere((sl) => sl.chapterUUID == selectedStorylineID);
+    return idx == -1 ? null : idx;
   }
 
   int? get selectedEventIndex {
     final si = selectedStorylineIndex;
     if (si == null || selectedEventID == null) return null;
-    return storylines[si].scenes.indexWhere(
+    final idx = storylines[si].scenes.indexWhere(
       (ev) => ev.storyEventUUID == selectedEventID,
     );
+    return idx == -1 ? null : idx;
   }
 
   int? get selectedSceneIndex {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si == null || ei == null || selectedSceneID == null) return null;
-    return storylines[si].scenes[ei].scenes.indexWhere(
+    final idx = storylines[si].scenes[ei].scenes.indexWhere(
       (sc) => sc.sceneUUID == selectedSceneID,
     );
+    return idx == -1 ? null : idx;
   }
 
   void _bootstrapSelectionFromProviderIfNeeded() {
@@ -682,6 +687,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     sceneFocusController.addListener(_onSceneFocusChanged);
     sceneConflictController.addListener(_onSceneConflictChanged);
     sceneMemoController.addListener(_onSceneMemoChanged);
+    // Provider listener will be registered during build() where Riverpod allows
+    // `ref.listen`. See build() for the guarded registration.
   }
 
   void _onStorylineNameChanged() {
@@ -1363,14 +1370,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
+    // Watch actual outline data for the UI.
     ref.watch(outlineDataProvider);
     _bootstrapSelectionFromProviderIfNeeded();
-    ref.listen<List<StorylineData>>(outlineDataProvider, (previous, next) {
-      if (!mounted) {
-        return;
-      }
-      _syncSelectionIfNeeded(next);
-    });
+
+    // Register the provider listener during build once (allowed by Riverpod).
+    if (!_registeredOutlineProviderListener) {
+      ref.listen<List<StorylineData>>(outlineDataProvider, (previous, next) {
+        if (!mounted) return;
+        _syncSelectionIfNeeded(next);
+      });
+      _registeredOutlineProviderListener = true;
+    }
 
     return Scaffold(
       body: Listener(

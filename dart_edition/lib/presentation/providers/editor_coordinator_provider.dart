@@ -1,14 +1,41 @@
 import "package:flutter/material.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import 'dart:async';
 
 import "../../bin/file.dart" as file_module;
 import "../../bin/file.dart";
 import "../../bin/settings_manager.dart";
 import "../../modules/chapterselectionview.dart" as chapter_module;
+import "../../bin/findreplace.dart" as findreplace_module;
 import "global_state_providers.dart";
 import "project_io_providers.dart";
 import "project_state_providers.dart";
+
+/// A lightweight aggregated signal provider that changes when any of the
+/// project-related providers change. Consumers can listen to this provider
+/// instead of adding multiple individual `ref.listen` calls.
+final projectDataAggregateProvider = Provider<int>((ref) {
+  final base = ref.watch(baseInfoDataProvider);
+  final segments = ref.watch(segmentsDataProvider);
+  final outline = ref.watch(outlineDataProvider);
+  final world = ref.watch(worldSettingsDataProvider);
+  final character = ref.watch(characterDataProvider);
+  final foreshadow = ref.watch(foreshadowDataProvider);
+  final updatePlan = ref.watch(updatePlanDataProvider);
+
+  // Compute a small fingerprint from lengths and shallow hashes to avoid
+  // expensive deep comparisons here. The consumer can still apply more
+  // precise checks if necessary before acting on changes.
+  int h = base.hashCode;
+  h = h * 31 + segments.length;
+  h = h * 31 + outline.length;
+  h = h * 31 + world.hashCode;
+  h = h * 31 + character.hashCode;
+  h = h * 31 + foreshadow.length;
+  h = h * 31 + updatePlan.length;
+  return h;
+});
 
 class EditorProjectInitialState {
   final String? selectedSegID;
@@ -94,6 +121,16 @@ class EditorCoordinatorState {
 const Object _editorCoordinatorUnset = Object();
 
 class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
+  Timer? _dirtyTimer;
+  static const int _dirtyDebounceMs = 150;
+
+  void _scheduleMarkProjectDataChanged() {
+    _dirtyTimer?.cancel();
+    _dirtyTimer = Timer(Duration(milliseconds: _dirtyDebounceMs), () {
+      _markProjectDataChanged();
+    });
+  }
+
   bool _isSameStringList(List<String> left, List<String> right) {
     if (left.length != right.length) {
       return false;
@@ -206,60 +243,16 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
   }
 
   void _setupProjectDirtyListeners() {
-    ref.listen(baseInfoDataProvider, (previous, next) {
-      if (previous == null || !_hasPersistedBaseInfoChanged(previous, next)) {
+    // Replace many individual listeners with a single aggregated listener.
+    // The aggregated provider emits a small fingerprint when any underlying
+    // project provider changes. We debounce the reaction to avoid rebuild
+    // storms on bursts of related updates.
+    ref.listen<int>(projectDataAggregateProvider, (previous, next) {
+      if (previous == null || previous == next) {
         return;
       }
 
-      _markProjectDataChanged();
-    });
-
-    ref.listen(segmentsDataProvider, (previous, next) {
-      if (previous == null || listEquals(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
-    });
-
-    ref.listen(outlineDataProvider, (previous, next) {
-      if (previous == null || _isSameOutlineData(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
-    });
-
-    ref.listen(worldSettingsDataProvider, (previous, next) {
-      if (previous == null || listEquals(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
-    });
-
-    ref.listen(characterDataProvider, (previous, next) {
-      if (previous == null || mapEquals(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
-    });
-
-    ref.listen(foreshadowDataProvider, (previous, next) {
-      if (previous == null || listEquals(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
-    });
-
-    ref.listen(updatePlanDataProvider, (previous, next) {
-      if (previous == null || listEquals(previous, next)) {
-        return;
-      }
-
-      _markProjectDataChanged();
+      _scheduleMarkProjectDataChanged();
     });
   }
 
@@ -305,6 +298,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     });
 
     _setupProjectDirtyListeners();
+    ref.onDispose(() {
+      _dirtyTimer?.cancel();
+    });
 
     return EditorCoordinatorState(
       isLoading: initialLoading,
@@ -537,6 +533,14 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     ref
       .read(characterDataProvider.notifier)
       .updateCharacterData((_) => snapshot.characterData);
+
+    // Evict normalization cache used by the editor find/replace highlighter
+    // to avoid unbounded memory growth across project switches.
+    try {
+      findreplace_module.clearNormalizationCache();
+    } catch (e) {
+      debugPrint('Failed to clear normalization cache: $e');
+    }
 
     ref
         .read(editorSelectionProvider.notifier)

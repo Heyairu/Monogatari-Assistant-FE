@@ -18,6 +18,12 @@ import 'dart:async';
 // Global normalization cache for character normalization
 final Map<String, String> _normalizationCache = <String, String>{};
 
+/// Clear the global normalization cache. Call this on project load/unload
+/// to avoid unbounded memory growth across long editing sessions.
+void clearNormalizationCache() {
+  _normalizationCache.clear();
+}
+
 // Precompiled RegExp constants to avoid recompilation hotspots
 final RegExp _punctuationRegex = RegExp(
   r"""[!"#\$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~、。，！？；：「」『』（）《》〈〉【】〔〕…—～·．｜／－＿＼]""",
@@ -222,18 +228,33 @@ class HighlightTextEditingController extends CodeController {
     Color? currentMatch,
     _SelectionCoverageIndex? precomputedIndex,
   }) {
+    final int textLength = text.length;
     final List<TextSelection> capped = matches.length > _MAX_SEARCH_RESULTS
         ? matches.sublist(0, _MAX_SEARCH_RESULTS)
         : List<TextSelection>.of(matches);
 
-    searchMatches = capped;
+    final List<TextSelection> normalizedMatches = <TextSelection>[];
+    for (final TextSelection selection in capped) {
+      final normalizedSelection = _normalizeSelection(selection, textLength);
+      if (normalizedSelection != null) {
+        normalizedMatches.add(normalizedSelection);
+      }
+    }
+
+    searchMatches = normalizedMatches;
     // ensure current index is within bounds
-    currentMatchIndex = (currentIndex >= 0 && currentIndex < capped.length) ? currentIndex : -1;
+    currentMatchIndex = (currentIndex >= 0 && currentIndex < normalizedMatches.length)
+        ? currentIndex
+        : -1;
     otherMatchColor = otherMatch ?? Colors.orange;
     currentMatchColor = currentMatch ?? Colors.red;
 
-    // 如果提供了預編譯的索引，直接使用；否則從匹配項構建
-    _searchIndex = precomputedIndex ?? _SelectionCoverageIndex.fromRaw(searchMatches, text.length);
+    // 如果提供了與當前文本長度相容的預編譯索引，直接使用；否則重新構建。
+    if (precomputedIndex != null && precomputedIndex.isCompatibleWithTextLength(textLength)) {
+      _searchIndex = precomputedIndex;
+    } else {
+      _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, textLength);
+    }
 
     notifyListeners();
   }
@@ -335,6 +356,14 @@ class _SelectionCoverageIndex {
   }
 
   bool get isEmpty => _selections.isEmpty;
+
+  bool isCompatibleWithTextLength(int textLength) {
+    if (_prefixMaxEnds.isEmpty) {
+      return true;
+    }
+
+    return _prefixMaxEnds.last <= textLength;
+  }
 
   void addBoundaries(Set<int> boundaries) {
     for (final TextSelection selection in _selections) {
@@ -447,6 +476,9 @@ Future<void> performFind(
 
   // 找出所有匹配項 (使用 compute，背景執行 + 預計算索引)
   final highlightUpdate = await findAllMatchesAsync(text, findText, options);
+  if (textController.text != text) {
+    return;
+  }
   final List<TextSelection> searchMatches = highlightUpdate.matches;
 
   if (searchMatches.isEmpty) {
@@ -550,6 +582,11 @@ Future<void> performReplace(
     // 確認選取範圍與當前匹配項一致
     if (selection.start == currentMatch.start &&
         selection.end == currentMatch.end) {
+      final currentText = textController.text;
+      if (selection.end > currentText.length) {
+        return;
+      }
+
       String actualReplaceText = replaceText;
 
       // 如果是正則表達式模式，處理捕獲組
@@ -558,6 +595,10 @@ Future<void> performReplace(
           // 正則表達式模式固定啟用大小寫相符
           final regex = RegExp(findText, caseSensitive: true);
           final text = textController.text;
+          if (selection.start < 0 || selection.end > text.length) {
+            return;
+          }
+
           final matchText = text.substring(selection.start, selection.end);
           final regexMatch = regex.firstMatch(matchText);
 
@@ -657,6 +698,9 @@ Future<void> performReplaceAll(
 
   // 找出所有匹配項 (Async)
   final highlightUpdate = await findAllMatchesAsync(text, findText, options);
+  if (textController.text != text) {
+    return;
+  }
   final List<TextSelection> matches = highlightUpdate.matches;
 
   if (matches.isEmpty) {
