@@ -1,4 +1,3 @@
-import "dart:async";
 
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -39,16 +38,14 @@ class ActiveChapterWordCountState {
   }
 }
 
-final activeChapterWordCountProvider = AutoDisposeNotifierProvider<
-  ActiveChapterWordCountNotifier,
-  ActiveChapterWordCountState
->(ActiveChapterWordCountNotifier.new);
+final activeChapterWordCountProvider =
+    AutoDisposeNotifierProvider<
+      ActiveChapterWordCountNotifier,
+      ActiveChapterWordCountState
+    >(ActiveChapterWordCountNotifier.new);
 
 class ActiveChapterWordCountNotifier
     extends AutoDisposeNotifier<ActiveChapterWordCountState> {
-  static const Duration _debounceDuration = Duration(milliseconds: 50);
-
-  Timer? _debounce;
   int _revision = 0;
   bool _isDisposed = false;
 
@@ -56,8 +53,6 @@ class ActiveChapterWordCountNotifier
   ActiveChapterWordCountState build() {
     ref.onDispose(() {
       _isDisposed = true;
-      _debounce?.cancel();
-      _debounce = null;
     });
     return const ActiveChapterWordCountState.initial();
   }
@@ -66,10 +61,8 @@ class ActiveChapterWordCountNotifier
     required String? chapterId,
     required String text,
     required WordCountMode mode,
-  }) {
+  }) async {
     if (chapterId == null || chapterId.trim().isEmpty) {
-      _debounce?.cancel();
-      _debounce = null;
       state = state.copyWith(
         count: 0,
         isComputing: false,
@@ -80,37 +73,33 @@ class ActiveChapterWordCountNotifier
     }
 
     final int nextRevision = ++_revision;
-    _debounce?.cancel();
-    _debounce = Timer(_debounceDuration, () async {
-      // Mark computing (keep previous count to avoid flicker).
-      state = state.copyWith(isComputing: true, error: null);
-      try {
-        final int count = await ContentManager.calculateWordCountAsync(
-          text,
-          mode: mode,
-        );
+    // Mark computing (keep previous count to avoid flicker).
+    state = state.copyWith(isComputing: true, error: null);
+    try {
+      final int count = await ContentManager.calculateWordCountAsync(
+        text,
+        mode: mode,
+      );
 
-        if (_isDisposed || nextRevision != _revision) {
-          return;
-        }
-
-        state = state.copyWith(
-          count: count,
-          isComputing: false,
-          error: null,
-          lastUpdatedAt: DateTime.now(),
-        );
-      } catch (e) {
-        if (_isDisposed || nextRevision != _revision) {
-          return;
-        }
-        state = state.copyWith(
-          isComputing: false,
-          error: e,
-          lastUpdatedAt: DateTime.now(),
-        );
+      if (_isDisposed || nextRevision != _revision) {
+        return;
       }
-    });
+
+      state = state.copyWith(
+        count: count,
+        isComputing: false,
+        error: null,
+        lastUpdatedAt: DateTime.now(),
+      );
+    } catch (e) {
+      if (_isDisposed || nextRevision != _revision) {
+        return;
+      }
+      state = state.copyWith(
+        isComputing: false,
+        error: e,
+        lastUpdatedAt: DateTime.now(),
+      );
+    }
   }
 }
-

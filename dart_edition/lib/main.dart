@@ -37,6 +37,7 @@ import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/word_count_providers.dart";
+import "utils/text_change_debouncer.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -229,6 +230,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   final List<ProviderSubscription> _subscriptions = [];
 
+  late final TextChangeDebouncer _textChangeDebouncer;
+
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
 
@@ -352,6 +355,28 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   void initState() {
     super.initState();
 
+    _textChangeDebouncer = TextChangeDebouncer(
+      onWordCountTrigger: (nextContent) {
+        final int gen = ++_activeWordCountGen;
+        final String? selectedSegIDSnapshot = selectedSegID;
+        final String? selectedChapIDSnapshot = selectedChapID;
+        final WordCountMode modeSnapshot = _settingsState.wordCountMode;
+
+        _updateActiveWordCountAsync(
+          gen: gen,
+          selectedSegIDSnapshot: selectedSegIDSnapshot,
+          selectedChapIDSnapshot: selectedChapIDSnapshot,
+          textSnapshot: nextContent,
+          modeSnapshot: modeSnapshot,
+        );
+      },
+      onContentCommitTrigger: (nextContent) {
+        if (!mounted) return;
+        if (ref.read(editorContentProvider) == nextContent) return;
+        ref.read(editorContentProvider.notifier).setContent(nextContent);
+      },
+    );
+
     // 註冊視窗監聽器並設置視窗選項
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -379,10 +404,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _lastObservedEditorText = currentText;
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         _editorCoordinatorNotifier.markAsModified();
-        _scheduleContentCommit(currentText);
 
-        // Trigger async incremental update instead of full sync recalculation
-        _debouncedWordCountUpdate();
+        _textChangeDebouncer.onTextChanged(currentText);
 
         _refreshActiveChapterWordCount();
 
@@ -401,9 +424,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     // 啟動時不自動建立新專案，避免與使用者手動開檔流程競態。
 
-    _subscriptions.add(ref.listenManual<String>(
-      editorContentProvider,
-      (previous, next) {
+    _subscriptions.add(
+      ref.listenManual<String>(editorContentProvider, (previous, next) {
         if (!mounted || _isSyncing || textController.text == next) {
           return;
         }
@@ -431,12 +453,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         }
 
         _refreshActiveChapterWordCount();
-      },
-    ));
+      }),
+    );
 
-    _subscriptions.add(ref.listenManual<EditorSelectionState>(
-      editorSelectionProvider,
-      (previous, next) {
+    _subscriptions.add(
+      ref.listenManual<EditorSelectionState>(editorSelectionProvider, (
+        previous,
+        next,
+      ) {
         if (!mounted) {
           return;
         }
@@ -445,30 +469,33 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           return;
         }
         _refreshActiveChapterWordCount();
-      },
-    ));
+      }),
+    );
 
-    _subscriptions.add(ref.listenManual<List<ChapterModule.SegmentData>>(
-        segmentsDataProvider, (
-          previous,
-          next,
-        ) {
-          if (!mounted || previous == null || previous == next) {
-            return;
-          }
+    _subscriptions.add(
+      ref.listenManual<List<ChapterModule.SegmentData>>(segmentsDataProvider, (
+        previous,
+        next,
+      ) {
+        if (!mounted || previous == null || previous == next) {
+          return;
+        }
 
-          if (ref.read(editorCoordinatorProvider).isApplyingProjectData) {
-            return;
-          }
+        if (ref.read(editorCoordinatorProvider).isApplyingProjectData) {
+          return;
+        }
 
-          setState(() {
-            totalWords = _recalculateSumFast();
-          });
-        }));
+        setState(() {
+          totalWords = _recalculateSumFast();
+        });
+      }),
+    );
 
-    _subscriptions.add(ref.listenManual<EditorCoordinatorState>(
-      editorCoordinatorProvider,
-      (previous, next) {
+    _subscriptions.add(
+      ref.listenManual<EditorCoordinatorState>(editorCoordinatorProvider, (
+        previous,
+        next,
+      ) {
         if (!mounted) {
           return;
         }
@@ -531,8 +558,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             }
           });
         }
-      },
-    ));
+      }),
+    );
 
     // 監聽焦點變化
     WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
@@ -540,8 +567,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   @override
   void dispose() {
-    _wordCountDebounce?.cancel(); // Cancel timer
-    _wordCountDebounce = null;
     _cancelPendingContentCommit();
     _activeWordCountGen++;
     _allWordCountsGen++;
@@ -559,6 +584,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             defaultTargetPlatform == TargetPlatform.macOS)) {
       windowManager.removeListener(this);
     }
+    _textChangeDebouncer.cancelAll();
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
@@ -566,67 +592,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     super.dispose();
   }
 
-  Timer? _wordCountDebounce;
-  Timer? _contentCommitDebounce;
-  String? _pendingContentCommit;
-  static const Duration _contentCommitDelay = Duration(milliseconds: 200);
   int _activeWordCountGen = 0;
 
-  void _debouncedWordCountUpdate() {
-    if (_wordCountDebounce?.isActive ?? false) _wordCountDebounce!.cancel();
-    final int gen = ++_activeWordCountGen;
-    final String? selectedSegIDSnapshot = selectedSegID;
-    final String? selectedChapIDSnapshot = selectedChapID;
-    final String textSnapshot = textController.text;
-    final WordCountMode modeSnapshot = _settingsState.wordCountMode;
-    _wordCountDebounce = Timer(const Duration(milliseconds: 500), () {
-      _updateActiveWordCountAsync(
-        gen: gen,
-        selectedSegIDSnapshot: selectedSegIDSnapshot,
-        selectedChapIDSnapshot: selectedChapIDSnapshot,
-        textSnapshot: textSnapshot,
-        modeSnapshot: modeSnapshot,
-      );
-    });
-  }
-
-  void _scheduleContentCommit(String nextContent) {
-    _pendingContentCommit = nextContent;
-    if (_contentCommitDebounce?.isActive ?? false) {
-      _contentCommitDebounce!.cancel();
-    }
-    _contentCommitDebounce = Timer(_contentCommitDelay, _commitPendingContent);
-  }
-
-  void _commitPendingContent() {
-    if (!mounted) {
-      return;
-    }
-
-    final pending = _pendingContentCommit;
-    _pendingContentCommit = null;
-    if (pending == null) {
-      return;
-    }
-
-    if (ref.read(editorContentProvider) == pending) {
-      return;
-    }
-
-    ref.read(editorContentProvider.notifier).setContent(pending);
-  }
-
   void _flushPendingEditorContent() {
-    if (_contentCommitDebounce?.isActive ?? false) {
-      _contentCommitDebounce!.cancel();
-    }
-    _commitPendingContent();
+    _textChangeDebouncer.flushPendingContentCommit();
   }
 
   void _cancelPendingContentCommit() {
-    _contentCommitDebounce?.cancel();
-    _contentCommitDebounce = null;
-    _pendingContentCommit = null;
+    _textChangeDebouncer.cancelAll();
   }
 
   Future<void> _updateActiveWordCountAsync({
@@ -1386,7 +1359,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                   (newText) {
                     setState(() {
                       contentText = newText;
-                      _debouncedWordCountUpdate();
+                      _textChangeDebouncer.onTextChanged(newText);
                     });
                   },
                 );
@@ -1407,7 +1380,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                   (newText) {
                     setState(() {
                       contentText = newText;
-                      _debouncedWordCountUpdate();
+                      _textChangeDebouncer.onTextChanged(newText);
                     });
                   },
                 );
