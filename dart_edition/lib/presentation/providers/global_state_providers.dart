@@ -135,6 +135,50 @@ final settingsStateProvider =
       SettingsStateNotifier.new,
     );
 
+@immutable
+class AppThemeSettings {
+  final Color color;
+  final AppThemeMode mode;
+  final double fontSize;
+
+  const AppThemeSettings({
+    required this.color,
+    required this.mode,
+    required this.fontSize,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is AppThemeSettings &&
+            other.color == color &&
+            other.mode == mode &&
+            other.fontSize == fontSize;
+  }
+
+  @override
+  int get hashCode => Object.hash(color, mode, fontSize);
+}
+
+final appThemeSettingsProvider = Provider<AppThemeSettings>((ref) {
+  final theme = ref.watch(
+    themeStateProvider.select(
+      (state) => state.valueOrNull ?? const AppThemeStateData(),
+    ),
+  );
+  final fontSize = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.valueOrNull?.fontSize ?? 12.0,
+    ),
+  );
+
+  return AppThemeSettings(
+    color: theme.themeColor,
+    mode: theme.themeMode,
+    fontSize: fontSize,
+  );
+});
+
 final appInitializationProvider = FutureProvider<void>((ref) async {
   await Future.wait([
     // Bootstrap should only await initial load; later updates should not

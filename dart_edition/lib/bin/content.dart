@@ -65,7 +65,6 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       _codeController = externalController;
       _ownsCodeController = false;
       _bridgeEnabled = false;
-      _codeController.addListener(_handleVisualChange);
       return;
     }
 
@@ -76,11 +75,9 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     _syncExternalToCode();
     externalController.addListener(_handleExternalControllerChanged);
     _codeController.addListener(_handleCodeControllerChanged);
-    _codeController.addListener(_handleVisualChange);
   }
 
   void _detachController(TextEditingController externalController) {
-    _codeController.removeListener(_handleVisualChange);
     if (!_bridgeEnabled) {
       return;
     }
@@ -90,13 +87,6 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   }
 
   void _handleFocusChange() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
-  }
-
-  void _handleVisualChange() {
     if (!mounted) {
       return;
     }
@@ -177,40 +167,42 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     );
     final editorBackground = colorScheme.surfaceContainerLowest;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      decoration: BoxDecoration(
-        color: editorBackground,
-      ),
-      child: ClipRect(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            const double gutterCompensation = 4;
-            final double compensatedWidth =
-                constraints.maxWidth + gutterCompensation * 2;
-            return Transform.translate(
-              // code_text_field 1.1.0 adds a fixed 8px left inset when
-              // lineNumbers is disabled. Shift left and widen equally so no
-              // visual strip appears on either side.
-              offset: const Offset(-gutterCompensation, 0),
-              child: SizedBox(
-                width: compensatedWidth,
-                child: CodeField(
-                  controller: _codeController,
-                  focusNode: widget.focusNode,
-                  expands: true,
-                  maxLines: null,
-                  minLines: null,
-                  wrap: true,
-                  horizontalScroll: false,
-                  lineNumbers: false,
-                  background: editorBackground,
-                  textStyle: textStyle,
-                  cursorColor: colorScheme.primary,
+    return RepaintBoundary(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: editorBackground,
+        ),
+        child: ClipRect(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              const double gutterCompensation = 4;
+              final double compensatedWidth =
+                  constraints.maxWidth + gutterCompensation * 2;
+              return Transform.translate(
+                // code_text_field 1.1.0 adds a fixed 8px left inset when
+                // lineNumbers is disabled. Shift left and widen equally so no
+                // visual strip appears on either side.
+                offset: const Offset(-gutterCompensation, 0),
+                child: SizedBox(
+                  width: compensatedWidth,
+                  child: CodeField(
+                    controller: _codeController,
+                    focusNode: widget.focusNode,
+                    expands: true,
+                    maxLines: null,
+                    minLines: null,
+                    wrap: true,
+                    horizontalScroll: false,
+                    lineNumbers: false,
+                    background: editorBackground,
+                    textStyle: textStyle,
+                    cursorColor: colorScheme.primary,
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

@@ -12,7 +12,7 @@
 
 1. **文本高亮和搜尋的計算複雜度** (O(n²) 潛在)
 2. **過度 Listener 訂閱導致的重建風暴**
-3. **長會話期間的內存累積**
+3. **長會話期間的RAM累積**
 4. **異步操作 Race Condition**
 5. **Provider 清理機制不完善**
 
@@ -158,9 +158,9 @@ String _getNormalizedChar(String char, FindReplaceOptions options) {
 
 ---
 
-## 🟠 **類別 2: 狀態管理與 Listener 過度訂閱** //OK
+## 🟠 **類別 2: 狀態管理與 Listener 過度訂閱** 
 
-### 問題 2.1: Riverpod Listener 訂閱爆炸 (Listener Hell)
+### 問題 2.1: Riverpod Listener Calling Hell //OK
 
 **位置**: [lib/presentation/providers/editor_coordinator_provider.dart](lib/presentation/providers/editor_coordinator_provider.dart#L208-L260)
 
@@ -290,7 +290,7 @@ void dispose() {
 
 ---
 
-## 🟠 **類別 3: 內存管理與累積問題**
+## 🟠 **類別 3: RAM管理與累積問題**
 
 ### 問題 3.1: Character/Outline 編輯模式下的臨時數據累積
 
@@ -310,9 +310,9 @@ List<String> unProficientToDoList = [];
 **問題**:
 - 每個字符對象包含 6 個列表
 - 長會話中編輯 100+ 個字符 → 累積 600+ 列表對象
-- 列表復制 (copy-on-write) 可能在內存峰值時失敗
+- 列表復制 (copy-on-write) 可能在RAM峰值時失敗
 
-**內存累積計算**:
+**RAM累積計算**:
 ```
 基礎字符數據:     ~2KB
 6 個 empty 列表:  ~0.5KB/字符
@@ -346,7 +346,7 @@ class HighlightTextEditingController extends CodeController {
 
 **問題**:
 - 若在 100KB 文本中搜尋常見詞 (如 "的" 或 "是")，可能返回 5000+ 匹配
-- `List<TextSelection>` × 5000 = 消耗 ~200KB 內存
+- `List<TextSelection>` × 5000 = 消耗 ~200KB RAM
 - 切換搜尋詞語時，舊列表未及時清理
 
 **建議修復**:
@@ -462,9 +462,9 @@ class TextChangeDebouncer {
 
 ---
 
-## 🔵 **類別 5: 構建性能與 Widget 層級問題**
+## 🔵 **類別 5: 構建性能與 Widget 層級問題** //OK
 
-### 問題 5.1: ContentView 中過多的 ref.watch 調用
+### 問題 5.1: ContentView 中過多的 ref.watch 調用 //OK
 
 **位置**: [lib/main.dart](lib/main.dart#L114-L130)
 
@@ -504,7 +504,7 @@ final theme = ref.watch(appThemeSettingsProvider);
 
 ---
 
-### 問題 5.2: CodeTextController 的過度渲染
+### 問題 5.2: CodeTextController 的過度渲染 //OK
 
 **位置**: [lib/bin/content.dart](lib/bin/content.dart#L1-L100)
 
@@ -542,7 +542,7 @@ RichText 重建
 | ID | 風險等級 | 類別 | 描述 | 影響範圍 |
 |----|---------|------|------|---------|
 | S1 | 🔴 高 | Provider 清理 | setState on disposed widget | 快速項目切換時崩潰 |
-| S2 | 🟠 中 | 內存洩漏 | 舊快照未清理 | 長會話應用內存持續增長 |
+| S2 | 🟠 中 | RAM洩漏 | 舊快照未清理 | 長會話應用RAM持續增長 |
 | S3 | 🟠 中 | Listener 訂閱 | 多個 listener 導致重建風暴 | 卡頓、響應遲緩 |
 | S4 | 🟠 中 | 異步競態 | Race condition 在字數更新中 | 間歇性崩潰 |
 | S5 | 🟡 低 | Timer 管理 | 多個 debounce timer 衝突 | 狀態不一致 |
@@ -568,7 +568,7 @@ RichText 重建
 
 - [ ] **P4**: 實現搜尋結果容量限制 (P3.2)
   - 限制最大 1000 個結果
-  - 預期改進: 內存 -30% 在大規模搜尋場景
+  - 預期改進: RAM -30% 在大規模搜尋場景
 
 ### **第 3 階段 (下周 / 5-7 天)**
 - [ ] **P5**: 重構字數計算為聚合 Provider (P4.1)
@@ -602,7 +602,7 @@ group('Performance Benchmarks', () {
   });
   
   test('Memory growth over 100 edits', () async {
-    // 監控內存增長曲線
+    // 監控RAM增長曲線
     // 目標: 線性增長, 無指數爆炸
   });
 });

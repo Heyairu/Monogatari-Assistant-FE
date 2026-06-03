@@ -120,27 +120,13 @@ class MainApp extends ConsumerWidget {
       );
     }
 
-    final themeColor = ref.watch(
-      themeStateProvider.select(
-        (state) => state.valueOrNull?.themeColor ?? Colors.lightBlue,
-      ),
-    );
-    final themeMode = ref.watch(
-      themeStateProvider.select(
-        (state) => state.valueOrNull?.themeMode ?? AppThemeMode.system,
-      ),
-    );
-    final fontSize = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.valueOrNull?.fontSize ?? 12.0,
-      ),
-    );
+    final theme = ref.watch(appThemeSettingsProvider);
 
     return MaterialApp(
       title: "物語Assistant",
-      theme: AppTheme.getLightTheme(fontSize, themeColor),
-      darkTheme: AppTheme.getDarkTheme(fontSize, themeColor),
-      themeMode: _convertThemeMode(themeMode),
+      theme: AppTheme.getLightTheme(theme.fontSize, theme.color),
+      darkTheme: AppTheme.getDarkTheme(theme.fontSize, theme.color),
+      themeMode: _convertThemeMode(theme.mode),
       home: const ContentView(),
     );
   }

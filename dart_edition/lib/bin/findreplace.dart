@@ -59,10 +59,15 @@ class HighlightTextEditingController extends CodeController {
   @override
   set text(String newText) {
     super.text = newText;
-    // Rebuild precomputed indices to keep them in sync with the current text length
-    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, newText.length);
-    _punctuationIndex = _SelectionCoverageIndex.fromRaw(punctuationMatches, newText.length);
-    _fillerIndex = _SelectionCoverageIndex.fromRaw(fillerWordMatches, newText.length);
+  }
+
+  @override
+  set value(TextEditingValue newValue) {
+    final bool textChanged = newValue.text != text;
+    if (textChanged) {
+      _rebuildHighlightIndices(newValue.text.length);
+    }
+    super.value = newValue;
   }
 
   List<TextSelection> searchMatches = [];
@@ -78,10 +83,25 @@ class HighlightTextEditingController extends CodeController {
   static const List<TextSelection> _emptySelections = <TextSelection>[];
   static const int _MAX_SEARCH_RESULTS = 1000;
 
+  int _highlightRevision = 0;
+  String? _cachedSpanText;
+  TextStyle? _cachedSpanStyle;
+  int? _cachedSpanRevision;
+  TextSpan? _cachedSpan;
+
   // Cached, precomputed indices to avoid recomputing during every paint
-  _SelectionCoverageIndex _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
-  _SelectionCoverageIndex _punctuationIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
-  _SelectionCoverageIndex _fillerIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+  _SelectionCoverageIndex _searchIndex = const _SelectionCoverageIndex._(
+    <TextSelection>[],
+    <int>[],
+  );
+  _SelectionCoverageIndex _punctuationIndex = const _SelectionCoverageIndex._(
+    <TextSelection>[],
+    <int>[],
+  );
+  _SelectionCoverageIndex _fillerIndex = const _SelectionCoverageIndex._(
+    <TextSelection>[],
+    <int>[],
+  );
 
   @override
   TextSpan buildTextSpan({
@@ -95,18 +115,31 @@ class HighlightTextEditingController extends CodeController {
     // current search(red) > other search(orange) > punctuation(purple) > filler(blue).
     // Limitation: this is color-only rendering and does not support multi-layer blends
     // inside the same segment.
-    final _SelectionCoverageIndex searchIndex = _searchIndex.isEmpty && searchMatches.isNotEmpty
+    final _SelectionCoverageIndex searchIndex =
+        _searchIndex.isEmpty && searchMatches.isNotEmpty
         ? _SelectionCoverageIndex.fromRaw(searchMatches, text.length)
         : _searchIndex;
-    final _SelectionCoverageIndex punctuationIndex = _punctuationIndex.isEmpty && punctuationMatches.isNotEmpty
+    final _SelectionCoverageIndex punctuationIndex =
+        _punctuationIndex.isEmpty && punctuationMatches.isNotEmpty
         ? _SelectionCoverageIndex.fromRaw(punctuationMatches, text.length)
         : _punctuationIndex;
-    final _SelectionCoverageIndex fillerIndex = _fillerIndex.isEmpty && fillerWordMatches.isNotEmpty
+    final _SelectionCoverageIndex fillerIndex =
+        _fillerIndex.isEmpty && fillerWordMatches.isNotEmpty
         ? _SelectionCoverageIndex.fromRaw(fillerWordMatches, text.length)
         : _fillerIndex;
 
-    if (searchIndex.isEmpty && punctuationIndex.isEmpty && fillerIndex.isEmpty) {
+    if (searchIndex.isEmpty &&
+        punctuationIndex.isEmpty &&
+        fillerIndex.isEmpty) {
       return TextSpan(text: text, style: style);
+    }
+
+    final TextSpan? cachedSpan = _cachedSpan;
+    if (cachedSpan != null &&
+        _cachedSpanText == text &&
+        _cachedSpanStyle == style &&
+        _cachedSpanRevision == _highlightRevision) {
+      return cachedSpan;
     }
 
     final int textLength = text.length;
@@ -161,7 +194,33 @@ class HighlightTextEditingController extends CodeController {
       spans.add(TextSpan(text: segmentText, style: segmentStyle));
     }
 
-    return TextSpan(children: spans, style: style);
+    final TextSpan span = TextSpan(children: spans, style: style);
+    _cachedSpanText = text;
+    _cachedSpanStyle = style;
+    _cachedSpanRevision = _highlightRevision;
+    _cachedSpan = span;
+    return span;
+  }
+
+  void _rebuildHighlightIndices(int textLength) {
+    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, textLength);
+    _punctuationIndex = _SelectionCoverageIndex.fromRaw(
+      punctuationMatches,
+      textLength,
+    );
+    _fillerIndex = _SelectionCoverageIndex.fromRaw(
+      fillerWordMatches,
+      textLength,
+    );
+    _invalidateSpanCache();
+  }
+
+  void _invalidateSpanCache() {
+    _highlightRevision++;
+    _cachedSpanText = null;
+    _cachedSpanStyle = null;
+    _cachedSpanRevision = null;
+    _cachedSpan = null;
   }
 
   TextStyle _withColor(TextStyle? style, Color color) {
@@ -243,19 +302,22 @@ class HighlightTextEditingController extends CodeController {
 
     searchMatches = normalizedMatches;
     // ensure current index is within bounds
-    currentMatchIndex = (currentIndex >= 0 && currentIndex < normalizedMatches.length)
+    currentMatchIndex =
+        (currentIndex >= 0 && currentIndex < normalizedMatches.length)
         ? currentIndex
         : -1;
     otherMatchColor = otherMatch ?? Colors.orange;
     currentMatchColor = currentMatch ?? Colors.red;
 
     // 如果提供了與當前文本長度相容的預編譯索引，直接使用；否則重新構建。
-    if (precomputedIndex != null && precomputedIndex.isCompatibleWithTextLength(textLength)) {
+    if (precomputedIndex != null &&
+        precomputedIndex.isCompatibleWithTextLength(textLength)) {
       _searchIndex = precomputedIndex;
     } else {
       _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, textLength);
     }
 
+    _invalidateSpanCache();
     notifyListeners();
   }
 
@@ -263,6 +325,7 @@ class HighlightTextEditingController extends CodeController {
     searchMatches = _emptySelections;
     currentMatchIndex = -1;
     _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _invalidateSpanCache();
     notifyListeners();
   }
 
@@ -276,13 +339,18 @@ class HighlightTextEditingController extends CodeController {
 
     fillerWordMatches = capped;
     fillerWordColor = color ?? Colors.blue;
-    _fillerIndex = _SelectionCoverageIndex.fromRaw(fillerWordMatches, text.length);
+    _fillerIndex = _SelectionCoverageIndex.fromRaw(
+      fillerWordMatches,
+      text.length,
+    );
+    _invalidateSpanCache();
     notifyListeners();
   }
 
   void clearFillerHighlights() {
     fillerWordMatches = _emptySelections;
     _fillerIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _invalidateSpanCache();
     notifyListeners();
   }
 
@@ -296,13 +364,18 @@ class HighlightTextEditingController extends CodeController {
 
     punctuationMatches = capped;
     punctuationColor = color ?? Colors.purple;
-    _punctuationIndex = _SelectionCoverageIndex.fromRaw(punctuationMatches, text.length);
+    _punctuationIndex = _SelectionCoverageIndex.fromRaw(
+      punctuationMatches,
+      text.length,
+    );
+    _invalidateSpanCache();
     notifyListeners();
   }
 
   void clearPunctuationHighlights() {
     punctuationMatches = _emptySelections;
     _punctuationIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _invalidateSpanCache();
     notifyListeners();
   }
 
