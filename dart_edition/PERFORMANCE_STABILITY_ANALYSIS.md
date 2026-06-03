@@ -158,7 +158,7 @@ String _getNormalizedChar(String char, FindReplaceOptions options) {
 
 ---
 
-## 🟠 **類別 2: 狀態管理與 Listener 過度訂閱**
+## 🟠 **類別 2: 狀態管理與 Listener 過度訂閱** //OK
 
 ### 問題 2.1: Riverpod Listener 訂閱爆炸 (Listener Hell)
 

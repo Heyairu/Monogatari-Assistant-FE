@@ -51,6 +51,14 @@ import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
 import "modules/settingview.dart";
 
+typedef _CoordinatorUiEventState = ({
+  int messageEventId,
+  String? messageText,
+  int wordCountModeEventId,
+  int errorEventId,
+  String? errorMessage,
+});
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 window_manager
@@ -492,73 +500,81 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     );
 
     _subscriptions.add(
-      ref.listenManual<EditorCoordinatorState>(editorCoordinatorProvider, (
-        previous,
-        next,
-      ) {
-        if (!mounted) {
-          return;
-        }
+      ref.listenManual<_CoordinatorUiEventState>(
+        editorCoordinatorProvider.select(
+          (state) => (
+            messageEventId: state.messageEventId,
+            messageText: state.messageText,
+            wordCountModeEventId: state.wordCountModeEventId,
+            errorEventId: state.errorEventId,
+            errorMessage: state.errorMessage,
+          ),
+        ),
+        (previous, next) {
+          if (!mounted) {
+            return;
+          }
 
-        if (previous?.messageEventId != next.messageEventId &&
-            next.messageText != null &&
-            next.messageText!.isNotEmpty) {
-          final int messageEventId = next.messageEventId;
-          final snackMessage = next.messageText!;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) {
-              return;
-            }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(snackMessage),
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-            if (mounted &&
-                ref.read(editorCoordinatorProvider).messageEventId ==
-                    messageEventId) {
-              _editorCoordinatorNotifier.clearMessage();
-            }
-          });
-        }
+          if (previous?.messageEventId != next.messageEventId &&
+              next.messageText != null &&
+              next.messageText!.isNotEmpty) {
+            final int messageEventId = next.messageEventId;
+            final snackMessage = next.messageText!;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) {
+                return;
+              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(snackMessage),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+              if (mounted &&
+                  ref.read(editorCoordinatorProvider).messageEventId ==
+                      messageEventId) {
+                _editorCoordinatorNotifier.clearMessage();
+              }
+            });
+          }
 
-        if (previous?.wordCountModeEventId != next.wordCountModeEventId) {
-          _onSettingsChanged();
-        }
+          if (previous?.wordCountModeEventId != next.wordCountModeEventId) {
+            _onSettingsChanged();
+          }
 
-        if (previous?.errorEventId != next.errorEventId &&
-            next.errorMessage != null &&
-            next.errorMessage!.isNotEmpty) {
-          final int errorEventId = next.errorEventId;
-          final dialogMessage = next.errorMessage!;
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            if (!mounted) {
-              return;
-            }
-            await showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text("錯誤"),
-                content: Text(dialogMessage),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text("確定"),
-                  ),
-                ],
-              ),
-            );
+          if (previous?.errorEventId != next.errorEventId &&
+              next.errorMessage != null &&
+              next.errorMessage!.isNotEmpty) {
+            final int errorEventId = next.errorEventId;
+            final dialogMessage = next.errorMessage!;
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              if (!mounted) {
+                return;
+              }
+              await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text("錯誤"),
+                  content: Text(dialogMessage),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text("確定"),
+                    ),
+                  ],
+                ),
+              );
 
-            if (mounted &&
-                ref.read(editorCoordinatorProvider).errorEventId ==
-                    errorEventId) {
-              _editorCoordinatorNotifier.clearError();
-            }
-          });
-        }
-      }),
+              if (mounted &&
+                  ref.read(editorCoordinatorProvider).errorEventId ==
+                      errorEventId) {
+                _editorCoordinatorNotifier.clearError();
+              }
+            });
+          }
+        },
+      ),
     );
 
     // 監聽焦點變化

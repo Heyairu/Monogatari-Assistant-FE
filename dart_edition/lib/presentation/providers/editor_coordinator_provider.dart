@@ -1,7 +1,7 @@
+import "dart:async";
+
 import "package:flutter/material.dart";
-import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
-import 'dart:async';
 
 import "../../bin/file.dart" as file_module;
 import "../../bin/file.dart";
@@ -12,9 +12,9 @@ import "global_state_providers.dart";
 import "project_io_providers.dart";
 import "project_state_providers.dart";
 
-/// A lightweight aggregated signal provider that changes when any of the
-/// project-related providers change. Consumers can listen to this provider
-/// instead of adding multiple individual `ref.listen` calls.
+/// A lightweight aggregated signal provider that changes when any persisted
+/// project provider publishes a new snapshot. Consumers can listen to this
+/// provider instead of adding multiple individual `ref.listen` calls.
 final projectDataAggregateProvider = Provider<int>((ref) {
   final base = ref.watch(baseInfoDataProvider);
   final segments = ref.watch(segmentsDataProvider);
@@ -24,17 +24,23 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final foreshadow = ref.watch(foreshadowDataProvider);
   final updatePlan = ref.watch(updatePlanDataProvider);
 
-  // Compute a small fingerprint from lengths and shallow hashes to avoid
-  // expensive deep comparisons here. The consumer can still apply more
-  // precise checks if necessary before acting on changes.
-  int h = base.hashCode;
-  h = h * 31 + segments.length;
-  h = h * 31 + outline.length;
-  h = h * 31 + world.hashCode;
-  h = h * 31 + character.hashCode;
-  h = h * 31 + foreshadow.length;
-  h = h * 31 + updatePlan.length;
-  return h;
+  return Object.hash(
+    Object.hash(
+      base.bookName,
+      base.author,
+      base.purpose,
+      base.toRecap,
+      base.storyType,
+      base.intro,
+      Object.hashAll(base.tags),
+    ),
+    identityHashCode(segments),
+    identityHashCode(outline),
+    identityHashCode(world),
+    identityHashCode(character),
+    identityHashCode(foreshadow),
+    identityHashCode(updatePlan),
+  );
 });
 
 class EditorProjectInitialState {
@@ -129,109 +135,6 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     _dirtyTimer = Timer(Duration(milliseconds: _dirtyDebounceMs), () {
       _markProjectDataChanged();
     });
-  }
-
-  bool _isSameStringList(List<String> left, List<String> right) {
-    if (left.length != right.length) {
-      return false;
-    }
-
-    for (int index = 0; index < left.length; index++) {
-      if (left[index] != right[index]) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  bool _hasPersistedBaseInfoChanged(dynamic previous, dynamic next) {
-    return previous.bookName != next.bookName ||
-        previous.author != next.author ||
-        previous.purpose != next.purpose ||
-        previous.toRecap != next.toRecap ||
-        previous.storyType != next.storyType ||
-        previous.intro != next.intro ||
-        !_isSameStringList(
-          (previous.tags as List).cast<String>(),
-          (next.tags as List).cast<String>(),
-        );
-  }
-
-  bool _isSameOutlineData(List<dynamic> left, List<dynamic> right) {
-    if (left.length != right.length) {
-      return false;
-    }
-
-    for (int index = 0; index < left.length; index++) {
-      if (!_isSameStoryline(left[index], right[index])) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  bool _isSameStoryline(dynamic left, dynamic right) {
-    return left.chapterUUID == right.chapterUUID &&
-        left.storylineName == right.storylineName &&
-        left.storylineType == right.storylineType &&
-        left.memo == right.memo &&
-        left.conflictPoint == right.conflictPoint &&
-        listEquals(left.people, right.people) &&
-        listEquals(left.item, right.item) &&
-        _isSameStoryEventList(left.scenes, right.scenes);
-  }
-
-  bool _isSameStoryEventList(List<dynamic> left, List<dynamic> right) {
-    if (left.length != right.length) {
-      return false;
-    }
-
-    for (int index = 0; index < left.length; index++) {
-      if (!_isSameStoryEvent(left[index], right[index])) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  bool _isSameStoryEvent(dynamic left, dynamic right) {
-    return left.storyEventUUID == right.storyEventUUID &&
-        left.storyEvent == right.storyEvent &&
-        left.memo == right.memo &&
-        left.conflictPoint == right.conflictPoint &&
-        listEquals(left.people, right.people) &&
-        listEquals(left.item, right.item) &&
-        _isSameSceneList(left.scenes, right.scenes);
-  }
-
-  bool _isSameSceneList(List<dynamic> left, List<dynamic> right) {
-    if (left.length != right.length) {
-      return false;
-    }
-
-    for (int index = 0; index < left.length; index++) {
-      if (!_isSameScene(left[index], right[index])) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  bool _isSameScene(dynamic left, dynamic right) {
-    return left.sceneUUID == right.sceneUUID &&
-        left.sceneName == right.sceneName &&
-        left.time == right.time &&
-        left.location == right.location &&
-        left.focusPoint == right.focusPoint &&
-        left.conflictPoint == right.conflictPoint &&
-        left.memo == right.memo &&
-        listEquals(left.people, right.people) &&
-        listEquals(left.item, right.item) &&
-        listEquals(left.doingThings, right.doingThings);
   }
 
   void _markProjectDataChanged() {
