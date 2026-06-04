@@ -453,6 +453,101 @@ class SmallTitle extends StatelessWidget {
   }
 }
 
+// MARK:開關項目元件
+class SwitchWithTitle extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final Future<void> Function(bool) onChanged;
+  final EdgeInsetsGeometry padding;
+
+  const SwitchWithTitle({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.padding = const EdgeInsets.symmetric(vertical: 4.0),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        subtitle: subtitle != null && subtitle!.isNotEmpty
+            ? Text(
+                subtitle!,
+                style: Theme.of(context).textTheme.displaySmall,
+              )
+            : null,
+        trailing: Switch(
+          value: value,
+          onChanged: (newValue) async {
+            await onChanged(newValue);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class SwitchWithIconTitle extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final bool value;
+  final Future<void> Function(bool) onChanged;
+  final EdgeInsetsGeometry padding;
+
+  const SwitchWithIconTitle({
+    super.key,
+    required this.title,
+    required this.icon,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.padding = const EdgeInsets.symmetric(vertical: 4.0),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        leading: Icon(
+          icon,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        subtitle: subtitle != null && subtitle!.isNotEmpty
+            ? Text(
+                subtitle!,
+                style: Theme.of(context).textTheme.displaySmall,
+              )
+            : null,
+        trailing: Switch(
+          value: value,
+          onChanged: (newValue) async {
+            await onChanged(newValue);
+          },
+        ),
+      ),
+    );
+  }
+}
+
 // 新增項目元件
 class AddItemInput extends StatefulWidget {
   final String title;
@@ -630,6 +725,8 @@ class AppDropdownField<T> extends StatelessWidget {
     );
   }
 }
+
+
 
 // Chip 元件
 class CardList extends StatelessWidget {

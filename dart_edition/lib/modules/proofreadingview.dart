@@ -2314,22 +2314,6 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     );
   }
 
-  Widget _buildDetectionToggleTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return SwitchListTile.adaptive(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(title),
-      subtitle: Text(subtitle),
-      value: value,
-      onChanged: onChanged,
-    );
-  }
-
   Widget _buildPunctuationProfileSetting() {
     final List<DropdownOption<_PunctuationProfile>> options =
         <DropdownOption<_PunctuationProfile>>[
@@ -2362,11 +2346,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "引號、括號閉合檢查",
           subtitle: "檢查配對與閉合狀態",
           value: _enablePairCheck,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2377,11 +2361,12 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+
+        SwitchWithTitle(
           title: "標點異常檢測",
           subtitle: "檢查連續標點與引號層級",
           value: _enableSymbolCheck,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2392,11 +2377,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "標點符號格式統一",
           subtitle: "檢查可統一的標點替換",
           value: _enablePunctuationNormalization,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2408,11 +2393,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "贅字檢查",
           subtitle: "檢查詞庫中的贅字出現位置",
           value: _enableFillerWordCheck,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2424,11 +2409,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "行尾辨識",
           subtitle: "檢查行尾符號是否符合規則",
           value: _enableLineEndingCheck,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2444,11 +2429,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           const SizedBox(height: 8),
           Text("行尾辨識細項", style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 4),
-          _buildDetectionToggleTile(
+          SwitchWithTitle(
             title: "行尾逗號不提示",
             subtitle: "行尾為 , 或 ，時不顯示提示",
             value: _lineEndingIgnoreComma,
-            onChanged: (bool value) {
+            onChanged: (bool value) async {
               unawaited(
                 _setDetectionSetting(
                   enabled: value,
@@ -2460,11 +2445,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               );
             },
           ),
-          _buildDetectionToggleTile(
+          SwitchWithTitle(
             title: "行尾破折號不提示",
             subtitle: "行尾為 — 或 - 時不顯示提示",
             value: _lineEndingIgnoreDash,
-            onChanged: (bool value) {
+            onChanged: (bool value) async {
               unawaited(
                 _setDetectionSetting(
                   enabled: value,
@@ -2476,11 +2461,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               );
             },
           ),
-          _buildDetectionToggleTile(
+          SwitchWithTitle(
             title: "行尾刪節號不提示",
             subtitle: "行尾為 … / …… 時不顯示提示",
             value: _lineEndingIgnoreEllipsis,
-            onChanged: (bool value) {
+            onChanged: (bool value) async {
               unawaited(
                 _setDetectionSetting(
                   enabled: value,
@@ -2492,11 +2477,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               );
             },
           ),
-          _buildDetectionToggleTile(
+          SwitchWithTitle(
             title: "行尾冒號不提示",
             subtitle: "行尾為 : 或 ：時不顯示提示",
             value: _lineEndingIgnoreColon,
-            onChanged: (bool value) {
+            onChanged: (bool value) async {
               unawaited(
                 _setDetectionSetting(
                   enabled: value,
@@ -2508,11 +2493,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               );
             },
           ),
-          _buildDetectionToggleTile(
+          SwitchWithTitle(
             title: "行尾分號不提示",
-            subtitle: "行尾為 ; 或 ；時不顯示提示",
+            subtitle: "行尾為；時不顯示提示",
             value: _lineEndingIgnoreSemicolon,
-            onChanged: (bool value) {
+            onChanged: (bool value) async {
               unawaited(
                 _setDetectionSetting(
                   enabled: value,
@@ -2548,24 +2533,24 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           ),
         ),
         const SizedBox(height: 8),
-        SwitchListTile.adaptive(
+        SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: const Text("拉丁文句檢測"),
           subtitle: const Text("偵測到拉丁文字時，自動套用拉丁標點"),
           value: _enableLatinSentenceDetection,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(_setLatinSentenceDetection(value));
           },
         ),
         const SizedBox(height: 8),
         Text("拉丁字母辨識細項", style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 4),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "允許字尾使用 CJK 引號/括號",
           subtitle: "拉丁字尾可接受 CJK 引號與括號",
           value: _latinAllowCjkQuoteBracketEnding,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2577,11 +2562,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "允許字尾使用 CJK 驚嘆號/問號",
           subtitle: "拉丁字尾可接受 ！與 ？",
           value: _latinAllowCjkQuestionExclamationEnding,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,
@@ -2593,11 +2578,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             );
           },
         ),
-        _buildDetectionToggleTile(
+        SwitchWithTitle(
           title: "允許在 CJK 文字前後加入 CJK 標點",
           subtitle: "若任一側語境為行首/CJK/行尾，CJK 標點不視為拉丁延伸",
           value: _latinAllowCjkPunctuationAroundCjkText,
-          onChanged: (bool value) {
+          onChanged: (bool value) async {
             unawaited(
               _setDetectionSetting(
                 enabled: value,

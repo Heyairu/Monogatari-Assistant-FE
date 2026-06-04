@@ -15,7 +15,6 @@
 import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 import "dart:io";
-import "dart:convert";
 import "dart:math" as math;
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
@@ -1254,7 +1253,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final result = await FilePicker.platform.saveFile(
       dialogTitle: "匯出檔案",
       fileName: fileName,
-      bytes: utf8.encode(content),
+      // 不在 saveFile 上傳遞 bytes，因為 macOS 不支援
+      // 內容將由應用程式寫入檔案
     );
 
     if (result != null) {

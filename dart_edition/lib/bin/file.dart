@@ -195,13 +195,20 @@ class _SystemBridge {
         type: FileType.any,
         bytes: utf8.encode(content),
       );
+    } else if (Platform.isIOS) {
+      return await FilePicker.platform.saveFile(
+        dialogTitle: "儲存專案檔案",
+        fileName: defaultName,
+        type: FileType.any,
+        bytes: utf8.encode(content),
+      );
     } else {
+      // macOS, Windows, Linux: 不傳遞 bytes，由應用程式寫入檔案
       return await FilePicker.platform.saveFile(
         dialogTitle: "儲存專案檔案",
         fileName: defaultName,
         type: FileType.custom,
         allowedExtensions: ["mnproj"],
-        bytes: utf8.encode(content),
       );
     }
   }
@@ -212,13 +219,24 @@ class _SystemBridge {
     required String extension,
     required String content,
   }) async {
-    return await FilePicker.platform.saveFile(
-      dialogTitle: "匯出文字檔案",
-      fileName: defaultName,
-      type: FileType.custom,
-      allowedExtensions: [extension.substring(1)], // 移除點號
-      bytes: utf8.encode(content),
-    );
+    // 僅在 Android 和 iOS 上傳遞 bytes
+    // macOS, Windows, Linux: 由應用程式寫入檔案
+    if (Platform.isAndroid || Platform.isIOS) {
+      return await FilePicker.platform.saveFile(
+        dialogTitle: "匯出文字檔案",
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: [extension.substring(1)], // 移除點號
+        bytes: utf8.encode(content),
+      );
+    } else {
+      return await FilePicker.platform.saveFile(
+        dialogTitle: "匯出文字檔案",
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: [extension.substring(1)], // 移除點號
+      );
+    }
   }
 
   /// 獲取文件目錄
@@ -1972,7 +1990,7 @@ class FileService {
     }
   }
 
-  // --- 本地檔案操作 ---
+  //Mark: --- 本地檔案操作 ---
 
   /// 讀取本地檔案（用於應用程式內部儲存）
   static Future<String> readLocalFile(String fileName) async {

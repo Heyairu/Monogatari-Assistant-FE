@@ -114,12 +114,12 @@ class _SettingViewState extends ConsumerState<SettingView> {
                   children: [
                     const LargeTitle(icon: Icons.tune, text: "其他設定"),
                     const SizedBox(height: 16),
-                    _buildSwitchSetting(
-                      "退出時提示",
-                      Icons.warning,
-                      "關閉應用前提示儲存未儲存的變更",
-                      _settingsViewState.showExitWarning,
-                      (value) async {
+                    SwitchWithIconTitle(
+                      title: "退出時提示",
+                      icon: Icons.warning,
+                      subtitle: "關閉應用前提示儲存未儲存的變更",
+                      value: _settingsViewState.showExitWarning,
+                      onChanged: (value) async {
                         await ref
                             .read(settingsStateProvider.notifier)
                             .setShowExitWarning(value);
@@ -403,38 +403,6 @@ class _SettingViewState extends ConsumerState<SettingView> {
           ),
         ),
       ],
-    );
-  }
-
-  // MARK: - 開關設定項目
-  Widget _buildSwitchSetting(
-    String title,
-    IconData icon,
-    String? subtitle,
-    bool value,
-    Future<void> Function(bool) onChanged,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(title, style: Theme.of(context).textTheme.labelMedium),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              )
-            : null,
-        trailing: Switch(
-          value: value,
-          onChanged: (newValue) async {
-            await onChanged(newValue);
-          },
-        ),
-      ),
     );
   }
 
