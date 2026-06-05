@@ -179,11 +179,17 @@ class BaseInfoCodec {
   static BaseInfoData? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-
-      // Find the <Type> root element
       final typeElement = document.findAllElements("Type").firstOrNull;
-      if (typeElement == null) return null;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      _log.severe("Error parsing BaseInfo XML: $e");
+      return null;
+    }
+  }
 
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static BaseInfoData? loadElement(xml.XmlElement typeElement) {
+    try {
       // Check for <Name>BaseInfo</Name>
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "BaseInfo") return null;
@@ -266,7 +272,7 @@ class BaseInfoCodec {
         nowWords: nowWords,
       );
     } catch (e) {
-      _log.severe("Error parsing BaseInfo XML: $e");
+      _log.severe("Error parsing BaseInfo XML element: $e");
       return null;
     }
   }
@@ -284,7 +290,7 @@ class BaseInfoView extends ConsumerStatefulWidget {
 class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   bool _isSyncingControllers = false;
   final DateFormat _dateFormatter = DateFormat("yyyy.MM.dd HH:mm:ss");
-  
+
   final List<ProviderSubscription> _subscriptions = [];
 
   // 為每個文字欄位創建專用的 TextEditingController
@@ -352,37 +358,37 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       _notifyDataChanged();
     });
 
-    _subscriptions.add(ref.listenManual<BaseInfoData>(
-      baseInfoDataProvider,
-      (previous, next) {
+    _subscriptions.add(
+      ref.listenManual<BaseInfoData>(baseInfoDataProvider, (previous, next) {
         if (previous == next) {
           return;
         }
         _syncControllersFromProvider(next);
-      },
-    ));
+      }),
+    );
 
-    _subscriptions.add(ref.listenManual<String>(editorContentProvider, (
-      previous,
-      next,
-    ) {
-      if (previous == next) {
-        return;
-      }
-      _syncNowWords();
-    }));
-
-    _subscriptions.add(ref.listenManual<AsyncValue<AppSettingsStateData>>(
-      settingsStateProvider,
-      (previous, next) {
-        final previousMode = previous?.valueOrNull?.wordCountMode;
-        final nextMode = next.valueOrNull?.wordCountMode;
-        if (previousMode == nextMode) {
+    _subscriptions.add(
+      ref.listenManual<String>(editorContentProvider, (previous, next) {
+        if (previous == next) {
           return;
         }
         _syncNowWords();
-      },
-    ));
+      }),
+    );
+
+    _subscriptions.add(
+      ref.listenManual<AsyncValue<AppSettingsStateData>>(
+        settingsStateProvider,
+        (previous, next) {
+          final previousMode = previous?.valueOrNull?.wordCountMode;
+          final nextMode = next.valueOrNull?.wordCountMode;
+          if (previousMode == nextMode) {
+            return;
+          }
+          _syncNowWords();
+        },
+      ),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {

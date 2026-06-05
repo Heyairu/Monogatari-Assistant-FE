@@ -281,8 +281,16 @@ class PlanCodec {
     try {
       final document = xml.XmlDocument.parse(content);
       final typeElement = document.findAllElements("Type").firstOrNull;
-      if (typeElement == null) return null;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      _log.warning("Error parsing PlanSettings XML: $e");
+      return null;
+    }
+  }
 
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static PlanProjectData? loadElement(xml.XmlElement typeElement) {
+    try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "PlanSettings") return null;
 
@@ -330,7 +338,7 @@ class PlanCodec {
         updatePlans: updatePlans,
       );
     } catch (e) {
-      _log.warning("Error parsing PlanSettings XML: $e");
+      _log.warning("Error parsing PlanSettings XML element: $e");
       return null;
     }
   }
@@ -377,7 +385,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
   bool _isLoadingInspiration = true;
 
   @override
-   void initState() {
+  void initState() {
     super.initState();
 
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
@@ -1720,7 +1728,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final updatePlanItems = ref.watch(updatePlanDataProvider);
 
     if (!_registeredProviderListeners) {
-      ref.listen<List<ForeshadowItem>>(foreshadowDataProvider, (previous, next) {
+      ref.listen<List<ForeshadowItem>>(foreshadowDataProvider, (
+        previous,
+        next,
+      ) {
         if (!mounted) return;
         if (selectedForeshadowId == null) return;
         final exists = next.any((item) => item.id == selectedForeshadowId);
@@ -1732,7 +1743,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
         }
       });
 
-      ref.listen<List<UpdatePlanItem>>(updatePlanDataProvider, (previous, next) {
+      ref.listen<List<UpdatePlanItem>>(updatePlanDataProvider, (
+        previous,
+        next,
+      ) {
         if (!mounted) return;
         if (selectedUpdatePlanId == null) return;
         final exists = next.any((item) => item.id == selectedUpdatePlanId);

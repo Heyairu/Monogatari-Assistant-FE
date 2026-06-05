@@ -5,7 +5,10 @@ abstract class FileRepository {
 
   Future<ProjectFile?> openProject();
 
-  Future<ProjectFile> openProjectFromPath(String filePath, {String? accessToken});
+  Future<ProjectFile> openProjectFromPath(
+    String filePath, {
+    String? accessToken,
+  });
 
   Future<ProjectFile> saveProject(ProjectFile projectFile);
 
@@ -32,6 +35,10 @@ abstract class FileRepository {
   Future<String> generateProjectXml(ProjectData data);
 
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile);
+
+  Future<ProjectParseResult> loadProjectParseResultFromXml(
+    ProjectFile projectFile,
+  );
 }
 
 class DefaultFileRepository implements FileRepository {
@@ -114,5 +121,12 @@ class DefaultFileRepository implements FileRepository {
   @override
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile) {
     return ProjectManager.loadProjectFromXML(projectFile);
+  }
+
+  @override
+  Future<ProjectParseResult> loadProjectParseResultFromXml(
+    ProjectFile projectFile,
+  ) {
+    return ProjectManager.loadProjectParseResultFromXML(projectFile);
   }
 }

@@ -245,6 +245,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     if (!state.isApplyingProjectData) {
       return;
     }
+    _dirtyTimer?.cancel();
     state = state.copyWith(isApplyingProjectData: false);
   }
 
@@ -270,6 +271,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
   }
 
   void resetAfterProjectLoaded() {
+    _dirtyTimer?.cancel();
     final bool nextUnsaved = ProjectManager.markAsSaved();
     state = state.copyWith(hasUnsavedChanges: nextUnsaved, lastSavedTime: null);
   }
@@ -416,26 +418,26 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     final snapshot = data;
 
     ref
-      .read(baseInfoDataProvider.notifier)
-      .updateBaseInfoData((_) => snapshot.baseInfoData);
+        .read(baseInfoDataProvider.notifier)
+        .updateBaseInfoData((_) => snapshot.baseInfoData);
     ref
-      .read(segmentsDataProvider.notifier)
-      .updateSegmentsData((_) => snapshot.segmentsData);
+        .read(segmentsDataProvider.notifier)
+        .updateSegmentsData((_) => snapshot.segmentsData);
     ref
-      .read(outlineDataProvider.notifier)
-      .updateOutlineData((_) => snapshot.outlineData);
+        .read(outlineDataProvider.notifier)
+        .updateOutlineData((_) => snapshot.outlineData);
     ref
-      .read(foreshadowDataProvider.notifier)
-      .updateForeshadowData((_) => snapshot.foreshadowData);
+        .read(foreshadowDataProvider.notifier)
+        .updateForeshadowData((_) => snapshot.foreshadowData);
     ref
-      .read(updatePlanDataProvider.notifier)
-      .updateUpdatePlanData((_) => snapshot.updatePlanData);
+        .read(updatePlanDataProvider.notifier)
+        .updateUpdatePlanData((_) => snapshot.updatePlanData);
     ref
-      .read(worldSettingsDataProvider.notifier)
-      .updateWorldSettingsData((_) => snapshot.worldSettingsData);
+        .read(worldSettingsDataProvider.notifier)
+        .updateWorldSettingsData((_) => snapshot.worldSettingsData);
     ref
-      .read(characterDataProvider.notifier)
-      .updateCharacterData((_) => snapshot.characterData);
+        .read(characterDataProvider.notifier)
+        .updateCharacterData((_) => snapshot.characterData);
 
     // Evict normalization cache used by the editor find/replace highlighter
     // to avoid unbounded memory growth across project switches.
@@ -469,12 +471,24 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
     try {
       final editorSelection = ref.read(editorSelectionProvider);
+      final segmentsData = ref.read(segmentsDataProvider);
+      final hasChanged =
+          ProjectManager.hasEditorContentChangedForSelectedChapter(
+            segmentsData: segmentsData,
+            selectedSegID: editorSelection.selectedSegID,
+            selectedChapID: editorSelection.selectedChapID,
+            textController: textController,
+          );
+      if (!hasChanged) {
+        return;
+      }
+
       final copiedSegments = List<chapter_module.SegmentData>.from(
-        ref.read(segmentsDataProvider),
+        segmentsData,
       );
 
       String? syncedContent;
-      ProjectManager.syncEditorToSelectedChapter(
+      final changed = ProjectManager.syncEditorToSelectedChapter(
         segmentsData: copiedSegments,
         selectedSegID: editorSelection.selectedSegID,
         selectedChapID: editorSelection.selectedChapID,
@@ -483,6 +497,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
           syncedContent = newContent;
         },
       );
+      if (!changed) {
+        return;
+      }
 
       ref
           .read(segmentsDataProvider.notifier)

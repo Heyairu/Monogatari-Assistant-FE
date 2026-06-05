@@ -314,10 +314,17 @@ class OutlineCodec {
   static List<StorylineData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-
       final typeElement = document.findAllElements("Type").firstOrNull;
-      if (typeElement == null) return null;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      _log.severe("Error parsing Outline XML: $e");
+      return null;
+    }
+  }
 
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static List<StorylineData>? loadElement(xml.XmlElement typeElement) {
+    try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "Outline") return null;
 
@@ -496,7 +503,7 @@ class OutlineCodec {
 
       return storylines.isEmpty ? null : _createSnapshot(storylines);
     } catch (e) {
-      _log.severe("Error parsing Outline XML: $e");
+      _log.severe("Error parsing Outline XML element: $e");
       return null;
     }
   }
@@ -576,7 +583,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   int? get selectedStorylineIndex {
     if (selectedStorylineID == null) return null;
-    final idx = storylines.indexWhere((sl) => sl.chapterUUID == selectedStorylineID);
+    final idx = storylines.indexWhere(
+      (sl) => sl.chapterUUID == selectedStorylineID,
+    );
     return idx == -1 ? null : idx;
   }
 

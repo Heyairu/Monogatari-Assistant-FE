@@ -179,9 +179,16 @@ class ChapterSelectionCodec {
     try {
       final document = xml.XmlDocument.parse(xmlContent);
       final typeElement = document.findAllElements("Type").firstOrNull;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      debugPrint("ChapterSelection XML Parse Error: $e");
+      return null;
+    }
+  }
 
-      if (typeElement == null) return null;
-
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static List<SegmentData>? loadElement(xml.XmlElement typeElement) {
+    try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement == null || nameElement.innerText != "ChapterSelection") {
         return null;
@@ -226,7 +233,7 @@ class ChapterSelectionCodec {
 
       return segments.isNotEmpty ? _createSnapshot(segments) : null;
     } catch (e) {
-      debugPrint("ChapterSelection XML Parse Error: $e");
+      debugPrint("ChapterSelection XML Element Parse Error: $e");
       return null;
     }
   }
@@ -586,10 +593,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }) {
     _setSelection(segmentID: segID, chapterID: previousChapterID);
 
-    final si = _indexWhereOrNull(
-      _segments,
-      (seg) => seg.segmentUUID == segID,
-    );
+    final si = _indexWhereOrNull(_segments, (seg) => seg.segmentUUID == segID);
     if (si != null) {
       if (_segments[si].chapters.isNotEmpty) {
         final firstChapter = _segments[si].chapters.first;
@@ -685,7 +689,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     if (segIdx == null || _segments.length <= 1) return;
 
     final remainingChapters =
-      _totalChaptersCount - _segments[segIdx].chapters.length;
+        _totalChaptersCount - _segments[segIdx].chapters.length;
     if (remainingChapters <= 0) return;
 
     // 如果要刪除的是當前選中的區段，先保存編輯器內容

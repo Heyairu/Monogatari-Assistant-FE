@@ -278,8 +278,46 @@ class ProjectManager {
     return hasUnsavedChanges;
   }
 
+  static ({int segIndex, int chapIndex})? _findSelectedChapter({
+    required List<ChapterModule.SegmentData> segmentsData,
+    required String? selectedSegID,
+    required String? selectedChapID,
+  }) {
+    if (selectedSegID == null || selectedChapID == null) return null;
+
+    final segIndex = segmentsData.indexWhere(
+      (seg) => seg.segmentUUID == selectedSegID,
+    );
+    if (segIndex < 0) return null;
+
+    final chapIndex = segmentsData[segIndex].chapters.indexWhere(
+      (chap) => chap.chapterUUID == selectedChapID,
+    );
+    if (chapIndex < 0) return null;
+
+    return (segIndex: segIndex, chapIndex: chapIndex);
+  }
+
+  static bool hasEditorContentChangedForSelectedChapter({
+    required List<ChapterModule.SegmentData> segmentsData,
+    required String? selectedSegID,
+    required String? selectedChapID,
+    required TextEditingController textController,
+  }) {
+    final selectedChapter = _findSelectedChapter(
+      segmentsData: segmentsData,
+      selectedSegID: selectedSegID,
+      selectedChapID: selectedChapID,
+    );
+    if (selectedChapter == null) return false;
+
+    final currentChapter = segmentsData[selectedChapter.segIndex]
+        .chapters[selectedChapter.chapIndex];
+    return currentChapter.chapterContent != textController.text;
+  }
+
   /// 同步編輯器內容到選中的章節
-  static void syncEditorToSelectedChapter({
+  static bool syncEditorToSelectedChapter({
     required List<ChapterModule.SegmentData> segmentsData,
     required String? selectedSegID,
     required String? selectedChapID,
@@ -287,26 +325,29 @@ class ProjectManager {
     required Function(String) updateContentCallback,
   }) {
     // 防呆檢查
-    if (selectedSegID == null || selectedChapID == null) return;
-
-    final segIndex = segmentsData.indexWhere(
-      (seg) => seg.segmentUUID == selectedSegID,
+    final selectedChapter = _findSelectedChapter(
+      segmentsData: segmentsData,
+      selectedSegID: selectedSegID,
+      selectedChapID: selectedChapID,
     );
-    if (segIndex != -1) {
-      final chapIndex = segmentsData[segIndex].chapters.indexWhere(
-        (chap) => chap.chapterUUID == selectedChapID,
-      );
-      if (chapIndex != -1) {
-        final currentEditorContent = textController.text;
-        final segment = segmentsData[segIndex];
-        final chapters = [...segment.chapters];
-        chapters[chapIndex] = chapters[chapIndex].copyWith(
-          chapterContent: currentEditorContent,
-        );
-        segmentsData[segIndex] = segment.copyWith(chapters: chapters);
-        updateContentCallback(currentEditorContent);
-      }
+    if (selectedChapter == null) return false;
+
+    final segment = segmentsData[selectedChapter.segIndex];
+    final currentEditorContent = textController.text;
+    final currentChapter = segment.chapters[selectedChapter.chapIndex];
+    if (currentChapter.chapterContent == currentEditorContent) {
+      return false;
     }
+
+    final chapters = [...segment.chapters];
+    chapters[selectedChapter.chapIndex] = currentChapter.copyWith(
+      chapterContent: currentEditorContent,
+    );
+    segmentsData[selectedChapter.segIndex] = segment.copyWith(
+      chapters: chapters,
+    );
+    updateContentCallback(currentEditorContent);
+    return true;
   }
 
   /// 生成專案XML內容
@@ -316,8 +357,19 @@ class ProjectManager {
 
   /// 從XML載入專案
   static Future<ProjectData> loadProjectFromXML(ProjectFile projectFile) async {
+    final result = await loadProjectParseResultFromXML(projectFile);
+    return result.data;
+  }
+
+  /// 從XML載入專案，並回傳同一次解析取得的檔案版本
+  static Future<ProjectParseResult> loadProjectParseResultFromXML(
+    ProjectFile projectFile,
+  ) async {
     try {
-      return compute(FileService.parseProjectXML, projectFile.content);
+      return compute(
+        FileService.parseProjectXMLWithMetadata,
+        projectFile.content,
+      );
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");
     }
@@ -553,9 +605,8 @@ class ProjectManager {
       setLoading(true);
       final projectFile = await FileService.openProject();
       if (projectFile != null) {
-        final openedVersion = FileService.extractProjectVersion(
-          projectFile.content,
-        );
+        final parseResult = await loadProjectParseResultFromXML(projectFile);
+        final openedVersion = parseResult.projectVersion;
         final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
           openedVersion,
         );
@@ -577,7 +628,7 @@ class ProjectManager {
           setLoading(true);
         }
 
-        final data = await loadProjectFromXML(projectFile);
+        final data = parseResult.data;
         onProjectLoaded(projectFile, data);
         onSuccess("專案開啟成功：${projectFile.nameWithoutExtension}");
       }
@@ -616,9 +667,8 @@ class ProjectManager {
         filePath,
         accessToken: accessToken,
       );
-      final openedVersion = FileService.extractProjectVersion(
-        projectFile.content,
-      );
+      final parseResult = await loadProjectParseResultFromXML(projectFile);
+      final openedVersion = parseResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
       );
@@ -640,7 +690,7 @@ class ProjectManager {
         setLoading(true);
       }
 
-      final data = await loadProjectFromXML(projectFile);
+      final data = parseResult.data;
       onProjectLoaded(projectFile, data);
       onSuccess("專案開啟成功：${projectFile.nameWithoutExtension}");
     } catch (e) {
@@ -934,6 +984,13 @@ class ProjectData {
   }
 }
 
+class ProjectParseResult {
+  final String? projectVersion;
+  final ProjectData data;
+
+  const ProjectParseResult({required this.projectVersion, required this.data});
+}
+
 /// 專案檔案資料類
 class ProjectFile {
   String fileName;
@@ -1007,9 +1064,10 @@ class FileException implements Exception {
 // MARK: - 5. Parsing (解析)
 /// 負責將 XML 字串解析為資料結構
 class _ProjectParser {
-  static ProjectData parseProjectXML(String xmlContent) {
+  static ProjectParseResult parseProjectXMLWithMetadata(String xmlContent) {
     // 準備載入的數據 - 使用 ProjectData.empty() 作為預設值
     final defaultData = ProjectData.empty();
+    String? projectVersion;
 
     BaseInfoModule.BaseInfoData? loadedBaseInfo;
     List<ChapterModule.SegmentData>? loadedSegments;
@@ -1025,6 +1083,14 @@ class _ProjectParser {
 
     try {
       final document = xml.XmlDocument.parse(xmlContent);
+      final version = document
+          .findAllElements("ver")
+          .firstOrNull
+          ?.innerText
+          .trim();
+      if (version != null && version.isNotEmpty) {
+        projectVersion = version;
+      }
 
       // 尋找所有的 Type 區塊
       final typeElements = document.findAllElements("Type");
@@ -1035,28 +1101,27 @@ class _ProjectParser {
         if (nameElement == null) continue;
 
         final typeName = nameElement.innerText;
-        // 重新序列化為XML字串以供各模組的解析器使用
-        final blockXml = element.toXmlString();
 
         try {
           switch (typeName) {
             case "BaseInfo":
               // 避免重複載入，只取第一個遇到的有效區塊
-              loadedBaseInfo ??= BaseInfoModule.BaseInfoCodec.loadXML(blockXml);
-              break;
-
-            case "ChapterSelection":
-              loadedSegments ??= ChapterModule.ChapterSelectionCodec.loadXML(
-                blockXml,
+              loadedBaseInfo ??= BaseInfoModule.BaseInfoCodec.loadElement(
+                element,
               );
               break;
 
+            case "ChapterSelection":
+              loadedSegments ??=
+                  ChapterModule.ChapterSelectionCodec.loadElement(element);
+              break;
+
             case "Outline":
-              loadedOutline ??= OutlineModule.OutlineCodec.loadXML(blockXml);
+              loadedOutline ??= OutlineModule.OutlineCodec.loadElement(element);
               break;
 
             case "PlanSettings":
-              final planData = PlanModule.PlanCodec.loadXML(blockXml);
+              final planData = PlanModule.PlanCodec.loadElement(element);
               if (planData != null) {
                 loadedForeshadow ??= planData.foreshadows;
                 loadedUpdatePlans ??= planData.updatePlans;
@@ -1064,11 +1129,11 @@ class _ProjectParser {
               break;
 
             case "WorldSettings":
-              loadedWorldSettings ??= WorldSettingsCodec.loadXML(blockXml);
+              loadedWorldSettings ??= WorldSettingsCodec.loadElement(element);
               break;
 
             case "Characters":
-              loadedCharacterData ??= CharacterCodec.loadXML(blockXml);
+              loadedCharacterData ??= CharacterCodec.loadElement(element);
               break;
           }
         } catch (e) {
@@ -1149,17 +1214,24 @@ class _ProjectParser {
           .length;
     }
 
-    return ProjectData(
-      baseInfoData: parsedBaseInfo,
-      segmentsData: parsedSegments,
-      outlineData: parsedOutline,
-      foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
-      updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
-      worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
-      characterData: loadedCharacterData ?? defaultData.characterData,
-      totalWords: totalWords,
-      contentText: contentText,
+    return ProjectParseResult(
+      projectVersion: projectVersion,
+      data: ProjectData(
+        baseInfoData: parsedBaseInfo,
+        segmentsData: parsedSegments,
+        outlineData: parsedOutline,
+        foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
+        updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
+        worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
+        characterData: loadedCharacterData ?? defaultData.characterData,
+        totalWords: totalWords,
+        contentText: contentText,
+      ),
     );
+  }
+
+  static ProjectData parseProjectXML(String xmlContent) {
+    return parseProjectXMLWithMetadata(xmlContent).data;
   }
 }
 
@@ -1678,7 +1750,7 @@ class FileService {
   static const String markdownExtension = ".md";
   static const String projectVersion = "1.06"; // 專案結構版本
 
-  /// 從專案 XML 取出版本號（<ver>）
+  /// 從專案 XML 取出版本號（`<ver>`）
   static String? extractProjectVersion(String xmlContent) {
     try {
       final document = xml.XmlDocument.parse(xmlContent);
@@ -2054,5 +2126,9 @@ class FileService {
   /// 解析專案XML內容 (Parser)
   static ProjectData parseProjectXML(String xmlContent) {
     return _ProjectParser.parseProjectXML(xmlContent);
+  }
+
+  static ProjectParseResult parseProjectXMLWithMetadata(String xmlContent) {
+    return _ProjectParser.parseProjectXMLWithMetadata(xmlContent);
   }
 }

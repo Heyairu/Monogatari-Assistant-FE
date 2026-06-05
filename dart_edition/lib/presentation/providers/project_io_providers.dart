@@ -33,8 +33,13 @@ class ProjectIoStatus {
 class ProjectLoadResult {
   final ProjectFile projectFile;
   final ProjectData data;
+  final String? projectVersion;
 
-  const ProjectLoadResult({required this.projectFile, required this.data});
+  const ProjectLoadResult({
+    required this.projectFile,
+    required this.data,
+    this.projectVersion,
+  });
 }
 
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
@@ -99,15 +104,29 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }
 
   Future<ProjectData> loadProjectData(ProjectFile projectFile) async {
+    final result = await loadProject(projectFile);
+    return result.data;
+  }
+
+  Future<ProjectLoadResult> loadProject(ProjectFile projectFile) async {
     state = const AsyncLoading();
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
-      final data = await useCase.loadProjectFromXml(projectFile);
-      final snapshot = snapshotProjectData(data);
-      state = const AsyncData(
-        ProjectIoStatus(operation: ProjectIoOperation.openProject),
+      final parseResult = await useCase.loadProjectParseResultFromXml(
+        projectFile,
       );
-      return snapshot;
+      final snapshot = snapshotProjectData(parseResult.data);
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.openProject,
+          message: "專案解析完成",
+        ),
+      );
+      return ProjectLoadResult(
+        projectFile: projectFile,
+        data: snapshot,
+        projectVersion: parseResult.projectVersion,
+      );
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       rethrow;

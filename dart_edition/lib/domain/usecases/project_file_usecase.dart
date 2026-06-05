@@ -51,4 +51,10 @@ class ProjectFileUseCase {
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile) {
     return fileRepository.loadProjectFromXml(projectFile);
   }
+
+  Future<ProjectParseResult> loadProjectParseResultFromXml(
+    ProjectFile projectFile,
+  ) {
+    return fileRepository.loadProjectParseResultFromXml(projectFile);
+  }
 }

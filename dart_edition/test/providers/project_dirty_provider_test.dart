@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:monogatari_assistant/modules/chapterselectionview.dart'
+    as chapter_module;
 import 'package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart';
 import 'package:monogatari_assistant/presentation/providers/project_state_providers.dart';
 
@@ -29,5 +31,36 @@ void main() {
     expect(after, isNotNull);
     // Either the fingerprint changed or at least an event was emitted
     expect(after == before || events.isNotEmpty, true);
+  });
+
+  test('resetAfterProjectLoaded cancels pending dirty notification', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final coordinator = container.read(editorCoordinatorProvider.notifier);
+    final beganApplying = coordinator.beginApplyingProjectData();
+
+    container.read(segmentsDataProvider.notifier).setSegmentsData([
+      chapter_module.SegmentData(
+        segmentName: 'Loaded segment',
+        segmentUUID: 'loaded-segment',
+        chapters: [
+          chapter_module.ChapterData(
+            chapterName: 'Loaded chapter',
+            chapterUUID: 'loaded-chapter',
+            chapterContent: 'Loaded content',
+          ),
+        ],
+      ),
+    ]);
+
+    coordinator.resetAfterProjectLoaded();
+    if (beganApplying) {
+      coordinator.endApplyingProjectData();
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+
+    expect(container.read(editorCoordinatorProvider).hasUnsavedChanges, false);
   });
 }

@@ -226,10 +226,17 @@ class WorldSettingsCodec {
   static List<LocationData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-
       final typeElement = document.findAllElements("Type").firstOrNull;
-      if (typeElement == null) return null;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      _log.severe("Error parsing WorldSettings XML: $e");
+      return null;
+    }
+  }
 
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static List<LocationData>? loadElement(xml.XmlElement typeElement) {
+    try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "WorldSettings") return null;
 
@@ -244,7 +251,7 @@ class WorldSettingsCodec {
 
       return roots;
     } catch (e) {
-      _log.severe("Error parsing WorldSettings XML: $e");
+      _log.severe("Error parsing WorldSettings XML element: $e");
       return null;
     }
   }
@@ -1428,7 +1435,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("無法移動到自己或自己的後代節點"),
-          duration: Duration(seconds: 2),
+          duration: Duration(seconds: 1),
         ),
       );
       return;

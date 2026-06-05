@@ -38,6 +38,7 @@ import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/word_count_providers.dart";
 import "utils/text_change_debouncer.dart";
+import "utils/text_position_index.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -195,6 +196,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
   String _lastObservedEditorText = "";
+  TextPositionIndex _textPositionIndex = TextPositionIndex.empty();
 
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
@@ -222,7 +224,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   bool get _isSyncing => _editorCoordinatorState.isSyncing;
   bool get hasUnsavedChanges => _editorCoordinatorState.hasUnsavedChanges;
 
-  final List<ProviderSubscription> _subscriptions = [];
+  final List<ProviderSubscription<Object?>> _subscriptions = [];
 
   late final TextChangeDebouncer _textChangeDebouncer;
 
@@ -330,19 +332,55 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text = initialContent;
       }
       _lastObservedEditorText = textController.text;
+      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(
+        textController.text,
+      );
 
       _refreshActiveChapterWordCount();
     });
   }
 
   void _refreshActiveChapterWordCount() {
-    ref
-        .read(activeChapterWordCountProvider.notifier)
-        .onTextChanged(
-          chapterId: selectedChapID,
-          text: textController.text,
-          mode: _settingsState.wordCountMode,
-        );
+    final String? activeChapterId = selectedChapID;
+    final activeWordCountNotifier = ref.read(
+      activeChapterWordCountProvider.notifier,
+    );
+    if (activeChapterId == null) {
+      activeWordCountNotifier.reset();
+      return;
+    }
+
+    final WordCountMode mode = _settingsState.wordCountMode;
+    final String activeText = textController.text;
+    final ChapterModule.ChapterData? activeChapter = _findChapterById(
+      selectedSegID,
+      activeChapterId,
+    );
+    final int count = activeChapter?.chapterContent == activeText
+        ? activeChapter!.getWordCount(mode)
+        : ContentManager.calculateWordCount(activeText, mode: mode);
+
+    activeWordCountNotifier.refreshFromCount(
+      chapterId: activeChapterId,
+      count: count,
+    );
+  }
+
+  ChapterModule.ChapterData? _findChapterById(
+    String? segmentId,
+    String chapterId,
+  ) {
+    for (final seg in segmentsData) {
+      if (segmentId != null && seg.segmentUUID != segmentId) {
+        continue;
+      }
+      for (final chap in seg.chapters) {
+        if (chap.chapterUUID == chapterId) {
+          return chap;
+        }
+      }
+    }
+    return null;
   }
 
   @override
@@ -351,6 +389,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     _textChangeDebouncer = TextChangeDebouncer(
       onWordCountTrigger: (nextContent) {
+        _flushPendingEditorContent();
         final int gen = ++_activeWordCountGen;
         final String? selectedSegIDSnapshot = selectedSegID;
         final String? selectedChapIDSnapshot = selectedChapID;
@@ -390,6 +429,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text.length,
       );
       final String currentText = textController.text;
+      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(currentText);
       final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
 
@@ -400,8 +440,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _editorCoordinatorNotifier.markAsModified();
 
         _textChangeDebouncer.onTextChanged(currentText);
-
-        _refreshActiveChapterWordCount();
 
         // 當文字內容變化時，清除所有高亮和搜尋狀態
         if (_searchMatches.isNotEmpty || _currentMatchIndex != -1) {
@@ -440,6 +478,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             composing: TextRange.empty,
           );
           _lastObservedEditorText = next;
+          _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(next);
         } finally {
           if (beganSync) {
             coordinatorNotifier.endSync();
@@ -572,13 +611,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _cancelPendingContentCommit();
     _activeWordCountGen++;
     _allWordCountsGen++;
-    for (final s in _subscriptions) {
-      try {
-        s.close();
-      } catch (e) {
-        debugPrint('Failed to close subscription: $e');
-      }
-    }
+    _closeProviderSubscriptions();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
@@ -592,6 +625,21 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     replaceController.dispose();
     editorFocusNode.dispose();
     super.dispose();
+  }
+
+  void _closeProviderSubscriptions() {
+    for (final subscription in List<ProviderSubscription<Object?>>.of(
+      _subscriptions,
+    )) {
+      try {
+        subscription.close();
+      } catch (error, stackTrace) {
+        debugPrint(
+          'Failed to close provider subscription: $error\n$stackTrace',
+        );
+      }
+    }
+    _subscriptions.clear();
   }
 
   int _activeWordCountGen = 0;
@@ -650,6 +698,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       // Re-sum using cached values (Fast)
       totalWords = _recalculateSumFast();
     });
+
+    ref
+        .read(activeChapterWordCountProvider.notifier)
+        .refreshFromCount(chapterId: selectedChapIDSnapshot, count: count);
   }
 
   Future<void> _updateAllWordCounts() async {
@@ -990,7 +1042,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     required bool hasUnsavedChanges,
     required DateTime? lastSavedTime,
   }) {
-    final statusContentText = textController.text;
     final statusSelection = ref.watch(
       editorSelectionProvider.select(
         (state) => (
@@ -1032,10 +1083,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         ? DateFormat("HH:mm").format(lastSavedTime)
         : "--:--";
 
-    final ({int line, int column}) cursorPos = _lineColumnFromOffset(
-      statusContentText,
-      statusSelection.cursorOffset,
-    );
+    final ({int line, int column}) cursorPos = _textPositionIndex
+        .lineColumnFromOffset(statusSelection.cursorOffset);
 
     final int currentWords = ref.watch(
       activeChapterWordCountProvider.select((state) => state.count),
@@ -1243,42 +1292,16 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 頁面視圖
   Widget _buildPageView() {
-    int pageIndex = slidePageIndexNow > (slidePageCounts - 1)
+    final int pageIndex = slidePageIndexNow > (slidePageCounts - 1)
         ? 0
         : slidePageIndexNow; // 如果在編輯器模式，預設顯示第一頁
 
-    switch (pageIndex) {
-      case 0:
-        return _buildWelcomeView();
-      case 1:
-        return _buildBaseInfoView();
-      case 2:
-        return _buildChapterSelectionView();
-      case 3:
-        return _buildOutlineView();
-      case 4:
-        return _buildWorldSettingsView();
-      case 5:
-        return _buildCharacterSettingsView();
-      case 6:
-        return _buildTimelineView();
-      case 7:
-        return _buildRelationView();
-      case 8:
-        return _buildPlanView();
-      case 9:
-        return _buildGlossaryView();
-      case 10:
-        return _buildProofreadingView();
-      case 11:
-        return _buildCopilotView();
-      case 12:
-        return _buildSettingView();
-      case 13:
-        return _buildAboutView();
-      default:
-        return Center(child: Text("Page ${pageIndex + 1}"));
-    }
+    return IndexedStack(
+      index: pageIndex.clamp(0, slidePageCounts - 1),
+      children: [
+        for (int i = 0; i < slidePageCounts; i++) _buildSpecificPageContent(i),
+      ],
+    );
   }
 
   // 編輯器
@@ -1508,23 +1531,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       chapterSwitchVersion: _proofreadingChapterSwitchVersion,
       onRequestFocusEditor: _focusEditorForProofreading,
     );
-  }
-
-  ({int line, int column}) _lineColumnFromOffset(String text, int offset) {
-    int line = 1;
-    int column = 1;
-
-    final int safeOffset = offset.clamp(0, text.length);
-    for (int i = 0; i < safeOffset; i++) {
-      if (text[i] == "\n") {
-        line++;
-        column = 1;
-      } else {
-        column++;
-      }
-    }
-
-    return (line: line, column: column);
   }
 
   void _focusEditorForProofreading() {
@@ -1983,9 +1989,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         return;
       }
 
-      final openedVersion = FileService.extractProjectVersion(
-        projectFile.content,
-      );
+      final loadResult = await ref
+          .read(projectIoControllerProvider.notifier)
+          .loadProject(projectFile);
+      final openedVersion = loadResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
       );
@@ -2009,9 +2016,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         }
       }
 
-      final data = await ref
-          .read(projectIoControllerProvider.notifier)
-          .loadProjectData(projectFile);
+      final data = loadResult.data;
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
@@ -2063,9 +2068,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           .read(projectIoControllerProvider.notifier)
           .openProjectFromPath(entry.filePath!, accessToken: entry.uri);
 
-      final openedVersion = FileService.extractProjectVersion(
-        projectFile.content,
-      );
+      final loadResult = await ref
+          .read(projectIoControllerProvider.notifier)
+          .loadProject(projectFile);
+      final openedVersion = loadResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
       );
@@ -2089,9 +2095,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         }
       }
 
-      final data = await ref
-          .read(projectIoControllerProvider.notifier)
-          .loadProjectData(projectFile);
+      final data = loadResult.data;
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
@@ -2241,6 +2245,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text = "";
       }
       _lastObservedEditorText = textController.text;
+      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(
+        textController.text,
+      );
     } finally {
       if (beganSync) {
         coordinatorNotifier.endSync();

@@ -1,8 +1,4 @@
-
 import "package:flutter_riverpod/flutter_riverpod.dart";
-
-import "../../bin/content_manager.dart";
-import "../../bin/settings_manager.dart";
 
 class ActiveChapterWordCountState {
   final int count;
@@ -46,7 +42,6 @@ final activeChapterWordCountProvider =
 
 class ActiveChapterWordCountNotifier
     extends AutoDisposeNotifier<ActiveChapterWordCountState> {
-  int _revision = 0;
   bool _isDisposed = false;
 
   @override
@@ -57,49 +52,38 @@ class ActiveChapterWordCountNotifier
     return const ActiveChapterWordCountState.initial();
   }
 
-  void onTextChanged({
-    required String? chapterId,
-    required String text,
-    required WordCountMode mode,
-  }) async {
+  void refreshFromCount({required String? chapterId, required int count}) {
     if (chapterId == null || chapterId.trim().isEmpty) {
-      state = state.copyWith(
-        count: 0,
-        isComputing: false,
-        error: null,
-        lastUpdatedAt: DateTime.now(),
-      );
+      reset();
       return;
     }
 
-    final int nextRevision = ++_revision;
-    // Mark computing (keep previous count to avoid flicker).
-    state = state.copyWith(isComputing: true, error: null);
-    try {
-      final int count = await ContentManager.calculateWordCountAsync(
-        text,
-        mode: mode,
-      );
+    if (_isDisposed) return;
+    state = state.copyWith(
+      count: count,
+      isComputing: false,
+      error: null,
+      lastUpdatedAt: DateTime.now(),
+    );
+  }
 
-      if (_isDisposed || nextRevision != _revision) {
-        return;
-      }
-
-      state = state.copyWith(
-        count: count,
-        isComputing: false,
-        error: null,
-        lastUpdatedAt: DateTime.now(),
-      );
-    } catch (e) {
-      if (_isDisposed || nextRevision != _revision) {
-        return;
-      }
-      state = state.copyWith(
-        isComputing: false,
-        error: e,
-        lastUpdatedAt: DateTime.now(),
-      );
+  void markComputing({required String? chapterId}) {
+    if (chapterId == null || chapterId.trim().isEmpty) {
+      reset();
+      return;
     }
+
+    if (_isDisposed) return;
+    state = state.copyWith(isComputing: true, error: null);
+  }
+
+  void reset() {
+    if (_isDisposed) return;
+    state = state.copyWith(
+      count: 0,
+      isComputing: false,
+      error: null,
+      lastUpdatedAt: DateTime.now(),
+    );
   }
 }

@@ -946,10 +946,19 @@ class CharacterCodec {
   static Map<String, CharacterEntryData>? loadXML(String content) {
     try {
       final document = xml.XmlDocument.parse(content);
-
       final typeElement = document.findAllElements("Type").firstOrNull;
-      if (typeElement == null) return null;
+      return typeElement == null ? null : loadElement(typeElement);
+    } catch (e) {
+      _log.severe("Error parsing Character XML: $e");
+      return null;
+    }
+  }
 
+  // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
+  static Map<String, CharacterEntryData>? loadElement(
+    xml.XmlElement typeElement,
+  ) {
+    try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "Characters") return null;
 
@@ -1047,7 +1056,7 @@ class CharacterCodec {
 
       return characterData.isNotEmpty ? characterData : null;
     } catch (e) {
-      _log.severe("Error parsing Character XML: $e");
+      _log.severe("Error parsing Character XML element: $e");
       return null;
     }
   }
