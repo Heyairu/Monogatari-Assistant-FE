@@ -257,8 +257,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _onFocusChange() {
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
+    
+    // 只記錄當焦點真正在編輯框時，不要在臨時焦點轉移時清除狀態
     if (node != null && _findEditableForFocusNode(node) != null) {
       _lastFocusedEditableNode = node;
+      debugPrint("[DEBUG] Focus on editable: $node");
     }
   }
 
@@ -1905,26 +1908,49 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _handleSelectAll(controller);
         break;
       case "cut":
-        await _handleCut(controller);
+        await _handleCut(controller, editable);
         break;
       case "copy":
         _handleCopy(controller);
         break;
       case "paste":
-        await _handlePaste(controller);
+        await _handlePaste(controller, editable);
         break;
       case "find":
         // 實作搜尋功能
         break;
     }
+    
+    // 操作完後恢復焦點到編輯框
+    final focusNode = editable.widget.focusNode;
+    if (focusNode != null && !focusNode.hasFocus) {
+      debugPrint("[DEBUG] Restoring focus to editable after action");
+      focusNode.requestFocus();
+    }
   }
 
   /// 選擇所有文本
   void _handleSelectAll(TextEditingController controller) {
-    controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: controller.text.length,
-    );
+    final editable = _getPrimaryFocusedEditable();
+    if (editable != null && editable.widget.controller == controller) {
+      // 使用 updateEditingValue 確保 UI 正確更新
+      editable.updateEditingValue(
+        TextEditingValue(
+          text: controller.text,
+          selection: TextSelection(
+            baseOffset: 0,
+            extentOffset: controller.text.length,
+          ),
+          composing: TextRange.empty,
+        ),
+      );
+    } else {
+      // 備用方案
+      controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: controller.text.length,
+      );
+    }
   }
 
   /// 複製選定的文本到剪貼簿
@@ -1946,7 +1972,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   /// 剪切選定的文本到剪貼簿
-  Future<void> _handleCut(TextEditingController controller) async {
+  Future<void> _handleCut(TextEditingController controller, EditableTextState editable) async {
     final selection = controller.selection;
     debugPrint("[DEBUG] Cut selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}");
     
@@ -1968,15 +1994,20 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       selection.end,
       '',
     );
-    controller.text = newText;
-
-    // 將游標位置設置到刪除位置
-    controller.selection = TextSelection.collapsed(offset: selection.start);
-    debugPrint("[DEBUG] Cut: Text after cut '${controller.text}'");
+    
+    // 使用 updateEditingValue 更新，確保 UI 正確更新
+    editable.updateEditingValue(
+      TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: selection.start),
+        composing: TextRange.empty,
+      ),
+    );
+    debugPrint("[DEBUG] Cut: Text after cut '$newText'");
   }
 
   /// 從剪貼簿貼上文本
-  Future<void> _handlePaste(TextEditingController controller) async {
+  Future<void> _handlePaste(TextEditingController controller, EditableTextState editable) async {
     debugPrint("[DEBUG] Paste Starting paste operation");
     try {
       final clipboardData = await Clipboard.getData('text/plain');
@@ -1992,35 +2023,39 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       final selection = controller.selection;
       debugPrint("[DEBUG] Paste: Current selection $selection");
       
+      String newText;
+      int newCursorPos;
+      
       if (selection.isValid && !selection.isCollapsed) {
         // 如果有選定的文本，先替換它
         debugPrint("[DEBUG] Paste Replacing selected text");
-        final newText = controller.text.replaceRange(
+        newText = controller.text.replaceRange(
           selection.start,
           selection.end,
           pastedText,
         );
-        controller.text = newText;
-        // 將游標位置設置到貼上文本的結尾
-        controller.selection = TextSelection.collapsed(
-          offset: selection.start + pastedText.length,
-        );
+        newCursorPos = selection.start + pastedText.length;
       } else {
         // 在游標位置插入文本
         debugPrint("[DEBUG] Paste Inserting at cursor position");
         final offset = selection.baseOffset;
-        final newText = controller.text.replaceRange(
+        newText = controller.text.replaceRange(
           offset,
           offset,
           pastedText,
         );
-        controller.text = newText;
-        // 將游標位置設置到貼上文本的結尾
-        controller.selection = TextSelection.collapsed(
-          offset: offset + pastedText.length,
-        );
+        newCursorPos = offset + pastedText.length;
       }
-      debugPrint("[DEBUG] Paste: Text after paste '${controller.text}'");
+      
+      // 使用 updateEditingValue 更新，確保 UI 正確更新
+      editable.updateEditingValue(
+        TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newCursorPos),
+          composing: TextRange.empty,
+        ),
+      );
+      debugPrint("[DEBUG] Paste: Text after paste '$newText'");
     } catch (e) {
       debugPrint("[DEBUG] Paste Error - $e");
     }
