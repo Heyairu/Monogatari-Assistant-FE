@@ -6,7 +6,7 @@
 > 主要範圍：Flutter/Dart 前端輸入效能、搜尋/高亮、校正文、Riverpod 狀態流、資料快照、檔案 IO、資源包體  
 > 備註：本次沒有執行 Flutter DevTools runtime profile 或 release build size analysis；以下結論以目前程式碼結構與可觀察成本推估，建議後續用實測指標驗證。
 
-## 1. 總結
+# 1. 總結
 
 此專案已經做過不少效能優化，尤其是搜尋/高亮：`findreplace.dart` 已有 debounce、背景 `compute()`、搜尋結果上限、prefix-max coverage index 與 benchmark test。Dirty listener 也已從多個 listener 收斂成 `projectDataAggregateProvider`。這些是正確方向。
 
@@ -29,7 +29,7 @@
 - 狀態列行列計算加入換行索引快取或 incremental cursor cache。
 - 對搜尋 benchmark 設定真正有約束力的 CI 門檻。
 
-## 2. 專案熱區盤點
+# 2. 專案熱區盤點
 
 ### 2.1 最大 Dart 檔案
 
@@ -61,7 +61,7 @@
 
 Custom fonts raw total 約 65,675,556 bytes，約 62.6 MiB。這是目前最明顯的包體風險。
 
-## 3. 最高優先問題
+# 3. 最高優先問題 // OK
 
 ## P0-1：主編輯器輸入時重複計算 active chapter 字數 // OK
 
@@ -318,7 +318,7 @@ UI 只負責：
 - UI thread frame build 不應超過 16ms 太多；大文字允許顯示 loading，但不應凍結。
 - 詞庫 10 / 100 / 1000 筆時測 `_analyzeFillerWords()` 耗時。
 
-## P0-4：同步章節內容時沒有內容相同 early return
+## P0-4：同步章節內容時沒有內容相同 early return // OK
 
 ### 證據位置
 
@@ -406,9 +406,9 @@ ref.read(segmentsDataProvider.notifier).updateSegmentsData((_) => copiedSegments
 - Provider test：`hasUnsavedChanges` 不應因無效同步變成 true。
 - 大型 project：連續切頁 100 次，rebuild / dirty timer 次數應顯著下降。
 
-## 4. 高優先問題
+# 4. 高優先問題
 
-## P1-1：狀態列行列計算每次從文字開頭掃到游標
+## P1-1：狀態列行列計算每次從文字開頭掃到游標 //OK
 
 ### 證據位置
 
@@ -625,7 +625,7 @@ final currentChapterPathProvider = Provider<String>((ref) {
   - 300 characters。
 - 測首屏時間、切換 tab 時間、滾動 frame jank。
 
-## P1-6：XML 開檔/存檔仍有多次全文複製與重複解析
+## P1-6：XML 開檔/存檔仍有多次全文複製與重複解析 // OK
 
 ### 證據位置
 
@@ -797,7 +797,7 @@ flutter build web --release --analyze-size
 - 1000 次 glossary entry edit/move。
 - 記錄每次操作平均時間與 memory allocation。
 
-## 6. 已完成且應保留的優化
+# 6. 已完成且應保留的優化
 
 | 已完成項目 | 位置 | 保留原因 |
 |---|---|---|
@@ -814,7 +814,7 @@ flutter build web --release --analyze-size
 
 注意：這些優化應用測試鎖住，避免後續重構時回歸。
 
-## 7. 建議修復路線
+# 7. 建議修復路線
 
 ### Phase 1：1-2 天內可做的高槓桿修復
 
