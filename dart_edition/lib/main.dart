@@ -258,10 +258,38 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   void _onFocusChange() {
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
     
-    // 只記錄當焦點真正在編輯框時，不要在臨時焦點轉移時清除狀態
     if (node != null && _findEditableForFocusNode(node) != null) {
+      // 焦點進入編輯框
       _lastFocusedEditableNode = node;
       debugPrint("[DEBUG] Focus on editable: $node");
+    } else if (node != null && node.canRequestFocus) {
+      // 焦點轉移到其他可請求焦點的 widget（非編輯框、非功能按鈕）
+      debugPrint("[DEBUG] Focus moved away from editable to: $node");
+      _clearAllSelections();
+    }
+  }
+
+  void _clearAllSelections() {
+    debugPrint("[DEBUG] Clearing all selections");
+    
+    // 清除主編輯器的選取
+    if (textController.selection.isValid && !textController.selection.isCollapsed) {
+      textController.selection = TextSelection.collapsed(
+        offset: textController.selection.baseOffset,
+      );
+    }
+    
+    // 清除搜尋欄的選取
+    if (findController.selection.isValid && !findController.selection.isCollapsed) {
+      findController.selection = TextSelection.collapsed(
+        offset: findController.selection.baseOffset,
+      );
+    }
+    
+    if (replaceController.selection.isValid && !replaceController.selection.isCollapsed) {
+      replaceController.selection = TextSelection.collapsed(
+        offset: replaceController.selection.baseOffset,
+      );
     }
   }
 
