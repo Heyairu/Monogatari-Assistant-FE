@@ -257,10 +257,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _onFocusChange() {
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
-    if (node != null && node.context != null) {
-      if (node.context!.findAncestorStateOfType<EditableTextState>() != null) {
-        _lastFocusedEditableNode = node;
-      }
+    if (node != null && _findEditableForFocusNode(node) != null) {
+      _lastFocusedEditableNode = node;
     }
   }
 
@@ -1827,10 +1825,56 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     }
   }
 
+  EditableTextState? _findEditableForFocusNode(FocusNode node) {
+    final context = node.context;
+    if (context == null || !context.mounted) {
+      return null;
+    }
+
+    final ancestor = context.findAncestorStateOfType<EditableTextState>();
+    if (ancestor != null && ancestor.widget.focusNode == node) {
+      return ancestor;
+    }
+
+    EditableTextState? result;
+    void visit(Element element) {
+      if (result != null) {
+        return;
+      }
+
+      if (element is StatefulElement) {
+        final state = element.state;
+        if (state is EditableTextState && state.widget.focusNode == node) {
+          result = state;
+          return;
+        }
+      }
+
+      element.visitChildElements(visit);
+    }
+
+    (context as Element).visitChildElements(visit);
+    return result;
+  }
+
+  EditableTextState? _getPrimaryFocusedEditable() {
+    final node = WidgetsBinding.instance.focusManager.primaryFocus;
+    if (node == null) {
+      return null;
+    }
+
+    return _findEditableForFocusNode(node);
+  }
+
   // 編輯器操作
   void _performEditorAction(String action) {
-    // 這裡可以實作編輯器的 undo, redo, copy, paste 等功能
-    // Flutter 的 TextField 已經內建了大部分功能
+    final editable = _getPrimaryFocusedEditable();
+
+    // Copy/Cut/Paste/Select All 只作用在目前取得焦點的輸入框。
+    if (editable == null) {
+      return;
+    }
+
     switch (action) {
       case "undo":
         // 實作 undo 功能
@@ -1839,46 +1883,25 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         // 實作 redo 功能
         break;
       case "selectAll":
-        textController.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: textController.text.length,
+        Actions.invoke(
+          editable.context,
+          const SelectAllTextIntent(SelectionChangedCause.toolbar),
         );
         break;
       case "cut":
-        if (textController.selection.isValid) {
-          final selectedText = textController.selection.textInside(
-            textController.text,
-          );
-          Clipboard.setData(ClipboardData(text: selectedText));
-          textController.text =
-              textController.selection.textBefore(textController.text) +
-              textController.selection.textAfter(textController.text);
-        }
+        Actions.invoke(
+          editable.context,
+          const CopySelectionTextIntent.cut(SelectionChangedCause.toolbar),
+        );
         break;
       case "copy":
-        if (textController.selection.isValid) {
-          final selectedText = textController.selection.textInside(
-            textController.text,
-          );
-          Clipboard.setData(ClipboardData(text: selectedText));
-        }
+        Actions.invoke(editable.context, CopySelectionTextIntent.copy);
         break;
       case "paste":
-        Clipboard.getData("text/plain").then((value) {
-          if (value?.text != null) {
-            final text = textController.text;
-            final selection = textController.selection;
-            final newText = text.replaceRange(
-              selection.start,
-              selection.end,
-              value!.text!,
-            );
-            textController.text = newText;
-            textController.selection = TextSelection.collapsed(
-              offset: selection.start + value.text!.length,
-            );
-          }
-        });
+        Actions.invoke(
+          editable.context,
+          const PasteTextIntent(SelectionChangedCause.toolbar),
+        );
         break;
       case "find":
         // 實作搜尋功能

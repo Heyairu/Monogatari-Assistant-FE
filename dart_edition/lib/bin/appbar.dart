@@ -106,29 +106,38 @@ class MonogatariTopAppBar extends StatelessWidget
                 ],
               ),
 
-              IconButton(
-                iconSize: iconSize,
-                icon: const Icon(Icons.select_all),
-                onPressed: () => onEditorAction("selectAll"),
-                tooltip: "Select All",
-              ),
-              IconButton(
-                iconSize: iconSize,
-                icon: const Icon(Icons.content_cut),
-                onPressed: () => onEditorAction("cut"),
-                tooltip: "Cut",
-              ),
-              IconButton(
-                iconSize: iconSize,
-                icon: const Icon(Icons.content_copy),
-                onPressed: () => onEditorAction("copy"),
-                tooltip: "Copy",
-              ),
-              IconButton(
-                iconSize: iconSize,
-                icon: const Icon(Icons.content_paste),
-                onPressed: () => onEditorAction("paste"),
-                tooltip: "Paste",
+              Focus(
+                canRequestFocus: false,
+                descendantsAreFocusable: false,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ToolbarEditButton(
+                      iconSize: iconSize,
+                      icon: const Icon(Icons.select_all),
+                      onPressed: () => onEditorAction("selectAll"),
+                      tooltip: "Select All",
+                    ),
+                    _ToolbarEditButton(
+                      iconSize: iconSize,
+                      icon: const Icon(Icons.content_cut),
+                      onPressed: () => onEditorAction("cut"),
+                      tooltip: "Cut",
+                    ),
+                    _ToolbarEditButton(
+                      iconSize: iconSize,
+                      icon: const Icon(Icons.content_copy),
+                      onPressed: () => onEditorAction("copy"),
+                      tooltip: "Copy",
+                    ),
+                    _ToolbarEditButton(
+                      iconSize: iconSize,
+                      icon: const Icon(Icons.content_paste),
+                      onPressed: () => onEditorAction("paste"),
+                      tooltip: "Paste",
+                    ),
+                  ],
+                ),
               ),
 
               IconButton(
@@ -192,6 +201,47 @@ class MonogatariTopAppBar extends StatelessWidget
       backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
       elevation: 0,
+    );
+  }
+}
+
+class _ToolbarEditButton extends StatefulWidget {
+  final double iconSize;
+  final Widget icon;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  const _ToolbarEditButton({
+    required this.iconSize,
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  @override
+  State<_ToolbarEditButton> createState() => _ToolbarEditButtonState();
+}
+
+class _ToolbarEditButtonState extends State<_ToolbarEditButton> {
+  late final FocusNode _focusNode = FocusNode(
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      focusNode: _focusNode,
+      iconSize: widget.iconSize,
+      icon: widget.icon,
+      onPressed: widget.onPressed,
+      tooltip: widget.tooltip,
     );
   }
 }
