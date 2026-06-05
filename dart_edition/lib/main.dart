@@ -1858,22 +1858,41 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   EditableTextState? _getPrimaryFocusedEditable() {
-    final node = WidgetsBinding.instance.focusManager.primaryFocus;
-    if (node == null) {
-      return null;
+    // 使用追蹤的最後一個有焦點的編輯框
+    // 當按鈕被點擊時，焦點會移到按鈕，但我們需要操作在它之前有焦點的編輯框
+    
+    if (_lastFocusedEditableNode != null && 
+        _lastFocusedEditableNode!.context != null &&
+        _lastFocusedEditableNode!.context!.mounted) {
+      
+      debugPrint("[DEBUG] Using last focused editable node: $_lastFocusedEditableNode");
+      final editable = _findEditableForFocusNode(_lastFocusedEditableNode!);
+      if (editable != null) {
+        return editable;
+      }
     }
-
-    return _findEditableForFocusNode(node);
+    
+    debugPrint("[DEBUG] No last focused editable found");
+    return null;
   }
 
   // 編輯器操作
-  void _performEditorAction(String action) {
+  Future<void> _performEditorAction(String action) async {
     final editable = _getPrimaryFocusedEditable();
 
     // Copy/Cut/Paste/Select All 只作用在目前取得焦點的輸入框。
     if (editable == null) {
+      debugPrint("[DEBUG] No focused editable found");
       return;
     }
+
+    final controller = editable.widget.controller;
+    if (controller == null) {
+      debugPrint("[DEBUG] No controller found for focused editable");
+      return;
+    }
+
+    debugPrint("[DEBUG]: Performing action $action on controller");
 
     switch (action) {
       case "undo":
@@ -1883,29 +1902,127 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         // 實作 redo 功能
         break;
       case "selectAll":
-        Actions.invoke(
-          editable.context,
-          const SelectAllTextIntent(SelectionChangedCause.toolbar),
-        );
+        _handleSelectAll(controller);
         break;
       case "cut":
-        Actions.invoke(
-          editable.context,
-          const CopySelectionTextIntent.cut(SelectionChangedCause.toolbar),
-        );
+        await _handleCut(controller);
         break;
       case "copy":
-        Actions.invoke(editable.context, CopySelectionTextIntent.copy);
+        _handleCopy(controller);
         break;
       case "paste":
-        Actions.invoke(
-          editable.context,
-          const PasteTextIntent(SelectionChangedCause.toolbar),
-        );
+        await _handlePaste(controller);
         break;
       case "find":
         // 實作搜尋功能
         break;
+    }
+  }
+
+  /// 選擇所有文本
+  void _handleSelectAll(TextEditingController controller) {
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
+  }
+
+  /// 複製選定的文本到剪貼簿
+  void _handleCopy(TextEditingController controller) {
+    final selection = controller.selection;
+    debugPrint("[DEBUG] Copy selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}");
+    
+    if (!selection.isValid || selection.isCollapsed) {
+      debugPrint("[DEBUG] Copy No selection to copy");
+      return; // 沒有選定任何文本
+    }
+
+    final selectedText = controller.text.substring(
+      selection.start,
+      selection.end,
+    );
+    debugPrint("[DEBUG] Copy: Copying text '$selectedText'");
+    Clipboard.setData(ClipboardData(text: selectedText));
+  }
+
+  /// 剪切選定的文本到剪貼簿
+  Future<void> _handleCut(TextEditingController controller) async {
+    final selection = controller.selection;
+    debugPrint("[DEBUG] Cut selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}");
+    
+    if (!selection.isValid || selection.isCollapsed) {
+      debugPrint("[DEBUG] Cut No selection to cut");
+      return; // 沒有選定任何文本
+    }
+
+    final selectedText = controller.text.substring(
+      selection.start,
+      selection.end,
+    );
+    debugPrint("[DEBUG] Cut: Cutting text '$selectedText'");
+    await Clipboard.setData(ClipboardData(text: selectedText));
+
+    // 刪除選定的文本
+    final newText = controller.text.replaceRange(
+      selection.start,
+      selection.end,
+      '',
+    );
+    controller.text = newText;
+
+    // 將游標位置設置到刪除位置
+    controller.selection = TextSelection.collapsed(offset: selection.start);
+    debugPrint("[DEBUG] Cut: Text after cut '${controller.text}'");
+  }
+
+  /// 從剪貼簿貼上文本
+  Future<void> _handlePaste(TextEditingController controller) async {
+    debugPrint("[DEBUG] Paste Starting paste operation");
+    try {
+      final clipboardData = await Clipboard.getData('text/plain');
+      final pastedText = clipboardData?.text ?? '';
+
+      debugPrint("[DEBUG] Paste: Clipboard data '$pastedText'");
+
+      if (pastedText.isEmpty) {
+        debugPrint("[DEBUG] Paste Clipboard is empty");
+        return; // 剪貼簿為空
+      }
+
+      final selection = controller.selection;
+      debugPrint("[DEBUG] Paste: Current selection $selection");
+      
+      if (selection.isValid && !selection.isCollapsed) {
+        // 如果有選定的文本，先替換它
+        debugPrint("[DEBUG] Paste Replacing selected text");
+        final newText = controller.text.replaceRange(
+          selection.start,
+          selection.end,
+          pastedText,
+        );
+        controller.text = newText;
+        // 將游標位置設置到貼上文本的結尾
+        controller.selection = TextSelection.collapsed(
+          offset: selection.start + pastedText.length,
+        );
+      } else {
+        // 在游標位置插入文本
+        debugPrint("[DEBUG] Paste Inserting at cursor position");
+        final offset = selection.baseOffset;
+        final newText = controller.text.replaceRange(
+          offset,
+          offset,
+          pastedText,
+        );
+        controller.text = newText;
+        // 將游標位置設置到貼上文本的結尾
+        controller.selection = TextSelection.collapsed(
+          offset: offset + pastedText.length,
+        );
+      }
+      debugPrint("[DEBUG] Paste: Text after paste '${controller.text}'");
+    } catch (e) {
+      debugPrint("[DEBUG] Paste Error - $e");
     }
   }
 

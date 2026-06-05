@@ -7,7 +7,7 @@ class MonogatariTopAppBar extends StatelessWidget
   final bool showPunctuationPanel;
   final bool showFindReplaceWindow;
   final ValueChanged<String> onFileAction;
-  final ValueChanged<String> onEditorAction;
+  final Future<void> Function(String) onEditorAction;
   final VoidCallback onTogglePunctuationPanel;
   final VoidCallback onToggleFindReplaceWindow;
 
@@ -121,7 +121,7 @@ class MonogatariTopAppBar extends StatelessWidget
                     _ToolbarEditButton(
                       iconSize: iconSize,
                       icon: const Icon(Icons.content_cut),
-                      onPressed: () => onEditorAction("cut"),
+                      onPressed: () async => await onEditorAction("cut"),
                       tooltip: "Cut",
                     ),
                     _ToolbarEditButton(
@@ -133,7 +133,7 @@ class MonogatariTopAppBar extends StatelessWidget
                     _ToolbarEditButton(
                       iconSize: iconSize,
                       icon: const Icon(Icons.content_paste),
-                      onPressed: () => onEditorAction("paste"),
+                      onPressed: () async => await onEditorAction("paste"),
                       tooltip: "Paste",
                     ),
                   ],
@@ -208,7 +208,7 @@ class MonogatariTopAppBar extends StatelessWidget
 class _ToolbarEditButton extends StatefulWidget {
   final double iconSize;
   final Widget icon;
-  final VoidCallback onPressed;
+  final Future<void> Function()? onPressed;
   final String tooltip;
 
   const _ToolbarEditButton({
@@ -240,7 +240,7 @@ class _ToolbarEditButtonState extends State<_ToolbarEditButton> {
       focusNode: _focusNode,
       iconSize: widget.iconSize,
       icon: widget.icon,
-      onPressed: widget.onPressed,
+      onPressed: widget.onPressed == null ? null : () => widget.onPressed!(),
       tooltip: widget.tooltip,
     );
   }
