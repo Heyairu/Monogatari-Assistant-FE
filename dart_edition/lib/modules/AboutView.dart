@@ -26,7 +26,7 @@ class AboutView extends StatelessWidget {
           children: [
             // 應用圖標
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: Image.asset(
@@ -45,31 +45,26 @@ class AboutView extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
 
             // 應用名稱
             Text(
               "物語Assistant",
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+              style: Theme.of(context).textTheme.titleLarge
             ),
 
             const SizedBox(height: 8),
 
             // 版本狀態
             Text(
-              "Beta 6",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+              "Beta 7",
+              style: Theme.of(context).textTheme.titleSmall
             ),
 
-            // 版本號
+            // Version
             Text(
-              "版本 0.8.10",
-              style: Theme.of(context).textTheme.titleSmall
+              "Ver 0.8.93",
+              style: Theme.of(context).textTheme.labelLarge
             ),
 
             const SizedBox(height: 32),
