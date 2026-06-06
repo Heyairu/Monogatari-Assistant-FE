@@ -254,10 +254,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 追蹤最後一個焦點輸入框
   FocusNode? _lastFocusedEditableNode;
+  bool _preserveEditableFocusForEditorAction = false;
 
   void _onFocusChange() {
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
-    
+
     if (node != null && _findEditableForFocusNode(node) != null) {
       // 焦點進入編輯框
       _lastFocusedEditableNode = node;
@@ -265,8 +266,35 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     } else if (node != null && node.canRequestFocus) {
       // 焦點轉移到其他可請求焦點的 widget（非編輯框、非功能按鈕）
       debugPrint("[DEBUG] Focus moved away from editable to: $node");
-      _clearAllSelections();
+      if (_preserveEditableFocusForEditorAction) {
+        debugPrint("[DEBUG] Preserving editable focus for editor action");
+        return;
+      }
+      _clearEditableFocus();
     }
+  }
+
+  void _prepareEditorToolbarAction() {
+    _preserveEditableFocusForEditorAction = true;
+  }
+
+  void _finishEditorToolbarAction() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preserveEditableFocusForEditorAction = false;
+    });
+  }
+
+  void _clearEditableFocus() {
+    debugPrint("[DEBUG] Clearing editable focus");
+
+    final lastFocusedEditableNode = _lastFocusedEditableNode;
+    _lastFocusedEditableNode = null;
+
+    if (lastFocusedEditableNode != null && lastFocusedEditableNode.hasFocus) {
+      lastFocusedEditableNode.unfocus();
+    }
+
+    _clearAllSelections();
   }
 
   void _clearAllSelections() {
@@ -979,28 +1007,33 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               showFindReplaceWindow: showFindReplaceWindow,
               onFileAction: _handleFileAction,
               onEditorAction: _performEditorAction,
+              onEditorActionPointerDown: _prepareEditorToolbarAction,
               onTogglePunctuationPanel: _togglePunctuationPanel,
               onToggleFindReplaceWindow: _toggleFindReplaceWindow,
             ),
-            body: LayoutBuilder(
-              builder: (context, constraints) {
-                // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
-                if (constraints.maxWidth < 800) {
-                  return _buildMobileLayout(
-                    fontSize: fontSize,
-                    wordCountMode: wordCountMode,
-                    hasUnsavedChanges: hasUnsavedChanges,
-                    lastSavedTime: lastSavedTime,
-                  );
-                } else {
-                  return _buildDesktopLayout(
-                    fontSize: fontSize,
-                    wordCountMode: wordCountMode,
-                    hasUnsavedChanges: hasUnsavedChanges,
-                    lastSavedTime: lastSavedTime,
-                  );
-                }
-              },
+            body: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _clearEditableFocus,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
+                  if (constraints.maxWidth < 800) {
+                    return _buildMobileLayout(
+                      fontSize: fontSize,
+                      wordCountMode: wordCountMode,
+                      hasUnsavedChanges: hasUnsavedChanges,
+                      lastSavedTime: lastSavedTime,
+                    );
+                  } else {
+                    return _buildDesktopLayout(
+                      fontSize: fontSize,
+                      wordCountMode: wordCountMode,
+                      hasUnsavedChanges: hasUnsavedChanges,
+                      lastSavedTime: lastSavedTime,
+                    );
+                  }
+                },
+              ),
             ),
           ),
         ),
@@ -1909,51 +1942,55 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 編輯器操作
   Future<void> _performEditorAction(String action) async {
-    final editable = _getPrimaryFocusedEditable();
+    try {
+      final editable = _getPrimaryFocusedEditable();
 
-    // Copy/Cut/Paste/Select All 只作用在目前取得焦點的輸入框。
-    if (editable == null) {
-      debugPrint("[DEBUG] No focused editable found");
-      return;
-    }
+      // Copy/Cut/Paste/Select All 只作用在目前取得焦點的輸入框。
+      if (editable == null) {
+        debugPrint("[DEBUG] No focused editable found");
+        return;
+      }
 
-    final controller = editable.widget.controller;
-    if (controller == null) {
-      debugPrint("[DEBUG] No controller found for focused editable");
-      return;
-    }
+      final controller = editable.widget.controller;
+      if (controller == null) {
+        debugPrint("[DEBUG] No controller found for focused editable");
+        return;
+      }
 
-    debugPrint("[DEBUG]: Performing action $action on controller");
+      debugPrint("[DEBUG]: Performing action $action on controller");
 
-    switch (action) {
-      case "undo":
-        // 實作 undo 功能
-        break;
-      case "redo":
-        // 實作 redo 功能
-        break;
-      case "selectAll":
-        _handleSelectAll(controller);
-        break;
-      case "cut":
-        await _handleCut(controller, editable);
-        break;
-      case "copy":
-        _handleCopy(controller);
-        break;
-      case "paste":
-        await _handlePaste(controller, editable);
-        break;
-      case "find":
-        // 實作搜尋功能
-        break;
-    }
-    
-    // 操作完後恢復焦點到編輯框
-    final focusNode = editable.widget.focusNode;
-    if (focusNode != null && !focusNode.hasFocus) {
-      debugPrint("[DEBUG] Restoring focus to editable after action");
-      focusNode.requestFocus();
+      switch (action) {
+        case "undo":
+          // 實作 undo 功能
+          break;
+        case "redo":
+          // 實作 redo 功能
+          break;
+        case "selectAll":
+          _handleSelectAll(controller);
+          break;
+        case "cut":
+          await _handleCut(controller, editable);
+          break;
+        case "copy":
+          _handleCopy(controller);
+          break;
+        case "paste":
+          await _handlePaste(controller, editable);
+          break;
+        case "find":
+          // 實作搜尋功能
+          break;
+      }
+
+      // 操作完後恢復焦點到編輯框
+      final focusNode = editable.widget.focusNode;
+      if (focusNode != null && !focusNode.hasFocus) {
+        debugPrint("[DEBUG] Restoring focus to editable after action");
+        focusNode.requestFocus();
+      }
+    } finally {
+      _finishEditorToolbarAction();
     }
   }
 
@@ -2066,7 +2103,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       } else {
         // 在游標位置插入文本
         debugPrint("[DEBUG] Paste Inserting at cursor position");
-        final offset = selection.baseOffset;
+        final offset = selection.isValid
+            ? _clampOffset(selection.baseOffset, controller.text.length)
+            : controller.text.length;
         newText = controller.text.replaceRange(
           offset,
           offset,

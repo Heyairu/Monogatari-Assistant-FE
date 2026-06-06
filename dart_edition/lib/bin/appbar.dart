@@ -8,6 +8,7 @@ class MonogatariTopAppBar extends StatelessWidget
   final bool showFindReplaceWindow;
   final ValueChanged<String> onFileAction;
   final Future<void> Function(String) onEditorAction;
+  final VoidCallback onEditorActionPointerDown;
   final VoidCallback onTogglePunctuationPanel;
   final VoidCallback onToggleFindReplaceWindow;
 
@@ -19,6 +20,7 @@ class MonogatariTopAppBar extends StatelessWidget
     required this.showFindReplaceWindow,
     required this.onFileAction,
     required this.onEditorAction,
+    required this.onEditorActionPointerDown,
     required this.onTogglePunctuationPanel,
     required this.onToggleFindReplaceWindow,
   });
@@ -116,24 +118,28 @@ class MonogatariTopAppBar extends StatelessWidget
                       iconSize: iconSize,
                       icon: const Icon(Icons.select_all),
                       onPressed: () => onEditorAction("selectAll"),
+                      onPointerDown: onEditorActionPointerDown,
                       tooltip: "Select All",
                     ),
                     _ToolbarEditButton(
                       iconSize: iconSize,
                       icon: const Icon(Icons.content_cut),
                       onPressed: () async => await onEditorAction("cut"),
+                      onPointerDown: onEditorActionPointerDown,
                       tooltip: "Cut",
                     ),
                     _ToolbarEditButton(
                       iconSize: iconSize,
                       icon: const Icon(Icons.content_copy),
                       onPressed: () => onEditorAction("copy"),
+                      onPointerDown: onEditorActionPointerDown,
                       tooltip: "Copy",
                     ),
                     _ToolbarEditButton(
                       iconSize: iconSize,
                       icon: const Icon(Icons.content_paste),
                       onPressed: () async => await onEditorAction("paste"),
+                      onPointerDown: onEditorActionPointerDown,
                       tooltip: "Paste",
                     ),
                   ],
@@ -209,12 +215,14 @@ class _ToolbarEditButton extends StatefulWidget {
   final double iconSize;
   final Widget icon;
   final Future<void> Function()? onPressed;
+  final VoidCallback onPointerDown;
   final String tooltip;
 
   const _ToolbarEditButton({
     required this.iconSize,
     required this.icon,
     required this.onPressed,
+    required this.onPointerDown,
     required this.tooltip,
   });
 
@@ -236,12 +244,15 @@ class _ToolbarEditButtonState extends State<_ToolbarEditButton> {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      focusNode: _focusNode,
-      iconSize: widget.iconSize,
-      icon: widget.icon,
-      onPressed: widget.onPressed == null ? null : () => widget.onPressed!(),
-      tooltip: widget.tooltip,
+    return Listener(
+      onPointerDown: (_) => widget.onPointerDown(),
+      child: IconButton(
+        focusNode: _focusNode,
+        iconSize: widget.iconSize,
+        icon: widget.icon,
+        onPressed: widget.onPressed == null ? null : () => widget.onPressed!(),
+        tooltip: widget.tooltip,
+      ),
     );
   }
 }
