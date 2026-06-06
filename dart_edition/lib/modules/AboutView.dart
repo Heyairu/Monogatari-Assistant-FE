@@ -26,7 +26,7 @@ class AboutView extends StatelessWidget {
           children: [
             // 應用圖標
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(32),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: Image.asset(
