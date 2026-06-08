@@ -275,36 +275,26 @@ class _SettingViewState extends ConsumerState<SettingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "主題模式",
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
+        Text("主題模式", style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
-        SegmentedButton<AppThemeMode>(
-          segments: const [
-            ButtonSegment<AppThemeMode>(
+        AppDropdownField<AppThemeMode>(
+          value: _themeViewState.themeMode,
+          labelText: "主題模式",
+          options: const [
+            DropdownOption<AppThemeMode>(
               value: AppThemeMode.light,
-              label: Text("淺色"),
-              icon: Icon(Icons.light_mode),
+              label: "淺色",
             ),
-            ButtonSegment<AppThemeMode>(
-              value: AppThemeMode.dark,
-              label: Text("深色"),
-              icon: Icon(Icons.dark_mode),
-            ),
-            ButtonSegment<AppThemeMode>(
+            DropdownOption<AppThemeMode>(value: AppThemeMode.dark, label: "深色"),
+            DropdownOption<AppThemeMode>(
               value: AppThemeMode.system,
-              label: Text("自動"),
-              icon: Icon(Icons.brightness_auto),
+              label: "自動",
             ),
           ],
-            selected: {_themeViewState.themeMode},
-          onSelectionChanged: (Set<AppThemeMode> newSelection) =>
-              ref
-                  .read(themeStateProvider.notifier)
-                  .setThemeMode(newSelection.first),
+          onChanged: (value) async {
+            if (value == null) return;
+            await ref.read(themeStateProvider.notifier).setThemeMode(value);
+          },
         ),
       ],
     );
@@ -367,11 +357,10 @@ class _SettingViewState extends ConsumerState<SettingView> {
                 children: [
                   Text("字數統計模式", style: Theme.of(context).textTheme.bodySmall),
                   Text(
-                    _settingsViewState.wordCountMode ==
-                            WordCountMode.characters
+                    _settingsViewState.wordCountMode == WordCountMode.characters
                         ? "純字元數 (不建議)"
                         : "全形字元 + 半形單字",
-                    style: Theme.of(context).textTheme.bodySmall
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -379,28 +368,25 @@ class _SettingViewState extends ConsumerState<SettingView> {
           ),
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: SegmentedButton<WordCountMode>(
-            segments: const [
-              ButtonSegment<WordCountMode>(
-                value: WordCountMode.characters,
-                label: Text("字元數 (不建議)"),
-                icon: Icon(Icons.abc),
-              ),
-              ButtonSegment<WordCountMode>(
-                value: WordCountMode.wordsAndCharacters,
-                label: Text("混合模式"),
-                icon: Icon(Icons.text_fields),
-              ),
-            ],
-            selected: {_settingsViewState.wordCountMode},
-            onSelectionChanged: (Set<WordCountMode> newSelection) async {
-              await ref
-                  .read(settingsStateProvider.notifier)
-                  .setWordCountMode(newSelection.first);
-            },
-          ),
+        AppDropdownField<WordCountMode>(
+          value: _settingsViewState.wordCountMode,
+          labelText: "字數統計模式",
+          options: const [
+            DropdownOption<WordCountMode>(
+              value: WordCountMode.characters,
+              label: "字元數 (不建議)",
+            ),
+            DropdownOption<WordCountMode>(
+              value: WordCountMode.wordsAndCharacters,
+              label: "混合模式",
+            ),
+          ],
+          onChanged: (value) async {
+            if (value == null) return;
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setWordCountMode(value);
+          },
         ),
       ],
     );

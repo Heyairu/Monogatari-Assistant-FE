@@ -50,6 +50,28 @@ class DragPayload {
   static String sceneString(String id) => scenePrefix + id;
 }
 
+class _OutlineEventIndex {
+  final int storylineIndex;
+  final int eventIndex;
+
+  const _OutlineEventIndex({
+    required this.storylineIndex,
+    required this.eventIndex,
+  });
+}
+
+class _OutlineSceneIndex {
+  final int storylineIndex;
+  final int eventIndex;
+  final int sceneIndex;
+
+  const _OutlineSceneIndex({
+    required this.storylineIndex,
+    required this.eventIndex,
+    required this.sceneIndex,
+  });
+}
+
 // MARK: - XML Codec for Outline
 class OutlineCodec {
   static List<StorylineData> _createSnapshot(List<StorylineData> source) {
@@ -576,36 +598,89 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   bool _hasHydratedInitialOutlineData = false;
 
   bool _registeredOutlineProviderListener = false;
+  List<StorylineData>? _indexedStorylines;
+  Map<String, int> _storylineIndexById = const <String, int>{};
+  Map<String, _OutlineEventIndex> _eventIndexById =
+      const <String, _OutlineEventIndex>{};
+  Map<String, _OutlineSceneIndex> _sceneIndexById =
+      const <String, _OutlineSceneIndex>{};
 
   List<StorylineData> get storylines => ref.read(outlineDataProvider);
   OutlineDataNotifier get _outlineNotifier =>
       ref.read(outlineDataProvider.notifier);
 
+  void _ensureOutlineIndexCurrent(List<StorylineData> currentStorylines) {
+    if (identical(_indexedStorylines, currentStorylines)) {
+      return;
+    }
+    _rebuildOutlineIndex(currentStorylines);
+  }
+
+  void _rebuildOutlineIndex(List<StorylineData> currentStorylines) {
+    final storylineIndexById = <String, int>{};
+    final eventIndexById = <String, _OutlineEventIndex>{};
+    final sceneIndexById = <String, _OutlineSceneIndex>{};
+
+    for (int si = 0; si < currentStorylines.length; si++) {
+      final storyline = currentStorylines[si];
+      storylineIndexById[storyline.chapterUUID] = si;
+
+      for (int ei = 0; ei < storyline.scenes.length; ei++) {
+        final event = storyline.scenes[ei];
+        eventIndexById[event.storyEventUUID] = _OutlineEventIndex(
+          storylineIndex: si,
+          eventIndex: ei,
+        );
+
+        for (int ci = 0; ci < event.scenes.length; ci++) {
+          final scene = event.scenes[ci];
+          sceneIndexById[scene.sceneUUID] = _OutlineSceneIndex(
+            storylineIndex: si,
+            eventIndex: ei,
+            sceneIndex: ci,
+          );
+        }
+      }
+    }
+
+    _indexedStorylines = currentStorylines;
+    _storylineIndexById = storylineIndexById;
+    _eventIndexById = eventIndexById;
+    _sceneIndexById = sceneIndexById;
+  }
+
   int? get selectedStorylineIndex {
     if (selectedStorylineID == null) return null;
-    final idx = storylines.indexWhere(
-      (sl) => sl.chapterUUID == selectedStorylineID,
-    );
-    return idx == -1 ? null : idx;
+    final currentStorylines = storylines;
+    _ensureOutlineIndexCurrent(currentStorylines);
+    return _storylineIndexById[selectedStorylineID!];
   }
 
   int? get selectedEventIndex {
     final si = selectedStorylineIndex;
     if (si == null || selectedEventID == null) return null;
-    final idx = storylines[si].scenes.indexWhere(
-      (ev) => ev.storyEventUUID == selectedEventID,
-    );
-    return idx == -1 ? null : idx;
+    final currentStorylines = storylines;
+    _ensureOutlineIndexCurrent(currentStorylines);
+    final eventIndex = _eventIndexById[selectedEventID!];
+    if (eventIndex == null || eventIndex.storylineIndex != si) {
+      return null;
+    }
+    return eventIndex.eventIndex;
   }
 
   int? get selectedSceneIndex {
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si == null || ei == null || selectedSceneID == null) return null;
-    final idx = storylines[si].scenes[ei].scenes.indexWhere(
-      (sc) => sc.sceneUUID == selectedSceneID,
-    );
-    return idx == -1 ? null : idx;
+    final currentStorylines = storylines;
+    _ensureOutlineIndexCurrent(currentStorylines);
+    final sceneIndex = _sceneIndexById[selectedSceneID!];
+    if (sceneIndex == null ||
+        sceneIndex.storylineIndex != si ||
+        sceneIndex.eventIndex != ei) {
+      return null;
+    }
+    return sceneIndex.sceneIndex;
   }
 
   void _bootstrapSelectionFromProviderIfNeeded() {
@@ -627,6 +702,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   void _syncSelectionIfNeeded(List<StorylineData> next) {
     bool needsSelectionSync = false;
+    _ensureOutlineIndexCurrent(next);
 
     if (next.isEmpty) {
       needsSelectionSync =
@@ -634,33 +710,30 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
           selectedEventID != null ||
           selectedSceneID != null;
     } else {
-      final hasStoryline =
-          selectedStorylineID != null &&
-          next.any((storyline) => storyline.chapterUUID == selectedStorylineID);
-      if (!hasStoryline) {
+      final storylineIndex = selectedStorylineID == null
+          ? null
+          : _storylineIndexById[selectedStorylineID!];
+      if (storylineIndex == null) {
         needsSelectionSync = true;
       } else {
-        final storyline = next.firstWhere(
-          (item) => item.chapterUUID == selectedStorylineID,
-        );
+        final storyline = next[storylineIndex];
         if (selectedEventID == null) {
           needsSelectionSync = storyline.scenes.isNotEmpty;
         } else {
-          final hasEvent = storyline.scenes.any(
-            (event) => event.storyEventUUID == selectedEventID,
-          );
-          if (!hasEvent) {
+          final eventIndex = _eventIndexById[selectedEventID!];
+          if (eventIndex == null ||
+              eventIndex.storylineIndex != storylineIndex) {
             needsSelectionSync = true;
           } else {
-            final event = storyline.scenes.firstWhere(
-              (item) => item.storyEventUUID == selectedEventID,
-            );
+            final event = storyline.scenes[eventIndex.eventIndex];
             if (selectedSceneID == null) {
               needsSelectionSync = event.scenes.isNotEmpty;
             } else {
-              needsSelectionSync = !event.scenes.any(
-                (scene) => scene.sceneUUID == selectedSceneID,
-              );
+              final sceneIndex = _sceneIndexById[selectedSceneID!];
+              needsSelectionSync =
+                  sceneIndex == null ||
+                  sceneIndex.storylineIndex != storylineIndex ||
+                  sceneIndex.eventIndex != eventIndex.eventIndex;
             }
           }
         }
@@ -959,8 +1032,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _initializeSelection() {
+    final currentStorylines = storylines;
+    _ensureOutlineIndexCurrent(currentStorylines);
+
     // 清空無效的選擇
-    if (storylines.isEmpty) {
+    if (currentStorylines.isEmpty) {
       selectedStorylineID = null;
       selectedEventID = null;
       selectedSceneID = null;
@@ -970,34 +1046,39 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
     // 如果當前選擇的故事線不存在，選擇第一個
     if (selectedStorylineID == null ||
-        !storylines.any((sl) => sl.chapterUUID == selectedStorylineID)) {
-      selectedStorylineID = storylines.first.chapterUUID;
+        _storylineIndexById[selectedStorylineID!] == null) {
+      selectedStorylineID = currentStorylines.first.chapterUUID;
       selectedEventID = null;
       selectedSceneID = null;
     }
 
     final si = selectedStorylineIndex;
-    if (si != null && si >= 0 && si < storylines.length) {
+    if (si != null && si >= 0 && si < currentStorylines.length) {
       // 檢查選擇的事件是否還存在
+      final eventIndex = selectedEventID == null
+          ? null
+          : _eventIndexById[selectedEventID!];
       if (selectedEventID == null ||
-          !storylines[si].scenes.any(
-            (ev) => ev.storyEventUUID == selectedEventID,
-          )) {
-        selectedEventID = storylines[si].scenes.isNotEmpty
-            ? storylines[si].scenes.first.storyEventUUID
+          eventIndex == null ||
+          eventIndex.storylineIndex != si) {
+        selectedEventID = currentStorylines[si].scenes.isNotEmpty
+            ? currentStorylines[si].scenes.first.storyEventUUID
             : null;
         selectedSceneID = null;
       }
 
       final ei = selectedEventIndex;
-      if (ei != null && ei >= 0 && ei < storylines[si].scenes.length) {
+      if (ei != null && ei >= 0 && ei < currentStorylines[si].scenes.length) {
         // 檢查選擇的場景是否還存在
+        final sceneIndex = selectedSceneID == null
+            ? null
+            : _sceneIndexById[selectedSceneID!];
         if (selectedSceneID == null ||
-            !storylines[si].scenes[ei].scenes.any(
-              (sc) => sc.sceneUUID == selectedSceneID,
-            )) {
-          selectedSceneID = storylines[si].scenes[ei].scenes.isNotEmpty
-              ? storylines[si].scenes[ei].scenes.first.sceneUUID
+            sceneIndex == null ||
+            sceneIndex.storylineIndex != si ||
+            sceneIndex.eventIndex != ei) {
+          selectedSceneID = currentStorylines[si].scenes[ei].scenes.isNotEmpty
+              ? currentStorylines[si].scenes[ei].scenes.first.sceneUUID
               : null;
         }
       } else {
@@ -1082,6 +1163,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     List<StorylineData> Function(List<StorylineData>) reduce,
   ) {
     _outlineNotifier.updateOutlineData((current) => reduce(current));
+    _ensureOutlineIndexCurrent(storylines);
   }
 
   void _reduceStorylineAt(
@@ -1380,7 +1462,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   @override
   Widget build(BuildContext context) {
     // Watch actual outline data for the UI.
-    ref.watch(outlineDataProvider);
+    final outlineStorylines = ref.watch(outlineDataProvider);
+    _ensureOutlineIndexCurrent(outlineStorylines);
     _bootstrapSelectionFromProviderIfNeeded();
 
     // Register the provider listener during build once (allowed by Riverpod).
@@ -2862,8 +2945,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   // MARK: - 刪除方法
   void _deleteStoryline(String id) {
-    final index = storylines.indexWhere((sl) => sl.chapterUUID == id);
-    if (index == -1) return;
+    final index = _storylineIndexById[id];
+    if (index == null) return;
 
     setState(() {
       _removeStorylineAt(index);
@@ -2877,13 +2960,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _deleteEvent(String id, int storylineIndex) {
-    final eventIndex = storylines[storylineIndex].scenes.indexWhere(
-      (ev) => ev.storyEventUUID == id,
-    );
-    if (eventIndex == -1) return;
+    final eventIndex = _eventIndexById[id];
+    if (eventIndex == null || eventIndex.storylineIndex != storylineIndex) {
+      return;
+    }
 
     setState(() {
-      _removeEventFromStoryline(storylineIndex, eventIndex);
+      _removeEventFromStoryline(storylineIndex, eventIndex.eventIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
       selectedEventID = storylines[storylineIndex].scenes.isNotEmpty
           ? storylines[storylineIndex].scenes.first.storyEventUUID
@@ -2895,12 +2978,15 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _deleteScene(String id, int storylineIndex, int eventIndex) {
-    final sceneIndex = storylines[storylineIndex].scenes[eventIndex].scenes
-        .indexWhere((sc) => sc.sceneUUID == id);
-    if (sceneIndex == -1) return;
+    final sceneIndex = _sceneIndexById[id];
+    if (sceneIndex == null ||
+        sceneIndex.storylineIndex != storylineIndex ||
+        sceneIndex.eventIndex != eventIndex) {
+      return;
+    }
 
     setState(() {
-      _removeSceneFromEvent(storylineIndex, eventIndex, sceneIndex);
+      _removeSceneFromEvent(storylineIndex, eventIndex, sceneIndex.sceneIndex);
       selectedStorylineID = storylines[storylineIndex].chapterUUID;
       selectedEventID =
           storylines[storylineIndex].scenes[eventIndex].storyEventUUID;
@@ -2927,33 +3013,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _moveEventToStoryline(String eventId, String toStorylineId) {
-    // 找到來源事件
-    int? sourceStorylineIdx;
-    int? sourceEventIdx;
-    for (int si = 0; si < storylines.length; si++) {
-      final ei = storylines[si].scenes.indexWhere(
-        (ev) => ev.storyEventUUID == eventId,
-      );
-      if (ei >= 0) {
-        sourceStorylineIdx = si;
-        sourceEventIdx = ei;
-        break;
-      }
-    }
-
-    if (sourceStorylineIdx == null || sourceEventIdx == null) return;
-
-    // 找到目標故事線
-    final targetStorylineIdx = storylines.indexWhere(
-      (sl) => sl.chapterUUID == toStorylineId,
-    );
-    if (targetStorylineIdx < 0 || targetStorylineIdx == sourceStorylineIdx)
+    final sourceEvent = _eventIndexById[eventId];
+    final targetStorylineIdx = _storylineIndexById[toStorylineId];
+    if (sourceEvent == null ||
+        targetStorylineIdx == null ||
+        targetStorylineIdx == sourceEvent.storylineIndex) {
       return;
+    }
 
     // 執行移動
     final movingEvent = _removeEventFromStoryline(
-      sourceStorylineIdx,
-      sourceEventIdx,
+      sourceEvent.storylineIndex,
+      sourceEvent.eventIndex,
     );
     _appendEventToStoryline(targetStorylineIdx, movingEvent);
 
@@ -2974,38 +3045,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     int targetStorylineIdx,
     int targetEventIdx,
   ) {
-    // 找到來源場景
-    int? sourceStorylineIdx;
-    int? sourceEventIdx;
-    int? sourceSceneIdx;
-    for (int si = 0; si < storylines.length; si++) {
-      for (int ei = 0; ei < storylines[si].scenes.length; ei++) {
-        final ci = storylines[si].scenes[ei].scenes.indexWhere(
-          (sc) => sc.sceneUUID == sceneId,
-        );
-        if (ci >= 0) {
-          sourceStorylineIdx = si;
-          sourceEventIdx = ei;
-          sourceSceneIdx = ci;
-          break;
-        }
-      }
-      if (sourceSceneIdx != null) break;
+    final sourceScene = _sceneIndexById[sceneId];
+    if (sourceScene == null) return;
+    if (sourceScene.storylineIndex == targetStorylineIdx &&
+        sourceScene.eventIndex == targetEventIdx) {
+      return;
     }
-
-    if (sourceStorylineIdx == null ||
-        sourceEventIdx == null ||
-        sourceSceneIdx == null)
-      return;
-    if (sourceStorylineIdx == targetStorylineIdx &&
-        sourceEventIdx == targetEventIdx)
-      return;
 
     // 執行移動
     final movingScene = _removeSceneFromEvent(
-      sourceStorylineIdx,
-      sourceEventIdx,
-      sourceSceneIdx,
+      sourceScene.storylineIndex,
+      sourceScene.eventIndex,
+      sourceScene.sceneIndex,
     );
     _appendSceneToEvent(targetStorylineIdx, targetEventIdx, movingScene);
 

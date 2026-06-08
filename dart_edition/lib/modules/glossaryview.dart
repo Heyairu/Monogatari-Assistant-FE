@@ -112,6 +112,7 @@ class GlossaryView extends ConsumerStatefulWidget {
 }
 
 class _GlossaryViewState extends ConsumerState<GlossaryView> {
+  final ScrollController _categoryTreeScrollController = ScrollController();
   final ScrollController _entryListScrollController = ScrollController();
 
   bool _isLoading = true;
@@ -135,6 +136,12 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   String? _editingCategoryId;
   TextEditingController? _categoryRenameController;
   final Set<String> _expandedCategoryIds = <String>{};
+  List<GlossaryCategory>? _indexedCategoryTree;
+  Map<String, GlossaryCategory> _categoryIndex =
+      const <String, GlossaryCategory>{};
+  Map<String, Set<String>> _descendantCategoryIdsById =
+      const <String, Set<String>>{};
+  Map<String, int> _subtreeEntryCountByCategoryId = const <String, int>{};
 
   void _bootstrapFromProviderState() {
     final initialState = ref.read(glossaryStateProvider);
@@ -167,6 +174,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   @override
   void dispose() {
     _categoryRenameController?.dispose();
+    _categoryTreeScrollController.dispose();
     _entryListScrollController.dispose();
     super.dispose();
   }
@@ -359,7 +367,45 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
   }
 
+  void _rebuildCategoryIndex(List<GlossaryCategory> categoryTree) {
+    final categoryIndex = <String, GlossaryCategory>{};
+    final descendantCategoryIdsById = <String, Set<String>>{};
+    final subtreeEntryCountByCategoryId = <String, int>{};
+
+    Set<String> walk(GlossaryCategory category) {
+      categoryIndex[category.id] = category;
+      int subtreeEntryCount = category.entryIds.length;
+      final descendants = <String>{};
+
+      for (final GlossaryCategory child in category.children) {
+        descendants.add(child.id);
+        descendants.addAll(walk(child));
+        subtreeEntryCount += subtreeEntryCountByCategoryId[child.id] ?? 0;
+      }
+
+      descendantCategoryIdsById[category.id] = descendants;
+      subtreeEntryCountByCategoryId[category.id] = subtreeEntryCount;
+      return descendants;
+    }
+
+    for (final GlossaryCategory category in categoryTree) {
+      walk(category);
+    }
+
+    _indexedCategoryTree = categoryTree;
+    _categoryIndex = categoryIndex;
+    _descendantCategoryIdsById = descendantCategoryIdsById;
+    _subtreeEntryCountByCategoryId = subtreeEntryCountByCategoryId;
+  }
+
   GlossaryCategory? _findCategoryById(String id, List<GlossaryCategory> nodes) {
+    if (identical(nodes, _indexedCategoryTree)) {
+      final GlossaryCategory? indexed = _categoryIndex[id];
+      if (indexed != null) {
+        return indexed;
+      }
+    }
+
     for (final GlossaryCategory node in nodes) {
       if (node.id == id) return node;
       final GlossaryCategory? found = _findCategoryById(id, node.children);
@@ -373,6 +419,13 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     String targetId,
     List<GlossaryCategory> categoryTree,
   ) {
+    if (identical(categoryTree, _indexedCategoryTree)) {
+      final descendants = _descendantCategoryIdsById[sourceId];
+      if (descendants != null) {
+        return descendants.contains(targetId);
+      }
+    }
+
     final GlossaryCategory? source = _findCategoryById(sourceId, categoryTree);
     if (source == null) return false;
 
@@ -470,6 +523,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   }
 
   int _countSubtreeEntries(GlossaryCategory category) {
+    final int? indexedCount = _subtreeEntryCountByCategoryId[category.id];
+    if (indexedCount != null) {
+      return indexedCount;
+    }
+
     int total = category.entryIds.length;
     for (final GlossaryCategory child in category.children) {
       total += _countSubtreeEntries(child);
@@ -1585,10 +1643,20 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             if (rows.isEmpty)
               Text("尚無詞語類別", style: Theme.of(context).textTheme.bodyMedium)
             else
-              Column(
-                children: rows
-                    .map((row) => _buildCategoryRow(row, categoryTree))
-                    .toList(),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: Scrollbar(
+                  controller: _categoryTreeScrollController,
+                  child: ListView.builder(
+                    controller: _categoryTreeScrollController,
+                    primary: false,
+                    padding: EdgeInsets.zero,
+                    itemCount: rows.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      return _buildCategoryRow(rows[index], categoryTree);
+                    },
+                  ),
+                ),
               ),
           ],
         ),
@@ -1838,22 +1906,21 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 constraints: const BoxConstraints(maxHeight: 320),
                 child: Scrollbar(
                   controller: _entryListScrollController,
-                  child: SingleChildScrollView(
+                  child: ListView.builder(
                     controller: _entryListScrollController,
-                    child: Column(
-                      children: visibleRefs
-                          .map(
-                            (ref) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _buildEntryRow(
-                                ref,
-                                categoryTree,
-                                entryIndex,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
+                    primary: false,
+                    padding: EdgeInsets.zero,
+                    itemCount: visibleRefs.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _buildEntryRow(
+                          visibleRefs[index],
+                          categoryTree,
+                          entryIndex,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -2158,6 +2225,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final Map<String, GlossaryEntry> entryIndex = ref.watch(
       glossaryStateProvider.select((glossaryState) => glossaryState.entryIndex),
     );
+    _rebuildCategoryIndex(categoryTree);
 
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

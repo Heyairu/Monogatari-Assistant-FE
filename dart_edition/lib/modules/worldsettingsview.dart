@@ -313,7 +313,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   String tempCustomVal = "";
   List<TemplatePreset> templatePresets = [];
   String selectedPresetName = "空白";
-  String renamePresetText = "";
+  Map<String, LocationData> _locationIndex = const <String, LocationData>{};
+  Map<String, Set<String>> _descendantIdsByLocationId =
+      const <String, Set<String>>{};
 
   // 拖動狀態與游標資訊
   bool _isDragging = false;
@@ -344,14 +346,28 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   List<_FlatNode> _buildFlatList(List<LocationData> locations) {
     final flatList = <_FlatNode>[];
-    void flatten(List<LocationData> nodes, int depth) {
-      for (var node in nodes) {
-        flatList.add(_FlatNode(node, depth));
-        flatten(node.child, depth + 1);
+    final locationIndex = <String, LocationData>{};
+    final descendantIdsByLocationId = <String, Set<String>>{};
+
+    Set<String> flatten(LocationData node, int depth) {
+      flatList.add(_FlatNode(node, depth));
+      locationIndex[node.id] = node;
+
+      final descendants = <String>{};
+      for (final child in node.child) {
+        descendants.add(child.id);
+        descendants.addAll(flatten(child, depth + 1));
       }
+      descendantIdsByLocationId[node.id] = descendants;
+      return descendants;
     }
 
-    flatten(locations, 0);
+    for (final location in locations) {
+      flatten(location, 0);
+    }
+
+    _locationIndex = locationIndex;
+    _descendantIdsByLocationId = descendantIdsByLocationId;
     return flatList;
   }
 
@@ -429,8 +445,13 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
+    _refreshLocationIndex();
     _syncDetailControllers();
     _notifyChange();
+  }
+
+  void _refreshLocationIndex() {
+    _buildFlatList(ref.read(worldSettingsDataProvider));
   }
 
   void _removeCustomValue(String locationId, int customValueIndex) {
@@ -704,14 +725,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
     // 標題組件
     Widget titleWidget = isEditing
-        ? TextField(
-            autofocus: true,
-            controller: TextEditingController(text: location.localName),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            ),
+        ? _EditableLocationName(
+            key: ValueKey("location-name-editor-${location.id}"),
+            name: location.localName,
             onSubmitted: (value) {
               _renameNode(location.id, value);
               setState(() {
@@ -1144,34 +1160,17 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     );
   }
 
-  void _showRenamePresetDialog() {
-    renamePresetText = selectedPresetName;
-    showDialog(
+  Future<void> _showRenamePresetDialog() async {
+    final newName = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("更改預設名稱"),
-        content: TextField(
-          controller: TextEditingController(text: renamePresetText),
-          decoration: const InputDecoration(labelText: "新模板名稱"),
-          onChanged: (value) {
-            renamePresetText = value;
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("取消"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _renameSelectedPreset(renamePresetText);
-            },
-            child: const Text("確定"),
-          ),
-        ],
+      builder: (context) => _RenamePresetDialog(
+        initialName: selectedPresetName,
       ),
     );
+    if (!mounted || newName == null) {
+      return;
+    }
+    _renameSelectedPreset(newName);
   }
 
   void _renameSelectedPreset(String newName) {
@@ -1391,6 +1390,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
+    _refreshLocationIndex();
     _notifyChange();
   }
 
@@ -1401,6 +1401,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   // MARK: - 拖動相關方法
 
   bool _isDescendant(String sourceId, String targetId) {
+    final descendants = _descendantIdsByLocationId[sourceId];
+    if (descendants != null) {
+      return descendants.contains(targetId);
+    }
+
     final sourceNode = _getLocation(sourceId, _locations);
     if (sourceNode == null) {
       return false;
@@ -1441,6 +1446,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
+    _refreshLocationIndex();
     _notifyChange();
   }
 
@@ -1452,6 +1458,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
+    _refreshLocationIndex();
     if (selectedNodeId == id || lastSelectedNodeId == id) {
       setState(() {
         if (selectedNodeId == id) {
@@ -1467,10 +1474,19 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     _notifyChange();
   }
 
-  LocationData? _getLocation(String id, List<LocationData> locations) {
+  LocationData? _getLocation(String id, [List<LocationData>? locations]) {
+    final indexed = _locationIndex[id];
+    if (indexed != null) {
+      return indexed;
+    }
+
+    return _findLocation(id, locations ?? _locations);
+  }
+
+  LocationData? _findLocation(String id, List<LocationData> locations) {
     for (final location in locations) {
       if (location.id == id) return location;
-      final found = _getLocation(id, location.child);
+      final found = _findLocation(id, location.child);
       if (found != null) return found;
     }
     return null;
@@ -1479,22 +1495,32 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   void _syncDetailControllers() {
     final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
     if (displayNodeId == null) {
-      locationNameController.clear();
-      locationTypeController.clear();
-      locationNoteController.clear();
+      _setControllerTextIfChanged(locationNameController, "");
+      _setControllerTextIfChanged(locationTypeController, "");
+      _setControllerTextIfChanged(locationNoteController, "");
       return;
     }
     final location = _getLocation(displayNodeId, _locations);
     if (location != null) {
-      locationNameController.text = location.localName;
-      locationTypeController.text = location.localType;
-      locationNoteController.text = location.note;
+      _setControllerTextIfChanged(locationNameController, location.localName);
+      _setControllerTextIfChanged(locationTypeController, location.localType);
+      _setControllerTextIfChanged(locationNoteController, location.note);
       return;
     }
 
-    locationNameController.clear();
-    locationTypeController.clear();
-    locationNoteController.clear();
+    _setControllerTextIfChanged(locationNameController, "");
+    _setControllerTextIfChanged(locationTypeController, "");
+    _setControllerTextIfChanged(locationNoteController, "");
+  }
+
+  void _setControllerTextIfChanged(
+    TextEditingController controller,
+    String text,
+  ) {
+    if (controller.text == text) {
+      return;
+    }
+    controller.text = text;
   }
 
   void _showErrorDialog(String message) {
@@ -1534,6 +1560,113 @@ class _FlatNode {
   final LocationData node;
   final int depth;
   _FlatNode(this.node, this.depth);
+}
+
+class _EditableLocationName extends StatefulWidget {
+  final String name;
+  final ValueChanged<String> onSubmitted;
+  final VoidCallback onEditingComplete;
+
+  const _EditableLocationName({
+    super.key,
+    required this.name,
+    required this.onSubmitted,
+    required this.onEditingComplete,
+  });
+
+  @override
+  State<_EditableLocationName> createState() => _EditableLocationNameState();
+}
+
+class _EditableLocationNameState extends State<_EditableLocationName> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.name);
+  }
+
+  @override
+  void didUpdateWidget(_EditableLocationName oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.name == _controller.text) {
+      return;
+    }
+    _controller.value = TextEditingValue(
+      text: widget.name,
+      selection: TextSelection.collapsed(offset: widget.name.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      autofocus: true,
+      controller: _controller,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      ),
+      onSubmitted: widget.onSubmitted,
+      onEditingComplete: widget.onEditingComplete,
+    );
+  }
+}
+
+class _RenamePresetDialog extends StatefulWidget {
+  final String initialName;
+
+  const _RenamePresetDialog({required this.initialName});
+
+  @override
+  State<_RenamePresetDialog> createState() => _RenamePresetDialogState();
+}
+
+class _RenamePresetDialogState extends State<_RenamePresetDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("更改預設名稱"),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: "新模板名稱"),
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text("取消"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text("確定"),
+        ),
+      ],
+    );
+  }
 }
 
 class _CustomValueRow extends StatefulWidget {

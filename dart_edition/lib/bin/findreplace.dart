@@ -65,7 +65,13 @@ class HighlightTextEditingController extends CodeController {
   set value(TextEditingValue newValue) {
     final bool textChanged = newValue.text != text;
     if (textChanged) {
-      _rebuildHighlightIndices(newValue.text.length);
+      // Text edits make existing highlight ranges stale. Drop them before
+      // CodeField asks for a new span so typing does not rebuild old indices.
+      if (hasHighlights || currentMatchIndex != -1) {
+        clearAllHighlights(notify: false);
+      } else {
+        _invalidateSpanCache();
+      }
     }
     super.value = newValue;
   }
@@ -81,7 +87,8 @@ class HighlightTextEditingController extends CodeController {
   Color fillerWordColor = Colors.blue;
 
   static const List<TextSelection> _emptySelections = <TextSelection>[];
-  static const int _MAX_SEARCH_RESULTS = 1000;
+  static const int maxSearchResults = 2048;
+  static const int _MAX_SEARCH_RESULTS = maxSearchResults;
 
   int _highlightRevision = 0;
   String? _cachedSpanText;
@@ -102,6 +109,26 @@ class HighlightTextEditingController extends CodeController {
     <TextSelection>[],
     <int>[],
   );
+
+  bool get hasHighlights =>
+      searchMatches.isNotEmpty ||
+      punctuationMatches.isNotEmpty ||
+      fillerWordMatches.isNotEmpty;
+
+  bool hasSameSearchMatches(List<TextSelection> matches) {
+    if (matches.length != searchMatches.length) {
+      return false;
+    }
+
+    for (int i = 0; i < matches.length; i++) {
+      if (matches[i].start != searchMatches[i].start ||
+          matches[i].end != searchMatches[i].end) {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   @override
   TextSpan buildTextSpan({
@@ -202,19 +229,6 @@ class HighlightTextEditingController extends CodeController {
     return span;
   }
 
-  void _rebuildHighlightIndices(int textLength) {
-    _searchIndex = _SelectionCoverageIndex.fromRaw(searchMatches, textLength);
-    _punctuationIndex = _SelectionCoverageIndex.fromRaw(
-      punctuationMatches,
-      textLength,
-    );
-    _fillerIndex = _SelectionCoverageIndex.fromRaw(
-      fillerWordMatches,
-      textLength,
-    );
-    _invalidateSpanCache();
-  }
-
   void _invalidateSpanCache() {
     _highlightRevision++;
     _cachedSpanText = null;
@@ -311,6 +325,7 @@ class HighlightTextEditingController extends CodeController {
 
     // 如果提供了與當前文本長度相容的預編譯索引，直接使用；否則重新構建。
     if (precomputedIndex != null &&
+        matches.length <= _MAX_SEARCH_RESULTS &&
         precomputedIndex.isCompatibleWithTextLength(textLength)) {
       _searchIndex = precomputedIndex;
     } else {
@@ -321,12 +336,45 @@ class HighlightTextEditingController extends CodeController {
     notifyListeners();
   }
 
+  void updateCurrentSearchMatchIndex(int nextIndex) {
+    final int normalizedIndex =
+        nextIndex >= 0 && nextIndex < searchMatches.length ? nextIndex : -1;
+    if (currentMatchIndex == normalizedIndex) {
+      return;
+    }
+
+    currentMatchIndex = normalizedIndex;
+    _invalidateSpanCache();
+    notifyListeners();
+  }
+
   void clearSearchHighlights() {
     searchMatches = _emptySelections;
     currentMatchIndex = -1;
     _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
     _invalidateSpanCache();
     notifyListeners();
+  }
+
+  void clearAllHighlights({bool notify = true}) {
+    if (!hasHighlights && currentMatchIndex == -1) {
+      return;
+    }
+
+    searchMatches = _emptySelections;
+    currentMatchIndex = -1;
+    punctuationMatches = _emptySelections;
+    fillerWordMatches = _emptySelections;
+    _searchIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _punctuationIndex = const _SelectionCoverageIndex._(
+      <TextSelection>[],
+      <int>[],
+    );
+    _fillerIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _invalidateSpanCache();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   void updateFillerHighlights({
@@ -482,8 +530,9 @@ class _FindParams {
   final String text;
   final String findText;
   final FindReplaceOptions options;
+  final int? maxResults;
 
-  _FindParams(this.text, this.findText, this.options);
+  _FindParams(this.text, this.findText, this.options, {this.maxResults});
 }
 
 // 搜尋結果 + 預編譯索引（返回自 Isolate）
@@ -508,7 +557,12 @@ class _HighlightUpdate {
 
 // Isolate 執行的任務函數：搜尋 + 預計算索引
 _HighlightUpdate _findAllMatchesTask(_FindParams params) {
-  final matches = findAllMatchesSync(params.text, params.findText, params.options);
+  final matches = findAllMatchesSync(
+    params.text,
+    params.findText,
+    params.options,
+    maxResults: params.maxResults,
+  );
 
   // 預計算 prefix-max 數據供快速索引重建
   final List<int> prefixMaxEnds = <int>[];
@@ -547,12 +601,27 @@ Future<void> performFind(
     return;
   }
 
-  // 找出所有匹配項 (使用 compute，背景執行 + 預計算索引)
-  final highlightUpdate = await findAllMatchesAsync(text, findText, options);
-  if (textController.text != text) {
-    return;
+  _HighlightUpdate? highlightUpdate;
+  final List<TextSelection> searchMatches;
+  final bool canReuseCurrentMatches =
+      currentMatches.isNotEmpty &&
+      textController.hasSameSearchMatches(currentMatches);
+
+  if (canReuseCurrentMatches) {
+    searchMatches = currentMatches;
+  } else {
+    // 找出所有匹配項 (使用 compute，背景執行 + 預計算索引)
+    highlightUpdate = await findAllMatchesAsync(
+      text,
+      findText,
+      options,
+      maxResults: HighlightTextEditingController.maxSearchResults,
+    );
+    if (textController.text != text) {
+      return;
+    }
+    searchMatches = highlightUpdate.matches;
   }
-  final List<TextSelection> searchMatches = highlightUpdate.matches;
 
   if (searchMatches.isEmpty) {
     textController.updateSearchHighlights(matches: [], currentIndex: -1);
@@ -596,23 +665,30 @@ Future<void> performFind(
     }
   }
 
-  // 更新高亮顯示（傳遞預編譯的索引以避免重新計算）
-  textController.updateSearchHighlights(
-    matches: searchMatches,
-    currentIndex: newMatchIndex,
-    precomputedIndex: highlightUpdate.buildSearchIndex(),
-  );
+  if (canReuseCurrentMatches) {
+    textController.updateCurrentSearchMatchIndex(newMatchIndex);
+  } else {
+    // 更新高亮顯示（傳遞預編譯的索引以避免重新計算）
+    textController.updateSearchHighlights(
+      matches: searchMatches,
+      currentIndex: newMatchIndex,
+      precomputedIndex: highlightUpdate!.buildSearchIndex(),
+    );
+  }
+
+  final List<TextSelection> visibleMatches = textController.searchMatches;
+  final int visibleMatchIndex = textController.currentMatchIndex;
 
   // 選中當前匹配項
-  if (newMatchIndex >= 0 && newMatchIndex < searchMatches.length) {
-    final match = searchMatches[newMatchIndex];
+  if (visibleMatchIndex >= 0 && visibleMatchIndex < visibleMatches.length) {
+    final match = visibleMatches[visibleMatchIndex];
     textController.selection = match;
   }
 
   // 請求焦點以顯示選取效果
   editorFocusNode.requestFocus();
 
-  onStateUpdate(searchMatches, newMatchIndex); // 更新 UI 以顯示當前匹配數
+  onStateUpdate(visibleMatches, visibleMatchIndex); // 更新 UI 以顯示當前匹配數
 }
 
 /// 執行取代（取代當前選中的項目）
@@ -847,15 +923,16 @@ Future<void> performReplaceAll(
 Future<_HighlightUpdate> findAllMatchesAsync(
   String text,
   String findText,
-  FindReplaceOptions options,
-) async {
+  FindReplaceOptions options, {
+  int? maxResults,
+}) async {
   if (text.isEmpty || findText.isEmpty) {
     return _HighlightUpdate(matches: [], prefixMaxEnds: []);
   }
   // 使用 compute 在背景 isolate 執行計算，避免阻塞 UI
   return await compute(
     _findAllMatchesTask,
-    _FindParams(text, findText, options),
+    _FindParams(text, findText, options, maxResults: maxResults),
   );
 }
 
@@ -863,8 +940,9 @@ Future<_HighlightUpdate> findAllMatchesAsync(
 List<TextSelection> findAllMatchesSync(
   String text,
   String findText,
-  FindReplaceOptions options,
-) {
+  FindReplaceOptions options, {
+  int? maxResults,
+}) {
   final matches = <TextSelection>[];
 
   if (findText.isEmpty) return matches;
@@ -882,6 +960,9 @@ List<TextSelection> findAllMatchesSync(
           matches.add(
             TextSelection(baseOffset: match.start, extentOffset: match.end),
           );
+          if (maxResults != null && matches.length >= maxResults) {
+            break;
+          }
         }
       }
 
@@ -974,6 +1055,9 @@ List<TextSelection> findAllMatchesSync(
       matches.add(
         TextSelection(baseOffset: matchStart, extentOffset: textIndex),
       );
+      if (maxResults != null && matches.length >= maxResults) {
+        break;
+      }
 
       // 跳過已匹配的範圍，避免重疊匹配
       i = textIndex;

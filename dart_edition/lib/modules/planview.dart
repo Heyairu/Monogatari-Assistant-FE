@@ -1526,11 +1526,12 @@ class _PlanViewState extends ConsumerState<PlanView> {
           ),
           child: inspirationFolders.isEmpty && inspirationNotes.isEmpty
               ? const Center(child: Text("尚無靈感，請新增資料夾或靈感"))
-              : ListView(
+              : ListView.builder(
                   padding: const EdgeInsets.all(8),
-                  children: [
-                    if (_showRootDirectory)
-                      ListTile(
+                  itemCount: entries.length + (_showRootDirectory ? 1 : 0),
+                  itemBuilder: (BuildContext context, int index) {
+                    if (_showRootDirectory && index == 0) {
+                      return ListTile(
                         selected:
                             selectedFolderId == null &&
                             selectedInspirationId == null,
@@ -1543,117 +1544,118 @@ class _PlanViewState extends ConsumerState<PlanView> {
                             _syncInspirationControllers();
                           });
                         },
-                      ),
-                    ...entries.map((entry) {
-                      final isFolder =
-                          entry.type == _InspirationLayerType.folder;
-                      final isSelected = isFolder
-                          ? (selectedFolderId == entry.id &&
-                                selectedInspirationId == null)
-                          : selectedInspirationId == entry.id;
-                      final isCollapsed =
-                          isFolder && collapsedFolderIds.contains(entry.id);
+                      );
+                    }
 
-                      return DraggableCardNode<_InspirationDragData>(
-                        key: ValueKey(entry.nodeKey),
-                        dragData: _InspirationDragData(
-                          id: entry.id,
-                          type: entry.type,
-                        ),
-                        nodeId: entry.nodeKey,
-                        nodeType: isFolder ? NodeType.folder : NodeType.item,
-                        leading: Icon(
-                          isFolder
-                              ? (isCollapsed
-                                    ? Icons.folder_outlined
-                                    : Icons.folder_open_outlined)
-                              : Icons.lightbulb_outline,
-                          color: Theme.of(context).colorScheme.primary,
-                          size: 20,
-                        ),
-                        title: Text(entry.title),
-                        subtitle: entry.subtitle == null
-                            ? null
-                            : Text(
-                                entry.subtitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isFolder)
-                              IconButton(
-                                onPressed: () =>
-                                    _toggleFolderCollapsed(entry.id),
-                                tooltip: isCollapsed ? "展開" : "收合",
-                                icon: Icon(
-                                  isCollapsed
-                                      ? Icons.chevron_right
-                                      : Icons.expand_more,
-                                ),
-                              ),
+                    final entry = entries[index - (_showRootDirectory ? 1 : 0)];
+                    final isFolder =
+                        entry.type == _InspirationLayerType.folder;
+                    final isSelected = isFolder
+                        ? (selectedFolderId == entry.id &&
+                              selectedInspirationId == null)
+                        : selectedInspirationId == entry.id;
+                    final isCollapsed =
+                        isFolder && collapsedFolderIds.contains(entry.id);
+
+                    return DraggableCardNode<_InspirationDragData>(
+                      key: ValueKey(entry.nodeKey),
+                      dragData: _InspirationDragData(
+                        id: entry.id,
+                        type: entry.type,
+                      ),
+                      nodeId: entry.nodeKey,
+                      nodeType: isFolder ? NodeType.folder : NodeType.item,
+                      leading: Icon(
+                        isFolder
+                            ? (isCollapsed
+                                  ? Icons.folder_outlined
+                                  : Icons.folder_open_outlined)
+                            : Icons.lightbulb_outline,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 20,
+                      ),
+                      title: Text(entry.title),
+                      subtitle: entry.subtitle == null
+                          ? null
+                          : Text(
+                              entry.subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isFolder)
                             IconButton(
-                              onPressed: () {
-                                if (isFolder) {
-                                  _deleteInspirationFolder(entry.id);
-                                } else {
-                                  _deleteInspirationNote(entry.id);
-                                }
-                              },
+                              onPressed: () =>
+                                  _toggleFolderCollapsed(entry.id),
+                              tooltip: isCollapsed ? "展開" : "收合",
                               icon: Icon(
-                                Icons.delete_outline,
-                                color: Theme.of(context).colorScheme.error,
+                                isCollapsed
+                                    ? Icons.chevron_right
+                                    : Icons.expand_more,
                               ),
                             ),
-                          ],
-                        ),
-                        isSelected: isSelected,
-                        onClicked: () {
-                          setState(() {
-                            if (isFolder) {
-                              selectedFolderId = entry.id;
-                              selectedInspirationId = null;
-                            } else {
-                              selectedInspirationId = entry.id;
-                              selectedFolderId = entry.folderContextId;
-                              _syncInspirationControllers();
-                            }
-                          });
-                        },
-                        isDragging: _isInspirationDragging,
-                        isThisDragging:
-                            _draggingInspirationNodeKey == entry.nodeKey,
-                        isDragForbidden: false,
-                        onDragStarted: () {
-                          setState(() {
-                            _isInspirationDragging = true;
-                            _draggingInspirationNodeKey = entry.nodeKey;
-                          });
-                        },
-                        onDragEnd: () {
-                          setState(() {
-                            _isInspirationDragging = false;
-                            _draggingInspirationNodeKey = null;
-                          });
-                        },
-                        getDropZoneSize: (pos) {
+                          IconButton(
+                            onPressed: () {
+                              if (isFolder) {
+                                _deleteInspirationFolder(entry.id);
+                              } else {
+                                _deleteInspirationNote(entry.id);
+                              }
+                            },
+                            icon: Icon(
+                              Icons.delete_outline,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                      isSelected: isSelected,
+                      onClicked: () {
+                        setState(() {
                           if (isFolder) {
-                            if (pos == DropPosition.child) return 0.34;
-                            return 0.33;
+                            selectedFolderId = entry.id;
+                            selectedInspirationId = null;
+                          } else {
+                            selectedInspirationId = entry.id;
+                            selectedFolderId = entry.folderContextId;
+                            _syncInspirationControllers();
                           }
-                          return pos == DropPosition.child ? 0.0 : 0.5;
-                        },
-                        onWillAccept: (data, pos) {
-                          return _canAcceptInspirationDrop(data, entry, pos);
-                        },
-                        onAccept: (data, pos) {
-                          _handleInspirationDrop(data, entry, pos);
-                        },
-                        indent: entry.depth * 28.0,
-                      );
-                    }),
-                  ],
+                        });
+                      },
+                      isDragging: _isInspirationDragging,
+                      isThisDragging:
+                          _draggingInspirationNodeKey == entry.nodeKey,
+                      isDragForbidden: false,
+                      onDragStarted: () {
+                        setState(() {
+                          _isInspirationDragging = true;
+                          _draggingInspirationNodeKey = entry.nodeKey;
+                        });
+                      },
+                      onDragEnd: () {
+                        setState(() {
+                          _isInspirationDragging = false;
+                          _draggingInspirationNodeKey = null;
+                        });
+                      },
+                      getDropZoneSize: (pos) {
+                        if (isFolder) {
+                          if (pos == DropPosition.child) return 0.34;
+                          return 0.33;
+                        }
+                        return pos == DropPosition.child ? 0.0 : 0.5;
+                      },
+                      onWillAccept: (data, pos) {
+                        return _canAcceptInspirationDrop(data, entry, pos);
+                      },
+                      onAccept: (data, pos) {
+                        _handleInspirationDrop(data, entry, pos);
+                      },
+                      indent: entry.depth * 28.0,
+                    );
+                  },
                 ),
         ),
         const SizedBox(height: 8),

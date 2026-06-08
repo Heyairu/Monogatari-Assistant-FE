@@ -1335,11 +1335,20 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Timer? _debounceTimer;
   bool _hasHydratedInitialCharacterData = false;
   bool _registeredCharacterDataListener = false;
+  final Set<String> _dirtyControllerKeys = <String>{};
+  bool _structuredFieldsDirty = false;
+  CharacterEntryData? _loadedCharacterEntrySnapshot;
 
-  void _markAsModified() {
+  void _markAsModified({String? controllerKey, bool structuredFields = false}) {
+    if (controllerKey != null) {
+      _dirtyControllerKeys.add(controllerKey);
+    }
+    if (structuredFields) {
+      _structuredFieldsDirty = true;
+    }
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 1000), () {
-      if (mounted) _saveCurrentCharacterData();
+      if (mounted) _saveCurrentCharacterData(forceStructuredFields: false);
     });
   }
 
@@ -1354,7 +1363,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (nameController != null) {
       nameController.addListener(() {
         if (_isLoading) return;
-        _markAsModified();
+        _markAsModified(controllerKey: "name");
       });
     }
 
@@ -1363,7 +1372,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       if (entry.key == "name") continue; // Handled specially
 
       entry.value.addListener(() {
-        if (!_isLoading) _markAsModified();
+        if (!_isLoading) _markAsModified(controllerKey: entry.key);
       });
     }
   }
@@ -2196,7 +2205,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               selectedAlignment = value;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2331,7 +2340,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (bool? value) {
             setState(() {
               values[entry.key] = value ?? false;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2355,7 +2364,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             onChanged: (value) {
               setState(() {
                 selectedRelationship = value;
-                _markAsModified();
+                _markAsModified(structuredFields: true);
               });
             },
           ),
@@ -2379,7 +2388,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               isFindNewLove = value ?? false;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         ),
@@ -2391,7 +2400,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               isHarem = value ?? false;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         ),
@@ -2413,7 +2422,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               commonAbilityValues[index] = value;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2433,7 +2442,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               socialItemValues[index] = value;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2453,7 +2462,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               approachValues[index] = value;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2473,7 +2482,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onChanged: (value) {
             setState(() {
               traitsValues[index] = value;
-              _markAsModified();
+              _markAsModified(structuredFields: true);
             });
           },
         );
@@ -2498,10 +2507,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   // 儲存當前角色資料
-  void _saveCurrentCharacterData() {
+  void _saveCurrentCharacterData({bool forceStructuredFields = true}) {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     final currentName = selectedCharacter;
     if (currentName == null) return;
+    if (forceStructuredFields) {
+      _structuredFieldsDirty = true;
+    }
 
     final desiredName = (_controllers["name"]?.text ?? "").trim();
     final targetName = desiredName.isEmpty ? currentName : desiredName;
@@ -2517,7 +2529,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return;
     }
 
-    final nextEntry = _buildDraftCharacterEntry(targetName);
+    final baseEntry =
+        currentData[currentName] ??
+        _loadedCharacterEntrySnapshot ??
+        CharacterEntryData.withName(currentName);
+    final nextEntry = _buildDraftCharacterEntry(
+      targetName,
+      baseEntry: baseEntry,
+      changedControllerKeys: _dirtyControllerKeys,
+      includeStructuredFields: _structuredFieldsDirty,
+    );
 
     if (targetName == currentName) {
       final didUpdate = _characterNotifier.setCharacterEntry(
@@ -2527,6 +2548,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       if (didUpdate) {
         _emitCharacterDataChanged();
       }
+      _commitSavedCharacterEntrySnapshot(nextEntry);
       _setNameFieldTextSilently(targetName);
       return;
     }
@@ -2559,6 +2581,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     _characterNotifier.setCharacterData(nextCharacterData);
     _emitCharacterDataChanged();
+    _commitSavedCharacterEntrySnapshot(nextEntry);
     _setNameFieldTextSilently(targetName);
 
     setState(() {
@@ -2567,42 +2590,65 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     });
   }
 
-  CharacterEntryData _buildDraftCharacterEntry(String fallbackName) {
-    final data = <String, dynamic>{};
+  void _commitSavedCharacterEntrySnapshot(CharacterEntryData entry) {
+    _loadedCharacterEntrySnapshot = CharacterCodec.copyCharacterEntry(entry);
+    _dirtyControllerKeys.clear();
+    _structuredFieldsDirty = false;
+  }
 
-    // Save all text controllers
-    for (final key in CharacterCodec.allControllerKeys) {
-      data[key] = _controllers[key]?.text ?? "";
+  CharacterEntryData _buildDraftCharacterEntry(
+    String fallbackName, {
+    required CharacterEntryData baseEntry,
+    required Set<String> changedControllerKeys,
+    required bool includeStructuredFields,
+  }) {
+    CharacterEntryData nextEntry = CharacterCodec.copyCharacterEntry(baseEntry);
+
+    if (changedControllerKeys.isNotEmpty ||
+        (nextEntry.textFields["name"] ?? "") != fallbackName) {
+      final nextTextFields = Map<String, String>.from(nextEntry.textFields);
+      for (final key in changedControllerKeys) {
+        nextTextFields[key] = _controllers[key]?.text ?? "";
+      }
+      nextTextFields["name"] = fallbackName;
+      nextEntry = nextEntry.copyWith(textFields: nextTextFields);
     }
 
-    // Add complex data (raw), then normalize with deep copy in a single path.
-    data["alignment"] = selectedAlignment;
-    data["hinderEvents"] = hinderEvents;
-    data["loveToDoList"] = loveToDoList;
-    data["hateToDoList"] = hateToDoList;
-    data["wantToDoList"] = wantToDoList;
-    data["fearToDoList"] = fearToDoList;
-    data["proficientToDoList"] = proficientToDoList;
-    data["unProficientToDoList"] = unProficientToDoList;
-    data["commonAbilityValues"] = commonAbilityValues;
-    data["howToShowLove"] = howToShowLove;
-    data["howToShowGoodwill"] = howToShowGoodwill;
-    data["handleHatePeople"] = handleHatePeople;
-    data["socialItemValues"] = socialItemValues;
-    data["relationship"] = selectedRelationship;
-    data["isFindNewLove"] = isFindNewLove;
-    data["isHarem"] = isHarem;
-    data["approachValues"] = approachValues;
-    data["traitsValues"] = traitsValues;
-    data["likeItemList"] = likeItemList;
-    data["admireItemList"] = admireItemList;
-    data["hateItemList"] = hateItemList;
-    data["fearItemList"] = fearItemList;
-    data["familiarItemList"] = familiarItemList;
+    if (!includeStructuredFields) {
+      return nextEntry.withTextField("name", fallbackName);
+    }
 
-    return CharacterEntryData.fromLegacyMap(
-      data,
-      fallbackName: fallbackName,
+    return nextEntry.copyWith(
+      alignment: selectedAlignment,
+      hinderEvents: hinderEvents
+          .map(
+            (event) => CharacterHinderEvent(
+              event: event["event"] ?? "",
+              solve: event["solve"] ?? "",
+            ),
+          )
+          .toList(growable: false),
+      loveToDoList: List<String>.from(loveToDoList),
+      hateToDoList: List<String>.from(hateToDoList),
+      wantToDoList: List<String>.from(wantToDoList),
+      fearToDoList: List<String>.from(fearToDoList),
+      proficientToDoList: List<String>.from(proficientToDoList),
+      unProficientToDoList: List<String>.from(unProficientToDoList),
+      commonAbilityValues: List<double>.from(commonAbilityValues),
+      howToShowLove: Map<String, bool>.from(howToShowLove),
+      howToShowGoodwill: Map<String, bool>.from(howToShowGoodwill),
+      handleHatePeople: Map<String, bool>.from(handleHatePeople),
+      socialItemValues: List<double>.from(socialItemValues),
+      relationship: selectedRelationship,
+      isFindNewLove: isFindNewLove,
+      isHarem: isHarem,
+      approachValues: List<double>.from(approachValues),
+      traitsValues: List<double>.from(traitsValues),
+      likeItemList: List<String>.from(likeItemList),
+      admireItemList: List<String>.from(admireItemList),
+      hateItemList: List<String>.from(hateItemList),
+      fearItemList: List<String>.from(fearItemList),
+      familiarItemList: List<String>.from(familiarItemList),
     ).withTextField("name", fallbackName);
   }
 
@@ -2717,10 +2763,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       if (_controllers.containsKey("name")) {
         _controllers["name"]!.text = characterName;
       }
+      _loadedCharacterEntrySnapshot = CharacterEntryData.withName(
+        characterName,
+      );
+      _dirtyControllerKeys.clear();
+      _structuredFieldsDirty = false;
       _isLoading = false;
       return;
     }
 
+    _loadedCharacterEntrySnapshot = CharacterCodec.copyCharacterEntry(data);
     final normalizedData = data.toLegacyMap();
 
     // Load all text controllers
@@ -2784,6 +2836,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     familiarItemList = _readStringList(normalizedData, "familiarItemList");
 
     _isLoading = false;
+    _dirtyControllerKeys.clear();
+    _structuredFieldsDirty = false;
   }
 
   // 清空所有欄位
@@ -2826,6 +2880,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     // Clear helpers
     _hinderEventController.clear();
     _solveController.clear();
+    _loadedCharacterEntrySnapshot = null;
+    _dirtyControllerKeys.clear();
+    _structuredFieldsDirty = false;
   }
 
   void _addCharacter() {

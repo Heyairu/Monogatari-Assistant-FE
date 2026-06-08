@@ -47,6 +47,7 @@ import "modules/glossaryview.dart" as GlossaryModule;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/planview.dart" as PlanModule;
 import "modules/proofreadingview.dart" as ProofReadingModule;
+import "modules/copliot.dart" as copilot_module;
 import "modules/WelcomeView.dart" as WelcomeModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
@@ -503,7 +504,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           setState(() {
             _searchMatches = [];
             _currentMatchIndex = -1;
-            textController.clearSearchHighlights();
+            textController.clearAllHighlights();
           });
         }
       } else if (_cursorOffset != normalizedOffset) {
@@ -1482,28 +1483,33 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                       text,
                       findText,
                       options,
+                      maxResults:
+                          HighlightTextEditingController.maxSearchResults,
                     );
                     if (!mounted) return;
 
                     setState(() {
-                      _searchMatches = highlightUpdate.matches;
-                      // 如果當前選中的匹配項仍然有效，保持它
-                      if (_currentMatchIndex >= _searchMatches.length) {
-                        _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
-                      }
                       // 更新高亮顯示（使用預編譯的索引）
                       textController.updateSearchHighlights(
-                        matches: _searchMatches,
+                        matches: highlightUpdate.matches,
                         currentIndex: _currentMatchIndex,
                         precomputedIndex: highlightUpdate.buildSearchIndex(),
                       );
+                      _searchMatches = textController.searchMatches;
+                      // 如果當前選中的匹配項仍然有效，保持它
+                      if (_currentMatchIndex >= _searchMatches.length) {
+                        _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
+                        textController.updateCurrentSearchMatchIndex(
+                          _currentMatchIndex,
+                        );
+                      }
                     });
                   }
                 } else {
                   setState(() {
                     _searchMatches = [];
                     _currentMatchIndex = -1;
-                    textController.clearSearchHighlights();
+                    textController.clearAllHighlights();
                   });
                 }
               },
@@ -1513,7 +1519,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                   // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
                   _searchMatches = [];
                   _currentMatchIndex = -1;
-                  textController.clearSearchHighlights();
+                  textController.clearAllHighlights();
                   // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                 });
               },
@@ -1612,12 +1618,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildCopilotView() {
-    return _buildPlaceholderPage(
-      icon: Icons.auto_awesome,
-      title: "Copilot",
-      description: "Copilot 功能開發中...",
-      color: Colors.deepPurple,
-    );
+    return const copilot_module.CopilotView();
   }
 
   Widget _buildSettingView() {

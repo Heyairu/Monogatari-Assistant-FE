@@ -5,7 +5,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../presentation/providers/global_state_providers.dart";
 
 class EditorTextBox extends ConsumerStatefulWidget {
-  final TextEditingController controller;
+  final CodeController controller;
   final FocusNode focusNode;
 
   const EditorTextBox({
@@ -19,16 +19,9 @@ class EditorTextBox extends ConsumerStatefulWidget {
 }
 
 class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
-  late CodeController _codeController;
-  bool _ownsCodeController = false;
-  bool _bridgeEnabled = false;
-  bool _isSyncingFromExternal = false;
-  bool _isSyncingFromCodeField = false;
-
   @override
   void initState() {
     super.initState();
-    _attachController(widget.controller);
     widget.focusNode.addListener(_handleFocusChange);
   }
 
@@ -37,11 +30,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.controller != widget.controller) {
-      _detachController(oldWidget.controller);
-      if (_ownsCodeController) {
-        _codeController.dispose();
-      }
-      _attachController(widget.controller);
+      setState(() {});
     }
 
     if (oldWidget.focusNode != widget.focusNode) {
@@ -53,37 +42,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   @override
   void dispose() {
     widget.focusNode.removeListener(_handleFocusChange);
-    _detachController(widget.controller);
-    if (_ownsCodeController) {
-      _codeController.dispose();
-    }
     super.dispose();
-  }
-
-  void _attachController(TextEditingController externalController) {
-    if (externalController is CodeController) {
-      _codeController = externalController;
-      _ownsCodeController = false;
-      _bridgeEnabled = false;
-      return;
-    }
-
-    _codeController = CodeController(text: externalController.text);
-    _ownsCodeController = true;
-    _bridgeEnabled = true;
-
-    _syncExternalToCode();
-    externalController.addListener(_handleExternalControllerChanged);
-    _codeController.addListener(_handleCodeControllerChanged);
-  }
-
-  void _detachController(TextEditingController externalController) {
-    if (!_bridgeEnabled) {
-      return;
-    }
-
-    externalController.removeListener(_handleExternalControllerChanged);
-    _codeController.removeListener(_handleCodeControllerChanged);
   }
 
   void _handleFocusChange() {
@@ -91,66 +50,6 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       return;
     }
     setState(() {});
-  }
-
-  void _handleExternalControllerChanged() {
-    if (!_bridgeEnabled || _isSyncingFromCodeField) {
-      return;
-    }
-    _syncExternalToCode();
-  }
-
-  void _syncExternalToCode() {
-    final externalValue = widget.controller.value;
-    final normalizedSelection = _clampSelection(
-      externalValue.selection,
-      externalValue.text.length,
-    );
-    final normalizedValue = externalValue.copyWith(selection: normalizedSelection);
-
-    if (_codeController.value == normalizedValue) {
-      return;
-    }
-
-    _isSyncingFromExternal = true;
-    _codeController.value = normalizedValue;
-    _isSyncingFromExternal = false;
-  }
-
-  void _handleCodeControllerChanged() {
-    if (!_bridgeEnabled || _isSyncingFromExternal) {
-      return;
-    }
-
-    final codeValue = _codeController.value;
-    final normalizedSelection = _clampSelection(
-      codeValue.selection,
-      codeValue.text.length,
-    );
-    final normalizedValue = codeValue.copyWith(selection: normalizedSelection);
-
-    if (widget.controller.value == normalizedValue) {
-      return;
-    }
-
-    _isSyncingFromCodeField = true;
-    widget.controller.value = normalizedValue;
-    _isSyncingFromCodeField = false;
-  }
-
-  TextSelection _clampSelection(TextSelection selection, int textLength) {
-    if (!selection.isValid) {
-      return const TextSelection.collapsed(offset: 0);
-    }
-
-    final int base = selection.baseOffset.clamp(0, textLength);
-    final int extent = selection.extentOffset.clamp(0, textLength);
-    return TextSelection(
-      baseOffset: base,
-      extentOffset: extent,
-      affinity: selection.affinity,
-      isDirectional: selection.isDirectional,
-    );
   }
 
   @override
@@ -187,7 +86,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                 child: SizedBox(
                   width: compensatedWidth,
                   child: CodeField(
-                    controller: _codeController,
+                    controller: widget.controller,
                     focusNode: widget.focusNode,
                     expands: true,
                     maxLines: null,

@@ -16,6 +16,7 @@
 
 import "dart:async";
 import "dart:convert";
+import "dart:isolate";
 
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
@@ -24,6 +25,7 @@ import "package:flutter/services.dart";
 import "package:monogatari_assistant/bin/findreplace.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
+import "package:monogatari_assistant/utils/text_position_index.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 enum _PunctuationProfile { zhTw, zhHk, zhHans, jp, kr, enOther }
@@ -53,6 +55,14 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   final ScrollController _fillerWordScrollController = ScrollController();
 
   static const String _fillerWordAssetPath = "assets/jsons/fillerwords.json";
+  static const int _smallProofreadingTextLength = 128 * 1024;
+  static const int _mediumProofreadingTextLength = 512 * 1024;
+  static const int _largeProofreadingTextLength = 2 * 1024 * 1024;
+  static const int _maxProofreadingHighlights =
+      HighlightTextEditingController.maxSearchResults;
+  static const int _initialResultListLimit = 100;
+  static const int _resultListPageSize = 100;
+  static const int _fillerHitPositionLimit = 50;
   static const String _punctuationProfileKey =
       "proofreading_punctuation_profile";
   static const String _latinSentenceDetectionKey =
@@ -339,6 +349,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   };
 
   List<String> _fillerWords = const <String>[];
+  int _fillerWordsRevision = 0;
   String? _loadingError;
   bool _isLoadingFillerWords = true;
 
@@ -348,6 +359,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   List<_SameTypeQuoteIssue> _sameTypeQuoteIssues =
       const <_SameTypeQuoteIssue>[];
   List<_LineEndingIssue> _lineEndingIssues = const <_LineEndingIssue>[];
+  int _visiblePairIssueCount = _initialResultListLimit;
+  int _visiblePunctuationChangeCount = _initialResultListLimit;
+  int _visibleSymbolIssueCount = _initialResultListLimit;
+  int _visibleLineEndingIssueCount = _initialResultListLimit;
+  int _visibleFillerHitCount = 20;
   _PunctuationProfile _punctuationProfile = _PunctuationProfile.zhTw;
   bool _enableLatinSentenceDetection = true;
   bool _enablePairCheck = true;
@@ -365,7 +381,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   bool _latinAllowCjkPunctuationAroundCjkText = true;
   _PunctuationNormalizationResult? _punctuationResult;
   _FillerWordAnalysis _fillerWordAnalysis = _FillerWordAnalysis.empty();
+  TextPositionIndex _proofreadingTextIndex = TextPositionIndex.empty();
   Timer? _scheduledAutoCheckTimer;
+  final _ProofreadingWorker _proofreadingWorker = _ProofreadingWorker();
+  _ProofreadingRequest? _pendingProofreadingRequest;
+  bool _isProofreadingRunning = false;
   final List<ProviderSubscription> _subscriptions = [];
   String _lastObservedText = "";
   int _proofreadingRevision = 0;
@@ -411,6 +431,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       }
     }
     _scheduledAutoCheckTimer?.cancel();
+    _proofreadingWorker.dispose();
     _pairCheckScrollController.dispose();
     _consecutiveSymbolScrollController.dispose();
     _lineEndingScrollController.dispose();
@@ -430,8 +451,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   void _scheduleBackgroundProofreading({bool immediate = false}) {
     _scheduledAutoCheckTimer?.cancel();
+    final String text = widget.textController.text;
     _scheduledAutoCheckTimer = Timer(
-      immediate ? Duration.zero : const Duration(milliseconds: 100),
+      immediate
+          ? Duration.zero
+          : _proofreadingDebounceForTextLength(text.length),
       () {
         _scheduledAutoCheckTimer = null;
         if (!mounted) {
@@ -440,6 +464,19 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         unawaited(_runProofreading());
       },
     );
+  }
+
+  Duration _proofreadingDebounceForTextLength(int textLength) {
+    if (textLength < _smallProofreadingTextLength) {
+      return const Duration(milliseconds: 100);
+    }
+    if (textLength < _mediumProofreadingTextLength) {
+      return const Duration(milliseconds: 300);
+    }
+    if (textLength < _largeProofreadingTextLength) {
+      return const Duration(milliseconds: 500);
+    }
+    return const Duration(seconds: 1);
   }
 
   Future<void> _loadFillerWords() async {
@@ -471,7 +508,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             ..sort((String a, String b) => b.length.compareTo(a.length));
 
       setState(() {
-        _fillerWords = words;
+        _fillerWords = List<String>.unmodifiable(words);
+        _fillerWordsRevision++;
       });
       _scheduleBackgroundProofreading(immediate: true);
     } catch (error) {
@@ -867,43 +905,84 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   Future<void> _runProofreading() async {
     final String text = widget.textController.text;
     final int revision = ++_proofreadingRevision;
-    final _ProofreadingRequest request = _ProofreadingRequest(
+    _pendingProofreadingRequest = _ProofreadingRequest(
       text: text,
       fillerWords: _fillerWords,
+      fillerWordsRevision: _fillerWordsRevision,
       options: _proofreadingOptions(),
       revision: revision,
     );
 
-    final _ProofreadingResult result = await compute(
-      _analyzeProofreading,
-      request,
-    );
-    if (!mounted ||
-        result.revision < _proofreadingRevision ||
-        result.revision <= _latestAppliedProofreadingRevision ||
-        widget.textController.text != request.text) {
+    if (_isProofreadingRunning) {
       return;
     }
 
-    _latestAppliedProofreadingRevision = result.revision;
+    await _drainProofreadingRequests();
+  }
 
-    _syncPunctuationHighlights(
-      text,
-      symbolIssues: result.symbolIssues,
-      sameTypeQuoteIssues: result.sameTypeQuoteIssues,
-      lineEndingIssues: result.lineEndingIssues,
-      punctuationResult: result.punctuationResult,
-    );
-    _syncFillerWordHighlights(text, result.fillerWordAnalysis);
+  Future<void> _drainProofreadingRequests() async {
+    if (_isProofreadingRunning) {
+      return;
+    }
 
-    setState(() {
-      _pairIssues = result.pairIssues;
-      _symbolIssues = result.symbolIssues;
-      _sameTypeQuoteIssues = result.sameTypeQuoteIssues;
-      _lineEndingIssues = result.lineEndingIssues;
-      _punctuationResult = result.punctuationResult;
-      _fillerWordAnalysis = result.fillerWordAnalysis;
-    });
+    _isProofreadingRunning = true;
+    try {
+      while (mounted) {
+        final _ProofreadingRequest? request = _pendingProofreadingRequest;
+        if (request == null) {
+          break;
+        }
+        _pendingProofreadingRequest = null;
+
+        final _ProofreadingResult result;
+        try {
+          result = await _proofreadingWorker.analyze(request);
+        } catch (error, stackTrace) {
+          debugPrint("Proofreading worker failed: $error\n$stackTrace");
+          continue;
+        }
+
+        if (!mounted ||
+            result.revision < _proofreadingRevision ||
+            result.revision <= _latestAppliedProofreadingRevision ||
+            widget.textController.text != request.text) {
+          continue;
+        }
+
+        _latestAppliedProofreadingRevision = result.revision;
+        final TextPositionIndex textIndex = TextPositionIndex(request.text);
+
+        _syncPunctuationHighlights(
+          request.text,
+          symbolIssues: result.symbolIssues,
+          sameTypeQuoteIssues: result.sameTypeQuoteIssues,
+          lineEndingIssues: result.lineEndingIssues,
+          punctuationResult: result.punctuationResult,
+        );
+        _syncFillerWordHighlights(request.text, result.fillerWordAnalysis);
+
+        setState(() {
+          _pairIssues = result.pairIssues;
+          _symbolIssues = result.symbolIssues;
+          _sameTypeQuoteIssues = result.sameTypeQuoteIssues;
+          _lineEndingIssues = result.lineEndingIssues;
+          _punctuationResult = result.punctuationResult;
+          _fillerWordAnalysis = result.fillerWordAnalysis;
+          _proofreadingTextIndex = textIndex;
+          _visiblePairIssueCount = _initialResultListLimit;
+          _visiblePunctuationChangeCount = _initialResultListLimit;
+          _visibleSymbolIssueCount = _initialResultListLimit;
+          _visibleLineEndingIssueCount = _initialResultListLimit;
+          _visibleFillerHitCount = 20;
+        });
+      }
+    } finally {
+      _isProofreadingRunning = false;
+    }
+
+    if (mounted && _pendingProofreadingRequest != null) {
+      unawaited(_drainProofreadingRequests());
+    }
   }
 
   _ProofreadingOptions _proofreadingOptions() {
@@ -946,6 +1025,13 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           continue;
         }
         matches.add(TextSelection(baseOffset: start, extentOffset: end));
+        if (matches.length >= _maxProofreadingHighlights) {
+          controller.updateFillerHighlights(
+            matches: matches,
+            color: Colors.teal,
+          );
+          return;
+        }
       }
     }
 
@@ -967,36 +1053,64 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     final List<TextSelection> matches = <TextSelection>[];
     final Set<String> dedup = <String>{};
 
-    void addRange(int start, int endExclusive) {
+    bool addRange(int start, int endExclusive) {
       if (start < 0 || endExclusive > text.length || endExclusive <= start) {
-        return;
+        return false;
       }
       final String key = "$start:$endExclusive";
       if (!dedup.add(key)) {
-        return;
+        return false;
       }
       matches.add(TextSelection(baseOffset: start, extentOffset: endExclusive));
+      return matches.length >= _maxProofreadingHighlights;
     }
 
     if (punctuationResult != null) {
       for (final _PunctuationChange change in punctuationResult.changes) {
-        addRange(change.index, change.index + change.from.length);
+        if (addRange(change.index, change.index + change.from.length)) {
+          controller.updatePunctuationHighlights(
+            matches: matches,
+            color: Colors.green,
+          );
+          return;
+        }
       }
     }
 
     for (final _ConsecutiveSymbolIssue issue in symbolIssues) {
-      addRange(issue.index, issue.index + issue.sequence.length);
+      if (addRange(issue.index, issue.index + issue.sequence.length)) {
+        controller.updatePunctuationHighlights(
+          matches: matches,
+          color: Colors.green,
+        );
+        return;
+      }
     }
 
     for (final _SameTypeQuoteIssue issue in sameTypeQuoteIssues) {
-      addRange(issue.index, issue.index + 1);
+      if (addRange(issue.index, issue.index + 1)) {
+        controller.updatePunctuationHighlights(
+          matches: matches,
+          color: Colors.green,
+        );
+        return;
+      }
     }
 
     for (final _LineEndingIssue issue in lineEndingIssues) {
-      addRange(issue.index, issue.index + issue.endingSymbol.length);
+      if (addRange(issue.index, issue.index + issue.endingSymbol.length)) {
+        controller.updatePunctuationHighlights(
+          matches: matches,
+          color: Colors.green,
+        );
+        return;
+      }
     }
 
-    controller.updatePunctuationHighlights(matches: matches, color: Colors.green);
+    controller.updatePunctuationHighlights(
+      matches: matches,
+      color: Colors.green,
+    );
   }
 
   List<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
@@ -2145,21 +2259,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   }
 
   ({int line, int column}) _lineColumnAt(String text, int index) {
-    int line = 1;
-    int column = 1;
-
-    final int safeIndex = index.clamp(0, text.length);
-    for (int i = 0; i < safeIndex; i++) {
-      final String current = text[i];
-      if (current == "\n") {
-        line++;
-        column = 1;
-      } else {
-        column++;
-      }
-    }
-
-    return (line: line, column: column);
+    final TextPositionIndex textIndex =
+        _proofreadingTextIndex.text.isEmpty && text.isNotEmpty
+        ? TextPositionIndex(text)
+        : _proofreadingTextIndex;
+    return textIndex.lineColumnFromOffset(index);
   }
 
   // 警語元件
@@ -2306,7 +2410,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   }
 
   Widget _buildScrollableResultArea({
-    required List<Widget> children,
+    required int itemCount,
+    required IndexedWidgetBuilder itemBuilder,
     required ScrollController controller,
     double maxHeight = 200,
   }) {
@@ -2315,11 +2420,43 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       child: Scrollbar(
         controller: controller,
         thumbVisibility: true,
-        child: ListView(
+        child: ListView.builder(
           controller: controller,
           primary: false,
           padding: EdgeInsets.zero,
-          children: children,
+          itemCount: itemCount,
+          itemBuilder: itemBuilder,
+        ),
+      ),
+    );
+  }
+
+  int _limitedResultCount(int totalCount, int visibleCount) {
+    return totalCount < visibleCount ? totalCount : visibleCount;
+  }
+
+  int _nextResultLimit(int currentLimit, int totalCount) {
+    final nextLimit = currentLimit + _resultListPageSize;
+    return nextLimit > totalCount ? totalCount : nextLimit;
+  }
+
+  Widget _buildShowMoreResultsButton({
+    required int totalCount,
+    required int visibleCount,
+    required VoidCallback onPressed,
+  }) {
+    if (visibleCount >= totalCount) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.expand_more, size: 16),
+          label: Text("顯示更多（剩餘 ${totalCount - visibleCount}）"),
         ),
       ),
     );
@@ -2642,30 +2779,57 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       );
     }
 
-    return _buildScrollableResultArea(
-      controller: _pairCheckScrollController,
-      children: _pairIssues.map((final _PairIssue issue) {
-        final ({int line, int column}) position = _lineColumnAt(
-          sourceText,
-          issue.index,
-        );
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: TextButton.icon(
-            onPressed: () => _jumpToOffset(issue.index),
-            icon: const Icon(Icons.my_location, size: 16),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              alignment: Alignment.centerLeft,
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
-            ),
-            label: Text(
-              " ${position.line}:${position.column} ｜ ${issue.message}",
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        );
-      }).toList(),
+    final visibleCount = _limitedResultCount(
+      _pairIssues.length,
+      _visiblePairIssueCount,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildScrollableResultArea(
+          controller: _pairCheckScrollController,
+          itemCount: visibleCount,
+          itemBuilder: (BuildContext context, int index) {
+            final _PairIssue issue = _pairIssues[index];
+            final ({int line, int column}) position = _lineColumnAt(
+              sourceText,
+              issue.index,
+            );
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: TextButton.icon(
+                onPressed: () => _jumpToOffset(issue.index),
+                icon: const Icon(Icons.my_location, size: 16),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  alignment: Alignment.centerLeft,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                ),
+                label: Text(
+                  " ${position.line}:${position.column} ｜ ${issue.message}",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            );
+          },
+        ),
+        _buildShowMoreResultsButton(
+          totalCount: _pairIssues.length,
+          visibleCount: visibleCount,
+          onPressed: () {
+            setState(() {
+              _visiblePairIssueCount = _nextResultLimit(
+                _visiblePairIssueCount,
+                _pairIssues.length,
+              );
+            });
+          },
+        ),
+      ],
     );
   }
 
@@ -2693,6 +2857,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       );
     }
 
+    final visibleCount = _limitedResultCount(
+      result.changes.length,
+      _visiblePunctuationChangeCount,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2700,7 +2869,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         const SizedBox(height: 6),
         _buildScrollableResultArea(
           controller: _punctuationScrollController,
-          children: result.changes.map((final _PunctuationChange change) {
+          itemCount: visibleCount,
+          itemBuilder: (BuildContext context, int index) {
+            final _PunctuationChange change = result.changes[index];
             final ({int line, int column}) position = _lineColumnAt(
               sourceText,
               change.index,
@@ -2733,7 +2904,19 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                 ),
               ],
             );
-          }).toList(),
+          },
+        ),
+        _buildShowMoreResultsButton(
+          totalCount: result.changes.length,
+          visibleCount: visibleCount,
+          onPressed: () {
+            setState(() {
+              _visiblePunctuationChangeCount = _nextResultLimit(
+                _visiblePunctuationChangeCount,
+                result.changes.length,
+              );
+            });
+          },
         ),
         const SizedBox(height: 8),
         TextButton(
@@ -2763,13 +2946,21 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       );
     }
 
+    final totalCount = _symbolIssues.length + _sameTypeQuoteIssues.length;
+    final visibleCount = _limitedResultCount(
+      totalCount,
+      _visibleSymbolIssueCount,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildScrollableResultArea(
           controller: _consecutiveSymbolScrollController,
-          children: [
-            ..._symbolIssues.map((final _ConsecutiveSymbolIssue issue) {
+          itemCount: visibleCount,
+          itemBuilder: (BuildContext context, int index) {
+            if (index < _symbolIssues.length) {
+              final _ConsecutiveSymbolIssue issue = _symbolIssues[index];
               final ({int line, int column}) position = _lineColumnAt(
                 sourceText,
                 issue.index,
@@ -2802,61 +2993,72 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                   ),
                 ],
               );
-            }),
-            ..._sameTypeQuoteIssues.map((final _SameTypeQuoteIssue issue) {
-              final ({int line, int column}) position = _lineColumnAt(
-                sourceText,
-                issue.index,
-              );
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildResolveSingleButton(
-                            onPressed: () => _resolveSameTypeQuoteIssue(issue),
-                          ),
-                          Expanded(
-                            child: TextButton.icon(
-                              onPressed: () => _jumpToOffset(issue.index),
-                              icon: const Icon(Icons.my_location, size: 16),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                alignment: Alignment.centerLeft,
+            }
+
+            final _SameTypeQuoteIssue issue =
+                _sameTypeQuoteIssues[index - _symbolIssues.length];
+            final ({int line, int column}) position = _lineColumnAt(
+              sourceText,
+              issue.index,
+            );
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildResolveSingleButton(
+                          onPressed: () => _resolveSameTypeQuoteIssue(issue),
+                        ),
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () => _jumpToOffset(issue.index),
+                            icon: const Icon(Icons.my_location, size: 16),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
                               ),
-                              label: Text(
-                                " ${position.line}:${position.column} ｜ ${issue.message}",
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
+                              alignment: Alignment.centerLeft,
+                            ),
+                            label: Text(
+                              " ${position.line}:${position.column} ｜ ${issue.message}",
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "建議：${issue.suggestion}",
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "建議：${issue.suggestion}",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
+              ),
+            );
+          },
+        ),
+        _buildShowMoreResultsButton(
+          totalCount: totalCount,
+          visibleCount: visibleCount,
+          onPressed: () {
+            setState(() {
+              _visibleSymbolIssueCount = _nextResultLimit(
+                _visibleSymbolIssueCount,
+                totalCount,
               );
-            }),
-          ],
+            });
+          },
         ),
         const SizedBox(height: 8),
         TextButton(
@@ -2886,29 +3088,56 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       );
     }
 
-    return _buildScrollableResultArea(
-      controller: _lineEndingScrollController,
-      children: _lineEndingIssues.map((final _LineEndingIssue issue) {
-        final ({int line, int column}) position = _lineColumnAt(
-          sourceText,
-          issue.index,
-        );
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => _jumpToOffset(issue.index),
-            icon: const Icon(Icons.my_location, size: 16),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    final visibleCount = _limitedResultCount(
+      _lineEndingIssues.length,
+      _visibleLineEndingIssueCount,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildScrollableResultArea(
+          controller: _lineEndingScrollController,
+          itemCount: visibleCount,
+          itemBuilder: (BuildContext context, int index) {
+            final _LineEndingIssue issue = _lineEndingIssues[index];
+            final ({int line, int column}) position = _lineColumnAt(
+              sourceText,
+              issue.index,
+            );
+            return Align(
               alignment: Alignment.centerLeft,
-            ),
-            label: Text(
-              " ${position.line}:${position.column} ｜ ${issue.message}",
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        );
-      }).toList(),
+              child: TextButton.icon(
+                onPressed: () => _jumpToOffset(issue.index),
+                icon: const Icon(Icons.my_location, size: 16),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  alignment: Alignment.centerLeft,
+                ),
+                label: Text(
+                  " ${position.line}:${position.column} ｜ ${issue.message}",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            );
+          },
+        ),
+        _buildShowMoreResultsButton(
+          totalCount: _lineEndingIssues.length,
+          visibleCount: visibleCount,
+          onPressed: () {
+            setState(() {
+              _visibleLineEndingIssueCount = _nextResultLimit(
+                _visibleLineEndingIssueCount,
+                _lineEndingIssues.length,
+              );
+            });
+          },
+        ),
+      ],
     );
   }
 
@@ -2932,9 +3161,10 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       );
     }
 
-    final List<_FillerWordHit> topHits = _fillerWordAnalysis.hits
-        .take(20)
-        .toList();
+    final visibleCount = _limitedResultCount(
+      _fillerWordAnalysis.hits.length,
+      _visibleFillerHitCount,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2956,10 +3186,14 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             child: ListView.separated(
               controller: _fillerWordScrollController,
               padding: const EdgeInsets.all(8),
-              itemCount: topHits.length,
+              itemCount: visibleCount,
               separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (BuildContext context, int index) {
-                final _FillerWordHit hit = topHits[index];
+                final _FillerWordHit hit = _fillerWordAnalysis.hits[index];
+                final visiblePositionCount = _limitedResultCount(
+                  hit.positions.length,
+                  _fillerHitPositionLimit,
+                );
                 return Card(
                   margin: EdgeInsets.zero,
                   elevation: 0,
@@ -2980,7 +3214,10 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: hit.positions.map((final int pos) {
+                        children: List<Widget>.generate(visiblePositionCount, (
+                          int positionIndex,
+                        ) {
+                          final int pos = hit.positions[positionIndex];
                           final ({int line, int column}) position =
                               _lineColumnAt(sourceText, pos);
                           return ActionChip(
@@ -2988,8 +3225,16 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                             label: Text("${position.line}:${position.column}"),
                             onPressed: () => _jumpToOffset(pos),
                           );
-                        }).toList(),
+                        }),
                       ),
+                      if (hit.positions.length > visiblePositionCount)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            "僅顯示前 $visiblePositionCount 個位置。",
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
                     ],
                   ),
                 );
@@ -2997,14 +3242,18 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             ),
           ),
         ),
-        if (_fillerWordAnalysis.hits.length > topHits.length)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              "僅顯示前 ${topHits.length} 個高頻贅字。",
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
+        _buildShowMoreResultsButton(
+          totalCount: _fillerWordAnalysis.hits.length,
+          visibleCount: visibleCount,
+          onPressed: () {
+            setState(() {
+              _visibleFillerHitCount = _nextResultLimit(
+                _visibleFillerHitCount,
+                _fillerWordAnalysis.hits.length,
+              );
+            });
+          },
+        ),
       ],
     );
   }
@@ -3048,16 +3297,233 @@ _ProofreadingResult _analyzeProofreading(_ProofreadingRequest request) {
   return _ProofreadingAnalyzer(request).run();
 }
 
+class _ProofreadingWorker {
+  Isolate? _isolate;
+  ReceivePort? _receivePort;
+  SendPort? _workerSendPort;
+  Completer<void>? _startCompleter;
+  final Map<int, Completer<_ProofreadingResult>> _pendingRequests =
+      <int, Completer<_ProofreadingResult>>{};
+  int _nextRequestId = 0;
+  bool _isDisposed = false;
+  bool _useComputeFallback = kIsWeb;
+
+  Future<_ProofreadingResult> analyze(_ProofreadingRequest request) async {
+    if (_isDisposed) {
+      throw StateError("Proofreading worker has been disposed.");
+    }
+
+    if (_useComputeFallback) {
+      return compute(_analyzeProofreading, request);
+    }
+
+    try {
+      await _ensureStarted();
+    } catch (_) {
+      if (_isDisposed) {
+        throw StateError("Proofreading worker has been disposed.");
+      }
+      _useComputeFallback = true;
+      return compute(_analyzeProofreading, request);
+    }
+
+    if (_isDisposed) {
+      throw StateError("Proofreading worker has been disposed.");
+    }
+
+    final int requestId = ++_nextRequestId;
+    final Completer<_ProofreadingResult> completer =
+        Completer<_ProofreadingResult>();
+    _pendingRequests[requestId] = completer;
+    _workerSendPort!.send(_ProofreadingWorkerRequest(requestId, request));
+    return completer.future;
+  }
+
+  Future<void> _ensureStarted() {
+    if (_workerSendPort != null) {
+      return Future<void>.value();
+    }
+
+    final Completer<void>? existingStart = _startCompleter;
+    if (existingStart != null) {
+      return existingStart.future;
+    }
+
+    final ReceivePort receivePort = ReceivePort();
+    _receivePort = receivePort;
+    final Completer<void> completer = Completer<void>();
+    _startCompleter = completer;
+    receivePort.listen(_handleWorkerMessage);
+
+    Isolate.spawn(_proofreadingWorkerEntryPoint, receivePort.sendPort)
+        .then((Isolate isolate) {
+          if (_isDisposed) {
+            isolate.kill(priority: Isolate.immediate);
+            return;
+          }
+          _isolate = isolate;
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          _receivePort?.close();
+          _receivePort = null;
+          _startCompleter = null;
+          if (!completer.isCompleted) {
+            completer.completeError(error, stackTrace);
+          }
+        });
+
+    return completer.future;
+  }
+
+  void _handleWorkerMessage(dynamic message) {
+    if (_isDisposed) {
+      return;
+    }
+
+    if (message is SendPort) {
+      _workerSendPort = message;
+      _startCompleter?.complete();
+      _startCompleter = null;
+      return;
+    }
+
+    if (message is _ProofreadingWorkerResponse) {
+      _pendingRequests.remove(message.requestId)?.complete(message.result);
+      return;
+    }
+
+    if (message is _ProofreadingWorkerError) {
+      _pendingRequests
+          .remove(message.requestId)
+          ?.completeError(
+            message.message,
+            StackTrace.fromString(message.stackTrace),
+          );
+    }
+  }
+
+  void dispose() {
+    if (_isDisposed) {
+      return;
+    }
+
+    _isDisposed = true;
+    _workerSendPort?.send(const _ProofreadingWorkerShutdown());
+    _isolate?.kill(priority: Isolate.immediate);
+    _receivePort?.close();
+    _startCompleter?.completeError(
+      StateError("Proofreading worker has been disposed."),
+    );
+    _startCompleter = null;
+
+    final StateError error = StateError(
+      "Proofreading worker has been disposed.",
+    );
+    for (final Completer<_ProofreadingResult> completer
+        in _pendingRequests.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(error);
+      }
+    }
+    _pendingRequests.clear();
+  }
+}
+
+void _proofreadingWorkerEntryPoint(SendPort mainSendPort) {
+  final ReceivePort receivePort = ReceivePort();
+  final _ProofreadingWorkerSession session = _ProofreadingWorkerSession();
+  mainSendPort.send(receivePort.sendPort);
+
+  receivePort.listen((dynamic message) {
+    if (message is _ProofreadingWorkerShutdown) {
+      receivePort.close();
+      return;
+    }
+
+    if (message is! _ProofreadingWorkerRequest) {
+      return;
+    }
+
+    try {
+      final _ProofreadingResult result = session.analyze(message.request);
+      mainSendPort.send(_ProofreadingWorkerResponse(message.requestId, result));
+    } catch (error, stackTrace) {
+      mainSendPort.send(
+        _ProofreadingWorkerError(
+          requestId: message.requestId,
+          message: error.toString(),
+          stackTrace: stackTrace.toString(),
+        ),
+      );
+    }
+  });
+}
+
+class _ProofreadingWorkerSession {
+  int? _cachedFillerWordsRevision;
+  _FillerWordMatcher? _cachedFillerWordMatcher;
+
+  _ProofreadingResult analyze(_ProofreadingRequest request) {
+    _FillerWordMatcher? fillerWordMatcher;
+    if (request.options.enableFillerWordCheck &&
+        request.fillerWords.isNotEmpty) {
+      if (_cachedFillerWordMatcher == null ||
+          _cachedFillerWordsRevision != request.fillerWordsRevision) {
+        _cachedFillerWordsRevision = request.fillerWordsRevision;
+        _cachedFillerWordMatcher = _FillerWordMatcher(request.fillerWords);
+      }
+      fillerWordMatcher = _cachedFillerWordMatcher;
+    }
+
+    return _ProofreadingAnalyzer(
+      request,
+      fillerWordMatcher: fillerWordMatcher,
+    ).run();
+  }
+}
+
+class _ProofreadingWorkerRequest {
+  const _ProofreadingWorkerRequest(this.requestId, this.request);
+
+  final int requestId;
+  final _ProofreadingRequest request;
+}
+
+class _ProofreadingWorkerResponse {
+  const _ProofreadingWorkerResponse(this.requestId, this.result);
+
+  final int requestId;
+  final _ProofreadingResult result;
+}
+
+class _ProofreadingWorkerError {
+  const _ProofreadingWorkerError({
+    required this.requestId,
+    required this.message,
+    required this.stackTrace,
+  });
+
+  final int requestId;
+  final String message;
+  final String stackTrace;
+}
+
+class _ProofreadingWorkerShutdown {
+  const _ProofreadingWorkerShutdown();
+}
+
 class _ProofreadingRequest {
   const _ProofreadingRequest({
     required this.text,
     required this.fillerWords,
+    required this.fillerWordsRevision,
     required this.options,
     required this.revision,
   });
 
   final String text;
   final List<String> fillerWords;
+  final int fillerWordsRevision;
   final _ProofreadingOptions options;
   final int revision;
 }
@@ -3119,9 +3585,11 @@ class _ProofreadingResult {
 }
 
 class _ProofreadingAnalyzer {
-  _ProofreadingAnalyzer(this.request);
+  _ProofreadingAnalyzer(this.request, {_FillerWordMatcher? fillerWordMatcher})
+    : _fillerWordMatcher = fillerWordMatcher;
 
   final _ProofreadingRequest request;
+  final _FillerWordMatcher? _fillerWordMatcher;
 
   String get text => request.text;
   _ProofreadingOptions get options => request.options;
@@ -3746,7 +4214,8 @@ class _ProofreadingAnalyzer {
       return _FillerWordAnalysis.empty();
     }
 
-    final _FillerWordMatcher matcher = _FillerWordMatcher(request.fillerWords);
+    final _FillerWordMatcher matcher =
+        _fillerWordMatcher ?? _FillerWordMatcher(request.fillerWords);
     final Map<String, List<int>> positionsByWord = matcher.findAll(text);
     final List<_FillerWordHit> hits = <_FillerWordHit>[];
     int totalMatches = 0;

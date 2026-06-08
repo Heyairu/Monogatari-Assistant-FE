@@ -697,7 +697,8 @@ class AppDropdownField<T> extends StatelessWidget {
     final effectiveStyle = _normalizeStyle(context);
 
     return DropdownButtonFormField<T>(
-      value: value,
+      key: ValueKey(value),
+      initialValue: value,
       isExpanded: isExpanded,
       isDense: isDense,
       menuMaxHeight: menuMaxHeight,
