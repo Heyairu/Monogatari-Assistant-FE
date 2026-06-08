@@ -3,7 +3,7 @@ import "package:flutter/material.dart";
 class MonogatariTopAppBar extends StatelessWidget
     implements PreferredSizeWidget {
   final double iconSize;
-  final bool isLoading;
+  final Widget? statusIndicator;
   final bool showPunctuationPanel;
   final bool showFindReplaceWindow;
   final ValueChanged<String> onFileAction;
@@ -15,7 +15,7 @@ class MonogatariTopAppBar extends StatelessWidget
   const MonogatariTopAppBar({
     super.key,
     required this.iconSize,
-    required this.isLoading,
+    this.statusIndicator,
     required this.showPunctuationPanel,
     required this.showFindReplaceWindow,
     required this.onFileAction,
@@ -48,15 +48,7 @@ class MonogatariTopAppBar extends StatelessWidget
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isLoading)
-                Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  child: const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
+              if (statusIndicator != null) statusIndicator!,
 
               PopupMenuButton<String>(
                 icon: const Icon(Icons.folder),

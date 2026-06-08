@@ -1,0 +1,197 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:monogatari_assistant/bin/file.dart';
+import 'package:monogatari_assistant/data/repositories/file_repository.dart';
+import 'package:monogatari_assistant/presentation/providers/core_providers.dart';
+import 'package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart';
+import 'package:monogatari_assistant/presentation/providers/project_io_providers.dart';
+import 'package:monogatari_assistant/presentation/providers/project_state_providers.dart';
+
+void main() {
+  test('saveProject is operation-specific and does not block editor', () async {
+    final repository = _BlockingFileRepository();
+    final container = ProviderContainer(
+      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(editorCoordinatorProvider).isLoading, false);
+    expect(container.read(baseInfoDataProvider).latestSave, isNull);
+
+    final projectFile = ProjectFile(
+      fileName: 'test.mnproj',
+      filePath: 'test.mnproj',
+      content: '',
+    );
+
+    final saveFuture = container
+        .read(projectIoControllerProvider.notifier)
+        .saveProject(
+          currentProject: projectFile,
+          currentData: ProjectData.empty(),
+          forceSaveAs: false,
+        );
+
+    await repository.saveStarted.future;
+
+    final status = container.read(projectIoControllerProvider).valueOrNull;
+    expect(status?.isSaving, true);
+    expect(status?.isBusy, true);
+    expect(status?.blocksEditor, false);
+    expect(container.read(editorCoordinatorProvider).isLoading, false);
+    expect(container.read(baseInfoDataProvider).latestSave, isNull);
+
+    repository.saveCompleter.complete(projectFile);
+    await saveFuture;
+
+    final finishedStatus = container
+        .read(projectIoControllerProvider)
+        .valueOrNull;
+    expect(finishedStatus?.isSaving, false);
+    expect(finishedStatus?.isBusy, false);
+    expect(container.read(editorCoordinatorProvider).isLoading, false);
+    expect(container.read(baseInfoDataProvider).latestSave, isNull);
+  });
+
+  test('loadProject parsing blocks editor until data is loaded', () async {
+    final repository = _BlockingFileRepository();
+    final container = ProviderContainer(
+      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(editorCoordinatorProvider).isLoading, false);
+
+    final projectFile = ProjectFile(
+      fileName: 'test.mnproj',
+      filePath: 'test.mnproj',
+      content: '<Project />',
+    );
+
+    final loadFuture = container
+        .read(projectIoControllerProvider.notifier)
+        .loadProject(projectFile);
+
+    await repository.loadStarted.future;
+
+    final status = container.read(projectIoControllerProvider).valueOrNull;
+    expect(status?.isParsing, true);
+    expect(status?.isBusy, true);
+    expect(status?.blocksEditor, true);
+    expect(container.read(editorCoordinatorProvider).isLoading, true);
+
+    repository.loadCompleter.complete(
+      ProjectParseResult(projectVersion: '0.1.0', data: ProjectData.empty()),
+    );
+    await loadFuture;
+
+    final finishedStatus = container
+        .read(projectIoControllerProvider)
+        .valueOrNull;
+    expect(finishedStatus?.isParsing, false);
+    expect(finishedStatus?.isBusy, false);
+    expect(container.read(editorCoordinatorProvider).isLoading, false);
+  });
+}
+
+class _BlockingFileRepository implements FileRepository {
+  final Completer<ProjectFile> saveStarted = Completer<ProjectFile>();
+  final Completer<ProjectFile> saveCompleter = Completer<ProjectFile>();
+  final Completer<ProjectFile> loadStarted = Completer<ProjectFile>();
+  final Completer<ProjectParseResult> loadCompleter =
+      Completer<ProjectParseResult>();
+
+  @override
+  Future<ProjectFile> createNewProject() {
+    return Future.value(
+      ProjectFile(fileName: 'new.mnproj', filePath: null, content: ''),
+    );
+  }
+
+  @override
+  Future<ProjectFile?> openProject() {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ProjectFile> openProjectFromPath(
+    String filePath, {
+    String? accessToken,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ProjectFile> saveProject(ProjectFile projectFile) {
+    if (!saveStarted.isCompleted) {
+      saveStarted.complete(projectFile);
+    }
+    return saveCompleter.future;
+  }
+
+  @override
+  Future<ProjectFile> saveProjectAs(ProjectFile projectFile) {
+    return saveProject(projectFile);
+  }
+
+  @override
+  Future<void> exportText({
+    required String content,
+    required String fileName,
+    required String extension,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> readLocalFile(String fileName) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> writeLocalFile(String fileName, String content) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> getAppDocumentsPath() {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> fileExists(String filePath) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> deleteFile(String filePath) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<FileInfo> getFileInfo(String filePath) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> generateProjectXml(ProjectData data) {
+    return Future.value('<Project />');
+  }
+
+  @override
+  Future<ProjectData> loadProjectFromXml(ProjectFile projectFile) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ProjectParseResult> loadProjectParseResultFromXml(
+    ProjectFile projectFile,
+  ) {
+    if (!loadStarted.isCompleted) {
+      loadStarted.complete(projectFile);
+    }
+    return loadCompleter.future;
+  }
+}

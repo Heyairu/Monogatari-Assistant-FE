@@ -8,7 +8,6 @@ import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/worldsettingsview.dart";
 import "core_providers.dart";
 import "project_snapshot_utils.dart";
-import "project_state_providers.dart";
 
 enum ProjectIoOperation {
   idle,
@@ -24,10 +23,26 @@ enum ProjectIoOperation {
 class ProjectIoStatus {
   final ProjectIoOperation operation;
   final String? message;
+  final bool isOpeningProject;
+  final bool isSaving;
+  final bool isExporting;
+  final bool isParsing;
 
-  const ProjectIoStatus({required this.operation, this.message});
+  const ProjectIoStatus({
+    required this.operation,
+    this.message,
+    this.isOpeningProject = false,
+    this.isSaving = false,
+    this.isExporting = false,
+    this.isParsing = false,
+  });
 
   const ProjectIoStatus.idle() : this(operation: ProjectIoOperation.idle);
+
+  bool get isBusy =>
+      isOpeningProject || isSaving || isExporting || isParsing;
+
+  bool get blocksEditor => isOpeningProject || isParsing;
 }
 
 class ProjectLoadResult {
@@ -44,12 +59,15 @@ class ProjectLoadResult {
 
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   @override
-  Future<ProjectIoStatus> build() async {
-    return const ProjectIoStatus.idle();
-  }
+  ProjectIoStatus build() => const ProjectIoStatus.idle();
 
   Future<ProjectLoadResult> createNewProject() async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.newProject,
+        isOpeningProject: true,
+      ),
+    );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectFile = await useCase.createNewProject();
@@ -68,7 +86,12 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }
 
   Future<ProjectFile?> pickProjectFile() async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.openProject,
+        isOpeningProject: true,
+      ),
+    );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectFile = await useCase.openProject();
@@ -86,7 +109,12 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     String filePath, {
     String? accessToken,
   }) async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.openRecentProject,
+        isOpeningProject: true,
+      ),
+    );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectFile = await useCase.openProjectFromPath(
@@ -109,7 +137,12 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   }
 
   Future<ProjectLoadResult> loadProject(ProjectFile projectFile) async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.openProject,
+        isParsing: true,
+      ),
+    );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final parseResult = await useCase.loadProjectParseResultFromXml(
@@ -138,7 +171,13 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     required ProjectData currentData,
     required bool forceSaveAs,
   }) async {
-    state = const AsyncLoading();
+    final shouldSaveAs = forceSaveAs || currentProject == null;
+    final operation = shouldSaveAs
+        ? ProjectIoOperation.saveProjectAs
+        : ProjectIoOperation.saveProject;
+    state = AsyncData(
+      ProjectIoStatus(operation: operation, isSaving: true),
+    );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectToSave = currentProject ?? await useCase.createNewProject();
@@ -148,9 +187,6 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
             data: currentData.baseInfoData,
             contentText: currentData.contentText,
           );
-      ref
-          .read(baseInfoDataProvider.notifier)
-          .updateBaseInfoData((_) => baseInfoSnapshot);
 
       final snapshotData = snapshotProjectData(
         currentData,
@@ -160,7 +196,6 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       final xmlContent = await useCase.generateProjectXml(snapshotData);
       projectToSave.content = xmlContent;
 
-      final shouldSaveAs = forceSaveAs || currentProject == null;
       final savedProject = shouldSaveAs
           ? await useCase.saveProjectAs(projectToSave)
           : await useCase.saveProject(projectToSave);
@@ -187,7 +222,12 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     required ProjectData currentData,
     required String defaultFileName,
   }) async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.exportText,
+        isExporting: true,
+      ),
+    );
     try {
       final snapshotData = snapshotProjectData(currentData);
       final buffer = StringBuffer();
@@ -228,7 +268,12 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     required Set<String> selectedModules,
     required String format,
   }) async {
-    state = const AsyncLoading();
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.exportSelective,
+        isExporting: true,
+      ),
+    );
     try {
       final snapshotData = snapshotProjectData(currentData);
       final buffer = StringBuffer();

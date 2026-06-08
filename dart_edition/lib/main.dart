@@ -61,6 +61,32 @@ typedef _CoordinatorUiEventState = ({
   String? errorMessage,
 });
 
+class _ProjectIoBusyIndicator extends ConsumerWidget {
+  const _ProjectIoBusyIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isBusy = ref.watch(
+      projectIoControllerProvider.select(
+        (value) => value.valueOrNull?.isBusy ?? value.isLoading,
+      ),
+    );
+
+    if (!isBusy) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(right: 12),
+      child: const SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化 window_manager
@@ -933,9 +959,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             WordCountMode.wordsAndCharacters,
       ),
     );
-    final isLoading = ref.watch(
-      editorCoordinatorProvider.select((state) => state.isLoading),
-    );
     final hasUnsavedChanges = ref.watch(
       editorCoordinatorProvider.select((state) => state.hasUnsavedChanges),
     );
@@ -1003,7 +1026,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           child: Scaffold(
             appBar: MonogatariTopAppBar(
               iconSize: fontSize + 8,
-              isLoading: isLoading,
+              statusIndicator: const _ProjectIoBusyIndicator(),
               showPunctuationPanel: showPunctuationPanel,
               showFindReplaceWindow: showFindReplaceWindow,
               onFileAction: _handleFileAction,

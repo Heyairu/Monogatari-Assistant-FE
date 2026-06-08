@@ -126,6 +126,10 @@ class EditorCoordinatorState {
 
 const Object _editorCoordinatorUnset = Object();
 
+bool _projectIoBlocksEditor(AsyncValue<ProjectIoStatus> value) {
+  return value.valueOrNull?.blocksEditor ?? value.isLoading;
+}
+
 class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
   Timer? _dirtyTimer;
   static const int _dirtyDebounceMs = 150;
@@ -161,7 +165,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
   @override
   EditorCoordinatorState build() {
-    final bool initialLoading = ref.read(projectIoControllerProvider).isLoading;
+    final bool initialLoading = _projectIoBlocksEditor(
+      ref.read(projectIoControllerProvider),
+    );
     final WordCountMode? initialWordCountMode = ref
         .read(settingsStateProvider)
         .valueOrNull
@@ -171,7 +177,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       previous,
       next,
     ) {
-      setLoading(next.isLoading);
+      setLoading(_projectIoBlocksEditor(next));
     });
 
     ref.listen<AsyncValue<AppSettingsStateData>>(settingsStateProvider, (
