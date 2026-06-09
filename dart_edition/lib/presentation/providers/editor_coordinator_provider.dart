@@ -49,6 +49,7 @@ class EditorProjectInitialState {
   final String contentText;
   final int totalWords;
   final bool hasSelection;
+  final int cursorOffset;
 
   const EditorProjectInitialState({
     this.selectedSegID,
@@ -56,6 +57,7 @@ class EditorProjectInitialState {
     required this.contentText,
     required this.totalWords,
     required this.hasSelection,
+    this.cursorOffset = 0,
   });
 }
 
@@ -396,6 +398,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       contentText: content,
       totalWords: words,
       hasSelection: hasSel,
+      cursorOffset: 0,
     );
   }
 
@@ -458,7 +461,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         .setSelectionAndCursor(
           selectedSegID: initialState.selectedSegID,
           selectedChapID: initialState.selectedChapID,
-          cursorOffset: 0,
+          cursorOffset: initialState.cursorOffset,
         );
     ref
         .read(editorContentProvider.notifier)

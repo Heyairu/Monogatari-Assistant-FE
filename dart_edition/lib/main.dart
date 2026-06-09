@@ -35,6 +35,7 @@ import "bin/content_manager.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
+import "presentation/providers/project_history_provider.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/word_count_providers.dart";
 import "utils/text_change_debouncer.dart";
@@ -192,6 +193,14 @@ class FindIntent extends Intent {
   const FindIntent();
 }
 
+class UndoProjectIntent extends Intent {
+  const UndoProjectIntent();
+}
+
+class RedoProjectIntent extends Intent {
+  const RedoProjectIntent();
+}
+
 // 主要 ContentView
 class ContentView extends ConsumerStatefulWidget {
   const ContentView({super.key});
@@ -254,6 +263,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   final List<ProviderSubscription<Object?>> _subscriptions = [];
 
   late final TextChangeDebouncer _textChangeDebouncer;
+  Timer? _projectHistoryRecordTimer;
+  bool _isApplyingProjectHistory = false;
+  static const Duration _projectHistoryRecordDelay = Duration(
+    milliseconds: 500,
+  );
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
@@ -285,6 +299,13 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _onFocusChange() {
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
+    final previousEditableNode = _lastFocusedEditableNode;
+    final focusChangedFromEditable =
+        previousEditableNode != null && previousEditableNode != node;
+
+    if (focusChangedFromEditable) {
+      _recordProjectHistorySnapshot();
+    }
 
     if (node != null && _findEditableForFocusNode(node) != null) {
       // 焦點進入編輯框
@@ -326,22 +347,25 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _clearAllSelections() {
     debugPrint("[DEBUG] Clearing all selections");
-    
+
     // 清除主編輯器的選取
-    if (textController.selection.isValid && !textController.selection.isCollapsed) {
+    if (textController.selection.isValid &&
+        !textController.selection.isCollapsed) {
       textController.selection = TextSelection.collapsed(
         offset: textController.selection.baseOffset,
       );
     }
-    
+
     // 清除搜尋欄的選取
-    if (findController.selection.isValid && !findController.selection.isCollapsed) {
+    if (findController.selection.isValid &&
+        !findController.selection.isCollapsed) {
       findController.selection = TextSelection.collapsed(
         offset: findController.selection.baseOffset,
       );
     }
-    
-    if (replaceController.selection.isValid && !replaceController.selection.isCollapsed) {
+
+    if (replaceController.selection.isValid &&
+        !replaceController.selection.isCollapsed) {
       replaceController.selection = TextSelection.collapsed(
         offset: replaceController.selection.baseOffset,
       );
@@ -486,6 +510,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           textSnapshot: nextContent,
           modeSnapshot: modeSnapshot,
         );
+        _recordProjectHistorySnapshot();
       },
       onContentCommitTrigger: (nextContent) {
         if (!mounted) return;
@@ -609,6 +634,20 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     );
 
     _subscriptions.add(
+      ref.listenManual<int>(projectDataAggregateProvider, (previous, next) {
+        if (!mounted ||
+            previous == null ||
+            previous == next ||
+            _isApplyingProjectHistory ||
+            ref.read(editorCoordinatorProvider).isApplyingProjectData) {
+          return;
+        }
+
+        _scheduleProjectHistoryRecord();
+      }),
+    );
+
+    _subscriptions.add(
       ref.listenManual<_CoordinatorUiEventState>(
         editorCoordinatorProvider.select(
           (state) => (
@@ -693,6 +732,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   @override
   void dispose() {
     _cancelPendingContentCommit();
+    _projectHistoryRecordTimer?.cancel();
+    _projectHistoryRecordTimer = null;
     _activeWordCountGen++;
     _allWordCountsGen++;
     _closeProviderSubscriptions();
@@ -734,6 +775,156 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _cancelPendingContentCommit() {
     _textChangeDebouncer.cancelAll();
+  }
+
+  void _scheduleProjectHistoryRecord() {
+    if (_isApplyingProjectHistory) {
+      return;
+    }
+
+    _projectHistoryRecordTimer?.cancel();
+    _projectHistoryRecordTimer = Timer(_projectHistoryRecordDelay, () {
+      _projectHistoryRecordTimer = null;
+      _recordProjectHistorySnapshot();
+    });
+  }
+
+  ProjectHistoryEntry _createProjectHistoryEntry(ProjectData data) {
+    final selection = ref.read(editorSelectionProvider);
+    final int cursorOffset = textController.selection.isValid
+        ? _clampOffset(
+            textController.selection.baseOffset,
+            textController.text.length,
+          )
+        : selection.cursorOffset;
+
+    return ProjectHistoryEntry(
+      data: data,
+      pageIndex: slidePageIndexNow,
+      selectedSegID: selection.selectedSegID,
+      selectedChapID: selection.selectedChapID,
+      cursorOffset: cursorOffset,
+    );
+  }
+
+  void _recordProjectHistorySnapshot({bool reset = false}) {
+    if (!mounted || _isApplyingProjectHistory) {
+      return;
+    }
+
+    _projectHistoryRecordTimer?.cancel();
+    _projectHistoryRecordTimer = null;
+    _syncEditorToSelectedChapter();
+
+    final entry = _createProjectHistoryEntry(_collectProjectData());
+    final historyNotifier = ref.read(projectHistoryProvider.notifier);
+    if (reset) {
+      historyNotifier.reset(entry);
+    } else {
+      historyNotifier.record(entry);
+    }
+  }
+
+  void _resetProjectHistory() {
+    _recordProjectHistorySnapshot(reset: true);
+  }
+
+  EditorProjectInitialState _initialStateForHistoryEntry(
+    ProjectHistoryEntry entry,
+  ) {
+    final fallback = ref
+        .read(editorCoordinatorProvider.notifier)
+        .calculateInitialState(entry.data, _settingsState.wordCountMode);
+
+    final String? targetSegID = entry.selectedSegID ?? fallback.selectedSegID;
+    final String? targetChapID =
+        entry.selectedChapID ?? fallback.selectedChapID;
+    String content = fallback.contentText;
+    bool hasSelection = fallback.hasSelection;
+    bool foundTargetChapter = false;
+
+    if (targetChapID != null) {
+      for (final segment in entry.data.segmentsData) {
+        if (targetSegID != null && segment.segmentUUID != targetSegID) {
+          continue;
+        }
+        for (final chapter in segment.chapters) {
+          if (chapter.chapterUUID == targetChapID) {
+            content = chapter.chapterContent;
+            hasSelection = true;
+            foundTargetChapter = true;
+            break;
+          }
+        }
+        if (foundTargetChapter) {
+          break;
+        }
+      }
+    }
+
+    return EditorProjectInitialState(
+      selectedSegID: targetSegID,
+      selectedChapID: targetChapID,
+      contentText: content,
+      totalWords: entry.data.totalWords,
+      hasSelection: hasSelection,
+      cursorOffset: _clampOffset(entry.cursorOffset, content.length),
+    );
+  }
+
+  void _applyProjectHistoryEntry(ProjectHistoryEntry entry) {
+    if (!mounted) {
+      return;
+    }
+
+    _projectHistoryRecordTimer?.cancel();
+    _projectHistoryRecordTimer = null;
+    _isApplyingProjectHistory = true;
+    final initialState = _initialStateForHistoryEntry(entry);
+
+    setState(() {
+      slidePageIndexNow = entry.pageIndex < 0 ? 0 : entry.pageIndex;
+      _applyProjectData(entry.data, initialState);
+    });
+
+    _updateAllWordCounts();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _isApplyingProjectHistory = false;
+      _editorCoordinatorNotifier.markAsModified();
+    });
+  }
+
+  void _undoProjectHistory() {
+    if (_isApplyingProjectHistory) {
+      return;
+    }
+
+    _syncEditorToSelectedChapter();
+    final currentEntry = _createProjectHistoryEntry(_collectProjectData());
+    final target = ref.read(projectHistoryProvider.notifier).undo(currentEntry);
+    if (target == null) {
+      return;
+    }
+
+    _applyProjectHistoryEntry(target);
+  }
+
+  void _redoProjectHistory() {
+    if (_isApplyingProjectHistory) {
+      return;
+    }
+
+    _syncEditorToSelectedChapter();
+    final currentEntry = _createProjectHistoryEntry(_collectProjectData());
+    final target = ref.read(projectHistoryProvider.notifier).redo(currentEntry);
+    if (target == null) {
+      return;
+    }
+
+    _applyProjectHistoryEntry(target);
   }
 
   Future<void> _updateActiveWordCountAsync({
@@ -994,6 +1185,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           control: !isApple,
           meta: isApple,
         ): const FindIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          control: !isApple,
+          meta: isApple,
+        ): const UndoProjectIntent(),
+        SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          control: !isApple,
+          meta: isApple,
+          shift: true,
+        ): const RedoProjectIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -1009,6 +1211,18 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           FindIntent: CallbackAction<FindIntent>(
             onInvoke: (intent) {
               _toggleFindReplaceWindow();
+              return null;
+            },
+          ),
+          UndoProjectIntent: CallbackAction<UndoProjectIntent>(
+            onInvoke: (intent) {
+              _undoProjectHistory();
+              return null;
+            },
+          ),
+          RedoProjectIntent: CallbackAction<RedoProjectIntent>(
+            onInvoke: (intent) {
+              _redoProjectHistory();
               return null;
             },
           ),
@@ -1202,6 +1416,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       fontSize: fontSize,
       onBeforePageSwitch: _syncEditorToSelectedChapter,
       onPageSelected: (index) {
+        _recordProjectHistorySnapshot();
         setState(() {
           slidePageIndexNow = index;
         });
@@ -1262,6 +1477,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                 selectedIndex: _getNavigationIndex(),
                 onDestinationSelected: (index) {
                   _syncEditorToSelectedChapter();
+                  _recordProjectHistorySnapshot();
                   setState(() {
                     slidePageIndexNow = index;
                   });
@@ -1553,6 +1769,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             child: EditorTextBox(
               controller: textController,
               focusNode: editorFocusNode,
+              onUndo: _undoProjectHistory,
+              onRedo: _redoProjectHistory,
             ),
           ),
         ],
@@ -1948,18 +2166,19 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   EditableTextState? _getPrimaryFocusedEditable() {
     // 使用追蹤的最後一個有焦點的編輯框
     // 當按鈕被點擊時，焦點會移到按鈕，但我們需要操作在它之前有焦點的編輯框
-    
-    if (_lastFocusedEditableNode != null && 
+
+    if (_lastFocusedEditableNode != null &&
         _lastFocusedEditableNode!.context != null &&
         _lastFocusedEditableNode!.context!.mounted) {
-      
-      debugPrint("[DEBUG] Using last focused editable node: $_lastFocusedEditableNode");
+      debugPrint(
+        "[DEBUG] Using last focused editable node: $_lastFocusedEditableNode",
+      );
       final editable = _findEditableForFocusNode(_lastFocusedEditableNode!);
       if (editable != null) {
         return editable;
       }
     }
-    
+
     debugPrint("[DEBUG] No last focused editable found");
     return null;
   }
@@ -1967,6 +2186,15 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   // 編輯器操作
   Future<void> _performEditorAction(String action) async {
     try {
+      if (action == "undo") {
+        _undoProjectHistory();
+        return;
+      }
+      if (action == "redo") {
+        _redoProjectHistory();
+        return;
+      }
+
       final editable = _getPrimaryFocusedEditable();
 
       // Copy/Cut/Paste/Select All 只作用在目前取得焦點的輸入框。
@@ -1976,20 +2204,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       }
 
       final controller = editable.widget.controller;
-      if (controller == null) {
-        debugPrint("[DEBUG] No controller found for focused editable");
-        return;
-      }
 
       debugPrint("[DEBUG]: Performing action $action on controller");
 
       switch (action) {
-        case "undo":
-          // 實作 undo 功能
-          break;
-        case "redo":
-          // 實作 redo 功能
-          break;
         case "selectAll":
           _handleSelectAll(controller);
           break;
@@ -2009,7 +2227,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       // 操作完後恢復焦點到編輯框
       final focusNode = editable.widget.focusNode;
-      if (focusNode != null && !focusNode.hasFocus) {
+      if (!focusNode.hasFocus) {
         debugPrint("[DEBUG] Restoring focus to editable after action");
         focusNode.requestFocus();
       }
@@ -2045,8 +2263,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   /// 複製選定的文本到剪貼簿
   void _handleCopy(TextEditingController controller) {
     final selection = controller.selection;
-    debugPrint("[DEBUG] Copy selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}");
-    
+    debugPrint(
+      "[DEBUG] Copy selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}",
+    );
+
     if (!selection.isValid || selection.isCollapsed) {
       debugPrint("[DEBUG] Copy No selection to copy");
       return; // 沒有選定任何文本
@@ -2061,10 +2281,15 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   /// 剪切選定的文本到剪貼簿
-  Future<void> _handleCut(TextEditingController controller, EditableTextState editable) async {
+  Future<void> _handleCut(
+    TextEditingController controller,
+    EditableTextState editable,
+  ) async {
     final selection = controller.selection;
-    debugPrint("[DEBUG] Cut selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}");
-    
+    debugPrint(
+      "[DEBUG] Cut selection=$selection, isValid=${selection.isValid}, isCollapsed=${selection.isCollapsed}",
+    );
+
     if (!selection.isValid || selection.isCollapsed) {
       debugPrint("[DEBUG] Cut No selection to cut");
       return; // 沒有選定任何文本
@@ -2083,7 +2308,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       selection.end,
       '',
     );
-    
+
     // 使用 updateEditingValue 更新，確保 UI 正確更新
     editable.updateEditingValue(
       TextEditingValue(
@@ -2096,7 +2321,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   /// 從剪貼簿貼上文本
-  Future<void> _handlePaste(TextEditingController controller, EditableTextState editable) async {
+  Future<void> _handlePaste(
+    TextEditingController controller,
+    EditableTextState editable,
+  ) async {
     debugPrint("[DEBUG] Paste Starting paste operation");
     try {
       final clipboardData = await Clipboard.getData('text/plain');
@@ -2111,10 +2339,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       final selection = controller.selection;
       debugPrint("[DEBUG] Paste: Current selection $selection");
-      
+
       String newText;
       int newCursorPos;
-      
+
       if (selection.isValid && !selection.isCollapsed) {
         // 如果有選定的文本，先替換它
         debugPrint("[DEBUG] Paste Replacing selected text");
@@ -2130,14 +2358,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         final offset = selection.isValid
             ? _clampOffset(selection.baseOffset, controller.text.length)
             : controller.text.length;
-        newText = controller.text.replaceRange(
-          offset,
-          offset,
-          pastedText,
-        );
+        newText = controller.text.replaceRange(offset, offset, pastedText);
         newCursorPos = offset + pastedText.length;
       }
-      
+
       // 使用 updateEditingValue 更新，確保 UI 正確更新
       editable.updateEditingValue(
         TextEditingValue(
@@ -2218,6 +2442,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _applyProjectData(result.data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      _resetProjectHistory();
       if (!mounted) {
         return;
       }
@@ -2293,6 +2518,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _applyProjectData(data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      _resetProjectHistory();
 
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       if (!mounted) {
@@ -2372,6 +2598,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _applyProjectData(data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      _resetProjectHistory();
 
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       if (!mounted) {
@@ -2510,6 +2737,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       } else {
         textController.text = "";
       }
+      textController.selection = TextSelection.collapsed(
+        offset: _clampOffset(
+          initialState.cursorOffset,
+          textController.text.length,
+        ),
+      );
       _lastObservedEditorText = textController.text;
       _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(
         textController.text,
