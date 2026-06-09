@@ -24,13 +24,32 @@ ProjectData _projectWithChapterContent(String content) {
     ..contentText = content;
 }
 
-ProjectHistoryEntry _entry(String content, {int pageIndex = 0}) {
+ProjectHistoryEntry _entry(
+  String content, {
+  int pageIndex = 0,
+  bool isPageTransition = false,
+}) {
+  return _entryFromData(
+    _projectWithChapterContent(content),
+    pageIndex: pageIndex,
+    cursorOffset: content.length,
+    isPageTransition: isPageTransition,
+  );
+}
+
+ProjectHistoryEntry _entryFromData(
+  ProjectData data, {
+  int pageIndex = 0,
+  int cursorOffset = 0,
+  bool isPageTransition = false,
+}) {
   return ProjectHistoryEntry(
-    data: _projectWithChapterContent(content),
+    data: data,
     pageIndex: pageIndex,
     selectedSegID: 'segment-1',
     selectedChapID: 'chapter-1',
-    cursorOffset: content.length,
+    cursorOffset: cursorOffset,
+    isPageTransition: isPageTransition,
   );
 }
 
@@ -112,6 +131,36 @@ void main() {
           .first
           .chapterContent,
       '60',
+    );
+  });
+
+  test('record removes previous unchanged page transition snapshot', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final history = container.read(projectHistoryProvider.notifier);
+    final baseEntry = _entry('one', pageIndex: 1);
+    history.reset(baseEntry);
+    history.record(
+      _entryFromData(baseEntry.data, pageIndex: 2, isPageTransition: true),
+    );
+    history.record(_entry('two', pageIndex: 2));
+
+    final state = container.read(projectHistoryProvider);
+    expect(state.undoStack, hasLength(2));
+    expect(state.undoStack.first.pageIndex, 1);
+    expect(state.undoStack.last.pageIndex, 2);
+    expect(
+      state
+          .undoStack
+          .last
+          .data
+          .segmentsData
+          .first
+          .chapters
+          .first
+          .chapterContent,
+      'two',
     );
   });
 }

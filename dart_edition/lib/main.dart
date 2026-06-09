@@ -268,6 +268,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
   );
+  static const Set<int> _ignoredPageTransitionIndexes = {
+    0, // Welcome
+    9, // Glossary
+    10, // Proofreading
+    13, // About
+  };
 
   List<ChapterModule.SegmentData> get segmentsData =>
       ref.read(segmentsDataProvider);
@@ -789,7 +795,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     });
   }
 
-  ProjectHistoryEntry _createProjectHistoryEntry(ProjectData data) {
+  ProjectHistoryEntry _createProjectHistoryEntry(
+    ProjectData data, {
+    bool isPageTransition = false,
+  }) {
     final selection = ref.read(editorSelectionProvider);
     final int cursorOffset = textController.selection.isValid
         ? _clampOffset(
@@ -804,10 +813,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       selectedSegID: selection.selectedSegID,
       selectedChapID: selection.selectedChapID,
       cursorOffset: cursorOffset,
+      isPageTransition: isPageTransition,
     );
   }
 
-  void _recordProjectHistorySnapshot({bool reset = false}) {
+  void _recordProjectHistorySnapshot({
+    bool reset = false,
+    bool isPageTransition = false,
+  }) {
     if (!mounted || _isApplyingProjectHistory) {
       return;
     }
@@ -816,7 +829,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _projectHistoryRecordTimer = null;
     _syncEditorToSelectedChapter();
 
-    final entry = _createProjectHistoryEntry(_collectProjectData());
+    final entry = _createProjectHistoryEntry(
+      _collectProjectData(),
+      isPageTransition: isPageTransition,
+    );
     final historyNotifier = ref.read(projectHistoryProvider.notifier);
     if (reset) {
       historyNotifier.reset(entry);
@@ -827,6 +843,19 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _resetProjectHistory() {
     _recordProjectHistorySnapshot(reset: true);
+  }
+
+  bool _shouldRecordPageTransition(int fromIndex, int toIndex) {
+    return !_ignoredPageTransitionIndexes.contains(fromIndex) &&
+        !_ignoredPageTransitionIndexes.contains(toIndex);
+  }
+
+  void _recordPageTransitionIfNeeded(int nextPageIndex) {
+    if (!_shouldRecordPageTransition(slidePageIndexNow, nextPageIndex)) {
+      return;
+    }
+
+    _recordProjectHistorySnapshot(isPageTransition: true);
   }
 
   EditorProjectInitialState _initialStateForHistoryEntry(
@@ -1416,7 +1445,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       fontSize: fontSize,
       onBeforePageSwitch: _syncEditorToSelectedChapter,
       onPageSelected: (index) {
-        _recordProjectHistorySnapshot();
+        _recordPageTransitionIfNeeded(index);
         setState(() {
           slidePageIndexNow = index;
         });
@@ -1477,7 +1506,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                 selectedIndex: _getNavigationIndex(),
                 onDestinationSelected: (index) {
                   _syncEditorToSelectedChapter();
-                  _recordProjectHistorySnapshot();
+                  _recordPageTransitionIfNeeded(index);
                   setState(() {
                     slidePageIndexNow = index;
                   });

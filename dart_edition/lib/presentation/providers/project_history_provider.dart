@@ -11,6 +11,7 @@ class ProjectHistoryEntry {
   final String? selectedSegID;
   final String? selectedChapID;
   final int cursorOffset;
+  final bool isPageTransition;
 
   ProjectHistoryEntry({
     required file_module.ProjectData data,
@@ -18,6 +19,7 @@ class ProjectHistoryEntry {
     required this.selectedSegID,
     required this.selectedChapID,
     required this.cursorOffset,
+    this.isPageTransition = false,
   }) : data = snapshotProjectData(data),
        xmlContent = file_module.FileService.generateProjectXML(
          snapshotProjectData(data),
@@ -59,8 +61,27 @@ class ProjectHistoryNotifier extends Notifier<ProjectHistoryState> {
     state = ProjectHistoryState(undoStack: [entry], redoStack: const []);
   }
 
+  List<ProjectHistoryEntry> _withoutTrailingUnchangedPageTransition(
+    List<ProjectHistoryEntry> stack,
+  ) {
+    if (stack.length < 2) {
+      return stack;
+    }
+
+    final last = stack.last;
+    final previous = stack[stack.length - 2];
+    if (!last.isPageTransition ||
+        last.xmlComparisonKey != previous.xmlComparisonKey) {
+      return stack;
+    }
+
+    return stack.sublist(0, stack.length - 1);
+  }
+
   bool record(ProjectHistoryEntry entry) {
-    final currentStack = state.undoStack;
+    final currentStack = _withoutTrailingUnchangedPageTransition(
+      state.undoStack,
+    );
     final nextUndo = [...currentStack, entry];
     final trimmedUndo = nextUndo.length > _maxEntries
         ? nextUndo.sublist(nextUndo.length - _maxEntries)
