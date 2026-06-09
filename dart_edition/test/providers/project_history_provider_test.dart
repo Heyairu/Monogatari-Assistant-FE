@@ -54,19 +54,40 @@ ProjectHistoryEntry _entryFromData(
 }
 
 void main() {
-  test('record keeps every XML snapshot', () {
+  test('record skips unchanged XML snapshots without page transition', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
     final history = container.read(projectHistoryProvider.notifier);
-    history.reset(_entry('one'));
+    final baseEntry = _entry('one');
+    history.reset(baseEntry);
 
-    expect(history.record(_entry('one')), true);
-    expect(container.read(projectHistoryProvider).undoStack, hasLength(2));
+    expect(history.record(_entryFromData(baseEntry.data)), false);
+    expect(container.read(projectHistoryProvider).undoStack, hasLength(1));
 
     expect(history.record(_entry('two')), true);
-    expect(container.read(projectHistoryProvider).undoStack, hasLength(3));
+    expect(container.read(projectHistoryProvider).undoStack, hasLength(2));
   });
+
+  test(
+    'record keeps unchanged XML snapshots when page transition is marked',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final history = container.read(projectHistoryProvider.notifier);
+      final baseEntry = _entry('one', pageIndex: 1);
+      history.reset(baseEntry);
+
+      expect(
+        history.record(
+          _entryFromData(baseEntry.data, pageIndex: 2, isPageTransition: true),
+        ),
+        true,
+      );
+      expect(container.read(projectHistoryProvider).undoStack, hasLength(2));
+    },
+  );
 
   test('undo and redo return full project snapshots with page metadata', () {
     final container = ProviderContainer();
@@ -163,4 +184,28 @@ void main() {
       'two',
     );
   });
+
+  test(
+    'record removes previous unchanged page transition then skips no-op',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final history = container.read(projectHistoryProvider.notifier);
+      final baseEntry = _entry('one', pageIndex: 1);
+      history.reset(baseEntry);
+      history.record(
+        _entryFromData(baseEntry.data, pageIndex: 2, isPageTransition: true),
+      );
+
+      expect(
+        history.record(_entryFromData(baseEntry.data, pageIndex: 2)),
+        false,
+      );
+
+      final state = container.read(projectHistoryProvider);
+      expect(state.undoStack, hasLength(1));
+      expect(state.undoStack.single.pageIndex, 1);
+    },
+  );
 }

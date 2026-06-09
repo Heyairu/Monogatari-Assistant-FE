@@ -82,6 +82,18 @@ class ProjectHistoryNotifier extends Notifier<ProjectHistoryState> {
     final currentStack = _withoutTrailingUnchangedPageTransition(
       state.undoStack,
     );
+    if (!entry.isPageTransition &&
+        currentStack.isNotEmpty &&
+        currentStack.last.xmlComparisonKey == entry.xmlComparisonKey) {
+      if (!identical(currentStack, state.undoStack)) {
+        state = ProjectHistoryState(
+          undoStack: currentStack,
+          redoStack: state.redoStack,
+        );
+      }
+      return false;
+    }
+
     final nextUndo = [...currentStack, entry];
     final trimmedUndo = nextUndo.length > _maxEntries
         ? nextUndo.sublist(nextUndo.length - _maxEntries)
