@@ -18,6 +18,7 @@ import "package:flutter/foundation.dart"; // Added for compute
 import "package:file_picker/file_picker.dart";
 import "package:path_provider/path_provider.dart";
 import "package:path/path.dart" as path;
+import "package:url_launcher/url_launcher.dart";
 import "package:xml/xml.dart" as xml;
 
 import "../modules/baseinfoview.dart" as BaseInfoModule;
@@ -1744,7 +1745,7 @@ class _ProjectMerger {
 // 負責協調 IO、System、Parsing、Merging 四大模組
 
 class FileService {
-  static const String defaultFileName = "MonogatariProject";
+  static const String defaultFileName = "Untitled";
   static const String projectExtension = ".mnproj"; // MonogatariAssistant 專案檔案
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
@@ -1824,6 +1825,71 @@ class FileService {
     }
 
     return null;
+  }
+
+  static String _twoDigits(int value) => value.toString().padLeft(2, "0");
+
+  static String _formatBackupTimestamp(DateTime now) {
+    final yy = _twoDigits(now.year % 100);
+    final mm = _twoDigits(now.month);
+    final dd = _twoDigits(now.day);
+    final hh = _twoDigits(now.hour);
+    final min = _twoDigits(now.minute);
+    final ss = _twoDigits(now.second);
+    return "${yy}${mm}${dd}_${hh}${min}${ss}";
+  }
+
+  static String _sanitizeBackupProjectName(String projectName) {
+    final sanitized = projectName
+        .trim()
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), "_")
+        .replaceAll(RegExp(r"\s+"), " ")
+        .replaceAll(RegExp(r"^\.+|\.+$"), "");
+    return sanitized.isEmpty ? defaultFileName : sanitized;
+  }
+
+  static Future<Directory> _autoBackupDirectory() async {
+    if (Platform.isWindows) {
+      final appData = Platform.environment["APPDATA"];
+      if (appData != null && appData.trim().isNotEmpty) {
+        return Directory(path.join(appData, "MonogatariAsstant", "AutoBackup"));
+      }
+    }
+
+    if (Platform.isMacOS) {
+      final home = Platform.environment["HOME"];
+      if (home != null && home.trim().isNotEmpty) {
+        return Directory(
+          path.join(
+            home,
+            "Library",
+            "Containers",
+            "com.heyairu.monoashi",
+            "AutoBackup",
+          ),
+        );
+      }
+    }
+
+    if (Platform.isLinux) {
+      final home = Platform.environment["HOME"];
+      if (home != null && home.trim().isNotEmpty) {
+        return Directory(
+          path.join(home, ".config", "MonogatariAsstant", "AutoBackup"),
+        );
+      }
+    }
+
+    final supportDir = await getApplicationSupportDirectory();
+    return Directory(path.join(supportDir.path, "AutoBackup"));
+  }
+
+  static Future<Directory> _ensureAutoBackupDirectory() async {
+    final backupDir = await _autoBackupDirectory();
+    if (!await backupDir.exists()) {
+      await backupDir.create(recursive: true);
+    }
+    return backupDir;
   }
 
   /// 建立平台持久化存取 token（目前 macOS 會回傳 security-scoped bookmark）
@@ -1986,6 +2052,32 @@ class FileService {
     }
   }
 
+  /// 只儲存到已知位置，不觸發另存新檔對話框。
+  static Future<ProjectFile> saveProjectToKnownLocation(
+    ProjectFile projectFile,
+  ) async {
+    try {
+      if (Platform.isAndroid && projectFile.uri != null) {
+        await _SystemBridge.writeToUri(projectFile.uri!, projectFile.content);
+        return projectFile;
+      }
+
+      final normalizedPath = _normalizeLocalPathOrNull(projectFile.filePath);
+      if (normalizedPath == null) {
+        throw FileException("自動儲存需要已知檔案路徑。");
+      }
+
+      projectFile.filePath = normalizedPath;
+      await _FileIO.write(normalizedPath, projectFile.content);
+      return projectFile;
+    } catch (e) {
+      if (e is FileException) {
+        rethrow;
+      }
+      throw FileException("自動儲存失敗: ${e.toString()}");
+    }
+  }
+
   /// 另存新檔
   static Future<ProjectFile> saveProjectAs(ProjectFile projectFile) async {
     try {
@@ -2029,6 +2121,73 @@ class FileService {
     } catch (e) {
       throw FileException("另存檔案失敗: ${e.toString()}");
     }
+  }
+
+  /// 寫入 AutoBackup 檔案，不影響目前專案路徑或未儲存狀態。
+  static Future<String> saveProjectAutoBackup({
+    required String projectName,
+    required String content,
+  }) async {
+    try {
+      final backupDir = await _ensureAutoBackupDirectory();
+
+      final safeProjectName = _sanitizeBackupProjectName(projectName);
+      final timestamp = _formatBackupTimestamp(DateTime.now());
+      final backupName =
+          "${safeProjectName}_backup_$timestamp$projectExtension";
+      final backupPath = path.join(backupDir.path, backupName);
+
+      await _FileIO.write(backupPath, content);
+      return backupPath;
+    } catch (e) {
+      throw FileException("寫入 AutoBackup 失敗: ${e.toString()}");
+    }
+  }
+
+  /// 取得 AutoBackup 目錄；若尚未存在會先建立。
+  static Future<String> getAutoBackupDirectoryPath() async {
+    final backupDir = await _ensureAutoBackupDirectory();
+    return backupDir.path;
+  }
+
+  /// 使用平台檔案管理器開啟 AutoBackup 目錄。
+  static Future<String> openAutoBackupDirectory() async {
+    final backupDir = await _ensureAutoBackupDirectory();
+
+    try {
+      if (Platform.isWindows) {
+        final result = await Process.run("explorer", [backupDir.path]);
+        if (result.exitCode == 0) {
+          return backupDir.path;
+        }
+      } else if (Platform.isMacOS) {
+        final result = await Process.run("open", [backupDir.path]);
+        if (result.exitCode == 0) {
+          return backupDir.path;
+        }
+      } else if (Platform.isLinux) {
+        final result = await Process.run("xdg-open", [backupDir.path]);
+        if (result.exitCode == 0) {
+          return backupDir.path;
+        }
+      }
+
+      final directoryUri = Uri.directory(
+        backupDir.path,
+        windows: Platform.isWindows,
+      );
+      final launched = await launchUrl(
+        directoryUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched) {
+        return backupDir.path;
+      }
+    } catch (e) {
+      throw FileException("開啟 AutoBackup 目錄失敗: ${e.toString()}");
+    }
+
+    throw FileException("此平台不支援直接開啟 AutoBackup 目錄：${backupDir.path}");
   }
 
   /// 匯出文字檔案

@@ -91,21 +91,44 @@ class SettingsManager extends ChangeNotifier {
   static const String _showExitWarningKey = "show_exit_warning";
   static const String _fontSizeKey = "app_font_size";
   static const String _wordCountModeKey = "word_count_mode";
+  static const String _autoSaveEnabledKey = "auto_save_enabled";
+  static const String _autoSaveIntervalMinutesKey =
+      "auto_save_interval_minutes";
+  static const String _autoBackupEnabledKey = "auto_backup_enabled";
+  static const String _autoBackupIntervalMinutesKey =
+      "auto_backup_interval_minutes";
+  static const String _legacyAutoBackupEnabledKey = "autosave_enabled";
+  static const String _legacyAutoBackupIntervalMinutesKey =
+      "autosave_interval_minutes";
   static const String _recentProjectsKey = "recent_projects";
   static const int _maxRecentProjects = 10;
   static const double _defaultFontSize = 12.0;
   static const double _minFontSize = 12.0;
   static const double _maxFontSize = 20.0;
+  static const int _defaultAutoSaveIntervalMinutes = 5;
+  static const int _minAutoSaveIntervalMinutes = 1;
+  static const int _maxAutoSaveIntervalMinutes = 120;
+  static const int _defaultAutoBackupIntervalMinutes = 5;
+  static const int _minAutoBackupIntervalMinutes = 1;
+  static const int _maxAutoBackupIntervalMinutes = 120;
 
   bool _showExitWarning = true;
   double _fontSize = _defaultFontSize;
   WordCountMode _wordCountMode = WordCountMode.wordsAndCharacters;
+  bool _autoSaveEnabled = false;
+  int _autoSaveIntervalMinutes = _defaultAutoSaveIntervalMinutes;
+  bool _autoBackupEnabled = false;
+  int _autoBackupIntervalMinutes = _defaultAutoBackupIntervalMinutes;
   List<RecentProjectEntry> _recentProjects = [];
   bool _isInitialized = false;
 
   bool get showExitWarning => _showExitWarning;
   double get fontSize => _fontSize;
   WordCountMode get wordCountMode => _wordCountMode;
+  bool get autoSaveEnabled => _autoSaveEnabled;
+  int get autoSaveIntervalMinutes => _autoSaveIntervalMinutes;
+  bool get autoBackupEnabled => _autoBackupEnabled;
+  int get autoBackupIntervalMinutes => _autoBackupIntervalMinutes;
   List<RecentProjectEntry> get recentProjects =>
       List.unmodifiable(_recentProjects);
   bool get isInitialized => _isInitialized;
@@ -123,6 +146,23 @@ class SettingsManager extends ChangeNotifier {
       _wordCountMode = WordCountMode.values.length > modeIndex
           ? WordCountMode.values[modeIndex]
           : WordCountMode.wordsAndCharacters;
+      _autoSaveEnabled = prefs.getBool(_autoSaveEnabledKey) ?? false;
+      _autoSaveIntervalMinutes =
+          (prefs.getInt(_autoSaveIntervalMinutesKey) ??
+                  _defaultAutoSaveIntervalMinutes)
+              .clamp(_minAutoSaveIntervalMinutes, _maxAutoSaveIntervalMinutes);
+      _autoBackupEnabled =
+          prefs.getBool(_autoBackupEnabledKey) ??
+          prefs.getBool(_legacyAutoBackupEnabledKey) ??
+          false;
+      _autoBackupIntervalMinutes =
+          (prefs.getInt(_autoBackupIntervalMinutesKey) ??
+                  prefs.getInt(_legacyAutoBackupIntervalMinutesKey) ??
+                  _defaultAutoBackupIntervalMinutes)
+              .clamp(
+                _minAutoBackupIntervalMinutes,
+                _maxAutoBackupIntervalMinutes,
+              );
 
       final savedRecentProjects =
           prefs.getStringList(_recentProjectsKey) ?? const [];
@@ -142,6 +182,10 @@ class SettingsManager extends ChangeNotifier {
       _showExitWarning = true;
       _fontSize = _defaultFontSize;
       _wordCountMode = WordCountMode.wordsAndCharacters;
+      _autoSaveEnabled = false;
+      _autoSaveIntervalMinutes = _defaultAutoSaveIntervalMinutes;
+      _autoBackupEnabled = false;
+      _autoBackupIntervalMinutes = _defaultAutoBackupIntervalMinutes;
       _recentProjects = [];
       debugPrint("Failed to load settings: $e");
     } finally {
@@ -191,6 +235,74 @@ class SettingsManager extends ChangeNotifier {
         await prefs.setInt(_wordCountModeKey, value.index);
       } catch (e) {
         debugPrint("Failed to save word count mode setting: $e");
+      }
+    }
+  }
+
+  /// 設定是否啟用自動儲存
+  Future<void> setAutoSaveEnabled(bool value) async {
+    if (_autoSaveEnabled != value) {
+      _autoSaveEnabled = value;
+      notifyListeners();
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_autoSaveEnabledKey, value);
+      } catch (e) {
+        debugPrint("Failed to save AutoSave enabled setting: $e");
+      }
+    }
+  }
+
+  /// 設定自動儲存間隔（分鐘）
+  Future<void> setAutoSaveIntervalMinutes(int value) async {
+    final normalized = value.clamp(
+      _minAutoSaveIntervalMinutes,
+      _maxAutoSaveIntervalMinutes,
+    );
+    if (_autoSaveIntervalMinutes != normalized) {
+      _autoSaveIntervalMinutes = normalized;
+      notifyListeners();
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_autoSaveIntervalMinutesKey, normalized);
+      } catch (e) {
+        debugPrint("Failed to save AutoSave interval setting: $e");
+      }
+    }
+  }
+
+  /// 設定是否啟用 AutoBackup
+  Future<void> setAutoBackupEnabled(bool value) async {
+    if (_autoBackupEnabled != value) {
+      _autoBackupEnabled = value;
+      notifyListeners();
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_autoBackupEnabledKey, value);
+      } catch (e) {
+        debugPrint("Failed to save AutoBackup enabled setting: $e");
+      }
+    }
+  }
+
+  /// 設定 AutoBackup 間隔（分鐘）
+  Future<void> setAutoBackupIntervalMinutes(int value) async {
+    final normalized = value.clamp(
+      _minAutoBackupIntervalMinutes,
+      _maxAutoBackupIntervalMinutes,
+    );
+    if (_autoBackupIntervalMinutes != normalized) {
+      _autoBackupIntervalMinutes = normalized;
+      notifyListeners();
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_autoBackupIntervalMinutesKey, normalized);
+      } catch (e) {
+        debugPrint("Failed to save AutoBackup interval setting: $e");
       }
     }
   }

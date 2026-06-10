@@ -59,6 +59,10 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
       showExitWarning: snapshot.showExitWarning,
       fontSize: snapshot.fontSize,
       wordCountMode: snapshot.wordCountMode,
+      autoSaveEnabled: snapshot.autoSaveEnabled,
+      autoSaveIntervalMinutes: snapshot.autoSaveIntervalMinutes,
+      autoBackupEnabled: snapshot.autoBackupEnabled,
+      autoBackupIntervalMinutes: snapshot.autoBackupIntervalMinutes,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -79,6 +83,36 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     final current = state.valueOrNull ?? const AppSettingsStateData();
     state = AsyncData(current.copyWith(wordCountMode: value));
     await ref.read(settingsRepositoryProvider).saveWordCountMode(value);
+  }
+
+  Future<void> setAutoSaveEnabled(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoSaveEnabled: value));
+    await ref.read(settingsRepositoryProvider).saveAutoSaveEnabled(value);
+  }
+
+  Future<void> setAutoSaveIntervalMinutes(int value) async {
+    final normalized = value.clamp(1, 120);
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoSaveIntervalMinutes: normalized));
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveAutoSaveIntervalMinutes(normalized);
+  }
+
+  Future<void> setAutoBackupEnabled(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoBackupEnabled: value));
+    await ref.read(settingsRepositoryProvider).saveAutoBackupEnabled(value);
+  }
+
+  Future<void> setAutoBackupIntervalMinutes(int value) async {
+    final normalized = value.clamp(1, 120);
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoBackupIntervalMinutes: normalized));
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveAutoBackupIntervalMinutes(normalized);
   }
 
   Future<void> addRecentProject({

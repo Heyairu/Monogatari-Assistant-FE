@@ -28,8 +28,30 @@ class ProjectFileUseCase {
     return fileRepository.saveProject(projectFile);
   }
 
+  Future<ProjectFile> saveProjectToKnownLocation(ProjectFile projectFile) {
+    return fileRepository.saveProjectToKnownLocation(projectFile);
+  }
+
   Future<ProjectFile> saveProjectAs(ProjectFile projectFile) {
     return fileRepository.saveProjectAs(projectFile);
+  }
+
+  Future<String> saveProjectAutoBackup({
+    required String projectName,
+    required String content,
+  }) {
+    return fileRepository.saveProjectAutoBackup(
+      projectName: projectName,
+      content: content,
+    );
+  }
+
+  Future<String> getAutoBackupDirectoryPath() {
+    return fileRepository.getAutoBackupDirectoryPath();
+  }
+
+  Future<String> openAutoBackupDirectory() {
+    return fileRepository.openAutoBackupDirectory();
   }
 
   Future<void> exportText({

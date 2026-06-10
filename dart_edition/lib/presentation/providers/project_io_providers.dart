@@ -16,6 +16,8 @@ enum ProjectIoOperation {
   openRecentProject,
   saveProject,
   saveProjectAs,
+  saveProjectAutoSave,
+  saveProjectAutoBackup,
   exportText,
   exportSelective,
 }
@@ -39,8 +41,7 @@ class ProjectIoStatus {
 
   const ProjectIoStatus.idle() : this(operation: ProjectIoOperation.idle);
 
-  bool get isBusy =>
-      isOpeningProject || isSaving || isExporting || isParsing;
+  bool get isBusy => isOpeningProject || isSaving || isExporting || isParsing;
 
   bool get blocksEditor => isOpeningProject || isParsing;
 }
@@ -175,9 +176,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     final operation = shouldSaveAs
         ? ProjectIoOperation.saveProjectAs
         : ProjectIoOperation.saveProject;
-    state = AsyncData(
-      ProjectIoStatus(operation: operation, isSaving: true),
-    );
+    state = AsyncData(ProjectIoStatus(operation: operation, isSaving: true));
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectToSave = currentProject ?? await useCase.createNewProject();
@@ -211,6 +210,90 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         ),
       );
       return savedProject;
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<ProjectFile> saveProjectAutoSave({
+    required ProjectFile currentProject,
+    required ProjectData currentData,
+  }) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.saveProjectAutoSave,
+        isSaving: true,
+      ),
+    );
+    try {
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final baseInfoSnapshot =
+          base_info_module.BaseInfoCodec.createSaveSnapshot(
+            data: currentData.baseInfoData,
+            contentText: currentData.contentText,
+          );
+      final snapshotData = snapshotProjectData(
+        currentData,
+        baseInfoOverride: baseInfoSnapshot,
+      );
+      final xmlContent = await useCase.generateProjectXml(snapshotData);
+      currentProject.content = xmlContent;
+      final savedProject = await useCase.saveProjectToKnownLocation(
+        currentProject,
+      );
+
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.saveProjectAutoSave,
+          message: "自動儲存完成",
+        ),
+      );
+      return savedProject;
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<String> saveProjectAutoBackup({
+    required ProjectFile? currentProject,
+    required ProjectData currentData,
+  }) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.saveProjectAutoBackup,
+        isSaving: true,
+      ),
+    );
+    try {
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final baseInfoSnapshot =
+          base_info_module.BaseInfoCodec.createSaveSnapshot(
+            data: currentData.baseInfoData,
+            contentText: currentData.contentText,
+          );
+      final snapshotData = snapshotProjectData(
+        currentData,
+        baseInfoOverride: baseInfoSnapshot,
+      );
+      final xmlContent = await useCase.generateProjectXml(snapshotData);
+      final projectName =
+          currentProject?.nameWithoutExtension.trim().isNotEmpty == true
+          ? currentProject!.nameWithoutExtension
+          : FileService.defaultFileName;
+      final backupPath = await useCase.saveProjectAutoBackup(
+        projectName: projectName,
+        content: xmlContent,
+      );
+
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.saveProjectAutoBackup,
+          message: "AutoBackup 已建立",
+        ),
+      );
+      return backupPath;
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       rethrow;

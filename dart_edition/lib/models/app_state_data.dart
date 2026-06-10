@@ -20,6 +20,10 @@ class AppSettingsStateData with _$AppSettingsStateData {
     @Default(true) bool showExitWarning,
     @Default(12.0) double fontSize,
     @Default(WordCountMode.wordsAndCharacters) WordCountMode wordCountMode,
+    @Default(false) bool autoSaveEnabled,
+    @Default(5) int autoSaveIntervalMinutes,
+    @Default(false) bool autoBackupEnabled,
+    @Default(5) int autoBackupIntervalMinutes,
     @Default(<RecentProjectEntry>[]) List<RecentProjectEntry> recentProjects,
   }) = _AppSettingsStateData;
 }

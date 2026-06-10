@@ -132,8 +132,31 @@ class _BlockingFileRepository implements FileRepository {
   }
 
   @override
+  Future<ProjectFile> saveProjectToKnownLocation(ProjectFile projectFile) {
+    return saveProject(projectFile);
+  }
+
+  @override
   Future<ProjectFile> saveProjectAs(ProjectFile projectFile) {
     return saveProject(projectFile);
+  }
+
+  @override
+  Future<String> saveProjectAutoBackup({
+    required String projectName,
+    required String content,
+  }) {
+    return Future.value('AutoBackup/$projectName.mnproj');
+  }
+
+  @override
+  Future<String> getAutoBackupDirectoryPath() {
+    return Future.value('AutoBackup');
+  }
+
+  @override
+  Future<String> openAutoBackupDirectory() {
+    return Future.value('AutoBackup');
   }
 
   @override

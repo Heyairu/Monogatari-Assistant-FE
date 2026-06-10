@@ -12,7 +12,18 @@ abstract class FileRepository {
 
   Future<ProjectFile> saveProject(ProjectFile projectFile);
 
+  Future<ProjectFile> saveProjectToKnownLocation(ProjectFile projectFile);
+
   Future<ProjectFile> saveProjectAs(ProjectFile projectFile);
+
+  Future<String> saveProjectAutoBackup({
+    required String projectName,
+    required String content,
+  });
+
+  Future<String> getAutoBackupDirectoryPath();
+
+  Future<String> openAutoBackupDirectory();
 
   Future<void> exportText({
     required String content,
@@ -66,8 +77,34 @@ class DefaultFileRepository implements FileRepository {
   }
 
   @override
+  Future<ProjectFile> saveProjectToKnownLocation(ProjectFile projectFile) {
+    return FileService.saveProjectToKnownLocation(projectFile);
+  }
+
+  @override
   Future<ProjectFile> saveProjectAs(ProjectFile projectFile) {
     return FileService.saveProjectAs(projectFile);
+  }
+
+  @override
+  Future<String> saveProjectAutoBackup({
+    required String projectName,
+    required String content,
+  }) {
+    return FileService.saveProjectAutoBackup(
+      projectName: projectName,
+      content: content,
+    );
+  }
+
+  @override
+  Future<String> getAutoBackupDirectoryPath() {
+    return FileService.getAutoBackupDirectoryPath();
+  }
+
+  @override
+  Future<String> openAutoBackupDirectory() {
+    return FileService.openAutoBackupDirectory();
   }
 
   @override

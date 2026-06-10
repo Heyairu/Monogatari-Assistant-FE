@@ -8,7 +8,7 @@
 PRODUCT_NAME = 物語Assistant
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.heyairu.monogatariAssistant
+PRODUCT_BUNDLE_IDENTIFIER = com.heyairu.monoashi
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 com.heyairu. All rights reserved.

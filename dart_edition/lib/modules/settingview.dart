@@ -16,6 +16,7 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
+import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
 
 class SettingView extends ConsumerStatefulWidget {
@@ -36,7 +37,15 @@ class _SettingViewState extends ConsumerState<SettingView> {
     }),
   );
 
-  ({bool showExitWarning, double fontSize, WordCountMode wordCountMode})
+  ({
+    bool showExitWarning,
+    double fontSize,
+    WordCountMode wordCountMode,
+    bool autoSaveEnabled,
+    int autoSaveIntervalMinutes,
+    bool autoBackupEnabled,
+    int autoBackupIntervalMinutes,
+  })
   get _settingsViewState => ref.watch(
     settingsStateProvider.select((state) {
       final settings = state.valueOrNull;
@@ -45,6 +54,10 @@ class _SettingViewState extends ConsumerState<SettingView> {
         fontSize: settings?.fontSize ?? 12.0,
         wordCountMode:
             settings?.wordCountMode ?? WordCountMode.wordsAndCharacters,
+        autoSaveEnabled: settings?.autoSaveEnabled ?? false,
+        autoSaveIntervalMinutes: settings?.autoSaveIntervalMinutes ?? 5,
+        autoBackupEnabled: settings?.autoBackupEnabled ?? false,
+        autoBackupIntervalMinutes: settings?.autoBackupIntervalMinutes ?? 5,
       );
     }),
   );
@@ -127,9 +140,11 @@ class _SettingViewState extends ConsumerState<SettingView> {
                     ),
                     const SizedBox(height: 16),
                     _buildWordCountSetting(),
+                    const SizedBox(height: 16),
+                    _buildAutoSaveSetting(),
+                    const SizedBox(height: 16),
+                    _buildAutoBackupSetting(),
                     const SizedBox(height: 8),
-                    _buildPlaceholderSetting("自動儲存", Icons.save),
-                    _buildPlaceholderSetting("自動備份", Icons.backup),
                     _buildPlaceholderSetting("語言設定", Icons.language),
                     _buildPlaceholderSetting("文件同步", Icons.sync),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
@@ -212,13 +227,13 @@ class _SettingViewState extends ConsumerState<SettingView> {
           itemBuilder: (context, index) {
             final entry = UILibrary.supportedColors.entries.elementAt(index);
             final isSelected =
-                _themeViewState.themeColor.toARGB32() ==
-                entry.value.toARGB32();
+                _themeViewState.themeColor.toARGB32() == entry.value.toARGB32();
 
             return Center(
               child: InkWell(
-                onTap: () =>
-                    ref.read(themeStateProvider.notifier).setThemeColor(entry.value),
+                onTap: () => ref
+                    .read(themeStateProvider.notifier)
+                    .setThemeColor(entry.value),
                 borderRadius: BorderRadius.circular(50),
                 child: Container(
                   width: 36,
@@ -303,9 +318,10 @@ class _SettingViewState extends ConsumerState<SettingView> {
   // MARK: - 主題預覽
   Widget _buildThemePreview() {
     final isSystemDark =
-      MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final isDark = _themeViewState.themeMode == AppThemeMode.dark ||
-      (_themeViewState.themeMode == AppThemeMode.system && isSystemDark);
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final isDark =
+        _themeViewState.themeMode == AppThemeMode.dark ||
+        (_themeViewState.themeMode == AppThemeMode.system && isSystemDark);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -392,6 +408,165 @@ class _SettingViewState extends ConsumerState<SettingView> {
     );
   }
 
+  // MARK: - 自動儲存設定
+  Widget _buildAutoSaveSetting() {
+    final enabled = _settingsViewState.autoSaveEnabled;
+    final interval = _settingsViewState.autoSaveIntervalMinutes;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchWithIconTitle(
+          title: "自動儲存",
+          icon: Icons.save,
+          subtitle: "依排程儲存檔案（需要檔案存在）",
+          value: enabled,
+          onChanged: (value) async {
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setAutoSaveEnabled(value);
+          },
+        ),
+        Opacity(
+          opacity: enabled ? 1 : 0.5,
+          child: IgnorePointer(
+            ignoring: !enabled,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final valueLabel = Text(
+                  "$interval 分鐘",
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                );
+                final slider = Slider(
+                  value: interval.toDouble(),
+                  min: 0,
+                  max: 120,
+                  divisions: 24,
+                  label: "$interval 分鐘",
+                  onChanged: (value) async {
+                    await ref
+                        .read(settingsStateProvider.notifier)
+                        .setAutoSaveIntervalMinutes(value.round());
+                  },
+                );
+
+                return Row(
+                  children: [
+                    Icon(Icons.timer, color: colorScheme.primary),
+                    const SizedBox(width: 4),
+                    Expanded(child: slider),
+                    const SizedBox(width: 4),
+                    valueLabel,
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // MARK: - AutoBackup 設定
+  Widget _buildAutoBackupSetting() {
+    final enabled = _settingsViewState.autoBackupEnabled;
+    final interval = _settingsViewState.autoBackupIntervalMinutes;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchWithIconTitle(
+          title: "自動備份",
+          icon: Icons.backup,
+          subtitle: "依排程建立專案備份，不覆蓋原檔案",
+          value: enabled,
+          onChanged: (value) async {
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setAutoBackupEnabled(value);
+          },
+        ),
+        Opacity(
+          opacity: enabled ? 1 : 0.5,
+          child: IgnorePointer(
+            ignoring: !enabled,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final valueLabel = Text(
+                  "$interval 分鐘",
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                );
+                final slider = Slider(
+                  value: interval.toDouble(),
+                  min: 0,
+                  max: 120,
+                  divisions: 24,
+                  label: "$interval 分鐘",
+                  onChanged: (value) async {
+                    await ref
+                        .read(settingsStateProvider.notifier)
+                        .setAutoBackupIntervalMinutes(value.round());
+                  },
+                );
+
+                return Row(
+                  children: [
+                    Icon(Icons.timer, color: colorScheme.primary),
+                    const SizedBox(width: 4),
+                    Expanded(child: slider),
+                    const SizedBox(width: 4),
+                    valueLabel,
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          onPressed: _openAutoBackupDirectory,
+          icon: const Icon(Icons.folder_open),
+          label: const Text("開啟自動備份資料夾"),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openAutoBackupDirectory() async {
+    try {
+      final directoryPath = await ref
+          .read(projectFileUseCaseProvider)
+          .openAutoBackupDirectory();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("已開啟 AutoBackup 目錄：$directoryPath"),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   // MARK: - 佔位元件
   Widget _buildPlaceholderSetting(String title, IconData icon) {
     return Padding(
@@ -400,10 +575,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
         children: [
           Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 12),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.labelMedium
-          ),
+          Text(title, style: Theme.of(context).textTheme.labelMedium),
           const Spacer(),
           Text(
             "即將推出",

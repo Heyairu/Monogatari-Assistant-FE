@@ -179,6 +179,10 @@ mixin _$AppSettingsStateData {
   bool get showExitWarning => throw _privateConstructorUsedError;
   double get fontSize => throw _privateConstructorUsedError;
   WordCountMode get wordCountMode => throw _privateConstructorUsedError;
+  bool get autoSaveEnabled => throw _privateConstructorUsedError;
+  int get autoSaveIntervalMinutes => throw _privateConstructorUsedError;
+  bool get autoBackupEnabled => throw _privateConstructorUsedError;
+  int get autoBackupIntervalMinutes => throw _privateConstructorUsedError;
   List<RecentProjectEntry> get recentProjects =>
       throw _privateConstructorUsedError;
 
@@ -200,6 +204,10 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
     bool showExitWarning,
     double fontSize,
     WordCountMode wordCountMode,
+    bool autoSaveEnabled,
+    int autoSaveIntervalMinutes,
+    bool autoBackupEnabled,
+    int autoBackupIntervalMinutes,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -225,6 +233,10 @@ class _$AppSettingsStateDataCopyWithImpl<
     Object? showExitWarning = null,
     Object? fontSize = null,
     Object? wordCountMode = null,
+    Object? autoSaveEnabled = null,
+    Object? autoSaveIntervalMinutes = null,
+    Object? autoBackupEnabled = null,
+    Object? autoBackupIntervalMinutes = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -241,6 +253,22 @@ class _$AppSettingsStateDataCopyWithImpl<
                 ? _value.wordCountMode
                 : wordCountMode // ignore: cast_nullable_to_non_nullable
                       as WordCountMode,
+            autoSaveEnabled: null == autoSaveEnabled
+                ? _value.autoSaveEnabled
+                : autoSaveEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            autoSaveIntervalMinutes: null == autoSaveIntervalMinutes
+                ? _value.autoSaveIntervalMinutes
+                : autoSaveIntervalMinutes // ignore: cast_nullable_to_non_nullable
+                      as int,
+            autoBackupEnabled: null == autoBackupEnabled
+                ? _value.autoBackupEnabled
+                : autoBackupEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            autoBackupIntervalMinutes: null == autoBackupIntervalMinutes
+                ? _value.autoBackupIntervalMinutes
+                : autoBackupIntervalMinutes // ignore: cast_nullable_to_non_nullable
+                      as int,
             recentProjects: null == recentProjects
                 ? _value.recentProjects
                 : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -264,6 +292,10 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
     bool showExitWarning,
     double fontSize,
     WordCountMode wordCountMode,
+    bool autoSaveEnabled,
+    int autoSaveIntervalMinutes,
+    bool autoBackupEnabled,
+    int autoBackupIntervalMinutes,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -285,6 +317,10 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
     Object? showExitWarning = null,
     Object? fontSize = null,
     Object? wordCountMode = null,
+    Object? autoSaveEnabled = null,
+    Object? autoSaveIntervalMinutes = null,
+    Object? autoBackupEnabled = null,
+    Object? autoBackupIntervalMinutes = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -301,6 +337,22 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
             ? _value.wordCountMode
             : wordCountMode // ignore: cast_nullable_to_non_nullable
                   as WordCountMode,
+        autoSaveEnabled: null == autoSaveEnabled
+            ? _value.autoSaveEnabled
+            : autoSaveEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        autoSaveIntervalMinutes: null == autoSaveIntervalMinutes
+            ? _value.autoSaveIntervalMinutes
+            : autoSaveIntervalMinutes // ignore: cast_nullable_to_non_nullable
+                  as int,
+        autoBackupEnabled: null == autoBackupEnabled
+            ? _value.autoBackupEnabled
+            : autoBackupEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        autoBackupIntervalMinutes: null == autoBackupIntervalMinutes
+            ? _value.autoBackupIntervalMinutes
+            : autoBackupIntervalMinutes // ignore: cast_nullable_to_non_nullable
+                  as int,
         recentProjects: null == recentProjects
             ? _value._recentProjects
             : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -317,6 +369,10 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     this.showExitWarning = true,
     this.fontSize = 12.0,
     this.wordCountMode = WordCountMode.wordsAndCharacters,
+    this.autoSaveEnabled = false,
+    this.autoSaveIntervalMinutes = 5,
+    this.autoBackupEnabled = false,
+    this.autoBackupIntervalMinutes = 5,
     final List<RecentProjectEntry> recentProjects =
         const <RecentProjectEntry>[],
   }) : _recentProjects = recentProjects;
@@ -330,6 +386,18 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   @override
   @JsonKey()
   final WordCountMode wordCountMode;
+  @override
+  @JsonKey()
+  final bool autoSaveEnabled;
+  @override
+  @JsonKey()
+  final int autoSaveIntervalMinutes;
+  @override
+  @JsonKey()
+  final bool autoBackupEnabled;
+  @override
+  @JsonKey()
+  final int autoBackupIntervalMinutes;
   final List<RecentProjectEntry> _recentProjects;
   @override
   @JsonKey()
@@ -341,7 +409,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
   @override
   String toString() {
-    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, recentProjects: $recentProjects)';
+    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, recentProjects: $recentProjects)';
   }
 
   @override
@@ -355,6 +423,20 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
                 other.fontSize == fontSize) &&
             (identical(other.wordCountMode, wordCountMode) ||
                 other.wordCountMode == wordCountMode) &&
+            (identical(other.autoSaveEnabled, autoSaveEnabled) ||
+                other.autoSaveEnabled == autoSaveEnabled) &&
+            (identical(
+                  other.autoSaveIntervalMinutes,
+                  autoSaveIntervalMinutes,
+                ) ||
+                other.autoSaveIntervalMinutes == autoSaveIntervalMinutes) &&
+            (identical(other.autoBackupEnabled, autoBackupEnabled) ||
+                other.autoBackupEnabled == autoBackupEnabled) &&
+            (identical(
+                  other.autoBackupIntervalMinutes,
+                  autoBackupIntervalMinutes,
+                ) ||
+                other.autoBackupIntervalMinutes == autoBackupIntervalMinutes) &&
             const DeepCollectionEquality().equals(
               other._recentProjects,
               _recentProjects,
@@ -367,6 +449,10 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     showExitWarning,
     fontSize,
     wordCountMode,
+    autoSaveEnabled,
+    autoSaveIntervalMinutes,
+    autoBackupEnabled,
+    autoBackupIntervalMinutes,
     const DeepCollectionEquality().hash(_recentProjects),
   );
 
@@ -388,6 +474,10 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
     final bool showExitWarning,
     final double fontSize,
     final WordCountMode wordCountMode,
+    final bool autoSaveEnabled,
+    final int autoSaveIntervalMinutes,
+    final bool autoBackupEnabled,
+    final int autoBackupIntervalMinutes,
     final List<RecentProjectEntry> recentProjects,
   }) = _$AppSettingsStateDataImpl;
 
@@ -397,6 +487,14 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
   double get fontSize;
   @override
   WordCountMode get wordCountMode;
+  @override
+  bool get autoSaveEnabled;
+  @override
+  int get autoSaveIntervalMinutes;
+  @override
+  bool get autoBackupEnabled;
+  @override
+  int get autoBackupIntervalMinutes;
   @override
   List<RecentProjectEntry> get recentProjects;
 

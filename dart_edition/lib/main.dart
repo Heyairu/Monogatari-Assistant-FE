@@ -217,7 +217,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
-  int autoSaveTime = 1;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
   int _allWordCountsGen = 0;
@@ -264,6 +263,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   late final TextChangeDebouncer _textChangeDebouncer;
   Timer? _projectHistoryRecordTimer;
+  Timer? _autoSaveTimer;
+  Timer? _autoBackupTimer;
+  bool _isWritingAutoSave = false;
+  bool _isWritingAutoBackup = false;
   bool _isApplyingProjectHistory = false;
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
@@ -535,6 +538,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     }
 
     _bootstrapEditorSelectionFromProviderState();
+    _configureAutoSaveTimer(_settingsState);
+    _configureAutoBackupTimer(_settingsState);
 
     // 監聽文字變化
     textController.addListener(() {
@@ -570,6 +575,29 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     });
 
     // 啟動時不自動建立新專案，避免與使用者手動開檔流程競態。
+
+    _subscriptions.add(
+      ref.listenManual<AppSettingsStateData>(
+        settingsStateProvider.select(
+          (state) => state.valueOrNull ?? const AppSettingsStateData(),
+        ),
+        (previous, next) {
+          if (!mounted) {
+            return;
+          }
+          if (previous?.autoSaveEnabled != next.autoSaveEnabled ||
+              previous?.autoSaveIntervalMinutes !=
+                  next.autoSaveIntervalMinutes) {
+            _configureAutoSaveTimer(next);
+          }
+          if (previous?.autoBackupEnabled != next.autoBackupEnabled ||
+              previous?.autoBackupIntervalMinutes !=
+                  next.autoBackupIntervalMinutes) {
+            _configureAutoBackupTimer(next);
+          }
+        },
+      ),
+    );
 
     _subscriptions.add(
       ref.listenManual<String>(editorContentProvider, (previous, next) {
@@ -740,6 +768,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _cancelPendingContentCommit();
     _projectHistoryRecordTimer?.cancel();
     _projectHistoryRecordTimer = null;
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = null;
     _activeWordCountGen++;
     _allWordCountsGen++;
     _closeProviderSubscriptions();
@@ -777,6 +809,107 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _flushPendingEditorContent() {
     _textChangeDebouncer.flushPendingContentCommit();
+  }
+
+  bool _canAutoSaveToKnownLocation(ProjectFile? projectFile) {
+    if (projectFile == null) {
+      return false;
+    }
+    final hasPath = projectFile.filePath?.trim().isNotEmpty == true;
+    final hasUri = projectFile.uri?.trim().isNotEmpty == true;
+    return hasPath || hasUri;
+  }
+
+  void _configureAutoSaveTimer(AppSettingsStateData settings) {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+
+    if (!settings.autoSaveEnabled) {
+      return;
+    }
+
+    final intervalMinutes = settings.autoSaveIntervalMinutes.clamp(1, 120);
+    _autoSaveTimer = Timer.periodic(
+      Duration(minutes: intervalMinutes),
+      (_) => unawaited(_performAutoSave()),
+    );
+  }
+
+  Future<void> _performAutoSave() async {
+    final project = currentProject;
+    if (!mounted ||
+        _isWritingAutoSave ||
+        !_settingsState.autoSaveEnabled ||
+        !_canAutoSaveToKnownLocation(project)) {
+      return;
+    }
+
+    _syncEditorToSelectedChapter();
+    if (!hasUnsavedChanges) {
+      return;
+    }
+
+    _isWritingAutoSave = true;
+    try {
+      final currentData = _collectProjectData();
+      final savedProject = await ref
+          .read(projectIoControllerProvider.notifier)
+          .saveProjectAutoSave(
+            currentProject: project!,
+            currentData: currentData,
+          );
+      if (!mounted) {
+        return;
+      }
+      setState(() => currentProject = savedProject);
+      _markAsSaved();
+      await _editorCoordinatorNotifier.recordRecentProject(savedProject);
+    } catch (error, stackTrace) {
+      debugPrint("AutoSave failed: $error\n$stackTrace");
+    } finally {
+      _isWritingAutoSave = false;
+    }
+  }
+
+  void _configureAutoBackupTimer(AppSettingsStateData settings) {
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = null;
+
+    if (!settings.autoBackupEnabled) {
+      return;
+    }
+
+    final intervalMinutes = settings.autoBackupIntervalMinutes.clamp(1, 120);
+    _autoBackupTimer = Timer.periodic(
+      Duration(minutes: intervalMinutes),
+      (_) => unawaited(_performAutoBackup()),
+    );
+  }
+
+  Future<void> _performAutoBackup() async {
+    if (!mounted || _isWritingAutoBackup || !_settingsState.autoBackupEnabled) {
+      return;
+    }
+
+    _syncEditorToSelectedChapter();
+    if (!hasUnsavedChanges) {
+      return;
+    }
+
+    _isWritingAutoBackup = true;
+    try {
+      final currentData = _collectProjectData();
+      await ref
+          .read(projectIoControllerProvider.notifier)
+          .saveProjectAutoBackup(
+            currentProject: currentProject,
+            currentData: currentData,
+          );
+    } catch (error, stackTrace) {
+      debugPrint("AutoBackup failed: $error\n$stackTrace");
+    } finally {
+      _isWritingAutoBackup = false;
+    }
   }
 
   void _cancelPendingContentCommit() {
@@ -1385,7 +1518,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     );
     final statusTotalWords = ref.watch(totalWordsProvider);
 
-    String projectName = currentProject?.nameWithoutExtension ?? "未命名專案";
+    String projectName = currentProject?.nameWithoutExtension ?? "Untitled";
     if (hasUnsavedChanges) projectName += "*";
 
     String currentPosition = "";
