@@ -50,6 +50,18 @@ class ProjectFileUseCase {
     return fileRepository.getAutoBackupDirectoryPath();
   }
 
+  Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo() {
+    return fileRepository.getAutoBackupDirectoryInfo();
+  }
+
+  Future<String> selectAutoBackupDirectory() {
+    return fileRepository.selectAutoBackupDirectory();
+  }
+
+  Future<String> resetAutoBackupDirectory() {
+    return fileRepository.resetAutoBackupDirectory();
+  }
+
   Future<String> openAutoBackupDirectory() {
     return fileRepository.openAutoBackupDirectory();
   }

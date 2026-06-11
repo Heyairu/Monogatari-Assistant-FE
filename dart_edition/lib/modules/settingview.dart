@@ -14,6 +14,7 @@
 
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "../bin/file.dart" show AutoBackupDirectoryInfo;
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 import "../presentation/providers/core_providers.dart";
@@ -27,6 +28,24 @@ class SettingView extends ConsumerStatefulWidget {
 }
 
 class _SettingViewState extends ConsumerState<SettingView> {
+  late Future<AutoBackupDirectoryInfo> _autoBackupDirectoryInfoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoBackupDirectoryInfoFuture = _loadAutoBackupDirectoryInfo();
+  }
+
+  Future<AutoBackupDirectoryInfo> _loadAutoBackupDirectoryInfo() {
+    return ref.read(projectFileUseCaseProvider).getAutoBackupDirectoryInfo();
+  }
+
+  void _refreshAutoBackupDirectoryInfo() {
+    setState(() {
+      _autoBackupDirectoryInfoFuture = _loadAutoBackupDirectoryInfo();
+    });
+  }
+
   ({AppThemeMode themeMode, Color themeColor}) get _themeViewState => ref.watch(
     themeStateProvider.select((state) {
       final theme = state.valueOrNull;
@@ -531,10 +550,81 @@ class _SettingViewState extends ConsumerState<SettingView> {
           ),
         ),
         const SizedBox(height: 4),
-        TextButton.icon(
-          onPressed: _openAutoBackupDirectory,
-          icon: const Icon(Icons.folder_open),
-          label: const Text("開啟自動備份資料夾"),
+        FutureBuilder<AutoBackupDirectoryInfo>(
+          future: _autoBackupDirectoryInfoFuture,
+          builder: (context, snapshot) {
+            final info = snapshot.data;
+            final isLoading =
+                snapshot.connectionState == ConnectionState.waiting &&
+                info == null;
+
+            if (isLoading) {
+              return const Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            }
+
+            if (info == null || (info.isAndroid && !info.isConfigured)) {
+              return TextButton.icon(
+                onPressed: _selectAutoBackupDirectory,
+                icon: const Icon(Icons.folder_open),
+                label: const Text("選擇自動備份資料夾"),
+              );
+            }
+
+            return Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                TextButton.icon(
+                  onPressed: _openAutoBackupDirectory,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text("開啟"),
+                ),
+                if (info.isAndroid)
+                  TextButton.icon(
+                    onPressed: _selectAutoBackupDirectory,
+                    icon: const Icon(Icons.drive_folder_upload_outlined),
+                    label: const Text("重新選擇"),
+                  )
+                else if (info.isDefault)
+                  TextButton.icon(
+                    onPressed: _selectAutoBackupDirectory,
+                    icon: const Icon(Icons.drive_folder_upload_outlined),
+                    label: const Text("選擇"),
+                  )
+                else
+                  PopupMenuButton<String>(
+                    tooltip: "AutoBackup 目錄選項",
+                    icon: const Icon(Icons.more_horiz),
+                    onSelected: (value) async {
+                      if (value == "select") {
+                        await _selectAutoBackupDirectory();
+                      } else if (value == "reset") {
+                        await _resetAutoBackupDirectory();
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: "select", child: Text("選擇")),
+                      PopupMenuItem(value: "reset", child: Text("重設")),
+                    ],
+                  ),
+                if (info.path.trim().isNotEmpty)
+                  Text(
+                    info.path,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -551,6 +641,62 @@ class _SettingViewState extends ConsumerState<SettingView> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("已開啟 AutoBackup 目錄：$directoryPath"),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _selectAutoBackupDirectory() async {
+    try {
+      final directoryPath = await ref
+          .read(projectFileUseCaseProvider)
+          .selectAutoBackupDirectory();
+      if (!mounted) {
+        return;
+      }
+      _refreshAutoBackupDirectoryInfo();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("AutoBackup 目錄已設定：$directoryPath"),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _resetAutoBackupDirectory() async {
+    try {
+      final directoryPath = await ref
+          .read(projectFileUseCaseProvider)
+          .resetAutoBackupDirectory();
+      if (!mounted) {
+        return;
+      }
+      _refreshAutoBackupDirectoryInfo();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("AutoBackup 目錄已重設：$directoryPath"),
           behavior: SnackBarBehavior.floating,
         ),
       );

@@ -155,6 +155,29 @@ class _BlockingFileRepository implements FileRepository {
   }
 
   @override
+  Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo() {
+    return Future.value(
+      const AutoBackupDirectoryInfo(
+        path: 'AutoBackup',
+        isConfigured: true,
+        isDefault: true,
+        canReset: false,
+        isAndroid: false,
+      ),
+    );
+  }
+
+  @override
+  Future<String> selectAutoBackupDirectory() {
+    return Future.value('AutoBackup');
+  }
+
+  @override
+  Future<String> resetAutoBackupDirectory() {
+    return Future.value('AutoBackup');
+  }
+
+  @override
   Future<String> openAutoBackupDirectory() {
     return Future.value('AutoBackup');
   }

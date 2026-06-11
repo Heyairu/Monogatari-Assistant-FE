@@ -18,6 +18,7 @@ import "package:flutter/foundation.dart"; // Added for compute
 import "package:file_picker/file_picker.dart";
 import "package:path_provider/path_provider.dart";
 import "package:path/path.dart" as path;
+import "package:shared_preferences/shared_preferences.dart";
 import "package:url_launcher/url_launcher.dart";
 import "package:xml/xml.dart" as xml;
 
@@ -77,6 +78,84 @@ class _SystemBridge {
       });
     } on PlatformException catch (e) {
       throw FileException("寫入 URI 失敗: ${e.message}");
+    }
+  }
+
+  /// 保留 Android SAF 檔案的讀寫權限，讓後續自動儲存可直接寫回。
+  static Future<void> persistUriPermission(String? uri) async {
+    if (!Platform.isAndroid || uri == null || uri.trim().isEmpty) {
+      return;
+    }
+
+    try {
+      await platform.invokeMethod("persistUriPermission", {"uri": uri.trim()});
+    } on PlatformException catch (e) {
+      debugPrint("Persist Android URI permission failed: ${e.message}");
+    }
+  }
+
+  /// 選擇 Android AutoBackup 目錄並保留 SAF 寫入權限。
+  static Future<String?> selectAutoBackupDirectory() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+
+    try {
+      return await platform.invokeMethod<String>("selectAutoBackupDirectory");
+    } on PlatformException catch (e) {
+      throw FileException("選擇 AutoBackup 目錄失敗: ${e.message ?? e.code}");
+    }
+  }
+
+  static Future<String?> getSelectedAutoBackupDirectory() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+
+    try {
+      return await platform.invokeMethod<String>(
+        "getSelectedAutoBackupDirectory",
+      );
+    } on PlatformException catch (e) {
+      debugPrint("Get selected Android backup directory failed: ${e.message}");
+      return null;
+    }
+  }
+
+  static Future<void> openSelectedAutoBackupDirectory() async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+
+    try {
+      await platform.invokeMethod("openSelectedAutoBackupDirectory");
+    } on PlatformException catch (e) {
+      throw FileException("開啟 AutoBackup 目錄失敗: ${e.message ?? e.code}");
+    }
+  }
+
+  static Future<String> saveAutoBackupFile({
+    required String fileName,
+    required String content,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw FileException("此平台不支援 Android SAF 備份寫入");
+    }
+
+    try {
+      final result = await platform.invokeMethod<String>("saveAutoBackupFile", {
+        "fileName": fileName,
+        "content": content,
+      });
+      if (result == null || result.trim().isEmpty) {
+        throw FileException("Android SAF 未回傳備份檔案位置");
+      }
+      return result;
+    } on PlatformException catch (e) {
+      if (e.code == "NO_BACKUP_DIRECTORY") {
+        throw FileException("請先在設定中選擇 AutoBackup 目錄。");
+      }
+      throw FileException("寫入 AutoBackup 失敗: ${e.message ?? e.code}");
     }
   }
 
@@ -992,6 +1071,22 @@ class ProjectParseResult {
   const ProjectParseResult({required this.projectVersion, required this.data});
 }
 
+class AutoBackupDirectoryInfo {
+  final String path;
+  final bool isConfigured;
+  final bool isDefault;
+  final bool canReset;
+  final bool isAndroid;
+
+  const AutoBackupDirectoryInfo({
+    required this.path,
+    required this.isConfigured,
+    required this.isDefault,
+    required this.canReset,
+    required this.isAndroid,
+  });
+}
+
 /// 專案檔案資料類
 class ProjectFile {
   String fileName;
@@ -1750,6 +1845,9 @@ class FileService {
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
   static const String projectVersion = "1.06"; // 專案結構版本
+  static const String autoBackupFolderName = "MonoAshi_Backup";
+  static const String _customAutoBackupDirectoryKey =
+      "custom_auto_backup_directory";
 
   /// 從專案 XML 取出版本號（`<ver>`）
   static String? extractProjectVersion(String xmlContent) {
@@ -1848,11 +1946,13 @@ class FileService {
     return sanitized.isEmpty ? defaultFileName : sanitized;
   }
 
-  static Future<Directory> _autoBackupDirectory() async {
+  static Future<Directory> _defaultAutoBackupDirectory() async {
     if (Platform.isWindows) {
       final appData = Platform.environment["APPDATA"];
       if (appData != null && appData.trim().isNotEmpty) {
-        return Directory(path.join(appData, "MonogatariAsstant", "AutoBackup"));
+        return Directory(
+          path.join(appData, "MonogatariAsstant", autoBackupFolderName),
+        );
       }
     }
 
@@ -1865,7 +1965,7 @@ class FileService {
             "Library",
             "Containers",
             "com.heyairu.monoashi",
-            "AutoBackup",
+            autoBackupFolderName,
           ),
         );
       }
@@ -1875,13 +1975,53 @@ class FileService {
       final home = Platform.environment["HOME"];
       if (home != null && home.trim().isNotEmpty) {
         return Directory(
-          path.join(home, ".config", "MonogatariAsstant", "AutoBackup"),
+          path.join(home, ".config", "MonogatariAsstant", autoBackupFolderName),
         );
       }
     }
 
     final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, "AutoBackup"));
+    return Directory(path.join(supportDir.path, autoBackupFolderName));
+  }
+
+  static Future<String?> _customAutoBackupDirectoryPath() async {
+    if (Platform.isAndroid) {
+      return null;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final savedPath = prefs.getString(_customAutoBackupDirectoryKey)?.trim();
+    return savedPath == null || savedPath.isEmpty ? null : savedPath;
+  }
+
+  static Future<void> _setCustomAutoBackupDirectoryPath(
+    String? directoryPath,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = directoryPath?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      await prefs.remove(_customAutoBackupDirectoryKey);
+      return;
+    }
+
+    final defaultDir = await _defaultAutoBackupDirectory();
+    if (path.equals(
+      path.normalize(normalized),
+      path.normalize(defaultDir.path),
+    )) {
+      await prefs.remove(_customAutoBackupDirectoryKey);
+      return;
+    }
+
+    await prefs.setString(_customAutoBackupDirectoryKey, normalized);
+  }
+
+  static Future<Directory> _autoBackupDirectory() async {
+    final customPath = await _customAutoBackupDirectoryPath();
+    if (customPath != null) {
+      return Directory(customPath);
+    }
+    return _defaultAutoBackupDirectory();
   }
 
   static Future<Directory> _ensureAutoBackupDirectory() async {
@@ -1931,6 +2071,7 @@ class FileService {
             : (normalizedPath != null
                   ? path.basename(normalizedPath)
                   : "$defaultFileName$projectExtension");
+        await _SystemBridge.persistUriPermission(result.uri);
         return ProjectFile(
           fileName: resolvedFileName,
           filePath: normalizedPath,
@@ -2098,6 +2239,9 @@ class FileService {
 
       final normalizedPath =
           _normalizeLocalPathOrNull(outputFile) ?? outputFile;
+      final normalizedLocalPath = _normalizeLocalPathOrNull(normalizedPath);
+      final outputUri = normalizedLocalPath == null ? normalizedPath : null;
+      await _SystemBridge.persistUriPermission(outputUri);
 
       // 在桌面平台上仍需要寫入檔案 (SystemBridge 可能只回傳路徑)
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -2112,10 +2256,8 @@ class FileService {
 
       return ProjectFile(
         fileName: resolvedFileName,
-        filePath: _normalizeLocalPathOrNull(normalizedPath),
-        uri: _normalizeLocalPathOrNull(normalizedPath) == null
-            ? normalizedPath
-            : null,
+        filePath: normalizedLocalPath,
+        uri: outputUri,
         content: projectFile.content,
       );
     } catch (e) {
@@ -2129,12 +2271,19 @@ class FileService {
     required String content,
   }) async {
     try {
-      final backupDir = await _ensureAutoBackupDirectory();
-
       final safeProjectName = _sanitizeBackupProjectName(projectName);
       final timestamp = _formatBackupTimestamp(DateTime.now());
       final backupName =
           "${safeProjectName}_backup_$timestamp$projectExtension";
+
+      if (Platform.isAndroid) {
+        return await _SystemBridge.saveAutoBackupFile(
+          fileName: backupName,
+          content: content,
+        );
+      }
+
+      final backupDir = await _ensureAutoBackupDirectory();
       final backupPath = path.join(backupDir.path, backupName);
 
       await _FileIO.write(backupPath, content);
@@ -2146,12 +2295,84 @@ class FileService {
 
   /// 取得 AutoBackup 目錄；若尚未存在會先建立。
   static Future<String> getAutoBackupDirectoryPath() async {
+    final info = await getAutoBackupDirectoryInfo();
+    return info.path;
+  }
+
+  static Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo() async {
+    if (Platform.isAndroid) {
+      final selectedUri = await _SystemBridge.getSelectedAutoBackupDirectory();
+      return AutoBackupDirectoryInfo(
+        path: selectedUri ?? "",
+        isConfigured: selectedUri != null && selectedUri.trim().isNotEmpty,
+        isDefault: false,
+        canReset: false,
+        isAndroid: true,
+      );
+    }
+
+    final defaultDir = await _defaultAutoBackupDirectory();
+    final customPath = await _customAutoBackupDirectoryPath();
+    final activePath = customPath ?? defaultDir.path;
+    final isDefault = customPath == null;
+
+    return AutoBackupDirectoryInfo(
+      path: activePath,
+      isConfigured: true,
+      isDefault: isDefault,
+      canReset: !isDefault,
+      isAndroid: false,
+    );
+  }
+
+  static Future<String> selectAutoBackupDirectory() async {
+    if (Platform.isAndroid) {
+      final selectedUri = await _SystemBridge.selectAutoBackupDirectory();
+      if (selectedUri == null || selectedUri.trim().isEmpty) {
+        throw FileException("已取消選擇 AutoBackup 目錄。");
+      }
+      return selectedUri;
+    }
+
+    final defaultDir = await _defaultAutoBackupDirectory();
+    final currentDir = await _autoBackupDirectory();
+    final selectedPath = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: "選擇 AutoBackup 目錄",
+      initialDirectory: (await currentDir.exists())
+          ? currentDir.path
+          : defaultDir.parent.path,
+    );
+
+    if (selectedPath == null || selectedPath.trim().isEmpty) {
+      throw FileException("已取消選擇 AutoBackup 目錄。");
+    }
+
+    await _setCustomAutoBackupDirectoryPath(selectedPath);
+    final selectedDir = Directory(selectedPath);
+    if (!await selectedDir.exists()) {
+      await selectedDir.create(recursive: true);
+    }
+    return selectedDir.path;
+  }
+
+  static Future<String> resetAutoBackupDirectory() async {
+    if (Platform.isAndroid) {
+      throw FileException("Android 需要由使用者選擇 AutoBackup 目錄。");
+    }
+
+    await _setCustomAutoBackupDirectoryPath(null);
     final backupDir = await _ensureAutoBackupDirectory();
     return backupDir.path;
   }
 
   /// 使用平台檔案管理器開啟 AutoBackup 目錄。
   static Future<String> openAutoBackupDirectory() async {
+    if (Platform.isAndroid) {
+      await _SystemBridge.openSelectedAutoBackupDirectory();
+      final selectedUri = await _SystemBridge.getSelectedAutoBackupDirectory();
+      return selectedUri ?? "";
+    }
+
     final backupDir = await _ensureAutoBackupDirectory();
 
     try {

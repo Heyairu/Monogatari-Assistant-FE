@@ -23,6 +23,12 @@ abstract class FileRepository {
 
   Future<String> getAutoBackupDirectoryPath();
 
+  Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo();
+
+  Future<String> selectAutoBackupDirectory();
+
+  Future<String> resetAutoBackupDirectory();
+
   Future<String> openAutoBackupDirectory();
 
   Future<void> exportText({
@@ -100,6 +106,21 @@ class DefaultFileRepository implements FileRepository {
   @override
   Future<String> getAutoBackupDirectoryPath() {
     return FileService.getAutoBackupDirectoryPath();
+  }
+
+  @override
+  Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo() {
+    return FileService.getAutoBackupDirectoryInfo();
+  }
+
+  @override
+  Future<String> selectAutoBackupDirectory() {
+    return FileService.selectAutoBackupDirectory();
+  }
+
+  @override
+  Future<String> resetAutoBackupDirectory() {
+    return FileService.resetAutoBackupDirectory();
   }
 
   @override
