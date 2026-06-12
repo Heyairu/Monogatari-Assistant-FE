@@ -1845,7 +1845,8 @@ class FileService {
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
   static const String projectVersion = "1.06"; // 專案結構版本
-  static const String autoBackupFolderName = "MonoAshi_Backup";
+  static const String autoBackupFolderNameDesktop = "autosave";
+  static const String autoBackupFolderNameMobile = "MonoAshi_Backup";
   static const String _customAutoBackupDirectoryKey =
       "custom_auto_backup_directory";
 
@@ -1951,7 +1952,7 @@ class FileService {
       final appData = Platform.environment["APPDATA"];
       if (appData != null && appData.trim().isNotEmpty) {
         return Directory(
-          path.join(appData, "MonogatariAsstant", autoBackupFolderName),
+          path.join(appData, "MonogatariAsstant", autoBackupFolderNameDesktop),
         );
       }
     }
@@ -1965,7 +1966,7 @@ class FileService {
             "Library",
             "Containers",
             "com.heyairu.monoashi",
-            autoBackupFolderName,
+            autoBackupFolderNameDesktop,
           ),
         );
       }
@@ -1975,13 +1976,13 @@ class FileService {
       final home = Platform.environment["HOME"];
       if (home != null && home.trim().isNotEmpty) {
         return Directory(
-          path.join(home, ".config", "MonogatariAsstant", autoBackupFolderName),
+          path.join(home, ".config", "MonogatariAsstant", autoBackupFolderNameDesktop),
         );
       }
     }
 
     final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, autoBackupFolderName));
+    return Directory(path.join(supportDir.path, autoBackupFolderNameMobile));
   }
 
   static Future<String?> _customAutoBackupDirectoryPath() async {
