@@ -78,8 +78,14 @@ class ProjectFileUseCase {
     );
   }
 
-  Future<String> generateProjectXml(ProjectData data) {
-    return fileRepository.generateProjectXml(data);
+  Future<String> generateProjectXml(
+    ProjectData data, {
+    bool updateLatestSave = true,
+  }) {
+    return fileRepository.generateProjectXml(
+      data,
+      updateLatestSave: updateLatestSave,
+    );
   }
 
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile) {

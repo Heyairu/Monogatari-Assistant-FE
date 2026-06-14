@@ -431,8 +431,14 @@ class ProjectManager {
   }
 
   /// 生成專案XML內容
-  static Future<String> generateProjectXML(ProjectData data) async {
-    return compute(FileService.generateProjectXML, data);
+  static Future<String> generateProjectXML(
+    ProjectData data, {
+    bool updateLatestSave = true,
+  }) async {
+    if (updateLatestSave) {
+      return compute(FileService.generateProjectXML, data);
+    }
+    return compute(FileService.generateProjectXMLWithoutLatestSaveUpdate, data);
   }
 
   /// 從XML載入專案
@@ -1335,7 +1341,10 @@ class _ProjectParser {
 /// 負責將資料結構合併/生成為 XML 或其他格式
 class _ProjectMerger {
   /// 生成專案XML內容
-  static String generateProjectXML(ProjectData data) {
+  static String generateProjectXML(
+    ProjectData data, {
+    bool updateLatestSave = true,
+  }) {
     final buffer = StringBuffer();
 
     buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -1347,6 +1356,7 @@ class _ProjectMerger {
       data: data.baseInfoData,
       totalWords: data.totalWords,
       contentText: data.contentText,
+      updateLatestSave: updateLatestSave,
     );
     if (baseInfoXml != null) {
       buffer.writeln(baseInfoXml);
@@ -2502,6 +2512,13 @@ class FileService {
   /// 生成專案XML內容 (Merger)
   static String generateProjectXML(ProjectData data) {
     return _ProjectMerger.generateProjectXML(data);
+  }
+
+  static String generateProjectXMLWithoutLatestSaveUpdate(ProjectData data) {
+    return _ProjectMerger.generateProjectXML(
+      data,
+      updateLatestSave: false,
+    );
   }
 
   /// 解析專案XML內容 (Parser)

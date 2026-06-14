@@ -267,6 +267,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   Timer? _autoBackupTimer;
   bool _isWritingAutoSave = false;
   bool _isWritingAutoBackup = false;
+  String? _lastAutoBackupContent;
   bool _isApplyingProjectHistory = false;
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
@@ -892,24 +893,29 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     }
 
     _syncEditorToSelectedChapter();
-    if (!hasUnsavedChanges) {
-      return;
-    }
 
     _isWritingAutoBackup = true;
     try {
       final currentData = _collectProjectData();
-      await ref
+      final result = await ref
           .read(projectIoControllerProvider.notifier)
           .saveProjectAutoBackup(
             currentProject: currentProject,
             currentData: currentData,
+            lastAutoBackupContent: _lastAutoBackupContent,
           );
+      if (result.wasWritten) {
+        _lastAutoBackupContent = result.content;
+      }
     } catch (error, stackTrace) {
       debugPrint("AutoBackup failed: $error\n$stackTrace");
     } finally {
       _isWritingAutoBackup = false;
     }
+  }
+
+  void _resetAutoBackupBaseline() {
+    _lastAutoBackupContent = null;
   }
 
   void _cancelPendingContentCommit() {
@@ -2601,6 +2607,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       setState(() {
         currentProject = result.projectFile;
+        _resetAutoBackupBaseline();
         _applyProjectData(result.data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
@@ -2677,6 +2684,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       setState(() {
         currentProject = projectFile;
+        _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
@@ -2757,6 +2765,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       setState(() {
         currentProject = projectFile;
+        _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
       _editorCoordinatorNotifier.resetAfterProjectLoaded();

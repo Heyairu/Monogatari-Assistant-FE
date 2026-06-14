@@ -49,7 +49,10 @@ abstract class FileRepository {
 
   Future<FileInfo> getFileInfo(String filePath);
 
-  Future<String> generateProjectXml(ProjectData data);
+  Future<String> generateProjectXml(
+    ProjectData data, {
+    bool updateLatestSave = true,
+  });
 
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile);
 
@@ -172,8 +175,14 @@ class DefaultFileRepository implements FileRepository {
   }
 
   @override
-  Future<String> generateProjectXml(ProjectData data) {
-    return ProjectManager.generateProjectXML(data);
+  Future<String> generateProjectXml(
+    ProjectData data, {
+    bool updateLatestSave = true,
+  }) {
+    return ProjectManager.generateProjectXML(
+      data,
+      updateLatestSave: updateLatestSave,
+    );
   }
 
   @override

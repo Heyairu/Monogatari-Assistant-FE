@@ -21,6 +21,24 @@
 
 Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 
+## App Preview
+<table>
+<tr>
+<td><img src="AppPreview/1.png" width="220"></td>
+<td><img src="AppPreview/2.png" width="220"></td>
+<td><img src="AppPreview/3.png" width="220"></td>
+<td><img src="AppPreview/4.png" width="220"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td><img src="AppPreview/5.png" width="220"></td>
+<td><img src="AppPreview/6.png" width="220"></td>
+<td><img src="AppPreview/7.png" width="220"></td>
+<td><img src="AppPreview/8.png" width="220"></td>
+</tr>
+</table>
 ## 配置需求
 
 ### Windows / macOS / Linux

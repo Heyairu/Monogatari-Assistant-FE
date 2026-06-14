@@ -58,6 +58,26 @@ class ProjectLoadResult {
   });
 }
 
+class AutoBackupResult {
+  final String? path;
+  final String content;
+  final bool wasWritten;
+
+  const AutoBackupResult._({
+    required this.path,
+    required this.content,
+    required this.wasWritten,
+  });
+
+  const AutoBackupResult.written({
+    required String path,
+    required String content,
+  }) : this._(path: path, content: content, wasWritten: true);
+
+  const AutoBackupResult.skipped({required String content})
+    : this._(path: null, content: content, wasWritten: false);
+}
+
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   @override
   ProjectIoStatus build() => const ProjectIoStatus.idle();
@@ -256,9 +276,10 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     }
   }
 
-  Future<String> saveProjectAutoBackup({
+  Future<AutoBackupResult> saveProjectAutoBackup({
     required ProjectFile? currentProject,
     required ProjectData currentData,
+    String? lastAutoBackupContent,
   }) async {
     state = const AsyncData(
       ProjectIoStatus(
@@ -272,12 +293,21 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           base_info_module.BaseInfoCodec.createSaveSnapshot(
             data: currentData.baseInfoData,
             contentText: currentData.contentText,
+            updateLatestSave: false,
           );
       final snapshotData = snapshotProjectData(
         currentData,
         baseInfoOverride: baseInfoSnapshot,
       );
-      final xmlContent = await useCase.generateProjectXml(snapshotData);
+      final xmlContent = await useCase.generateProjectXml(
+        snapshotData,
+        updateLatestSave: false,
+      );
+      if (lastAutoBackupContent == xmlContent) {
+        state = const AsyncData(ProjectIoStatus.idle());
+        return AutoBackupResult.skipped(content: xmlContent);
+      }
+
       final projectName =
           currentProject?.nameWithoutExtension.trim().isNotEmpty == true
           ? currentProject!.nameWithoutExtension
@@ -293,7 +323,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           message: "AutoBackup 已建立",
         ),
       );
-      return backupPath;
+      return AutoBackupResult.written(path: backupPath, content: xmlContent);
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       rethrow;
