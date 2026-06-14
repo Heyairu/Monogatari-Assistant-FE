@@ -8,20 +8,8 @@
 [![Flutter](https://img.shields.io/badge/Flutter-%5E3.9.2-02569B?logo=flutter)](https://flutter.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows|macOS|Linux||Android|iOS-green)](#支援平台)
 
-- **Material Design 介面** - 支援亮色/暗色主題，響應式佈局
-- **章節管理** - 分部章節組織，拖拽排序，快速切換
-- **角色設定** - 詳細的角色資料卡，包含外觀、性格、能力等多維度設定
-- **世界設定** - 地點、文化、歷史等世界觀資料管理
-- **大綱規劃** - 結構化故事線管理，支援場景、事件和衝突點規劃
-- **搜尋** - 支援正則表達式、大小寫敏感、全形半形不敏感搜尋
-
-「物語Assistant」是一款專為小說家與創作者設計的輕量級編輯工具。它能讓你更直觀地整理與構築故事中的場景、對話、動作以及事件等要素。不同於傳統文字編輯器，本工具強調視覺化與結構化的工作流程，能在寫作過程中即時預覽故事的進展，大幅減少不必要的修正工作。
-
-無論是長篇小說、輕小說，還是短篇故事，都能靈活支援。透過模組化設計，創作者能迅速將靈感轉化為稿件。「物語Assistant」不僅僅是寫作工具，更是協助你維持故事一致性與條理性的「創作夥伴」，讓寫作流程更加順暢。
-
-Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
-
-## App Preview
+<details>
+<summary>App Preview</summary>
 <table>
 <tr>
 <td><img src="AppPreview/1.png" width="220"></td>
@@ -39,6 +27,21 @@ Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
 <td><img src="AppPreview/8.png" width="220"></td>
 </tr>
 </table>
+</details>
+
+- **Material Design 介面** - 支援亮色/暗色主題，響應式佈局
+- **章節管理** - 分部章節組織，拖拽排序，快速切換
+- **角色設定** - 詳細的角色資料卡，包含外觀、性格、能力等多維度設定
+- **世界設定** - 地點、文化、歷史等世界觀資料管理
+- **大綱規劃** - 結構化故事線管理，支援場景、事件和衝突點規劃
+- **搜尋** - 支援正則表達式、大小寫敏感、全形半形不敏感搜尋
+
+「物語Assistant」是一款專為小說家與創作者設計的輕量級編輯工具。它能讓你更直觀地整理與構築故事中的場景、對話、動作以及事件等要素。不同於傳統文字編輯器，本工具強調視覺化與結構化的工作流程，能在寫作過程中即時預覽故事的進展，大幅減少不必要的修正工作。
+
+無論是長篇小說、輕小說，還是短篇故事，都能靈活支援。透過模組化設計，創作者能迅速將靈感轉化為稿件。「物語Assistant」不僅僅是寫作工具，更是協助你維持故事一致性與條理性的「創作夥伴」，讓寫作流程更加順暢。
+
+Logo靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori
+
 ## 配置需求
 
 ### Windows / macOS / Linux
