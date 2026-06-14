@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows|macOS|Linux||Android|iOS-green)](#支援平台)
 
 <details>
-<summary>App Preview</summary>
+<summary><h2>App Preview</h2></summary>
 <table>
 <tr>
 <td><img src="AppPreview/1.png" width="220"></td>
