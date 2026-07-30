@@ -685,35 +685,16 @@ class _CopilotViewState extends State<CopilotView> {
   }
 
   Widget _buildWarningCard() {
-    return Card(
-      elevation: 0,
-      color: Theme.of(context).colorScheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_outlined,
-              color: Theme.of(context).colorScheme.onErrorContainer,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                "本功能正在開發中，Ask / Plan / Agent 模式暫不可用。",
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onErrorContainer,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const AppNoticeBanner(
+      message: "本功能正在開發中，Ask / Plan / Agent 模式暫不可用。",
+      tone: AppFeedbackTone.warning,
     );
   }
 
   Widget _buildModelPanel() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: ExpansionTile(
@@ -724,44 +705,19 @@ class _CopilotViewState extends State<CopilotView> {
         title: Text("模型選擇", style: Theme.of(context).textTheme.titleMedium),
         childrenPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final bool isWide = constraints.maxWidth >= 720;
-              return Column(
-                children: [
-                  const SizedBox(height: 16),
-                  if (isWide)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildProviderField()),
-                        const SizedBox(width: 16),
-                        Expanded(child: _buildApiUrlField()),
-                      ],
-                    )
-                  else ...[
-                    _buildProviderField(),
-                    const SizedBox(height: 16),
-                    _buildApiUrlField(),
-                  ],
-                  const SizedBox(height: 16),
-                  if (isWide)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildModelField()),
-                        const SizedBox(width: 16),
-                        Expanded(child: _buildApiKeyField()),
-                      ],
-                    )
-                  else ...[
-                    _buildModelField(),
-                    const SizedBox(height: 16),
-                    _buildApiKeyField(),
-                  ],
-                ],
-              );
-            },
+          Column(
+            children: [
+              const SizedBox(height: 16),
+              ResponsiveSplitView(
+                primary: _buildProviderField(),
+                secondary: _buildApiUrlField(),
+              ),
+              const SizedBox(height: 16),
+              ResponsiveSplitView(
+                primary: _buildModelField(),
+                secondary: _buildApiKeyField(),
+              ),
+            ],
           ),
         ],
       ),
@@ -791,13 +747,11 @@ class _CopilotViewState extends State<CopilotView> {
   }
 
   Widget _buildApiUrlField() {
-    return TextField(
+    return AppTextField(
       controller: _apiUrlController,
-      decoration: const InputDecoration(
-        labelText: "API URL",
-        hintText: "https://api.openai.com/v1",
-        prefixIcon: Icon(Icons.link),
-      ),
+      labelText: "API URL",
+      hintText: "https://api.openai.com/v1",
+      prefixIcon: const Icon(Icons.link),
       onChanged: (_) => unawaited(_saveSettings()),
     );
   }
@@ -819,14 +773,12 @@ class _CopilotViewState extends State<CopilotView> {
             },
             fieldViewBuilder:
                 (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
+                  return AppTextField(
                     controller: controller,
                     focusNode: focusNode,
-                    decoration: const InputDecoration(
-                      labelText: "使用模型",
-                      hintText: "選擇或輸入模型 ID",
-                      prefixIcon: Icon(Icons.memory),
-                    ),
+                    labelText: "使用模型",
+                    hintText: "選擇或輸入模型 ID",
+                    prefixIcon: const Icon(Icons.memory),
                     onChanged: (_) => unawaited(_saveSettings()),
                   );
                 },
@@ -882,24 +834,24 @@ class _CopilotViewState extends State<CopilotView> {
   }
 
   Widget _buildApiKeyField() {
-    return TextField(
+    return AppTextField(
       controller: _apiKeyController,
       obscureText: !_showApiKey,
-      decoration: InputDecoration(
-        labelText: "API Key",
-        prefixIcon: const Icon(Icons.key),
-        suffixIcon: IconButton(
-          tooltip: _showApiKey ? "隱藏 API Key" : "顯示 API Key",
-          onPressed: () => setState(() => _showApiKey = !_showApiKey),
-          icon: Icon(_showApiKey ? Icons.visibility_off : Icons.visibility),
-        ),
+      labelText: "API Key",
+      prefixIcon: const Icon(Icons.key),
+      suffixIcon: IconButton(
+        tooltip: _showApiKey ? "隱藏 API Key" : "顯示 API Key",
+        onPressed: () => setState(() => _showApiKey = !_showApiKey),
+        icon: Icon(_showApiKey ? Icons.visibility_off : Icons.visibility),
       ),
       onChanged: (_) => unawaited(_saveSettings()),
     );
   }
 
   Widget _buildConversationPanel() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -919,23 +871,17 @@ class _CopilotViewState extends State<CopilotView> {
               ],
             ),
             const SizedBox(height: 16),
-            Container(
-              height: 420,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              child: _messages.isEmpty
-                  ? Center(
-                      child: Text(
-                        "尚無對話紀錄",
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
+            CollectionPanel.custom(
+              title: "對話紀錄",
+              showSectionCard: false,
+              minHeight: 420,
+              maxHeight: 420,
+              content: _messages.isEmpty
+                  ? const AppEmptyState(
+                      title: "尚無對話紀錄",
+                      description: "送出訊息後會顯示在這裡",
+                      icon: Icons.chat_bubble_outline,
+                      compact: true,
                     )
                   : ListView.separated(
                       controller: _conversationScrollController,
@@ -1041,7 +987,9 @@ class _CopilotViewState extends State<CopilotView> {
   }
 
   Widget _buildComposerPanel() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1064,7 +1012,7 @@ class _CopilotViewState extends State<CopilotView> {
                         },
                       ),
                 },
-                child: TextField(
+                child: AppTextField(
                   controller: _messageController,
                   enabled: _selectedMode == CopilotMode.chat && !_isSending,
                   minLines: 3,

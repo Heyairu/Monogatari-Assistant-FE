@@ -1499,11 +1499,19 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 child: LargeTitle(icon: Icons.account_tree, text: "大綱調整"),
               ),
               const SizedBox(height: 32),
-              _buildStorylineSection(),
-              const SizedBox(height: 24),
-              _buildEventSection(),
-              const SizedBox(height: 24),
-              _buildSceneSection(),
+              ResponsiveSplitView(
+                breakpoint: 980,
+                spacing: 24,
+                primary: _buildStorylineSection(),
+                secondary: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildEventSection(),
+                    const SizedBox(height: 24),
+                    _buildSceneSection(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1513,7 +1521,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   // MARK: - 大箱（故事線）區段
   Widget _buildStorylineSection() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1712,7 +1722,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     if (si == null || si < 0 || si >= storylines.length)
       return const SizedBox.shrink();
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1725,7 +1737,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField(
               controller: storylineNameController,
               decoration: const InputDecoration(
                 labelText: "故事線名稱",
@@ -1734,7 +1746,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
+            AppTextField(
               controller: storylineTypeController,
               decoration: const InputDecoration(
                 labelText: "類型 (如：懸疑、愛情)",
@@ -1743,7 +1755,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
+            AppTextField(
               controller: storylineConflictController,
               decoration: const InputDecoration(
                 labelText: "主要衝突",
@@ -1754,7 +1766,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             const SizedBox(height: 16),
             Text("備註", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            TextField(
+            AppTextField(
               controller: storylineMemoController,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
@@ -1770,7 +1782,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   // MARK: - 中箱（事件）區段
   Widget _buildEventSection() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1862,13 +1876,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Center(
-                  child: Text(
-                    "請先選擇故事線",
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                child: const AppEmptyState(
+                  title: "請先選擇故事線",
+                  description: "選擇故事線後即可新增與編輯事件",
+                  icon: Icons.touch_app_outlined,
+                  compact: true,
                 ),
               ),
             ],
@@ -1907,33 +1919,21 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       isThisDragging: _currentDragData?.id == storyline.chapterUUID,
       isSelected: isSelected,
 
-      title: isEditing
-          ? TextField(
-              controller: _renameListController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-              onSubmitted: (_) => _submitRenamingStoryline(index),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startRenamingStoryline(storyline),
-              child: Text(
-                storyline.storylineName.isEmpty
-                    ? "(未命名故事線)"
-                    : storyline.storylineName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      )
-                    : null,
-              ),
-            ),
+      title: InlineEditableText(
+        value: storyline.storylineName,
+        controller: _renameListController,
+        isEditing: isEditing,
+        onEdit: () => _startRenamingStoryline(storyline),
+        onSubmitted: (_) => _submitRenamingStoryline(index),
+        onCanceled: _cancelRenaming,
+        emptyText: "(未命名故事線)",
+        style: isSelected
+            ? TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              )
+            : null,
+      ),
       subtitle: Text(
         storyline.storylineType.isEmpty ? "未設定類型" : storyline.storylineType,
         style: Theme.of(context).textTheme.bodySmall,
@@ -1945,28 +1945,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => _startRenamingStoryline(storyline),
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: storylines.length > 1
-                ? () => _deleteStoryline(storyline.chapterUUID)
-                : null,
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: storylines.length > 1
-                  ? Theme.of(context).colorScheme.error
-                  : null,
-            ),
-            tooltip: "刪除故事線",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        iconSize: 20,
+        onEdit: () => _startRenamingStoryline(storyline),
+        onDelete: storylines.length > 1
+            ? () => _deleteStoryline(storyline.chapterUUID)
+            : null,
+        deleteTooltip: "刪除故事線",
       ),
       onClicked: () {
         setState(() {
@@ -2018,11 +2003,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         } else if (data.type == OutlineDragType.event &&
             pos == DropPosition.child) {
           _moveEventToStoryline(data.id, storyline.chapterUUID);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("事件已移動到「${storyline.storylineName}」"),
-              duration: const Duration(seconds: 2),
-            ),
+          AppFeedback.success(
+            context,
+            "事件已移動到「${storyline.storylineName}」",
+            duration: const Duration(seconds: 2),
           );
         }
       },
@@ -2049,31 +2033,21 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       isThisDragging: _currentDragData?.id == event.storyEventUUID,
       isSelected: isSelected,
 
-      title: isEditing
-          ? TextField(
-              controller: _renameListController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-              onSubmitted: (_) => _submitRenamingEvent(slIdx, index),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startRenamingEvent(event),
-              child: Text(
-                event.storyEvent.isEmpty ? "(未命名事件)" : event.storyEvent,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      )
-                    : null,
-              ),
-            ),
+      title: InlineEditableText(
+        value: event.storyEvent,
+        controller: _renameListController,
+        isEditing: isEditing,
+        onEdit: () => _startRenamingEvent(event),
+        onSubmitted: (_) => _submitRenamingEvent(slIdx, index),
+        onCanceled: _cancelRenaming,
+        emptyText: "(未命名事件)",
+        style: isSelected
+            ? TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              )
+            : null,
+      ),
       subtitle: Text(
         "${event.scenes.length} 個場景",
         style: Theme.of(context).textTheme.bodySmall,
@@ -2085,24 +2059,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => _startRenamingEvent(event),
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: () => _deleteEvent(event.storyEventUUID, slIdx),
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除事件",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        onEdit: () => _startRenamingEvent(event),
+        onDelete: () => _deleteEvent(event.storyEventUUID, slIdx),
+        deleteTooltip: "刪除事件",
       ),
       onClicked: () {
         setState(() {
@@ -2174,7 +2134,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     }
     final event = storylines[si].scenes[ei];
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -2195,7 +2157,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventNameController.text = event.storyEvent;
                   });
                 }
-                return TextField(
+                return AppTextField(
                   controller: eventNameController,
                   decoration: const InputDecoration(
                     labelText: "事件名稱",
@@ -2215,7 +2177,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventConflictController.text = event.conflictPoint;
                   });
                 }
-                return TextField(
+                return AppTextField(
                   controller: eventConflictController,
                   decoration: const InputDecoration(
                     labelText: "衝突點",
@@ -2288,7 +2250,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventMemoController.text = event.memo;
                   });
                 }
-                return TextField(
+                return AppTextField(
                   controller: eventMemoController,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
@@ -2306,7 +2268,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   // MARK: - 小箱（場景）區段
   Widget _buildSceneSection() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -2417,13 +2381,11 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Center(
-                  child: Text(
-                    "請先選擇一個事件",
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                child: const AppEmptyState(
+                  title: "請先選擇一個事件",
+                  description: "選擇事件後即可新增與編輯場景",
+                  icon: Icons.touch_app_outlined,
+                  compact: true,
                 ),
               ),
             ],
@@ -2461,35 +2423,25 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       isThisDragging: _currentDragData?.id == scene.sceneUUID,
       isSelected: isSelected,
 
-      title: isEditing
-          ? TextField(
-              controller: _renameListController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-              onSubmitted: (_) => _submitRenamingScene(
-                selectedStorylineIndex!,
-                selectedEventIndex!,
-                index,
-              ),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startRenamingScene(scene),
-              child: Text(
-                scene.sceneName.isEmpty ? "(未命名場景)" : scene.sceneName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      )
-                    : null,
-              ),
-            ),
+      title: InlineEditableText(
+        value: scene.sceneName,
+        controller: _renameListController,
+        isEditing: isEditing,
+        onEdit: () => _startRenamingScene(scene),
+        onSubmitted: (_) => _submitRenamingScene(
+          selectedStorylineIndex!,
+          selectedEventIndex!,
+          index,
+        ),
+        onCanceled: _cancelRenaming,
+        emptyText: "(未命名場景)",
+        style: isSelected
+            ? TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              )
+            : null,
+      ),
       subtitle: (scene.time.isNotEmpty || scene.location.isNotEmpty)
           ? Row(
               children: [
@@ -2529,28 +2481,15 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => _startRenamingScene(scene),
-            icon: const Icon(Icons.edit, size: 20),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            onPressed: () => _deleteScene(
-              scene.sceneUUID,
-              selectedStorylineIndex!,
-              selectedEventIndex!,
-            ),
-            icon: Icon(
-              Icons.delete,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: "刪除場景",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        iconSize: 20,
+        onEdit: () => _startRenamingScene(scene),
+        onDelete: () => _deleteScene(
+          scene.sceneUUID,
+          selectedStorylineIndex!,
+          selectedEventIndex!,
+        ),
+        deleteTooltip: "刪除場景",
       ),
       onClicked: () {
         setState(() {
@@ -2622,7 +2561,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     }
     final scene = storylines[si].scenes[ei].scenes[ci];
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -2643,7 +2584,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     sceneNameController.text = scene.sceneName;
                   });
                 }
-                return TextField(
+                return AppTextField(
                   controller: sceneNameController,
                   decoration: const InputDecoration(
                     labelText: "場景名稱",
@@ -2666,7 +2607,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneTimeController.text = scene.time;
                         });
                       }
-                      return TextField(
+                      return AppTextField(
                         controller: sceneTimeController,
                         decoration: const InputDecoration(
                           labelText: "時間",
@@ -2686,7 +2627,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneLocationController.text = scene.location;
                         });
                       }
-                      return TextField(
+                      return AppTextField(
                         controller: sceneLocationController,
                         decoration: const InputDecoration(
                           labelText: "地點",
@@ -2712,7 +2653,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneFocusController.text = scene.focusPoint;
                         });
                       }
-                      return TextField(
+                      return AppTextField(
                         controller: sceneFocusController,
                         decoration: const InputDecoration(
                           labelText: "聚焦點",
@@ -2732,7 +2673,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneConflictController.text = scene.conflictPoint;
                         });
                       }
-                      return TextField(
+                      return AppTextField(
                         controller: sceneConflictController,
                         decoration: const InputDecoration(
                           labelText: "衝突點",
@@ -2835,7 +2776,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     sceneMemoController.text = scene.memo;
                   });
                 }
-                return TextField(
+                return AppTextField(
                   controller: sceneMemoController,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),

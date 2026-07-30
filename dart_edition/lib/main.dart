@@ -707,12 +707,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               if (!mounted) {
                 return;
               }
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(snackMessage),
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 3),
-                ),
+              AppFeedback.info(
+                context,
+                snackMessage,
+                duration: const Duration(seconds: 3),
               );
               if (mounted &&
                   ref.read(editorCoordinatorProvider).messageEventId ==
@@ -735,18 +733,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               if (!mounted) {
                 return;
               }
-              await showDialog(
+              await AppDialog.message(
                 context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text("錯誤"),
-                  content: Text(dialogMessage),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text("確定"),
-                    ),
-                  ],
-                ),
+                title: "錯誤",
+                message: dialogMessage,
+                closeLabel: "確定",
+                tone: AppFeedbackTone.error,
               );
 
               if (mounted &&
@@ -2117,13 +2109,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     };
     String selectedFormat = "xml";
 
-    await showDialog(
+    await AppDialog.showCustom(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text("匯出選項"),
+            return AppDialog(
+              title: "匯出選項",
+              icon: Icons.ios_share_outlined,
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

@@ -1514,9 +1514,14 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               children: [
                 LargeTitle(icon: Icons.person_rounded, text: "角色編輯"),
                 const SizedBox(height: 32),
-                _buildCharacterListSection(),
-                const SizedBox(height: 16),
-                _buildCharacterEditSection(),
+                ResponsiveSplitView(
+                  breakpoint: 960,
+                  spacing: 16,
+                  primaryFlex: 1,
+                  secondaryFlex: 2,
+                  primary: _buildCharacterListSection(),
+                  secondary: _buildCharacterEditSection(),
+                ),
               ],
             ),
           ),
@@ -1526,7 +1531,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   Widget _buildCharacterListSection() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -1541,76 +1548,79 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               onAdd: (_) => _addCharacter(),
             ),
             const SizedBox(height: 8),
-            Container(
-              height: 200,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ListView.builder(
-                itemCount: characters.length,
-                itemBuilder: (context, index) {
-                  final name = characters[index];
-                  final isSelected = selectedCharacterIndex == index;
+            CollectionPanel.builder(
+              title: "角色列表",
+              showSectionCard: false,
+              minHeight: 200,
+              maxHeight: 200,
+              listPadding: EdgeInsets.zero,
+              itemCount: characters.length,
+              emptyTitle: "尚無角色",
+              emptyDescription: "請新增第一個角色",
+              emptyIcon: Icons.person_add_alt_outlined,
+              itemBuilder: (context, index) {
+                final name = characters[index];
+                final isSelected = selectedCharacterIndex == index;
 
-                  return DraggableCardNode<String>(
-                    key: ValueKey(name),
-                    dragData: name,
-                    nodeId: name,
-                    nodeType: NodeType.item,
-                    isDragging: _isDragging,
-                    isThisDragging: _currentDragData == name,
-                    isSelected: isSelected,
+                return DraggableCardNode<String>(
+                  key: ValueKey(name),
+                  dragData: name,
+                  nodeId: name,
+                  nodeType: NodeType.item,
+                  isDragging: _isDragging,
+                  isThisDragging: _currentDragData == name,
+                  isSelected: isSelected,
 
-                    title: Text(
-                      name,
-                      style: isSelected
-                          ? TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            )
-                          : null,
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, size: 20),
-                      onPressed: () => _deleteCharacter(index),
-                      tooltip: "刪除",
-                    ),
-                    onClicked: () => _selectCharacter(index),
+                  title: Text(
+                    name,
+                    style: isSelected
+                        ? TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
+                  ),
+                  trailing: ItemActionBar(
+                    actions: [
+                      ItemAction.delete(
+                        onPressed: () => _deleteCharacter(index),
+                      ),
+                    ],
+                  ),
+                  onClicked: () => _selectCharacter(index),
 
-                    onDragStarted: () {
-                      setState(() {
-                        _isDragging = true;
-                        _currentDragData = name;
-                      });
-                    },
-                    onDragEnd: () {
-                      setState(() {
-                        _isDragging = false;
-                        _currentDragData = null;
-                      });
-                    },
-                    getDropZoneSize: (pos) {
-                      if (_currentDragData == null) return 0.0;
-                      // 這裡只支援上下排序，不支援資料夾
-                      return pos == DropPosition.child ? 0.0 : 0.5;
-                    },
-                    onAccept: (data, pos) {
-                      if (pos == DropPosition.child) return;
+                  onDragStarted: () {
+                    setState(() {
+                      _isDragging = true;
+                      _currentDragData = name;
+                    });
+                  },
+                  onDragEnd: () {
+                    setState(() {
+                      _isDragging = false;
+                      _currentDragData = null;
+                    });
+                  },
+                  getDropZoneSize: (pos) {
+                    if (_currentDragData == null) return 0.0;
+                    // 這裡只支援上下排序，不支援資料夾
+                    return pos == DropPosition.child ? 0.0 : 0.5;
+                  },
+                  onAccept: (data, pos) {
+                    if (pos == DropPosition.child) return;
 
-                      int toIndex = index;
-                      if (pos == DropPosition.after) toIndex++;
+                    int toIndex = index;
+                    if (pos == DropPosition.after) toIndex++;
 
-                      int fromIndex = characters.indexOf(data);
-                      if (fromIndex < 0) return;
+                    int fromIndex = characters.indexOf(data);
+                    if (fromIndex < 0) return;
 
-                      if (fromIndex < toIndex) toIndex--;
+                    if (fromIndex < toIndex) toIndex--;
 
-                      _moveCharacter(fromIndex, toIndex);
-                    },
-                  );
-                },
-              ),
+                    _moveCharacter(fromIndex, toIndex);
+                  },
+                );
+              },
             ),
           ],
         ),
@@ -1654,31 +1664,23 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Widget _buildCharacterEditSection() {
     // 未選取角色時顯示提示
     if (selectedCharacter == null) {
-      return Card(
+      return AppSectionCard(
+        padding: EdgeInsets.zero,
+        useSectionLayout: false,
         child: SizedBox(
           height: 400,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.person_outline,
-                  size: 80,
-                  color: Colors.grey.shade400,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "請選取一個角色",
-                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
+          child: const AppEmptyState(
+            title: "請選取一個角色",
+            description: "從左側列表選擇要編輯的角色",
+            icon: Icons.person_outline,
           ),
         ),
       );
     }
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1761,7 +1763,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _buildTextField("體格：", _controllers["body"]!),
         _buildTextField("服裝：", _controllers["dress"]!),
 
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1769,7 +1773,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               children: [
                 SmallTitle(icon: Icons.description, text: "故事相關"),
                 const SizedBox(height: 16),
-                TextField(
+                AppTextField(
                   controller: _controllers["intention"]!,
                   decoration: const InputDecoration(
                     labelText: "故事中的動機、目標？",
@@ -1781,47 +1785,14 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildHinderTable(),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _hinderEventController,
-                        decoration: const InputDecoration(
-                          labelText: "阻礙事件",
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      onPressed: _addHinderEvent,
-                      tooltip: "新增",
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: selectedHinderIndex != null
-                          ? _deleteHinderEvent
-                          : null,
-                      tooltip: "刪除",
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _solveController,
-                  decoration: const InputDecoration(
-                    labelText: "解決方式",
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
+                AppTwoColumnTableEditor(
+                  firstController: _hinderEventController,
+                  secondController: _solveController,
+                  firstLabel: "阻礙事件",
+                  secondLabel: "解決方式",
+                  isEditing: selectedHinderIndex != null,
+                  onSubmit: (_, _) => _addHinderEvent(),
+                  onDelete: _deleteHinderEvent,
                 ),
               ],
             ),
@@ -1850,7 +1821,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _buildTextField("最害怕的事物？", _controllers["fear"]!),
         _buildTextField("最好奇的事物？", _controllers["curious"]!),
         _buildTextField("最期待的事物？", _controllers["expect"]!),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1863,7 +1836,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             ),
           ),
         ),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1876,7 +1851,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             ),
           ),
         ),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1949,7 +1926,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           onRemove: _deleteUnProficientToDo,
         ),
         const SizedBox(height: 16),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1978,7 +1957,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         const SizedBox(height: 8),
         _buildMultilineField("簡述原生家庭", _controllers["family"]!),
         const Divider(height: 32),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1988,7 +1969,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowLove, howToShowLoveLabels),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _controllers["otherShowLove"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
@@ -2004,7 +1985,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 16),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -2014,7 +1997,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowGoodwill, howToShowGoodwillLabels),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _controllers["otherGoodwill"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
@@ -2030,7 +2013,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 16),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -2043,7 +2028,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
-                TextField(
+                AppTextField(
                   controller: _controllers["otherHatePeople"]!,
                   decoration: const InputDecoration(
                     labelText: "其他",
@@ -2059,7 +2044,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 16),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -2073,7 +2060,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 16),
-        Card(
+        AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -2096,7 +2085,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        AppTextField(
           controller: _controllers["originalName"]!,
           decoration: const InputDecoration(
             labelText: "原文姓名",
@@ -2216,96 +2205,37 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   // 阻礙事件表格
 
   Widget _buildHinderTable() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(4),
+    return AppTwoColumnTable(
+      firstHeader: "阻礙事件",
+      secondHeader: "解決方式",
+      bodyHeight: 200,
+      emptyState: const AppEmptyState(
+        title: "尚無阻礙事件",
+        description: "在下方輸入事件與解決方式後新增",
+        icon: Icons.warning_amber_outlined,
+        compact: true,
       ),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(4),
-                topRight: Radius.circular(4),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Text(
-                      "阻礙事件",
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Text(
-                      "解決方式",
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Data rows
-          SizedBox(
-            height: 200,
-            child: ListView.builder(
-              itemCount: hinderEvents.length,
-              itemBuilder: (context, index) {
-                final event = hinderEvents[index];
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      selectedHinderIndex = index;
-                      _hinderEventController.text = event["event"] ?? "";
-                      _solveController.text = event["solve"] ?? "";
-                    });
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: selectedHinderIndex == index
-                          ? Theme.of(context).primaryColor.withOpacity(0.1)
-                          : null,
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade300),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 1,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Text(event["event"] ?? ""),
-                          ),
-                        ),
-                        Expanded(
-                          flex: 1,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Text(event["solve"] ?? ""),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
+      rows: hinderEvents
+          .asMap()
+          .entries
+          .map((entry) {
+            final index = entry.key;
+            final event = entry.value;
+            return AppTwoColumnTableRow(
+              selected: selectedHinderIndex == index,
+              showDivider: index != hinderEvents.length - 1,
+              firstCell: Text(event["event"] ?? ""),
+              secondCell: Text(event["solve"] ?? ""),
+              onTap: () {
+                setState(() {
+                  selectedHinderIndex = index;
+                  _hinderEventController.text = event["event"] ?? "";
+                  _solveController.text = event["solve"] ?? "";
+                });
               },
-            ),
-          ),
-        ],
-      ),
+            );
+          })
+          .toList(growable: false),
     );
   }
 
@@ -2370,7 +2300,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
+        AppTextField(
           controller: _controllers["otherRelationship"]!,
           decoration: const InputDecoration(
             labelText: "其他：",
@@ -2522,9 +2452,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (targetName != currentName && currentData.containsKey(targetName)) {
       _setNameFieldTextSilently(currentName);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("角色名稱已存在")));
+        AppFeedback.warning(context, "角色名稱已存在");
       }
       return;
     }
@@ -2618,38 +2546,40 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return nextEntry.withTextField("name", fallbackName);
     }
 
-    return nextEntry.copyWith(
-      alignment: selectedAlignment,
-      hinderEvents: hinderEvents
-          .map(
-            (event) => CharacterHinderEvent(
-              event: event["event"] ?? "",
-              solve: event["solve"] ?? "",
-            ),
-          )
-          .toList(growable: false),
-      loveToDoList: List<String>.from(loveToDoList),
-      hateToDoList: List<String>.from(hateToDoList),
-      wantToDoList: List<String>.from(wantToDoList),
-      fearToDoList: List<String>.from(fearToDoList),
-      proficientToDoList: List<String>.from(proficientToDoList),
-      unProficientToDoList: List<String>.from(unProficientToDoList),
-      commonAbilityValues: List<double>.from(commonAbilityValues),
-      howToShowLove: Map<String, bool>.from(howToShowLove),
-      howToShowGoodwill: Map<String, bool>.from(howToShowGoodwill),
-      handleHatePeople: Map<String, bool>.from(handleHatePeople),
-      socialItemValues: List<double>.from(socialItemValues),
-      relationship: selectedRelationship,
-      isFindNewLove: isFindNewLove,
-      isHarem: isHarem,
-      approachValues: List<double>.from(approachValues),
-      traitsValues: List<double>.from(traitsValues),
-      likeItemList: List<String>.from(likeItemList),
-      admireItemList: List<String>.from(admireItemList),
-      hateItemList: List<String>.from(hateItemList),
-      fearItemList: List<String>.from(fearItemList),
-      familiarItemList: List<String>.from(familiarItemList),
-    ).withTextField("name", fallbackName);
+    return nextEntry
+        .copyWith(
+          alignment: selectedAlignment,
+          hinderEvents: hinderEvents
+              .map(
+                (event) => CharacterHinderEvent(
+                  event: event["event"] ?? "",
+                  solve: event["solve"] ?? "",
+                ),
+              )
+              .toList(growable: false),
+          loveToDoList: List<String>.from(loveToDoList),
+          hateToDoList: List<String>.from(hateToDoList),
+          wantToDoList: List<String>.from(wantToDoList),
+          fearToDoList: List<String>.from(fearToDoList),
+          proficientToDoList: List<String>.from(proficientToDoList),
+          unProficientToDoList: List<String>.from(unProficientToDoList),
+          commonAbilityValues: List<double>.from(commonAbilityValues),
+          howToShowLove: Map<String, bool>.from(howToShowLove),
+          howToShowGoodwill: Map<String, bool>.from(howToShowGoodwill),
+          handleHatePeople: Map<String, bool>.from(handleHatePeople),
+          socialItemValues: List<double>.from(socialItemValues),
+          relationship: selectedRelationship,
+          isFindNewLove: isFindNewLove,
+          isHarem: isHarem,
+          approachValues: List<double>.from(approachValues),
+          traitsValues: List<double>.from(traitsValues),
+          likeItemList: List<String>.from(likeItemList),
+          admireItemList: List<String>.from(admireItemList),
+          hateItemList: List<String>.from(hateItemList),
+          fearItemList: List<String>.from(fearItemList),
+          familiarItemList: List<String>.from(familiarItemList),
+        )
+        .withTextField("name", fallbackName);
   }
 
   void _setNameFieldTextSilently(String value) {
@@ -2890,9 +2820,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (name.isEmpty) return;
 
     if (characters.contains(name)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("角色名稱已存在")));
+      AppFeedback.warning(context, "角色名稱已存在");
       return;
     }
 
@@ -3212,76 +3140,23 @@ class _CharacterSliderState extends State<CharacterSlider> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (widget.title.isNotEmpty) ...[
-            SizedBox(
-              width: 60,
-              child: Text(
-                widget.title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      widget.leftLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    Text(
-                      widget.rightLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-                SliderTheme(
-                  data: SliderThemeData(
-                    showValueIndicator: ShowValueIndicator.always,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
-                  ),
-                  child: Slider(
-                    value: _currentValue,
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: _currentValue.toStringAsFixed(0),
-                    onChanged: (value) {
-                      setState(() {
-                        _currentValue = value;
-                      });
-                      widget.onChanged(value);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return LabeledSlider(
+      title: widget.title,
+      value: _currentValue,
+      min: 0,
+      max: 100,
+      divisions: 100,
+      leftLabel: widget.leftLabel,
+      rightLabel: widget.rightLabel,
+      showValue: false,
+      layout: LabeledSliderLayout.inline,
+      inlineTitleWidth: 60,
+      onChanged: (value) {
+        setState(() {
+          _currentValue = value;
+        });
+        widget.onChanged(value);
+      },
     );
   }
 }
@@ -3304,17 +3179,14 @@ class CharacterTextField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
-      child: TextField(
+      child: AppTextField(
         controller: controller,
         maxLines: maxLines,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hintText,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 12,
-          ),
+        labelText: label,
+        hintText: hintText,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
         ),
       ),
     );

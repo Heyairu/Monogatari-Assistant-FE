@@ -97,7 +97,9 @@ class _SettingViewState extends ConsumerState<SettingView> {
             ),
             const SizedBox(height: 32),
             // 主題設定卡片
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -136,7 +138,9 @@ class _SettingViewState extends ConsumerState<SettingView> {
             const SizedBox(height: 24),
 
             // 其他設定卡片
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -179,42 +183,17 @@ class _SettingViewState extends ConsumerState<SettingView> {
 
   // MARK: - 字體大小設定
   Widget _buildFontSizeSetting() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Row(
-            children: [
-              Icon(
-                Icons.text_fields,
-                size: _settingsViewState.fontSize + 6,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 12),
-              Text("字體大小調整", style: Theme.of(context).textTheme.labelMedium),
-              const Spacer(),
-              Text(
-                "${_settingsViewState.fontSize.toInt()} px",
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Slider(
-          value: _settingsViewState.fontSize,
-          min: 12.0,
-          max: 20.0,
-          divisions: 8, // (20-12) = 8 steps, 1px per step
-          label: "${_settingsViewState.fontSize.toInt()} px",
-          onChanged: (value) async {
-            await ref.read(settingsStateProvider.notifier).setFontSize(value);
-          },
-        ),
-      ],
+    return LabeledSlider(
+      title: "字體大小調整",
+      icon: Icons.text_fields,
+      value: _settingsViewState.fontSize,
+      min: 12,
+      max: 20,
+      divisions: 8,
+      valueLabelBuilder: (value) => "${value.toInt()} px",
+      onChanged: (value) async {
+        await ref.read(settingsStateProvider.notifier).setFontSize(value);
+      },
     );
   }
 
@@ -336,13 +315,12 @@ class _SettingViewState extends ConsumerState<SettingView> {
 
   // MARK: - 主題預覽
   Widget _buildThemePreview() {
+    final colorScheme = Theme.of(context).colorScheme;
     final isSystemDark =
         MediaQuery.platformBrightnessOf(context) == Brightness.dark;
     final isDark =
         _themeViewState.themeMode == AppThemeMode.dark ||
         (_themeViewState.themeMode == AppThemeMode.system && isSystemDark);
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -431,7 +409,6 @@ class _SettingViewState extends ConsumerState<SettingView> {
   Widget _buildAutoSaveSetting() {
     final enabled = _settingsViewState.autoSaveEnabled;
     final interval = _settingsViewState.autoSaveIntervalMinutes;
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,37 +428,20 @@ class _SettingViewState extends ConsumerState<SettingView> {
           opacity: enabled ? 1 : 0.5,
           child: IgnorePointer(
             ignoring: !enabled,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final valueLabel = Text(
-                  "$interval 分鐘",
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                );
-                final slider = Slider(
-                  value: interval.toDouble(),
-                  min: 0,
-                  max: 120,
-                  divisions: 24,
-                  label: "$interval 分鐘",
-                  onChanged: (value) async {
-                    await ref
-                        .read(settingsStateProvider.notifier)
-                        .setAutoSaveIntervalMinutes(value.round());
-                  },
-                );
-
-                return Row(
-                  children: [
-                    Icon(Icons.timer, color: colorScheme.primary),
-                    const SizedBox(width: 4),
-                    Expanded(child: slider),
-                    const SizedBox(width: 4),
-                    valueLabel,
-                  ],
-                );
+            child: LabeledSlider(
+              title: "儲存間隔",
+              icon: Icons.timer,
+              value: interval.toDouble(),
+              min: 0,
+              max: 120,
+              divisions: 24,
+              layout: LabeledSliderLayout.inline,
+              inlineTitleWidth: 96,
+              valueLabelBuilder: (value) => "${value.round()} 分鐘",
+              onChanged: (value) async {
+                await ref
+                    .read(settingsStateProvider.notifier)
+                    .setAutoSaveIntervalMinutes(value.round());
               },
             ),
           ),
@@ -514,37 +474,20 @@ class _SettingViewState extends ConsumerState<SettingView> {
           opacity: enabled ? 1 : 0.5,
           child: IgnorePointer(
             ignoring: !enabled,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final valueLabel = Text(
-                  "$interval 分鐘",
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                );
-                final slider = Slider(
-                  value: interval.toDouble(),
-                  min: 0,
-                  max: 120,
-                  divisions: 24,
-                  label: "$interval 分鐘",
-                  onChanged: (value) async {
-                    await ref
-                        .read(settingsStateProvider.notifier)
-                        .setAutoBackupIntervalMinutes(value.round());
-                  },
-                );
-
-                return Row(
-                  children: [
-                    Icon(Icons.timer, color: colorScheme.primary),
-                    const SizedBox(width: 4),
-                    Expanded(child: slider),
-                    const SizedBox(width: 4),
-                    valueLabel,
-                  ],
-                );
+            child: LabeledSlider(
+              title: "備份間隔",
+              icon: Icons.timer,
+              value: interval.toDouble(),
+              min: 0,
+              max: 120,
+              divisions: 24,
+              layout: LabeledSliderLayout.inline,
+              inlineTitleWidth: 96,
+              valueLabelBuilder: (value) => "${value.round()} 分鐘",
+              onChanged: (value) async {
+                await ref
+                    .read(settingsStateProvider.notifier)
+                    .setAutoBackupIntervalMinutes(value.round());
               },
             ),
           ),
@@ -638,22 +581,12 @@ class _SettingViewState extends ConsumerState<SettingView> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("已開啟 AutoBackup 目錄：$directoryPath"),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.success(context, "已開啟 AutoBackup 目錄：$directoryPath");
     } catch (e) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.error(context, e.toString());
     }
   }
 
@@ -666,22 +599,12 @@ class _SettingViewState extends ConsumerState<SettingView> {
         return;
       }
       _refreshAutoBackupDirectoryInfo();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("AutoBackup 目錄已設定：$directoryPath"),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.success(context, "AutoBackup 目錄已設定：$directoryPath");
     } catch (e) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.error(context, e.toString());
     }
   }
 
@@ -694,22 +617,12 @@ class _SettingViewState extends ConsumerState<SettingView> {
         return;
       }
       _refreshAutoBackupDirectoryInfo();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("AutoBackup 目錄已重設：$directoryPath"),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.success(context, "AutoBackup 目錄已重設：$directoryPath");
     } catch (e) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppFeedback.error(context, e.toString());
     }
   }
 

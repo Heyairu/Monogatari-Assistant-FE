@@ -1015,25 +1015,19 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               ),
               const SizedBox(height: 32),
 
-              // 主要內容區域 - 直排佈局
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 上方：區段列表
-                  _buildSegmentsList(
-                    segments,
-                    wordCountMode,
-                    selectionSnapshot,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 下方：章節列表
-                  _buildChaptersList(
-                    segments,
-                    wordCountMode,
-                    selectionSnapshot,
-                  ),
-                ],
+              ResponsiveSplitView(
+                breakpoint: 900,
+                spacing: 24,
+                primary: _buildSegmentsList(
+                  segments,
+                  wordCountMode,
+                  selectionSnapshot,
+                ),
+                secondary: _buildChaptersList(
+                  segments,
+                  wordCountMode,
+                  selectionSnapshot,
+                ),
               ),
             ],
           ),
@@ -1105,7 +1099,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     WordCountMode wordCountMode,
     _SelectionSnapshot selection,
   ) {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1194,7 +1190,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   ) {
     final selectedSegIdx = selection.segmentIndex;
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1278,16 +1276,11 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                             selection,
                           ),
                         )
-                      : Center(
-                          child: Text(
-                            "請先選擇一個區段",
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
+                      : const AppEmptyState(
+                          title: "請先選擇一個區段",
+                          description: "選擇區段後即可管理章節",
+                          icon: Icons.touch_app_outlined,
+                          compact: true,
                         ),
                 );
               },
@@ -1394,35 +1387,22 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       isThisDragging: _currentDragData?.id == segment.segmentUUID,
       isSelected: isSelected,
 
-      title: isEditing
-          ? TextField(
-              controller: _renameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-              onSubmitted: (_) => _submitEditingSegment(),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startEditingSegment(segment),
-              child: Text(
-                segment.segmentName.isEmpty ? "(未命名 Seg)" : segment.segmentName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        fontSize: 16,
-                      )
-                    : const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-              ),
-            ),
+      title: InlineEditableText(
+        value: segment.segmentName,
+        controller: _renameController,
+        isEditing: isEditing,
+        onEdit: () => _startEditingSegment(segment),
+        onSubmitted: (_) => _submitEditingSegment(),
+        onCanceled: _cancelEditing,
+        emptyText: "(未命名 Seg)",
+        style: isSelected
+            ? TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontSize: 16,
+              )
+            : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      ),
       subtitle: Text(
         "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(wordCountMode))} 字",
         style: Theme.of(context).textTheme.bodySmall,
@@ -1431,25 +1411,12 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         Icons.folder_outlined,
         color: isSelected ? Theme.of(context).colorScheme.primary : null,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => _startEditingSegment(segment),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            color: Theme.of(context).colorScheme.error,
-            onPressed: () {
-              if (_segments.length > 1) {
-                _deleteSegment(segment.segmentUUID, selection);
-              }
-            },
-            tooltip: "刪除此 Seg",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        onEdit: () => _startEditingSegment(segment),
+        onDelete: _segments.length > 1
+            ? () => _deleteSegment(segment.segmentUUID, selection)
+            : null,
+        deleteTooltip: "刪除此 Seg",
       ),
       onClicked: () => _selectSegment(segment.segmentUUID, selection),
 
@@ -1495,11 +1462,10 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           _moveSegmentByDrag(fromIndex, toIndex, selection);
         } else if (data.type == DragType.chapter && pos == DropPosition.child) {
           _moveChapterToSegment(data.id, segment.segmentUUID, selection);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("章節已移動到「${segment.segmentName}」"),
-              duration: const Duration(seconds: 2),
-            ),
+          AppFeedback.success(
+            context,
+            "章節已移動到「${segment.segmentName}」",
+            duration: const Duration(seconds: 2),
           );
         }
       },
@@ -1530,38 +1496,22 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       isThisDragging: _currentDragData?.id == chapter.chapterUUID,
       isSelected: isSelected,
 
-      title: isEditing
-          ? TextField(
-              controller: _renameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-              ),
-              onSubmitted: (_) => _submitEditingChapter(segIdx),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startEditingChapter(chapter),
-              child: Text(
-                chapter.chapterName.isEmpty
-                    ? "(未命名 Chapter)"
-                    : chapter.chapterName,
-                style: isSelected
-                    ? TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        fontSize: 16,
-                      )
-                    : const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: null, // Use default
-                        fontSize: 16,
-                      ),
-              ),
-            ),
+      title: InlineEditableText(
+        value: chapter.chapterName,
+        controller: _renameController,
+        isEditing: isEditing,
+        onEdit: () => _startEditingChapter(chapter),
+        onSubmitted: (_) => _submitEditingChapter(segIdx),
+        onCanceled: _cancelEditing,
+        emptyText: "(未命名 Chapter)",
+        style: isSelected
+            ? TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontSize: 16,
+              )
+            : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      ),
       subtitle: Text(
         "${chapter.getWordCount(wordCountMode)} 字",
         style: Theme.of(context).textTheme.bodySmall,
@@ -1573,25 +1523,12 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             : Theme.of(context).colorScheme.primary,
         size: 24,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => _startEditingChapter(chapter),
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            color: Theme.of(context).colorScheme.error,
-            onPressed: () {
-              if (_totalChaptersCount > 1) {
-                _deleteChapter(segIdx, chapter.chapterUUID, selection);
-              }
-            },
-            tooltip: "刪除此章節",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        onEdit: () => _startEditingChapter(chapter),
+        onDelete: _totalChaptersCount > 1
+            ? () => _deleteChapter(segIdx, chapter.chapterUUID, selection)
+            : null,
+        deleteTooltip: "刪除此章節",
       ),
       onClicked: () => _selectChapter(segIdx, chapter.chapterUUID, selection),
 

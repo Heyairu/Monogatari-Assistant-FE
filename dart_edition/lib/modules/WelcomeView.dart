@@ -272,9 +272,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("載入姓名資料失敗，請稍後再試。")));
+      AppFeedback.error(context, "載入姓名資料失敗，請稍後再試。");
     } finally {
       if (!mounted) {
         return;
@@ -294,9 +292,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("已複製姓名結果")));
+    AppFeedback.success(context, "已複製姓名結果");
   }
 
   Future<void> _handleNewProject() async {
@@ -361,9 +357,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    AppFeedback.info(context, message);
   }
 
   // MARK: - UI 介面建構
@@ -433,7 +427,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
             const SizedBox(height: 32),
 
             // Start
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -506,7 +502,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               ),
             ),
             // Did you know?
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: InkWell(
@@ -554,7 +552,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               ),
             ),
             // Recent Files
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -565,9 +565,12 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                     const SmallTitle(icon: Icons.folder, text: "Recent"),
                     const SizedBox(height: 12),
                     if (recentProjects.isEmpty)
-                      Text(
-                        "尚無最近開啟檔案",
-                        style: Theme.of(context).textTheme.labelMedium,
+                      const AppEmptyState(
+                        title: "尚無最近開啟檔案",
+                        description: "開啟專案後會顯示在這裡",
+                        icon: Icons.history_outlined,
+                        compact: true,
+                        padding: EdgeInsets.symmetric(vertical: 12),
                       )
                     else
                       ...recentProjects.take(5).map((entry) {
@@ -627,7 +630,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               ),
             ),
             // Features
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -836,7 +841,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               ),
             ),
             // Sync
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(

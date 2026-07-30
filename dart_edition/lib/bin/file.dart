@@ -22,6 +22,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "package:url_launcher/url_launcher.dart";
 import "package:xml/xml.dart" as xml;
 
+import "ui_library.dart";
 import "../modules/baseinfoview.dart" as BaseInfoModule;
 import "../modules/chapterselectionview.dart" as ChapterModule;
 import "../modules/outlineview.dart" as OutlineModule;
@@ -472,23 +473,16 @@ class ProjectManager {
   }) async {
     bool dontShowAgain = false;
 
-    return showDialog<bool>(
+    return AppDialog.showCustom<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(title),
-                ],
-              ),
+            return AppDialog(
+              title: title,
+              icon: Icons.warning_amber_rounded,
+              tone: AppFeedbackTone.error,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -590,21 +584,14 @@ class ProjectManager {
     required String fileVersion,
     required String supportedVersion,
   }) async {
-    final result = await showDialog<bool>(
+    final result = await AppDialog.showCustom<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(width: 12),
-              const Text("版本相容性警告"),
-            ],
-          ),
+        return AppDialog(
+          title: "版本相容性警告",
+          icon: Icons.warning_amber_rounded,
+          tone: AppFeedbackTone.error,
           content: Text(
             "此檔案版本（$fileVersion）高於目前支援版本（$supportedVersion）。\n"
             "若繼續開啟並儲存，可能遺失部分數據。\n\n"
@@ -1986,7 +1973,12 @@ class FileService {
       final home = Platform.environment["HOME"];
       if (home != null && home.trim().isNotEmpty) {
         return Directory(
-          path.join(home, ".config", "MonogatariAsstant", autoBackupFolderNameDesktop),
+          path.join(
+            home,
+            ".config",
+            "MonogatariAsstant",
+            autoBackupFolderNameDesktop,
+          ),
         );
       }
     }
@@ -2515,10 +2507,7 @@ class FileService {
   }
 
   static String generateProjectXMLWithoutLatestSaveUpdate(ProjectData data) {
-    return _ProjectMerger.generateProjectXML(
-      data,
-      updateLatestSave: false,
-    );
+    return _ProjectMerger.generateProjectXML(data, updateLatestSave: false);
   }
 
   /// 解析專案XML內容 (Parser)

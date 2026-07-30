@@ -15,6 +15,8 @@ import "package:flutter/material.dart";
 import "package:flutter/foundation.dart"; // Added for compute
 import 'dart:async';
 
+import "ui_library.dart";
+
 // Global normalization cache for character normalization
 final Map<String, String> _normalizationCache = <String, String>{};
 
@@ -196,8 +198,7 @@ class HighlightTextEditingController extends CodeController {
           currentMatch != null &&
           _isRangeCovered(currentMatch, segmentStart, segmentEnd);
       final bool isOtherMatch =
-          !isCurrentMatch &&
-          searchIndex.covers(segmentStart, segmentEnd);
+          !isCurrentMatch && searchIndex.covers(segmentStart, segmentEnd);
       final bool isPunctuationIssue =
           !isCurrentMatch &&
           !isOtherMatch &&
@@ -244,11 +245,7 @@ class HighlightTextEditingController extends CodeController {
     );
   }
 
-  bool _isRangeCovered(
-    TextSelection selection,
-    int start,
-    int end,
-  ) {
+  bool _isRangeCovered(TextSelection selection, int start, int end) {
     return selection.start <= start && selection.end >= end;
   }
 
@@ -422,11 +419,13 @@ class HighlightTextEditingController extends CodeController {
 
   void clearPunctuationHighlights() {
     punctuationMatches = _emptySelections;
-    _punctuationIndex = const _SelectionCoverageIndex._(<TextSelection>[], <int>[]);
+    _punctuationIndex = const _SelectionCoverageIndex._(
+      <TextSelection>[],
+      <int>[],
+    );
     _invalidateSpanCache();
     notifyListeners();
   }
-
 }
 
 class _SelectionCoverageIndex {
@@ -441,10 +440,11 @@ class _SelectionCoverageIndex {
   ) {
     final List<TextSelection> normalized = <TextSelection>[];
     for (final TextSelection selection in rawSelections) {
-      final normalizedSelection = HighlightTextEditingController._normalizeSelection(
-        selection,
-        textLength,
-      );
+      final normalizedSelection =
+          HighlightTextEditingController._normalizeSelection(
+            selection,
+            textLength,
+          );
       if (normalizedSelection != null) {
         normalized.add(normalizedSelection);
       }
@@ -468,8 +468,8 @@ class _SelectionCoverageIndex {
       currentMaxEnd = i == 0
           ? normalized[i].end
           : currentMaxEnd > normalized[i].end
-              ? currentMaxEnd
-              : normalized[i].end;
+          ? currentMaxEnd
+          : normalized[i].end;
       prefixMaxEnds[i] = currentMaxEnd;
     }
 
@@ -539,12 +539,9 @@ class _FindParams {
 // 包含規範化的 matches 和預計算的 prefix-max 數據供快速索引重建
 class _HighlightUpdate {
   final List<TextSelection> matches;
-  final List<int> prefixMaxEnds;  // 預計算的 prefix-max 數據
+  final List<int> prefixMaxEnds; // 預計算的 prefix-max 數據
 
-  _HighlightUpdate({
-    required this.matches,
-    required this.prefixMaxEnds,
-  });
+  _HighlightUpdate({required this.matches, required this.prefixMaxEnds});
 
   /// 快速在主線程重建全覆蓋索引（使用預計算的 prefix-max）
   _SelectionCoverageIndex buildSearchIndex() {
@@ -572,8 +569,8 @@ _HighlightUpdate _findAllMatchesTask(_FindParams params) {
       currentMaxEnd = i == 0
           ? matches[i].end
           : currentMaxEnd > matches[i].end
-              ? currentMaxEnd
-              : matches[i].end;
+          ? currentMaxEnd
+          : matches[i].end;
       prefixMaxEnds.add(currentMaxEnd);
     }
   }
@@ -770,9 +767,7 @@ Future<void> performReplace(
           }
         } catch (e) {
           if (context.mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text("正則表達式錯誤: $e")));
+            AppFeedback.error(context, "正則表達式錯誤: $e");
           }
           return;
         }
@@ -878,9 +873,7 @@ Future<void> performReplaceAll(
       });
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("正則表達式錯誤: $e")));
+        AppFeedback.error(context, "正則表達式錯誤: $e");
       }
       return;
     }
@@ -1096,8 +1089,10 @@ bool isWhitespace(String char) {
 
 /// 檢查兩個字元是否匹配（考慮搜尋選項）
 bool charsMatch(String char1, String char2, FindReplaceOptions options) {
-  final String key1 = '${char1}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
-  final String key2 = '${char2}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
+  final String key1 =
+      '${char1}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
+  final String key2 =
+      '${char2}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
 
   final String c1 = _normalizationCache.putIfAbsent(key1, () {
     String out = char1;
@@ -1442,7 +1437,7 @@ void showFindReplaceWindow(
   final tempReplaceController = replaceController ?? TextEditingController();
   final tempOptions = options ?? FindReplaceOptions();
 
-  showDialog(
+  AppDialog.showCustom(
     context: context,
     barrierDismissible: false,
     builder: (context) => FindReplaceFloatingWindow(
@@ -1618,7 +1613,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                   flex: 3,
                   child: SizedBox(
                     height: 36,
-                    child: TextField(
+                    child: AppTextField(
                       controller: widget.findController,
                       decoration: InputDecoration(
                         // labelText: "尋找",
@@ -1749,7 +1744,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                     flex: 3,
                     child: SizedBox(
                       height: 36,
-                      child: TextField(
+                      child: AppTextField(
                         controller: widget.replaceController,
                         decoration: InputDecoration(
                           // labelText: "取代為",
@@ -2132,7 +2127,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                       Expanded(
                         child: SizedBox(
                           height: 32,
-                          child: TextField(
+                          child: AppTextField(
                             controller: widget.findController,
                             decoration: InputDecoration(
                               border: const OutlineInputBorder(),
@@ -2298,7 +2293,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         Expanded(
                           child: SizedBox(
                             height: 32,
-                            child: TextField(
+                            child: AppTextField(
                               controller: widget.replaceController,
                               decoration: InputDecoration(
                                 border: const OutlineInputBorder(),

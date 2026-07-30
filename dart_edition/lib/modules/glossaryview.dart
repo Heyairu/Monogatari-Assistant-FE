@@ -123,7 +123,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   Map<String, GlossaryEntry> _readEntryIndex() =>
       ref.read(glossaryStateProvider.select((state) => state.entryIndex));
   GlossaryStateNotifier get _glossaryNotifier =>
-    ref.read(glossaryStateProvider.notifier);
+      ref.read(glossaryStateProvider.notifier);
 
   String? _selectedCategoryId;
   String? _selectedEntryId;
@@ -337,7 +337,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     if (_selectedCategoryId == null ||
         _findCategoryById(_selectedCategoryId!, categoryTree) == null) {
-      _selectedCategoryId = categoryTree.isNotEmpty ? categoryTree.first.id : null;
+      _selectedCategoryId = categoryTree.isNotEmpty
+          ? categoryTree.first.id
+          : null;
     }
 
     if (_selectedCategoryId == null) {
@@ -351,7 +353,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     if (_selectedEntryId != null) {
-      final bool stillVisible = refs.any((ref) => ref.entryId == _selectedEntryId);
+      final bool stillVisible = refs.any(
+        (ref) => ref.entryId == _selectedEntryId,
+      );
       final bool exists = entryIndex.containsKey(_selectedEntryId);
       if (stillVisible && exists) {
         return;
@@ -458,9 +462,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
 
     if (!moved) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("無法移動到自己或自己的子目錄")));
+      AppFeedback.warning(context, "無法移動到自己或自己的子目錄");
       return;
     }
 
@@ -623,62 +625,26 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     required String hint,
     String initialValue = "",
   }) async {
-    String draftValue = initialValue;
-
-    final String? value = await showDialog<String>(
+    return AppDialog.prompt(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: TextFormField(
-            autofocus: true,
-            initialValue: initialValue,
-            decoration: InputDecoration(hintText: hint),
-            onChanged: (v) {
-              draftValue = v;
-            },
-            onFieldSubmitted: (v) => Navigator.of(context).pop(v),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text("取消"),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(draftValue),
-              child: const Text("確定"),
-            ),
-          ],
-        );
-      },
+      title: title,
+      hintText: hint,
+      initialValue: initialValue,
+      allowEmpty: true,
     );
-    return value?.trim();
   }
 
   Future<bool> _showConfirmDialog({
     required String title,
     required String message,
   }) async {
-    final bool? accepted = await showDialog<bool>(
+    return AppDialog.confirm(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text("取消"),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text("刪除"),
-            ),
-          ],
-        );
-      },
+      title: title,
+      message: message,
+      confirmLabel: "刪除",
+      destructive: true,
     );
-    return accepted ?? false;
   }
 
   List<GlossaryCategory>? _findCategoryPathById(
@@ -803,22 +769,20 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       await File(resolvedPath).writeAsString(jsonContent);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("匯出失敗：無法寫入檔案"),
-          duration: Duration(seconds: 2),
-        ),
+      AppFeedback.error(
+        context,
+        "匯出失敗：無法寫入檔案",
+        duration: const Duration(seconds: 2),
       );
       return;
     }
 
     if (!mounted) return;
     final String name = resolvedPath.replaceAll("\\", "/").split("/").last;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("匯出完成：$name\n$resolvedPath"),
-        duration: const Duration(seconds: 3),
-      ),
+    AppFeedback.success(
+      context,
+      "匯出完成：$name\n$resolvedPath",
+      duration: const Duration(seconds: 3),
     );
   }
 
@@ -833,9 +797,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   Future<void> _exportSelectedGlossary() async {
     if (_selectedCategoryId == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("請先選擇類別"), duration: Duration(seconds: 1)),
-      );
+      AppFeedback.info(context, "請先選擇類別", duration: const Duration(seconds: 1));
       return;
     }
 
@@ -845,11 +807,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         _buildExportTreeForSelectedCategory(_selectedCategoryId!, categoryTree);
     if (exportTree.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("找不到選取類別"),
-          duration: Duration(seconds: 1),
-        ),
+      AppFeedback.warning(
+        context,
+        "找不到選取類別",
+        duration: const Duration(seconds: 1),
       );
       return;
     }
@@ -967,11 +928,12 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   Future<bool> _showImportPreviewDialog(
     _GlossaryImportPreviewSummary summary,
   ) async {
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await AppDialog.showCustom<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text("匯入預覽"),
+        return AppDialog(
+          title: "匯入預覽",
+          icon: Icons.preview_outlined,
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
             child: SingleChildScrollView(
@@ -1041,11 +1003,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       imported = _decodeGlossary(raw);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("匯入檔案格式錯誤"),
-          duration: Duration(seconds: 1),
-        ),
+      AppFeedback.error(
+        context,
+        "匯入檔案格式錯誤",
+        duration: const Duration(seconds: 1),
       );
       return;
     }
@@ -1077,7 +1038,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       if (normalizedTerm.isEmpty) {
         return null;
       }
-      for (final MapEntry<String, GlossaryEntry> item in nextEntryIndex.entries) {
+      for (final MapEntry<String, GlossaryEntry> item
+          in nextEntryIndex.entries) {
         if (item.key != item.value.id) {
           continue;
         }
@@ -1113,7 +1075,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         }
 
         for (final String importedEntryId in incoming.entryIds) {
-          final GlossaryEntry? importedEntry = imported.entryIndex[importedEntryId];
+          final GlossaryEntry? importedEntry =
+              imported.entryIndex[importedEntryId];
           if (importedEntry == null) {
             continue;
           }
@@ -1162,13 +1125,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     });
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "匯入完成：新增類別 $createdCategoryCount、匯入新詞條 $createdEntryCount、重用既有詞條 $reusedEntryCount、連結詞條 $linkedEntryCount",
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.success(
+      context,
+      "匯入完成：新增類別 $createdCategoryCount、匯入新詞條 $createdEntryCount、重用既有詞條 $reusedEntryCount、連結詞條 $linkedEntryCount",
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -1302,8 +1262,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   void _addEntryByTermToSelectedCategory(String rawTerm) {
     if (_selectedCategoryId == null) return;
-    final GlossaryAddEntryResult? result =
-        _glossaryNotifier.addEntryByTermToCategory(
+    final GlossaryAddEntryResult? result = _glossaryNotifier
+        .addEntryByTermToCategory(
           categoryId: _selectedCategoryId!,
           term: rawTerm,
           newEntryId: _createId(),
@@ -1317,15 +1277,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     });
 
     if (!result.createdNewEntry) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.linkedToCategory
-                ? "已連結到同名詞條，共用意義/例句"
-                : "此分類已有同名詞條，已定位到該詞條",
-          ),
-          duration: const Duration(seconds: 1),
-        ),
+      AppFeedback.info(
+        context,
+        result.linkedToCategory ? "已連結到同名詞條，共用意義/例句" : "此分類已有同名詞條，已定位到該詞條",
+        duration: const Duration(seconds: 1),
       );
     }
   }
@@ -1394,11 +1349,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       setState(() {
         _selectedEntryId = result.mergedIntoEntryId;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("同名詞條已合併，現在共用同一組意義/例句"),
-          duration: Duration(seconds: 1),
-        ),
+      AppFeedback.info(
+        context,
+        "同名詞條已合併，現在共用同一組意義/例句",
+        duration: const Duration(seconds: 1),
       );
     }
   }
@@ -1408,7 +1362,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       children: List.generate(selectedEntry.pairs.length, (index) {
         final GlossaryPair pair = selectedEntry.pairs[index];
 
-        return Card(
+        return AppSectionCard(
+          padding: EdgeInsets.zero,
+          useSectionLayout: false,
           elevation: 0,
           margin: const EdgeInsets.only(bottom: 10),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -1424,17 +1380,20 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const Spacer(),
-                    IconButton(
-                      tooltip: "刪除此組",
-                      onPressed: selectedEntry.pairs.length <= 1
-                          ? null
-                          : () => _removePair(index),
-                      icon: const Icon(Icons.delete_outline),
+                    ItemActionBar(
+                      actions: [
+                        ItemAction.delete(
+                          tooltip: "刪除此組",
+                          onPressed: selectedEntry.pairs.length <= 1
+                              ? null
+                              : () => _removePair(index),
+                        ),
+                      ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                TextFormField(
+                AppTextField(
                   key: ValueKey("meaning_${selectedEntry.id}_$index"),
                   initialValue: pair.meaning,
                   minLines: 2,
@@ -1446,7 +1405,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   onChanged: (value) => _updatePairMeaning(index, value),
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                AppTextField(
                   key: ValueKey("example_${selectedEntry.id}_$index"),
                   initialValue: pair.example,
                   minLines: 2,
@@ -1536,27 +1495,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   }
 
   Widget _buildWarningCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.redAccent,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Icon(Icons.warning_amber_outlined, color: Colors.yellow),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                "本功能正在開發中，使用時可能出現錯誤。",
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const AppNoticeBanner(
+      message: "本功能正在開發中，使用時可能出現錯誤。",
+      tone: AppFeedbackTone.warning,
     );
   }
 
@@ -1568,7 +1509,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final TextStyle menuTextStyle =
         Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
@@ -1640,24 +1583,22 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
-            if (rows.isEmpty)
-              Text("尚無詞語類別", style: Theme.of(context).textTheme.bodyMedium)
-            else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 420),
-                child: Scrollbar(
-                  controller: _categoryTreeScrollController,
-                  child: ListView.builder(
-                    controller: _categoryTreeScrollController,
-                    primary: false,
-                    padding: EdgeInsets.zero,
-                    itemCount: rows.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return _buildCategoryRow(rows[index], categoryTree);
-                    },
-                  ),
-                ),
-              ),
+            CollectionPanel.builder(
+              title: "詞語類別",
+              showSectionCard: false,
+              minHeight: 180,
+              maxHeight: 420,
+              controller: _categoryTreeScrollController,
+              showScrollbar: true,
+              listPadding: EdgeInsets.zero,
+              itemCount: rows.length,
+              emptyTitle: "尚無詞語類別",
+              emptyDescription: "請新增第一個分類",
+              emptyIcon: Icons.create_new_folder_outlined,
+              itemBuilder: (BuildContext context, int index) {
+                return _buildCategoryRow(rows[index], categoryTree);
+              },
+            ),
           ],
         ),
       ),
@@ -1689,33 +1630,21 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         hasChildren ? Icons.folder_copy_outlined : Icons.folder_open_outlined,
         color: Theme.of(context).colorScheme.primary,
       ),
-      title: isEditing
-          ? TextField(
-              controller: _categoryRenameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 6,
-                ),
-              ),
-              onSubmitted: (_) => _submitEditingCategory(),
-              onTapOutside: (_) => _submitEditingCategory(),
-            )
-          : GestureDetector(
-              onDoubleTap: () => _startEditingCategory(category.id),
-              child: Text(
-                category.name,
-                style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ),
+      title: InlineEditableText(
+        value: category.name,
+        controller: _categoryRenameController,
+        isEditing: isEditing,
+        onEdit: () => _startEditingCategory(category.id),
+        onSubmitted: (_) => _submitEditingCategory(),
+        onTapOutside: (_) => _submitEditingCategory(),
+        emptyText: "（未命名分類）",
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurface,
+        ),
+      ),
       subtitle: Text(
         "共 $totalEntries 條",
         style: Theme.of(context).textTheme.bodySmall,
@@ -1768,7 +1697,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       isThisDragging: _draggingCategoryId == category.id,
       isDragForbidden:
           _draggingCategoryId != null &&
-          _isDescendantCategory(_draggingCategoryId!, category.id, categoryTree),
+          _isDescendantCategory(
+            _draggingCategoryId!,
+            category.id,
+            categoryTree,
+          ),
       onClicked: () => _selectCategory(category.id),
       onDragStarted: () {
         if (_editingCategoryId != null) {
@@ -1792,7 +1725,11 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       onWillAccept: (data, position) {
         if (data is _GlossaryCategoryDragData) {
           if (data.categoryId == category.id) return false;
-          if (_isDescendantCategory(data.categoryId, category.id, categoryTree)) {
+          if (_isDescendantCategory(
+            data.categoryId,
+            category.id,
+            categoryTree,
+          )) {
             return false;
           }
           return true;
@@ -1810,11 +1747,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             DropPosition.child => "移動到子目錄",
             DropPosition.after => "移動到後方",
           };
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("「${data.categoryName}」已$actionText"),
-              duration: const Duration(seconds: 1),
-            ),
+          AppFeedback.success(
+            context,
+            "「${data.categoryName}」已$actionText",
+            duration: const Duration(seconds: 1),
           );
           return;
         }
@@ -1826,11 +1762,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             targetCategoryId: category.id,
           );
           if (moved) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("「${data.entryTerm}」已移到「${category.name}」"),
-                duration: const Duration(seconds: 1),
-              ),
+            AppFeedback.success(
+              context,
+              "「${data.entryTerm}」已移到「${category.name}」",
+              duration: const Duration(seconds: 1),
             );
           }
         }
@@ -1859,19 +1794,13 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
     if (_selectedCategoryId == null) {
-      return Card(
-        elevation: 0,
-        color: scheme.surfaceContainerLow,
-        child: const Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              MediumTitle(icon: Icons.format_list_bulleted, text: "詞語條目"),
-              SizedBox(height: 12),
-              Text("請先選擇詞語類別。"),
-            ],
-          ),
+      return const AppSectionCard(
+        title: "詞語條目",
+        icon: Icons.format_list_bulleted,
+        child: AppEmptyState(
+          title: "請先選擇詞語類別",
+          icon: Icons.touch_app_outlined,
+          compact: true,
         ),
       );
     }
@@ -1884,7 +1813,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         .where((ref) => entryIndex.containsKey(ref.entryId))
         .toList();
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
@@ -1899,35 +1830,32 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
-            if (visibleRefs.isEmpty)
-              Text("此類別目前沒有詞條。", style: Theme.of(context).textTheme.bodyMedium)
-            else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 320),
-                child: Scrollbar(
-                  controller: _entryListScrollController,
-                  child: ListView.builder(
-                    controller: _entryListScrollController,
-                    primary: false,
-                    padding: EdgeInsets.zero,
-                    itemCount: visibleRefs.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildEntryRow(
-                          visibleRefs[index],
-                          categoryTree,
-                          entryIndex,
-                        ),
-                      );
-                    },
-                  ),
-                ),
+            CollectionPanel.builder(
+              title: "詞語條目",
+              showSectionCard: false,
+              minHeight: 180,
+              maxHeight: 320,
+              controller: _entryListScrollController,
+              showScrollbar: true,
+              listPadding: EdgeInsets.zero,
+              itemCount: visibleRefs.length,
+              emptyTitle: "此類別目前沒有詞條",
+              emptyDescription: "請新增第一個詞條",
+              emptyIcon: Icons.menu_book_outlined,
+              footer: AddItemInput(
+                title: "詞條名稱",
+                onAdd: _addEntryByTermToSelectedCategory,
               ),
-            const SizedBox(height: 12),
-            AddItemInput(
-              title: "詞條名稱",
-              onAdd: _addEntryByTermToSelectedCategory,
+              itemBuilder: (BuildContext context, int index) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _buildEntryRow(
+                    visibleRefs[index],
+                    categoryTree,
+                    entryIndex,
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -2064,11 +1992,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             ref.sourceCategoryId,
             categoryTree,
           );
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("「${data.entryTerm}」已移動到「$destination」"),
-              duration: const Duration(seconds: 1),
-            ),
+          AppFeedback.success(
+            context,
+            "「${data.entryTerm}」已移動到「$destination」",
+            duration: const Duration(seconds: 1),
           );
         }
       },
@@ -2085,7 +2012,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
         ? null
         : entryIndex[_selectedEntryId!];
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
@@ -2098,7 +2027,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             if (selectedEntry == null)
               Text("請從上方選擇一個詞條。", style: Theme.of(context).textTheme.bodyMedium)
             else ...[
-              TextFormField(
+              AppTextField(
                 key: ValueKey("term_${selectedEntry.id}"),
                 initialValue: selectedEntry.term,
                 decoration: const InputDecoration(
@@ -2139,7 +2068,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               if (selectedEntry.partOfSpeech ==
                   GlossaryPartOfSpeech.custom) ...[
                 const SizedBox(height: 12),
-                TextFormField(
+                AppTextField(
                   key: ValueKey("custom_pos_${selectedEntry.id}"),
                   initialValue: selectedEntry.customPartOfSpeech,
                   decoration: const InputDecoration(
@@ -2276,11 +2205,21 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             const SizedBox(height: 32),
             _buildWarningCard(),
             const SizedBox(height: 20),
-            _buildCategoryTreeCard(categoryTree),
-            const SizedBox(height: 12),
-            _buildEntryListCard(categoryTree, entryIndex),
-            const SizedBox(height: 12),
-            _buildEntryEditorCard(entryIndex),
+            ResponsiveSplitView(
+              breakpoint: 980,
+              spacing: 12,
+              primaryFlex: 1,
+              secondaryFlex: 2,
+              primary: _buildCategoryTreeCard(categoryTree),
+              secondary: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildEntryListCard(categoryTree, entryIndex),
+                  const SizedBox(height: 12),
+                  _buildEntryEditorCard(entryIndex),
+                ],
+              ),
+            ),
           ],
         ),
       ),

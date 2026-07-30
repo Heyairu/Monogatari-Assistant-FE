@@ -2268,27 +2268,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   // 警語元件
   Widget _buildWarningCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.redAccent,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Icon(Icons.warning_amber_outlined, color: Colors.yellow),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                "本功能正在開發中，使用時可能出現錯誤。",
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const AppNoticeBanner(
+      message: "本功能正在開發中，使用時可能出現錯誤。",
+      tone: AppFeedbackTone.warning,
     );
   }
 
@@ -2315,7 +2297,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             _buildWarningCard(),
             const SizedBox(height: 16),
 
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -2343,7 +2327,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
             const SizedBox(height: 16),
 
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -2388,7 +2374,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               ),
             ),
 
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -3194,7 +3182,9 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                   hit.positions.length,
                   _fillerHitPositionLimit,
                 );
-                return Card(
+                return AppSectionCard(
+                  padding: EdgeInsets.zero,
+                  useSectionLayout: false,
                   margin: EdgeInsets.zero,
                   elevation: 0,
                   color: Theme.of(context).colorScheme.surfaceContainer,

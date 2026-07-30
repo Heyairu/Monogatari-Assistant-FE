@@ -1200,7 +1200,9 @@ class _PlanViewState extends ConsumerState<PlanView> {
 
   Widget _buildForeshadowSection(List<ForeshadowItem> items) {
     final selectedItem = _selectedForeshadow;
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1210,17 +1212,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
           children: [
             const MediumTitle(icon: Icons.list_alt_outlined, text: "伏筆列表"),
             const SizedBox(height: 12),
-            Container(
-              constraints: const BoxConstraints(minHeight: 180, maxHeight: 300),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                ),
-                borderRadius: BorderRadius.circular(8),
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-              ),
-              child: items.isEmpty
-                  ? const Center(child: Text("尚無伏筆，請新增項目"))
+            CollectionPanel.custom(
+              title: "伏筆列表",
+              showSectionCard: false,
+              minHeight: 180,
+              maxHeight: 300,
+              content: items.isEmpty
+                  ? const AppEmptyState(
+                      title: "尚無伏筆",
+                      description: "請新增第一個項目",
+                      compact: true,
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
                       itemCount: items.length,
@@ -1266,12 +1268,12 @@ class _PlanViewState extends ConsumerState<PlanView> {
                                   );
                                 },
                               ),
-                              IconButton(
-                                onPressed: () => _deleteForeshadow(item.id),
-                                icon: Icon(
-                                  Icons.delete_outline,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
+                              ItemActionBar(
+                                actions: [
+                                  ItemAction.delete(
+                                    onPressed: () => _deleteForeshadow(item.id),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -1315,11 +1317,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
             AddItemInput(title: "新增伏筆", onAdd: _addForeshadow),
             const SizedBox(height: 12),
             if (selectedItem == null)
-              const Text("請選擇一個伏筆進行編輯")
+              const AppEmptyState(
+                title: "請選擇一個伏筆",
+                description: "選取後即可編輯內容",
+                icon: Icons.touch_app_outlined,
+                compact: true,
+                padding: EdgeInsets.symmetric(vertical: 12),
+              )
             else
               Column(
                 children: [
-                  TextField(
+                  AppTextField(
                     controller: foreshadowTitleController,
                     decoration: const InputDecoration(
                       labelText: "伏筆名稱",
@@ -1328,7 +1336,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
+                  AppTextField(
                     controller: foreshadowNoteController,
                     decoration: const InputDecoration(
                       labelText: "說明",
@@ -1357,7 +1365,9 @@ class _PlanViewState extends ConsumerState<PlanView> {
 
   Widget _buildUpdatePlanSection(List<UpdatePlanItem> items) {
     final selectedItem = _selectedUpdatePlan;
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -1367,17 +1377,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
           children: [
             const MediumTitle(icon: Icons.note, text: "更新計畫"),
             const SizedBox(height: 12),
-            Container(
-              constraints: const BoxConstraints(minHeight: 180, maxHeight: 300),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                ),
-                borderRadius: BorderRadius.circular(8),
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-              ),
-              child: items.isEmpty
-                  ? const Center(child: Text("尚無更新計畫，請新增項目"))
+            CollectionPanel.custom(
+              title: "更新計畫",
+              showSectionCard: false,
+              minHeight: 180,
+              maxHeight: 300,
+              content: items.isEmpty
+                  ? const AppEmptyState(
+                      title: "尚無更新計畫",
+                      description: "請新增第一個項目",
+                      compact: true,
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
                       itemCount: items.length,
@@ -1420,12 +1430,12 @@ class _PlanViewState extends ConsumerState<PlanView> {
                                   _toggleUpdatePlanDone(item, value ?? false);
                                 },
                               ),
-                              IconButton(
-                                onPressed: () => _deleteUpdatePlan(item.id),
-                                icon: Icon(
-                                  Icons.delete_outline,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
+                              ItemActionBar(
+                                actions: [
+                                  ItemAction.delete(
+                                    onPressed: () => _deleteUpdatePlan(item.id),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -1469,11 +1479,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
             AddItemInput(title: "新增更新計畫", onAdd: _addUpdatePlan),
             const SizedBox(height: 12),
             if (selectedItem == null)
-              const Text("請選擇一個更新計畫進行編輯")
+              const AppEmptyState(
+                title: "請選擇一個更新計畫",
+                description: "選取後即可編輯內容",
+                icon: Icons.touch_app_outlined,
+                compact: true,
+                padding: EdgeInsets.symmetric(vertical: 12),
+              )
             else
               Column(
                 children: [
-                  TextField(
+                  AppTextField(
                     controller: updatePlanTitleController,
                     decoration: const InputDecoration(
                       labelText: "計畫名稱",
@@ -1482,7 +1498,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
+                  AppTextField(
                     controller: updatePlanNoteController,
                     decoration: const InputDecoration(
                       labelText: "說明",
@@ -1515,17 +1531,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          constraints: const BoxConstraints(minHeight: 220, maxHeight: 420),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-            ),
-            borderRadius: BorderRadius.circular(8),
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-          ),
-          child: inspirationFolders.isEmpty && inspirationNotes.isEmpty
-              ? const Center(child: Text("尚無靈感，請新增資料夾或靈感"))
+        CollectionPanel.custom(
+          title: "靈感列表",
+          showSectionCard: false,
+          minHeight: 220,
+          maxHeight: 420,
+          content: inspirationFolders.isEmpty && inspirationNotes.isEmpty
+              ? const AppEmptyState(
+                  title: "尚無靈感",
+                  description: "請新增資料夾或靈感",
+                  compact: true,
+                )
               : ListView.builder(
                   padding: const EdgeInsets.all(8),
                   itemCount: entries.length + (_showRootDirectory ? 1 : 0),
@@ -1548,8 +1564,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     }
 
                     final entry = entries[index - (_showRootDirectory ? 1 : 0)];
-                    final isFolder =
-                        entry.type == _InspirationLayerType.folder;
+                    final isFolder = entry.type == _InspirationLayerType.folder;
                     final isSelected = isFolder
                         ? (selectedFolderId == entry.id &&
                               selectedInspirationId == null)
@@ -1587,8 +1602,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                         children: [
                           if (isFolder)
                             IconButton(
-                              onPressed: () =>
-                                  _toggleFolderCollapsed(entry.id),
+                              onPressed: () => _toggleFolderCollapsed(entry.id),
                               tooltip: isCollapsed ? "展開" : "收合",
                               icon: Icon(
                                 isCollapsed
@@ -1596,18 +1610,18 @@ class _PlanViewState extends ConsumerState<PlanView> {
                                     : Icons.expand_more,
                               ),
                             ),
-                          IconButton(
-                            onPressed: () {
-                              if (isFolder) {
-                                _deleteInspirationFolder(entry.id);
-                              } else {
-                                _deleteInspirationNote(entry.id);
-                              }
-                            },
-                            icon: Icon(
-                              Icons.delete_outline,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
+                          ItemActionBar(
+                            actions: [
+                              ItemAction.delete(
+                                onPressed: () {
+                                  if (isFolder) {
+                                    _deleteInspirationFolder(entry.id);
+                                  } else {
+                                    _deleteInspirationNote(entry.id);
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1670,13 +1684,19 @@ class _PlanViewState extends ConsumerState<PlanView> {
   Widget _buildInspirationEditorPanel() {
     final selected = _selectedInspiration;
     if (selected == null) {
-      return const Text("請選擇一則靈感進行編輯");
+      return const AppEmptyState(
+        title: "請選擇一則靈感",
+        description: "選取後即可編輯內容",
+        icon: Icons.touch_app_outlined,
+        compact: true,
+        padding: EdgeInsets.symmetric(vertical: 12),
+      );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
+        AppTextField(
           controller: inspirationTitleController,
           decoration: const InputDecoration(
             labelText: "靈感標題",
@@ -1685,7 +1705,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
+        AppTextField(
           controller: inspirationContentController,
           decoration: const InputDecoration(
             labelText: "內容",
@@ -1700,7 +1720,9 @@ class _PlanViewState extends ConsumerState<PlanView> {
   }
 
   Widget _buildInspirationSection() {
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(

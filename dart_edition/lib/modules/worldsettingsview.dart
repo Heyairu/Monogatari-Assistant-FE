@@ -309,8 +309,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   String? selectedNodeId;
   String? lastSelectedNodeId; // 記錄上次選取的節點
   String? editingNodeId;
-  String tempCustomKey = "";
-  String tempCustomVal = "";
+  String? selectedCustomValueId;
+  String? _customValueEditorLocationId;
   List<TemplatePreset> templatePresets = [];
   String selectedPresetName = "空白";
   Map<String, LocationData> _locationIndex = const <String, LocationData>{};
@@ -334,9 +334,6 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   @override
   void initState() {
     super.initState();
-    tempKeyController.text = tempCustomKey;
-    tempValController.text = tempCustomVal;
-
     _loadTemplatesFromDisk();
 
     locationNameController.addListener(_onNameChanged);
@@ -454,78 +451,56 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     _buildFlatList(ref.read(worldSettingsDataProvider));
   }
 
-  void _removeCustomValue(String locationId, int customValueIndex) {
-    _updateLocationById(locationId, (current) {
-      if (customValueIndex < 0 ||
-          customValueIndex >= current.customVal.length) {
-        return current;
-      }
-      final nextCustomValues = [...current.customVal]
-        ..removeAt(customValueIndex);
-      return current.copyWith(customVal: nextCustomValues);
-    });
-  }
-
-  void _addCustomValue(String locationId, String key, String value) {
-    final trimmedKey = key.trim();
-    if (trimmedKey.isEmpty) return;
-
-    _updateLocationById(locationId, (current) {
-      final nextCustomValues = [
-        ...current.customVal,
-        LocationCustomize(key: trimmedKey, val: value),
-      ];
-      return current.copyWith(customVal: nextCustomValues);
-    });
-
+  void _selectCustomValueForEditing(String locationId, LocationCustomize item) {
     setState(() {
-      tempCustomKey = "";
-      tempCustomVal = "";
-      tempKeyController.clear();
-      tempValController.clear();
+      selectedCustomValueId = item.id;
+      _customValueEditorLocationId = locationId;
+      tempKeyController.text = item.key;
+      tempValController.text = item.val;
     });
   }
 
-  void _updateCustomValueKey(
-    String locationId,
-    int customValueIndex,
-    String key,
-  ) {
-    _updateLocationById(locationId, (current) {
-      if (customValueIndex < 0 ||
-          customValueIndex >= current.customVal.length) {
-        return current;
-      }
-      final existing = current.customVal[customValueIndex];
-      if (existing.key == key) {
-        return current;
-      }
-
-      final nextCustomValues = [...current.customVal];
-      nextCustomValues[customValueIndex] = existing.copyWith(key: key);
-      return current.copyWith(customVal: nextCustomValues);
-    });
+  void _clearCustomValueEditor() {
+    selectedCustomValueId = null;
+    tempKeyController.clear();
+    tempValController.clear();
   }
 
-  void _updateCustomValueVal(
-    String locationId,
-    int customValueIndex,
-    String value,
-  ) {
-    _updateLocationById(locationId, (current) {
-      if (customValueIndex < 0 ||
-          customValueIndex >= current.customVal.length) {
-        return current;
-      }
-      final existing = current.customVal[customValueIndex];
-      if (existing.val == value) {
-        return current;
-      }
+  void _saveCustomValue(String locationId) {
+    final key = tempKeyController.text.trim();
+    if (key.isEmpty) return;
+    final value = tempValController.text;
+    final selectedId = selectedCustomValueId;
 
+    _updateLocationById(locationId, (current) {
       final nextCustomValues = [...current.customVal];
-      nextCustomValues[customValueIndex] = existing.copyWith(val: value);
+      final selectedIndex = selectedId == null
+          ? -1
+          : nextCustomValues.indexWhere((item) => item.id == selectedId);
+
+      if (selectedIndex >= 0) {
+        nextCustomValues[selectedIndex] = nextCustomValues[selectedIndex]
+            .copyWith(key: key, val: value);
+      } else {
+        nextCustomValues.add(LocationCustomize(key: key, val: value));
+      }
       return current.copyWith(customVal: nextCustomValues);
     });
+
+    setState(_clearCustomValueEditor);
+  }
+
+  void _deleteSelectedCustomValue(String locationId) {
+    final selectedId = selectedCustomValueId;
+    if (selectedId == null) return;
+
+    _updateLocationById(locationId, (current) {
+      final nextCustomValues = [...current.customVal]
+        ..removeWhere((item) => item.id == selectedId);
+      return current.copyWith(customVal: nextCustomValues);
+    });
+
+    setState(_clearCustomValueEditor);
   }
 
   // MARK: - UI 介面建構
@@ -624,90 +599,71 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                     ),
                     const SizedBox(height: 32),
 
-                    // 上方樹狀列表區域
-                    MediumTitle(icon: Icons.map, text: "世界結構"),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: listHeight,
-                      child: GestureDetector(
-                        onTap: () {
-                          // 點擊容器空白區域時取消選取
-                          setState(() {
-                            selectedNodeId = null;
-                          });
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(
+                    ResponsiveSplitView(
+                      breakpoint: 980,
+                      spacing: 24,
+                      primary: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MediumTitle(icon: Icons.map, text: "世界結構"),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedNodeId = null;
+                              });
+                            },
+                            child: CollectionPanel.builder(
+                              title: "世界結構",
+                              showSectionCard: false,
+                              minHeight: listHeight,
+                              maxHeight: listHeight,
+                              controller: _treeScrollController,
+                              showScrollbar: true,
+                              itemCount: flatList.length,
+                              emptyTitle: "尚無地點",
+                              emptyDescription: "請新增第一個地點",
+                              emptyIcon: Icons.public_off_outlined,
+                              itemBuilder: (context, index) {
+                                final item = flatList[index];
+                                return _buildLocationRow(item.node, item.depth);
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: AddItemInput(
+                              title: selectedNodeId != null ? "子地點" : "頂層地點",
+                              onAdd: _addLocation,
+                            ),
+                          ),
+                        ],
+                      ),
+                      secondary: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MediumTitle(icon: Icons.info_outline, text: "節點詳情"),
+                          const SizedBox(height: 8),
+                          Container(
+                            constraints: const BoxConstraints(minHeight: 320),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outline.withValues(alpha: 0.2),
+                              ),
+                              borderRadius: BorderRadius.circular(8),
                               color: Theme.of(
                                 context,
-                              ).colorScheme.outline.withOpacity(0.2),
+                              ).colorScheme.surfaceContainerLowest,
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerLowest,
+                            padding: const EdgeInsets.all(16),
+                            child: _buildDetailPanel(),
                           ),
-                          child: Builder(
-                            builder: (context) {
-                              if (locations.isEmpty) {
-                                return Center(
-                                  child: Text(
-                                    "尚無地點，請新增第一個地點",
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.labelLarge,
-                                  ),
-                                );
-                              }
-
-                              return ListView.builder(
-                                controller: _treeScrollController,
-                                primary: false,
-                                padding: const EdgeInsets.all(8),
-                                itemCount: flatList.length,
-                                itemBuilder: (context, index) {
-                                  final item = flatList[index];
-                                  return _buildLocationRow(
-                                    item.node,
-                                    item.depth,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
+                        ],
                       ),
-                    ),
-                    // 新增地點輸入框
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: AddItemInput(
-                        title: selectedNodeId != null ? "子地點" : "頂層地點",
-                        onAdd: _addLocation,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // 下方詳情面板
-                    MediumTitle(icon: Icons.info_outline, text: "節點詳情"),
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(minHeight: 320),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withOpacity(0.2),
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerLowest,
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: _buildDetailPanel(),
                     ),
                   ],
                 ),
@@ -723,39 +679,34 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final isSelected = selectedNodeId == location.id;
     final isEditing = editingNodeId == location.id;
 
-    // 標題組件
-    Widget titleWidget = isEditing
-        ? _EditableLocationName(
-            key: ValueKey("location-name-editor-${location.id}"),
-            name: location.localName,
-            onSubmitted: (value) {
-              _renameNode(location.id, value);
-              setState(() {
-                editingNodeId = null;
-              });
-            },
-            onEditingComplete: () {
-              setState(() {
-                editingNodeId = null;
-              });
-            },
-          )
-        : GestureDetector(
-            onDoubleTap: () {
-              setState(() {
-                editingNodeId = location.id;
-              });
-            },
-            child: Text(
-              location.localName.isEmpty ? "（未命名）" : location.localName,
-              style: TextStyle(
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          );
+    final titleWidget = InlineEditableText(
+      key: ValueKey("location-name-editor-${location.id}"),
+      value: location.localName,
+      isEditing: isEditing,
+      onEdit: () {
+        setState(() {
+          editingNodeId = location.id;
+        });
+      },
+      onSubmitted: (value) {
+        _renameNode(location.id, value);
+        setState(() {
+          editingNodeId = null;
+        });
+      },
+      onCanceled: () {
+        setState(() {
+          editingNodeId = null;
+        });
+      },
+      emptyText: "（未命名）",
+      style: TextStyle(
+        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurface,
+      ),
+    );
 
     return DraggableCardNode<LocationDragData>(
       key: ValueKey(location.id),
@@ -777,32 +728,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         "${location.nodeType.label} • ${location.child.length} 個子節點",
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              Icons.edit_outlined,
-              size: 18,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: () {
-              setState(() {
-                editingNodeId = location.id;
-              });
-            },
-            tooltip: "重新命名",
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              size: 18,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => _deleteNode(location.id),
-            tooltip: "刪除地點",
-          ),
-        ],
+      trailing: ItemActionBar.editDelete(
+        iconSize: 18,
+        onEdit: () {
+          setState(() {
+            editingNodeId = location.id;
+          });
+        },
+        onDelete: () => _deleteNode(location.id),
+        deleteTooltip: "刪除地點",
       ),
 
       // 狀態與回調
@@ -876,11 +810,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             : "「${data.locationName}」已移動到「${location.localName}」$messageKey";
 
         _moveLocationTo(data.locationId, location.id, positionStr);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 1),
-          ),
+        AppFeedback.success(
+          context,
+          message,
+          duration: const Duration(seconds: 1),
         );
       },
 
@@ -893,12 +826,21 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
 
     if (displayNodeId == null) {
-      return const Center(child: Text("請選擇一個地點來編輯詳情"));
+      return const AppEmptyState(
+        title: "請選擇一個地點",
+        description: "選取地點後即可編輯詳細資料",
+        icon: Icons.touch_app_outlined,
+        compact: true,
+      );
     }
 
     final location = _getLocation(displayNodeId, _locations);
     if (location == null) {
-      return const Center(child: Text("找不到該地點"));
+      return const AppEmptyState(
+        title: "找不到該地點",
+        icon: Icons.location_off_outlined,
+        compact: true,
+      );
     }
 
     return SingleChildScrollView(
@@ -946,7 +888,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           const SizedBox(height: 16),
 
           // 名稱
-          TextField(
+          AppTextField(
             controller: locationNameController,
             decoration: const InputDecoration(
               labelText: "名稱",
@@ -957,7 +899,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           const SizedBox(height: 12),
 
           // 類型
-          TextField(
+          AppTextField(
             controller: locationTypeController,
             decoration: const InputDecoration(
               labelText: "類型",
@@ -991,84 +933,52 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           // 自訂值表
           Text("自訂值表:", style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 8),
-          ...location.customVal.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return _CustomValueRow(
-              key: ValueKey(item.id),
-              item: item,
-              onKeyChanged: (value) {
-                _updateCustomValueKey(location.id, index, value);
-              },
-              onValChanged: (value) {
-                _updateCustomValueVal(location.id, index, value);
-              },
-              onRemove: () {
-                _removeCustomValue(location.id, index);
-              },
-            );
-          }),
-
-          // 新增自訂值
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: tempKeyController,
-                  decoration: const InputDecoration(
-                    labelText: "設定",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      tempCustomKey = value;
-                    });
-                  },
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text("="),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: tempValController,
-                  decoration: const InputDecoration(
-                    labelText: "鍵值",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      tempCustomVal = value;
-                    });
-                  },
-                ),
-              ),
-              IconButton(
-                onPressed: tempCustomKey.isEmpty
-                    ? null
-                    : () {
-                        _addCustomValue(
-                          location.id,
-                          tempCustomKey,
-                          tempCustomVal,
-                        );
-                      },
-                icon: Icon(
-                  Icons.add_circle,
-                  color: tempCustomKey.isEmpty ? Colors.grey : Colors.green,
-                ),
-              ),
-            ],
+          AppTwoColumnTable(
+            firstHeader: "設定",
+            secondHeader: "鍵值",
+            bodyHeight: 200,
+            emptyState: const AppEmptyState(
+              title: "尚無自訂值",
+              description: "在下方輸入設定與鍵值後新增",
+              icon: Icons.tune_outlined,
+              compact: true,
+            ),
+            rows: location.customVal
+                .asMap()
+                .entries
+                .map((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
+                  return AppTwoColumnTableRow(
+                    key: ValueKey(item.id),
+                    selected: selectedCustomValueId == item.id,
+                    showDivider: index != location.customVal.length - 1,
+                    firstCell: Text(item.key),
+                    secondCell: Text(item.val),
+                    onTap: () {
+                      _selectCustomValueForEditing(location.id, item);
+                    },
+                  );
+                })
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 8),
+          AppTwoColumnTableEditor(
+            firstController: tempKeyController,
+            secondController: tempValController,
+            firstLabel: "設定",
+            secondLabel: "鍵值",
+            isEditing: selectedCustomValueId != null,
+            canSubmit: (key, _) => key.trim().isNotEmpty,
+            onSubmit: (_, _) => _saveCustomValue(location.id),
+            onDelete: () => _deleteSelectedCustomValue(location.id),
           ),
           const SizedBox(height: 16),
 
           // 備註
           const Text("備註:", style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          TextField(
+          AppTextField(
             controller: locationNoteController,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
@@ -1130,42 +1040,29 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     }
   }
 
-  void _showOverwritePresetDialog(TemplatePreset preset) {
-    showDialog(
+  Future<void> _showOverwritePresetDialog(TemplatePreset preset) async {
+    final confirmed = await AppDialog.confirm(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("儲存預設模板"),
-        content: const Text("同名模板已存在，是否要覆蓋？"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("取消"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              final index = templatePresets.indexWhere(
-                (p) => p.name == preset.name,
-              );
-              setState(() {
-                templatePresets[index] = preset;
-                selectedPresetName = preset.name;
-              });
-              _saveTemplatesToDisk();
-            },
-            child: const Text("覆蓋"),
-          ),
-        ],
-      ),
+      title: "儲存預設模板",
+      message: "同名模板已存在，是否要覆蓋？",
+      confirmLabel: "覆蓋",
     );
+    if (!mounted || !confirmed) return;
+
+    final index = templatePresets.indexWhere((p) => p.name == preset.name);
+    setState(() {
+      templatePresets[index] = preset;
+      selectedPresetName = preset.name;
+    });
+    _saveTemplatesToDisk();
   }
 
   Future<void> _showRenamePresetDialog() async {
-    final newName = await showDialog<String>(
+    final newName = await AppDialog.prompt(
       context: context,
-      builder: (context) => _RenamePresetDialog(
-        initialName: selectedPresetName,
-      ),
+      title: "更改預設名稱",
+      labelText: "新模板名稱",
+      initialValue: selectedPresetName,
     );
     if (!mounted || newName == null) {
       return;
@@ -1437,11 +1334,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           position: position,
         );
     if (!moved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("無法移動到自己或自己的後代節點"),
-          duration: Duration(seconds: 1),
-        ),
+      AppFeedback.warning(
+        context,
+        "無法移動到自己或自己的後代節點",
+        duration: const Duration(seconds: 1),
       );
       return;
     }
@@ -1494,6 +1390,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   void _syncDetailControllers() {
     final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
+    if (_customValueEditorLocationId != displayNodeId) {
+      _customValueEditorLocationId = displayNodeId;
+      _clearCustomValueEditor();
+    }
     if (displayNodeId == null) {
       _setControllerTextIfChanged(locationNameController, "");
       _setControllerTextIfChanged(locationTypeController, "");
@@ -1524,34 +1424,22 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _showErrorDialog(String message) {
-    showDialog(
+    AppDialog.message(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("錯誤"),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("確定"),
-          ),
-        ],
-      ),
+      title: "錯誤",
+      message: message,
+      closeLabel: "確定",
+      tone: AppFeedbackTone.error,
     );
   }
 
   void _showSuccessDialog(String message) {
-    showDialog(
+    AppDialog.message(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("成功"),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("確定"),
-          ),
-        ],
-      ),
+      title: "成功",
+      message: message,
+      closeLabel: "確定",
+      tone: AppFeedbackTone.success,
     );
   }
 }
@@ -1560,212 +1448,4 @@ class _FlatNode {
   final LocationData node;
   final int depth;
   _FlatNode(this.node, this.depth);
-}
-
-class _EditableLocationName extends StatefulWidget {
-  final String name;
-  final ValueChanged<String> onSubmitted;
-  final VoidCallback onEditingComplete;
-
-  const _EditableLocationName({
-    super.key,
-    required this.name,
-    required this.onSubmitted,
-    required this.onEditingComplete,
-  });
-
-  @override
-  State<_EditableLocationName> createState() => _EditableLocationNameState();
-}
-
-class _EditableLocationNameState extends State<_EditableLocationName> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.name);
-  }
-
-  @override
-  void didUpdateWidget(_EditableLocationName oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.name == _controller.text) {
-      return;
-    }
-    _controller.value = TextEditingValue(
-      text: widget.name,
-      selection: TextSelection.collapsed(offset: widget.name.length),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      autofocus: true,
-      controller: _controller,
-      decoration: const InputDecoration(
-        border: OutlineInputBorder(),
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      ),
-      onSubmitted: widget.onSubmitted,
-      onEditingComplete: widget.onEditingComplete,
-    );
-  }
-}
-
-class _RenamePresetDialog extends StatefulWidget {
-  final String initialName;
-
-  const _RenamePresetDialog({required this.initialName});
-
-  @override
-  State<_RenamePresetDialog> createState() => _RenamePresetDialogState();
-}
-
-class _RenamePresetDialogState extends State<_RenamePresetDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialName);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("更改預設名稱"),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: const InputDecoration(labelText: "新模板名稱"),
-        onSubmitted: (value) => Navigator.of(context).pop(value),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text("取消"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text("確定"),
-        ),
-      ],
-    );
-  }
-}
-
-class _CustomValueRow extends StatefulWidget {
-  final LocationCustomize item;
-  final VoidCallback onRemove;
-  final ValueChanged<String> onKeyChanged;
-  final ValueChanged<String> onValChanged;
-
-  const _CustomValueRow({
-    super.key,
-    required this.item,
-    required this.onRemove,
-    required this.onKeyChanged,
-    required this.onValChanged,
-  });
-
-  @override
-  State<_CustomValueRow> createState() => _CustomValueRowState();
-}
-
-class _CustomValueRowState extends State<_CustomValueRow> {
-  late TextEditingController keyController;
-  late TextEditingController valController;
-
-  @override
-  void initState() {
-    super.initState();
-    keyController = TextEditingController(text: widget.item.key);
-    valController = TextEditingController(text: widget.item.val);
-    keyController.addListener(_onKeyChanged);
-    valController.addListener(_onValChanged);
-  }
-
-  void _onKeyChanged() {
-    if (widget.item.key == keyController.text) return;
-    widget.onKeyChanged(keyController.text);
-  }
-
-  void _onValChanged() {
-    if (widget.item.val == valController.text) return;
-    widget.onValChanged(valController.text);
-  }
-
-  @override
-  void didUpdateWidget(_CustomValueRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.item.key != keyController.text) {
-      keyController.text = widget.item.key;
-    }
-    if (widget.item.val != valController.text) {
-      valController.text = widget.item.val;
-    }
-  }
-
-  @override
-  void dispose() {
-    keyController.removeListener(_onKeyChanged);
-    valController.removeListener(_onValChanged);
-    keyController.dispose();
-    valController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: keyController,
-              decoration: const InputDecoration(
-                labelText: "設定",
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Text("="),
-          ),
-          Expanded(
-            child: TextField(
-              controller: valController,
-              decoration: const InputDecoration(
-                labelText: "鍵值",
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: widget.onRemove,
-            icon: const Icon(Icons.remove_circle, color: Colors.red),
-          ),
-        ],
-      ),
-    );
-  }
 }

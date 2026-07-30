@@ -516,7 +516,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
             ),
             const SizedBox(height: 32),
             // 表單卡片
-            Card(
+            AppSectionCard(
+              padding: EdgeInsets.zero,
+              useSectionLayout: false,
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
@@ -610,7 +612,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       children: [
         SmallTitle(icon: icon, text: label),
         const SizedBox(height: 8),
-        TextField(
+        AppTextField(
           controller: controller,
           selectAllOnFocus: false,
           decoration: InputDecoration(
@@ -640,7 +642,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       children: [
         const SmallTitle(icon: Icons.description, text: "簡介"),
         const SizedBox(height: 8),
-        TextField(
+        AppTextField(
           controller: _introController,
           selectAllOnFocus: false,
           decoration: InputDecoration(
@@ -661,7 +663,9 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   }) {
     final totalWords = ref.watch(totalWordsProvider);
 
-    return Card(
+    return AppSectionCard(
+      padding: EdgeInsets.zero,
+      useSectionLayout: false,
       elevation: 0,
       color: Theme.of(context).colorScheme.tertiaryContainer,
       child: Padding(
