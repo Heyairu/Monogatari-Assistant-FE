@@ -15,6 +15,7 @@
 import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 import "dart:io";
+import "dart:async";
 import "dart:math" as math;
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
@@ -314,8 +315,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   List<TemplatePreset> templatePresets = [];
   String selectedPresetName = "空白";
   Map<String, LocationData> _locationIndex = const <String, LocationData>{};
-  Map<String, Set<String>> _descendantIdsByLocationId =
-      const <String, Set<String>>{};
+  Map<String, int> _locationDfsEntry = const <String, int>{};
+  Map<String, int> _locationDfsExit = const <String, int>{};
 
   // 拖動狀態與游標資訊
   bool _isDragging = false;
@@ -330,6 +331,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   final ScrollController _pageScrollController = ScrollController();
   final ScrollController _treeScrollController = ScrollController();
   final ScrollController _detailScrollController = ScrollController();
+  Timer? _detailDraftTimer;
+  VoidCallback? _pendingDetailCommit;
 
   @override
   void initState() {
@@ -344,19 +347,19 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   List<_FlatNode> _buildFlatList(List<LocationData> locations) {
     final flatList = <_FlatNode>[];
     final locationIndex = <String, LocationData>{};
-    final descendantIdsByLocationId = <String, Set<String>>{};
+    final dfsEntry = <String, int>{};
+    final dfsExit = <String, int>{};
+    int dfsClock = 0;
 
-    Set<String> flatten(LocationData node, int depth) {
+    void flatten(LocationData node, int depth) {
+      dfsEntry[node.id] = dfsClock++;
       flatList.add(_FlatNode(node, depth));
       locationIndex[node.id] = node;
 
-      final descendants = <String>{};
       for (final child in node.child) {
-        descendants.add(child.id);
-        descendants.addAll(flatten(child, depth + 1));
+        flatten(child, depth + 1);
       }
-      descendantIdsByLocationId[node.id] = descendants;
-      return descendants;
+      dfsExit[node.id] = dfsClock++;
     }
 
     for (final location in locations) {
@@ -364,12 +367,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     }
 
     _locationIndex = locationIndex;
-    _descendantIdsByLocationId = descendantIdsByLocationId;
+    _locationDfsEntry = dfsEntry;
+    _locationDfsExit = dfsExit;
     return flatList;
   }
 
   @override
   void dispose() {
+    _detailDraftTimer?.cancel();
+    _pendingDetailCommit?.call();
     locationNameController.removeListener(_onNameChanged);
     locationTypeController.removeListener(_onTypeChanged);
     locationNoteController.removeListener(_onNoteChanged);
@@ -385,45 +391,45 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _onNameChanged() {
-    final nodeId = selectedNodeId ?? lastSelectedNodeId;
-    if (nodeId == null) return;
-    final location = _getLocation(nodeId, _locations);
-    if (location == null || location.localName == locationNameController.text) {
-      return;
-    }
-
-    _updateLocationById(
-      nodeId,
-      (current) => current.copyWith(localName: locationNameController.text),
-    );
+    _scheduleDetailDraft();
   }
 
   void _onTypeChanged() {
-    final nodeId = selectedNodeId ?? lastSelectedNodeId;
-    if (nodeId == null) return;
-    final location = _getLocation(nodeId, _locations);
-    if (location == null || location.localType == locationTypeController.text) {
-      return;
-    }
-
-    _updateLocationById(
-      nodeId,
-      (current) => current.copyWith(localType: locationTypeController.text),
-    );
+    _scheduleDetailDraft();
   }
 
   void _onNoteChanged() {
+    _scheduleDetailDraft();
+  }
+
+  void _scheduleDetailDraft() {
     final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
-    final location = _getLocation(nodeId, _locations);
-    if (location == null || location.note == locationNoteController.text) {
-      return;
-    }
+    final name = locationNameController.text;
+    final type = locationTypeController.text;
+    final note = locationNoteController.text;
+    _pendingDetailCommit = () {
+      _updateLocationById(
+        nodeId,
+        (current) =>
+            current.copyWith(localName: name, localType: type, note: note),
+      );
+    };
+    _detailDraftTimer?.cancel();
+    _detailDraftTimer = Timer(const Duration(milliseconds: 300), () {
+      _detailDraftTimer = null;
+      final commit = _pendingDetailCommit;
+      _pendingDetailCommit = null;
+      commit?.call();
+    });
+  }
 
-    _updateLocationById(
-      nodeId,
-      (current) => current.copyWith(note: locationNoteController.text),
-    );
+  void _flushDetailDraft() {
+    _detailDraftTimer?.cancel();
+    _detailDraftTimer = null;
+    final commit = _pendingDetailCommit;
+    _pendingDetailCommit = null;
+    commit?.call();
   }
 
   void _notifyChange() {
@@ -442,8 +448,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       return;
     }
 
-    _refreshLocationIndex();
-    _syncDetailControllers();
+    if (selectedNodeId == id || lastSelectedNodeId == id) {
+      _syncDetailControllers();
+    }
     _notifyChange();
   }
 
@@ -742,6 +749,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       // 狀態與回調
       isSelected: isSelected,
       onClicked: () {
+        _flushDetailDraft();
         setState(() {
           selectedNodeId = location.id;
           lastSelectedNodeId = location.id;
@@ -1298,9 +1306,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   // MARK: - 拖動相關方法
 
   bool _isDescendant(String sourceId, String targetId) {
-    final descendants = _descendantIdsByLocationId[sourceId];
-    if (descendants != null) {
-      return descendants.contains(targetId);
+    final sourceEntry = _locationDfsEntry[sourceId];
+    final sourceExit = _locationDfsExit[sourceId];
+    final targetEntry = _locationDfsEntry[targetId];
+    final targetExit = _locationDfsExit[targetId];
+    if (sourceEntry != null &&
+        sourceExit != null &&
+        targetEntry != null &&
+        targetExit != null) {
+      return sourceEntry < targetEntry && targetExit < sourceExit;
     }
 
     final sourceNode = _getLocation(sourceId, _locations);

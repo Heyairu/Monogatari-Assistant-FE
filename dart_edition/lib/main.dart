@@ -31,7 +31,6 @@ import "bin/findreplace.dart";
 import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
-import "bin/content_manager.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
@@ -40,6 +39,8 @@ import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/word_count_providers.dart";
 import "utils/text_change_debouncer.dart";
 import "utils/text_position_index.dart";
+import "services/word_count_service.dart";
+import "services/project_io_session_coordinator.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -201,6 +202,143 @@ class RedoProjectIntent extends Intent {
   const RedoProjectIntent();
 }
 
+typedef _EditorStatusLocation = ({String chapterLabel, int cursorOffset});
+
+final _editorStatusLocationProvider = Provider<_EditorStatusLocation>((ref) {
+  final selection = ref.watch(
+    editorSelectionProvider.select(
+      (state) => (
+        selectedSegID: state.selectedSegID,
+        selectedChapID: state.selectedChapID,
+        cursorOffset: state.cursorOffset,
+      ),
+    ),
+  );
+  final segments = ref.watch(segmentsDataProvider);
+
+  String chapterLabel = "";
+  for (final segment in segments) {
+    if (segment.segmentUUID != selection.selectedSegID) continue;
+    for (final chapter in segment.chapters) {
+      if (chapter.chapterUUID == selection.selectedChapID) {
+        chapterLabel = "${segment.segmentName} / ${chapter.chapterName}";
+        break;
+      }
+    }
+    break;
+  }
+
+  return (chapterLabel: chapterLabel, cursorOffset: selection.cursorOffset);
+});
+
+class _EditorStatusBar extends ConsumerStatefulWidget {
+  const _EditorStatusBar({
+    required this.textController,
+    required this.projectName,
+    required this.hasUnsavedChanges,
+    required this.lastSavedTime,
+    required this.iconSize,
+  });
+
+  final TextEditingController textController;
+  final String projectName;
+  final bool hasUnsavedChanges;
+  final DateTime? lastSavedTime;
+  final double iconSize;
+
+  @override
+  ConsumerState<_EditorStatusBar> createState() => _EditorStatusBarState();
+}
+
+class _EditorStatusBarState extends ConsumerState<_EditorStatusBar> {
+  static const int _largeDocumentThreshold = 128 * 1024;
+  static const Duration _largeDocumentDebounce = Duration(milliseconds: 160);
+
+  late TextPositionIndex _positionIndex;
+  Timer? _positionIndexTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _positionIndex = TextPositionIndex(widget.textController.text);
+    widget.textController.addListener(_handleControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _EditorStatusBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.textController, widget.textController)) return;
+    oldWidget.textController.removeListener(_handleControllerChanged);
+    widget.textController.addListener(_handleControllerChanged);
+    _rebuildPositionIndex(widget.textController.text);
+  }
+
+  void _handleControllerChanged() {
+    final nextText = widget.textController.text;
+    if (nextText == _positionIndex.text) return;
+
+    final isSmall = nextText.length < _largeDocumentThreshold;
+    final looksLikeSingleEdit =
+        (nextText.length - _positionIndex.text.length).abs() <= 8;
+    if (isSmall || !looksLikeSingleEdit) {
+      _positionIndexTimer?.cancel();
+      _rebuildPositionIndex(nextText);
+      return;
+    }
+
+    _positionIndexTimer?.cancel();
+    _positionIndexTimer = Timer(_largeDocumentDebounce, () {
+      if (!mounted) return;
+      _rebuildPositionIndex(widget.textController.text);
+    });
+  }
+
+  void _rebuildPositionIndex(String text) {
+    if (!mounted) {
+      _positionIndex = TextPositionIndex(text);
+      return;
+    }
+    setState(() => _positionIndex = TextPositionIndex(text));
+  }
+
+  @override
+  void dispose() {
+    _positionIndexTimer?.cancel();
+    widget.textController.removeListener(_handleControllerChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(_editorStatusLocationProvider);
+    final totalWords = ref.watch(totalWordsProvider);
+    final currentWords = ref.watch(
+      activeChapterWordCountProvider.select((state) => state.count),
+    );
+
+    final projectName = widget.hasUnsavedChanges
+        ? "${widget.projectName}*"
+        : widget.projectName;
+    final displayText = status.chapterLabel.isNotEmpty
+        ? "$projectName | ${status.chapterLabel}"
+        : projectName;
+    final saveTimeText = widget.lastSavedTime == null
+        ? "--:--"
+        : DateFormat("HH:mm").format(widget.lastSavedTime!);
+    final cursor = _positionIndex.lineColumnFromOffset(status.cursorOffset);
+
+    return MonogatariStatusBar(
+      displayText: displayText,
+      saveTimeText: saveTimeText,
+      cursorLine: cursor.line,
+      cursorColumn: cursor.column,
+      currentWords: currentWords,
+      totalWords: totalWords,
+      iconSize: widget.iconSize,
+    );
+  }
+}
+
 // 主要 ContentView
 class ContentView extends ConsumerStatefulWidget {
   const ContentView({super.key});
@@ -210,16 +348,14 @@ class ContentView extends ConsumerStatefulWidget {
 }
 
 class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
-  /// 全專案字數批次重算時，同時進行的 `compute` 上限（每章仍各自 isolate）。
-  static const int _maxConcurrentChapterWordCounts = 6;
-
   // 狀態變數
   int slidePageCounts = 14;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
+  int _projectSessionVersion = 0;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
-  int _allWordCountsGen = 0;
+  final WordCountService _wordCountService = WordCountService.instance;
 
   // 主編輯器文字
   String get contentText => ref.read(editorContentProvider);
@@ -231,7 +367,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
   String _lastObservedEditorText = "";
-  TextPositionIndex _textPositionIndex = TextPositionIndex.empty();
 
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
@@ -263,11 +398,19 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   late final TextChangeDebouncer _textChangeDebouncer;
   Timer? _projectHistoryRecordTimer;
+  int _projectDataRevision = 0;
+  int? _lastRecordedProjectDataRevision;
+  int? _pendingProjectHistoryRevision;
   Timer? _autoSaveTimer;
   Timer? _autoBackupTimer;
   bool _isWritingAutoSave = false;
   bool _isWritingAutoBackup = false;
   String? _lastAutoBackupContent;
+  int? _lastAutoBackupRevision;
+  final ProjectIoSessionCoordinator _projectIoCoordinator =
+      ProjectIoSessionCoordinator();
+  late ProjectIoSessionToken _projectIoSession;
+  bool _isProjectSwitching = false;
   bool _isApplyingProjectHistory = false;
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
@@ -277,6 +420,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     9, // Glossary
     10, // Proofreading
     13, // About
+  };
+  static const Set<int> _projectBackedPageIndexes = {
+    1, // Base info
+    2, // Chapters
+    3, // Outline
+    4, // World settings
+    5, // Characters
+    8, // Plans
   };
 
   List<ChapterModule.SegmentData> get segmentsData =>
@@ -450,9 +601,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text = initialContent;
       }
       _lastObservedEditorText = textController.text;
-      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(
-        textController.text,
-      );
 
       _refreshActiveChapterWordCount();
     });
@@ -470,56 +618,52 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     final WordCountMode mode = _settingsState.wordCountMode;
     final String activeText = textController.text;
-    final ChapterModule.ChapterData? activeChapter = _findChapterById(
-      selectedSegID,
-      activeChapterId,
-    );
-    final int count = activeChapter?.chapterContent == activeText
-        ? activeChapter!.getWordCount(mode)
-        : ContentManager.calculateWordCount(activeText, mode: mode);
-
-    activeWordCountNotifier.refreshFromCount(
+    final lookup = _wordCountService.observeChapter(
       chapterId: activeChapterId,
-      count: count,
+      content: activeText,
+      mode: mode,
     );
+    if (lookup.isPending) {
+      activeWordCountNotifier.markComputing(chapterId: activeChapterId);
+    } else {
+      activeWordCountNotifier.refreshFromCount(
+        chapterId: activeChapterId,
+        count: lookup.count,
+      );
+    }
   }
 
-  ChapterModule.ChapterData? _findChapterById(
-    String? segmentId,
-    String chapterId,
-  ) {
-    for (final seg in segmentsData) {
-      if (segmentId != null && seg.segmentUUID != segmentId) {
-        continue;
-      }
-      for (final chap in seg.chapters) {
-        if (chap.chapterUUID == chapterId) {
-          return chap;
-        }
-      }
+  void _handleWordCountServiceChanged() {
+    if (!mounted) {
+      return;
     }
-    return null;
+    totalWords = _wordCountService.total;
+    final chapterId = selectedChapID;
+    if (chapterId == null) {
+      return;
+    }
+    final lookup = _wordCountService.lookup(
+      chapterId,
+      _settingsState.wordCountMode,
+    );
+    final notifier = ref.read(activeChapterWordCountProvider.notifier);
+    if (lookup.isPending) {
+      notifier.markComputing(chapterId: chapterId);
+    } else {
+      notifier.refreshFromCount(chapterId: chapterId, count: lookup.count);
+    }
   }
 
   @override
   void initState() {
     super.initState();
+    _projectIoSession = _projectIoCoordinator.beginSession("");
+    _wordCountService.addListener(_handleWordCountServiceChanged);
 
     _textChangeDebouncer = TextChangeDebouncer(
       onWordCountTrigger: (nextContent) {
         _flushPendingEditorContent();
-        final int gen = ++_activeWordCountGen;
-        final String? selectedSegIDSnapshot = selectedSegID;
-        final String? selectedChapIDSnapshot = selectedChapID;
-        final WordCountMode modeSnapshot = _settingsState.wordCountMode;
-
-        _updateActiveWordCountAsync(
-          gen: gen,
-          selectedSegIDSnapshot: selectedSegIDSnapshot,
-          selectedChapIDSnapshot: selectedChapIDSnapshot,
-          textSnapshot: nextContent,
-          modeSnapshot: modeSnapshot,
-        );
+        _refreshActiveChapterWordCount();
         _recordProjectHistorySnapshot();
       },
       onContentCommitTrigger: (nextContent) {
@@ -550,12 +694,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         textController.text.length,
       );
       final String currentText = textController.text;
-      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(currentText);
       final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
       if (textChanged) {
+        cancelFindAllMatches(textController);
         _lastObservedEditorText = currentText;
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         _editorCoordinatorNotifier.markAsModified();
@@ -622,7 +766,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             composing: TextRange.empty,
           );
           _lastObservedEditorText = next;
-          _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(next);
         } finally {
           if (beganSync) {
             coordinatorNotifier.endSync();
@@ -662,9 +805,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           return;
         }
 
-        setState(() {
-          totalWords = _recalculateSumFast();
-        });
+        _updateAllWordCounts();
       }),
     );
 
@@ -678,7 +819,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           return;
         }
 
-        _scheduleProjectHistoryRecord();
+        _projectDataRevision++;
+        _scheduleProjectHistoryRecord(_projectDataRevision);
       }),
     );
 
@@ -754,19 +896,27 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     // 監聽焦點變化
     WidgetsBinding.instance.focusManager.addListener(_onFocusChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _updateAllWordCounts();
+      }
+    });
   }
 
   @override
   void dispose() {
+    CharacterDraftSessionCoordinator.instance.flushAndClose(
+      _projectSessionVersion,
+    );
     _cancelPendingContentCommit();
     _projectHistoryRecordTimer?.cancel();
     _projectHistoryRecordTimer = null;
+    _pendingProjectHistoryRevision = null;
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     _autoBackupTimer?.cancel();
     _autoBackupTimer = null;
-    _activeWordCountGen++;
-    _allWordCountsGen++;
+    _wordCountService.removeListener(_handleWordCountServiceChanged);
     _closeProviderSubscriptions();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
     if (!kIsWeb &&
@@ -798,8 +948,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _subscriptions.clear();
   }
 
-  int _activeWordCountGen = 0;
-
   void _flushPendingEditorContent() {
     _textChangeDebouncer.flushPendingContentCommit();
   }
@@ -811,6 +959,35 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     final hasPath = projectFile.filePath?.trim().isNotEmpty == true;
     final hasUri = projectFile.uri?.trim().isNotEmpty == true;
     return hasPath || hasUri;
+  }
+
+  String _projectIdentity(ProjectFile? project) {
+    if (project == null) return "unsaved";
+    return project.uri?.trim().isNotEmpty == true
+        ? "uri:${project.uri!.trim()}"
+        : project.filePath?.trim().isNotEmpty == true
+        ? "path:${project.filePath!.trim()}"
+        : "name:${project.fileName}";
+  }
+
+  ProjectIoSessionToken _beginProjectIoSession(ProjectFile? project) {
+    final token = _projectIoCoordinator.beginSession(_projectIdentity(project));
+    _projectIoSession = token;
+    return token;
+  }
+
+  Future<ProjectIoPayload> _sharedProjectIoPayload({
+    required ProjectIoSessionToken session,
+    required int revision,
+    required ProjectData data,
+  }) {
+    return _projectIoCoordinator.sharedPayload<ProjectIoPayload>(
+      token: session,
+      revision: revision,
+      create: () => ref
+          .read(projectIoControllerProvider.notifier)
+          .prepareProjectPayload(data),
+    );
   }
 
   void _configureAutoSaveTimer(AppSettingsStateData settings) {
@@ -832,6 +1009,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     final project = currentProject;
     if (!mounted ||
         _isWritingAutoSave ||
+        _isProjectSwitching ||
         !_settingsState.autoSaveEnabled ||
         !_canAutoSaveToKnownLocation(project)) {
       return;
@@ -844,18 +1022,33 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     _isWritingAutoSave = true;
     try {
+      final session = _projectIoSession;
+      final revision = _projectDataRevision;
       final currentData = _collectProjectData();
-      final savedProject = await ref
-          .read(projectIoControllerProvider.notifier)
-          .saveProjectAutoSave(
-            currentProject: project!,
-            currentData: currentData,
-          );
-      if (!mounted) {
+      final runResult = await _projectIoCoordinator.run(session, () async {
+        final payload = await _sharedProjectIoPayload(
+          session: session,
+          revision: revision,
+          data: currentData,
+        );
+        return ref
+            .read(projectIoControllerProvider.notifier)
+            .saveProjectAutoSave(
+              currentProject: project!,
+              currentData: currentData,
+              preparedPayload: payload,
+            );
+      });
+      final savedProject = runResult.value;
+      if (!mounted ||
+          savedProject == null ||
+          !_projectIoCoordinator.isCurrent(session)) {
         return;
       }
       setState(() => currentProject = savedProject);
-      _markAsSaved();
+      if (_projectDataRevision == revision) {
+        _markAsSaved();
+      }
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
     } catch (error, stackTrace) {
       debugPrint("AutoSave failed: $error\n$stackTrace");
@@ -880,22 +1073,40 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Future<void> _performAutoBackup() async {
-    if (!mounted || _isWritingAutoBackup || !_settingsState.autoBackupEnabled) {
+    if (!mounted ||
+        _isWritingAutoBackup ||
+        _isProjectSwitching ||
+        !_settingsState.autoBackupEnabled) {
       return;
     }
 
     _syncEditorToSelectedChapter();
+    final revision = _projectDataRevision;
+    if (_lastAutoBackupRevision == revision) return;
 
     _isWritingAutoBackup = true;
     try {
+      final session = _projectIoSession;
       final currentData = _collectProjectData();
-      final result = await ref
-          .read(projectIoControllerProvider.notifier)
-          .saveProjectAutoBackup(
-            currentProject: currentProject,
-            currentData: currentData,
-            lastAutoBackupContent: _lastAutoBackupContent,
-          );
+      final runResult = await _projectIoCoordinator.run(session, () async {
+        final payload = await _sharedProjectIoPayload(
+          session: session,
+          revision: revision,
+          data: currentData,
+        );
+        return ref
+            .read(projectIoControllerProvider.notifier)
+            .saveProjectAutoBackup(
+              currentProject: currentProject,
+              currentData: currentData,
+              lastAutoBackupContent: _lastAutoBackupContent,
+              maxTotalBytes: _settingsState.autoBackupMaxSizeMb * 1024 * 1024,
+              preparedPayload: payload,
+            );
+      });
+      final result = runResult.value;
+      if (result == null || !_projectIoCoordinator.isCurrent(session)) return;
+      _lastAutoBackupRevision = revision;
       if (result.wasWritten) {
         _lastAutoBackupContent = result.content;
       }
@@ -908,20 +1119,29 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _resetAutoBackupBaseline() {
     _lastAutoBackupContent = null;
+    _lastAutoBackupRevision = null;
   }
 
   void _cancelPendingContentCommit() {
     _textChangeDebouncer.cancelAll();
   }
 
-  void _scheduleProjectHistoryRecord() {
-    if (_isApplyingProjectHistory) {
+  void _scheduleProjectHistoryRecord(int revision) {
+    if (_isApplyingProjectHistory ||
+        revision == _lastRecordedProjectDataRevision) {
       return;
     }
 
+    _pendingProjectHistoryRevision = revision;
     _projectHistoryRecordTimer?.cancel();
     _projectHistoryRecordTimer = Timer(_projectHistoryRecordDelay, () {
       _projectHistoryRecordTimer = null;
+      final int? pendingRevision = _pendingProjectHistoryRevision;
+      _pendingProjectHistoryRevision = null;
+      if (pendingRevision == null ||
+          pendingRevision == _lastRecordedProjectDataRevision) {
+        return;
+      }
       _recordProjectHistorySnapshot();
     });
   }
@@ -958,7 +1178,21 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
     _projectHistoryRecordTimer?.cancel();
     _projectHistoryRecordTimer = null;
+    _pendingProjectHistoryRevision = null;
     _syncEditorToSelectedChapter();
+
+    // Syncing editor text may publish a new aggregate provider state and
+    // schedule another timer synchronously. Consume that revision here so the
+    // duplicate callback cannot perform a second full snapshot/serialization.
+    _projectHistoryRecordTimer?.cancel();
+    _projectHistoryRecordTimer = null;
+    _pendingProjectHistoryRevision = null;
+    final int currentRevision = _projectDataRevision;
+    if (!reset &&
+        !isPageTransition &&
+        currentRevision == _lastRecordedProjectDataRevision) {
+      return;
+    }
 
     final entry = _createProjectHistoryEntry(
       _collectProjectData(),
@@ -970,6 +1204,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     } else {
       historyNotifier.record(entry);
     }
+    _lastRecordedProjectDataRevision = currentRevision;
   }
 
   void _resetProjectHistory() {
@@ -1046,6 +1281,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       slidePageIndexNow = entry.pageIndex < 0 ? 0 : entry.pageIndex;
       _applyProjectData(entry.data, initialState);
     });
+    _projectDataRevision++;
+    _lastRecordedProjectDataRevision = _projectDataRevision;
 
     _updateAllWordCounts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1087,146 +1324,19 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _applyProjectHistoryEntry(target);
   }
 
-  Future<void> _updateActiveWordCountAsync({
-    required int gen,
-    required String? selectedSegIDSnapshot,
-    required String? selectedChapIDSnapshot,
-    required String textSnapshot,
-    required WordCountMode modeSnapshot,
-  }) async {
-    if (selectedSegIDSnapshot == null || selectedChapIDSnapshot == null) {
-      return;
-    }
-
-    // Use Isolate to calculate word count for active chapter only
-    final count = await ContentManager.calculateWordCountAsync(
-      textSnapshot,
-      mode: modeSnapshot,
+  void _updateAllWordCounts() {
+    _wordCountService.synchronizeChapters(
+      segmentsData.expand(
+        (segment) => segment.chapters.map(
+          (chapter) => WordCountChapterInput(
+            chapterId: chapter.chapterUUID,
+            content: chapter.chapterContent,
+          ),
+        ),
+      ),
+      _settingsState.wordCountMode,
     );
-
-    if (!mounted || gen != _activeWordCountGen) return;
-    if (selectedSegID != selectedSegIDSnapshot ||
-        selectedChapID != selectedChapIDSnapshot) {
-      return;
-    }
-    if (textController.text != textSnapshot ||
-        _settingsState.wordCountMode != modeSnapshot) {
-      return;
-    }
-
-    setState(() {
-      // Update cache for the active chapter
-      for (final seg in segmentsData) {
-        if (seg.segmentUUID == selectedSegIDSnapshot) {
-          for (final chap in seg.chapters) {
-            if (chap.chapterUUID == selectedChapIDSnapshot) {
-              // Update the cached value in ChapterData
-              // Note: We are updating the cache associated with the object which might have stale content string
-              // but this is the correct "current" count for the UI.
-              chap.updateCachedWordCount(count, modeSnapshot);
-              break;
-            }
-          }
-        }
-      }
-
-      // Re-sum using cached values (Fast)
-      totalWords = _recalculateSumFast();
-    });
-
-    ref
-        .read(activeChapterWordCountProvider.notifier)
-        .refreshFromCount(chapterId: selectedChapIDSnapshot, count: count);
-  }
-
-  Future<void> _updateAllWordCounts() async {
-    final int gen = ++_allWordCountsGen;
-    final WordCountMode mode = _settingsState.wordCountMode;
-
-    final List<
-      ({
-        ChapterModule.ChapterData chap,
-        String snapshotContent,
-        WordCountMode snapshotMode,
-      })
-    >
-    jobs = [];
-
-    for (final ChapterModule.SegmentData seg in segmentsData) {
-      for (final ChapterModule.ChapterData chap in seg.chapters) {
-        jobs.add((
-          chap: chap,
-          snapshotContent: chap.chapterContent,
-          snapshotMode: mode,
-        ));
-      }
-    }
-
-    for (
-      var start = 0;
-      start < jobs.length;
-      start += _maxConcurrentChapterWordCounts
-    ) {
-      if (!mounted || gen != _allWordCountsGen) {
-        return;
-      }
-
-      final int end = (start + _maxConcurrentChapterWordCounts)
-          .clamp(0, jobs.length)
-          .toInt();
-      final slice = jobs.sublist(start, end);
-
-      await Future.wait(
-        slice.map((job) async {
-          if (!mounted || gen != _allWordCountsGen) {
-            return;
-          }
-
-          if (job.snapshotContent.isEmpty) {
-            job.chap.updateCachedWordCount(0, job.snapshotMode);
-            return;
-          }
-
-          final int count = await ContentManager.calculateWordCountAsync(
-            job.snapshotContent,
-            mode: job.snapshotMode,
-          );
-
-          if (!mounted || gen != _allWordCountsGen) {
-            return;
-          }
-
-          if (job.snapshotMode != _settingsState.wordCountMode) {
-            return;
-          }
-
-          if (job.chap.chapterContent != job.snapshotContent) {
-            return;
-          }
-
-          job.chap.updateCachedWordCount(count, job.snapshotMode);
-        }),
-      );
-    }
-
-    if (mounted && gen == _allWordCountsGen) {
-      setState(() {
-        totalWords = _recalculateSumFast();
-      });
-    }
-  }
-
-  int _recalculateSumFast() {
-    int sum = 0;
-    for (final seg in segmentsData) {
-      for (final chap in seg.chapters) {
-        // use getWordCount for reading. It will use cache if available.
-        // If cache is null (first load and async hasn't finished), it might calc sync.
-        // But we try to rely on async updates.
-        sum += chap.getWordCount(_settingsState.wordCountMode);
-      }
-    }
-    return sum;
+    totalWords = _wordCountService.total;
   }
 
   void _onSettingsChanged() {
@@ -1446,6 +1556,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   void _toggleFindReplaceWindow() {
+    if (showFindReplaceWindow) {
+      cancelFindAllMatches(textController);
+      cancelReplaceAll(textController);
+    }
     setState(() {
       if (slidePageIndexNow < slidePageCounts) {
         slidePageIndexNow = 114514;
@@ -1502,61 +1616,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     required bool hasUnsavedChanges,
     required DateTime? lastSavedTime,
   }) {
-    final statusSelection = ref.watch(
-      editorSelectionProvider.select(
-        (state) => (
-          selectedSegID: state.selectedSegID,
-          selectedChapID: state.selectedChapID,
-          cursorOffset: state.cursorOffset,
-        ),
-      ),
-    );
-    final statusSegments = ref.watch(
-      segmentsDataProvider.select((segments) => segments),
-    );
-    final statusTotalWords = ref.watch(totalWordsProvider);
-
-    String projectName = currentProject?.nameWithoutExtension ?? "Untitled";
-    if (hasUnsavedChanges) projectName += "*";
-
-    String currentPosition = "";
-    if (statusSelection.selectedSegID != null &&
-        statusSelection.selectedChapID != null) {
-      for (final seg in statusSegments) {
-        if (seg.segmentUUID == statusSelection.selectedSegID) {
-          for (final chap in seg.chapters) {
-            if (chap.chapterUUID == statusSelection.selectedChapID) {
-              currentPosition = "${seg.segmentName} / ${chap.chapterName}";
-              break;
-            }
-          }
-          break;
-        }
-      }
-    }
-
-    final displayText = currentPosition.isNotEmpty
-        ? "$projectName | $currentPosition"
-        : projectName;
-
-    String saveTimeStr = lastSavedTime != null
-        ? DateFormat("HH:mm").format(lastSavedTime)
-        : "--:--";
-
-    final ({int line, int column}) cursorPos = _textPositionIndex
-        .lineColumnFromOffset(statusSelection.cursorOffset);
-
-    final int currentWords = ref.watch(
-      activeChapterWordCountProvider.select((state) => state.count),
-    );
-
-    return MonogatariStatusBar(
-      displayText: displayText,
-      saveTimeText: saveTimeStr,
-      cursorLine: cursorPos.line,
-      cursorColumn: cursorPos.column,
-      currentWords: currentWords,
-      totalWords: statusTotalWords,
+    return _EditorStatusBar(
+      textController: textController,
+      projectName: currentProject?.nameWithoutExtension ?? "Untitled",
+      hasUnsavedChanges: hasUnsavedChanges,
+      lastSavedTime: lastSavedTime,
       iconSize: fontSize,
     );
   }
@@ -1587,38 +1651,65 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 特定頁面內容建構（用於 IndexedStack）
   Widget _buildSpecificPageContent(int pageIndex) {
+    late final Widget page;
     switch (pageIndex) {
       case 0:
-        return _buildWelcomeView();
+        page = _buildWelcomeView();
+        break;
       case 1:
-        return _buildBaseInfoView();
+        page = _buildBaseInfoView();
+        break;
       case 2:
-        return _buildChapterSelectionView();
+        page = _buildChapterSelectionView();
+        break;
       case 3:
-        return _buildOutlineView();
+        page = _buildOutlineView();
+        break;
       case 4:
-        return _buildWorldSettingsView();
+        page = _buildWorldSettingsView();
+        break;
       case 5:
-        return _buildCharacterSettingsView();
+        page = _buildCharacterSettingsView();
+        break;
       case 6:
-        return _buildTimelineView();
+        page = _buildTimelineView();
+        break;
       case 7:
-        return _buildRelationView();
+        page = _buildRelationView();
+        break;
       case 8:
-        return _buildPlanView();
+        page = _buildPlanView();
+        break;
       case 9:
-        return _buildGlossaryView();
+        page = _buildGlossaryView();
+        break;
       case 10:
-        return _buildProofreadingView();
+        page = _buildProofreadingView();
+        break;
       case 11:
-        return _buildCopilotView();
+        page = _buildCopilotView();
+        break;
       case 12:
-        return _buildSettingView();
+        page = _buildSettingView();
+        break;
       case 13:
-        return _buildAboutView();
+        page = _buildAboutView();
+        break;
       default:
-        return Center(child: Text("Page ${pageIndex + 1}"));
+        page = Center(child: Text("Page ${pageIndex + 1}"));
     }
+
+    if (!_projectBackedPageIndexes.contains(pageIndex)) {
+      return page;
+    }
+
+    // IndexedStack normally preserves every project page's State. Use a new
+    // session key after switching projects so controllers and selections cannot
+    // keep values that belong to the previous project.
+    return KeyedSubtree(
+      key: ValueKey("project-$_projectSessionVersion-page-$pageIndex"),
+      child: page,
+    );
   }
 
   // 桌面佈局（使用 NavigationRail）
@@ -1875,24 +1966,32 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               onSearchChanged: (findText, options) async {
                 // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
                 if (findText.isNotEmpty) {
-                  final text = textController.text;
-                  if (text.isNotEmpty) {
+                  if (textController.text.isNotEmpty) {
                     // Async search (background isolate + precomputed index)
-                    final highlightUpdate = await findAllMatchesAsync(
-                      text,
+                    final searchResult = await findAllMatchesLatest(
+                      textController,
                       findText,
                       options,
                       maxResults:
                           HighlightTextEditingController.maxSearchResults,
                     );
-                    if (!mounted) return;
+                    if (!mounted ||
+                        searchResult == null ||
+                        !searchResult.isCurrent(
+                          textController,
+                          findController.text,
+                          findReplaceOptions,
+                          maxResults:
+                              HighlightTextEditingController.maxSearchResults,
+                        )) {
+                      return;
+                    }
 
                     setState(() {
                       // 更新高亮顯示（使用預編譯的索引）
-                      textController.updateSearchHighlights(
-                        matches: highlightUpdate.matches,
+                      searchResult.applyHighlights(
+                        textController,
                         currentIndex: _currentMatchIndex,
-                        precomputedIndex: highlightUpdate.buildSearchIndex(),
                       );
                       _searchMatches = textController.searchMatches;
                       // 如果當前選中的匹配項仍然有效，保持它
@@ -1905,6 +2004,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                     });
                   }
                 } else {
+                  cancelFindAllMatches(textController);
                   setState(() {
                     _searchMatches = [];
                     _currentMatchIndex = -1;
@@ -1913,6 +2013,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                 }
               },
               onClose: () {
+                cancelFindAllMatches(textController);
+                cancelReplaceAll(textController);
                 setState(() {
                   showFindReplaceWindow = false;
                   // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
@@ -1965,7 +2067,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildCharacterSettingsView() {
-    return const CharacterView();
+    return CharacterView(projectSessionId: _projectSessionVersion);
   }
 
   Widget _buildTimelineView() {
@@ -2548,6 +2650,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   /// 檢查是否有未儲存的變更
   bool _hasUnsavedChanges() {
+    CharacterDraftSessionCoordinator.instance.flush(_projectSessionVersion);
     _syncEditorToSelectedChapter();
     return _editorCoordinatorNotifier.hasUnsavedChanges();
   }
@@ -2570,6 +2673,24 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   // 檔案操作方法
+  void _resetProjectSessionUiState() {
+    CharacterDraftSessionCoordinator.instance.flushAndClose(
+      _projectSessionVersion,
+    );
+    _projectSessionVersion++;
+    _lastFocusedEditableNode = null;
+    _preserveEditableFocusForEditorAction = false;
+
+    cancelFindAllMatches(textController);
+    cancelReplaceAll(textController);
+    findController.clear();
+    replaceController.clear();
+    _searchMatches = const <TextSelection>[];
+    _currentMatchIndex = -1;
+    textController.clearAllHighlights(notify: false);
+    showFindReplaceWindow = false;
+  }
+
   Future<void> _newProject() async {
     if (_hasUnsavedChanges()) {
       final shouldProceed = await ProjectManager.showSaveConfirmDialog(
@@ -2589,20 +2710,30 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       return;
     }
 
+    _isProjectSwitching = true;
+    final switchSession = _projectIoCoordinator.beginSession("switch:new");
+    _projectIoSession = switchSession;
     try {
-      final result = await ref
-          .read(projectIoControllerProvider.notifier)
-          .createNewProject();
+      final runResult = await _projectIoCoordinator.run(
+        switchSession,
+        () => ref.read(projectIoControllerProvider.notifier).createNewProject(),
+      );
+      final result = runResult.value;
+      if (result == null || !_projectIoCoordinator.isCurrent(switchSession)) {
+        return;
+      }
 
       final initialState = ref
           .read(editorCoordinatorProvider.notifier)
           .calculateInitialState(result.data, _settingsState.wordCountMode);
 
       setState(() {
+        _resetProjectSessionUiState();
         currentProject = result.projectFile;
         _resetAutoBackupBaseline();
         _applyProjectData(result.data, initialState);
       });
+      _beginProjectIoSession(result.projectFile);
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _resetProjectHistory();
       if (!mounted) {
@@ -2613,6 +2744,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _updateAllWordCounts();
     } catch (e) {
       _showError("建立新專案失敗：${e.toString()}");
+      _beginProjectIoSession(currentProject);
+    } finally {
+      if (_projectIoCoordinator.isCurrent(switchSession)) {
+        _beginProjectIoSession(currentProject);
+      }
+      _isProjectSwitching = false;
     }
   }
 
@@ -2634,17 +2771,26 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       return;
     }
 
+    _isProjectSwitching = true;
+    final switchSession = _projectIoCoordinator.beginSession("switch:open");
+    _projectIoSession = switchSession;
     try {
-      final projectFile = await ref
-          .read(projectIoControllerProvider.notifier)
-          .pickProjectFile();
-      if (projectFile == null) {
+      final runResult = await _projectIoCoordinator.run(
+        switchSession,
+        () async {
+          final controller = ref.read(projectIoControllerProvider.notifier);
+          final projectFile = await controller.pickProjectFile();
+          return projectFile == null
+              ? null
+              : controller.loadProject(projectFile);
+        },
+      );
+      final loadResult = runResult.value;
+      if (loadResult == null) {
+        _beginProjectIoSession(currentProject);
         return;
       }
-
-      final loadResult = await ref
-          .read(projectIoControllerProvider.notifier)
-          .loadProject(projectFile);
+      final projectFile = loadResult.projectFile;
       final openedVersion = loadResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
@@ -2676,10 +2822,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           .calculateInitialState(data, _settingsState.wordCountMode);
 
       setState(() {
+        _resetProjectSessionUiState();
         currentProject = projectFile;
         _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
+      _beginProjectIoSession(projectFile);
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _resetProjectHistory();
 
@@ -2692,6 +2840,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _updateAllWordCounts();
     } catch (e) {
       _showError("開啟專案失敗：${e.toString()}");
+      _beginProjectIoSession(currentProject);
+    } finally {
+      if (_projectIoCoordinator.isCurrent(switchSession)) {
+        _beginProjectIoSession(currentProject);
+      }
+      _isProjectSwitching = false;
     }
   }
 
@@ -2718,14 +2872,24 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       return;
     }
 
+    _isProjectSwitching = true;
+    final switchSession = _projectIoCoordinator.beginSession("switch:recent");
+    _projectIoSession = switchSession;
     try {
-      final projectFile = await ref
-          .read(projectIoControllerProvider.notifier)
-          .openProjectFromPath(entry.filePath!, accessToken: entry.uri);
-
-      final loadResult = await ref
-          .read(projectIoControllerProvider.notifier)
-          .loadProject(projectFile);
+      final runResult = await _projectIoCoordinator.run(
+        switchSession,
+        () async {
+          final controller = ref.read(projectIoControllerProvider.notifier);
+          final projectFile = await controller.openProjectFromPath(
+            entry.filePath!,
+            accessToken: entry.uri,
+          );
+          return controller.loadProject(projectFile);
+        },
+      );
+      final loadResult = runResult.value;
+      if (loadResult == null) return;
+      final projectFile = loadResult.projectFile;
       final openedVersion = loadResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
         openedVersion,
@@ -2757,10 +2921,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           .calculateInitialState(data, _settingsState.wordCountMode);
 
       setState(() {
+        _resetProjectSessionUiState();
         currentProject = projectFile;
         _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
+      _beginProjectIoSession(projectFile);
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _resetProjectHistory();
 
@@ -2779,6 +2945,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
         );
       }
+      _beginProjectIoSession(currentProject);
+    } finally {
+      if (_projectIoCoordinator.isCurrent(switchSession)) {
+        _beginProjectIoSession(currentProject);
+      }
+      _isProjectSwitching = false;
     }
   }
 
@@ -2788,22 +2960,41 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Future<void> _saveProject() async {
+    if (_isProjectSwitching) return;
     _syncEditorToSelectedChapter();
+    final session = _projectIoSession;
+    final revision = _projectDataRevision;
     final currentData = _collectProjectData();
 
     try {
-      final savedProject = await ref
-          .read(projectIoControllerProvider.notifier)
-          .saveProject(
-            currentProject: currentProject,
-            currentData: currentData,
-            forceSaveAs: false,
-          );
-      if (!mounted) {
+      final runResult = await _projectIoCoordinator.run(session, () async {
+        final payload = await _sharedProjectIoPayload(
+          session: session,
+          revision: revision,
+          data: currentData,
+        );
+        return ref
+            .read(projectIoControllerProvider.notifier)
+            .saveProject(
+              currentProject: currentProject,
+              currentData: currentData,
+              forceSaveAs: false,
+              preparedPayload: payload,
+            );
+      });
+      final savedProject = runResult.value;
+      if (!mounted ||
+          savedProject == null ||
+          !_projectIoCoordinator.isCurrent(session)) {
         return;
       }
       setState(() => currentProject = savedProject);
-      _markAsSaved();
+      if (_projectDataRevision == revision) {
+        _markAsSaved();
+      }
+      if (_projectIdentity(savedProject) != session.projectIdentity) {
+        _beginProjectIoSession(savedProject);
+      }
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       if (!mounted) {
         return;
@@ -2815,22 +3006,39 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Future<void> _saveProjectAs() async {
+    if (_isProjectSwitching) return;
     _syncEditorToSelectedChapter();
+    final session = _projectIoSession;
+    final revision = _projectDataRevision;
     final currentData = _collectProjectData();
 
     try {
-      final savedProject = await ref
-          .read(projectIoControllerProvider.notifier)
-          .saveProject(
-            currentProject: currentProject,
-            currentData: currentData,
-            forceSaveAs: true,
-          );
-      if (!mounted) {
+      final runResult = await _projectIoCoordinator.run(session, () async {
+        final payload = await _sharedProjectIoPayload(
+          session: session,
+          revision: revision,
+          data: currentData,
+        );
+        return ref
+            .read(projectIoControllerProvider.notifier)
+            .saveProject(
+              currentProject: currentProject,
+              currentData: currentData,
+              forceSaveAs: true,
+              preparedPayload: payload,
+            );
+      });
+      final savedProject = runResult.value;
+      if (!mounted ||
+          savedProject == null ||
+          !_projectIoCoordinator.isCurrent(session)) {
         return;
       }
       setState(() => currentProject = savedProject);
-      _markAsSaved();
+      if (_projectDataRevision == revision) {
+        _markAsSaved();
+      }
+      _beginProjectIoSession(savedProject);
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       if (!mounted) {
         return;
@@ -2871,6 +3079,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   // 輔助方法：收集當前專案數據
   ProjectData _collectProjectData() {
+    CharacterDraftSessionCoordinator.instance.flush(_projectSessionVersion);
     _flushPendingEditorContent();
     return ref.read(editorCoordinatorProvider.notifier).collectProjectData();
   }
@@ -2908,9 +3117,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         ),
       );
       _lastObservedEditorText = textController.text;
-      _textPositionIndex = _textPositionIndex.rebuildIfTextChanged(
-        textController.text,
-      );
     } finally {
       if (beganSync) {
         coordinatorNotifier.endSync();
@@ -2941,3 +3147,24 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _editorCoordinatorNotifier.pushMessage(message);
   }
 }
+
+/************************************************
+誰偷了我的芳文人生==
+
+為什麼我已經17歲了，
+還沒有加入輕音部，
+沒有轉學到天宮女學院，也沒有加入漫畫咖啡廳「刺蝟」，
+沒有加入情報處理部，
+沒有從英國來的金髮蘿莉來我們學校交換，
+沒有在轉學後在路邊睡著遇到同校的露營專家，
+沒有來到RPG不動產，
+沒有考上天之御船學園幸福班，
+沒有遇到對夜來舞有興趣的如妖精般的外國人，
+沒有去Rabbit House打工，
+沒有人跟我約定一起找小行星，也沒有加入地學部，
+沒有遇見自稱外星人的神秘新生，
+沒有在因緣際會下去角色扮演咖啡廳當抖S，
+沒有考上美術班，
+沒有在文芳社當4コマ家，
+進了板中資訊社發現這裡沒有做同人遊戲的SNS部==
+************************************************/

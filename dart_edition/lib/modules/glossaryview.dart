@@ -136,11 +136,13 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
   String? _editingCategoryId;
   TextEditingController? _categoryRenameController;
   final Set<String> _expandedCategoryIds = <String>{};
+  final Map<String, Timer> _draftTimers = <String, Timer>{};
+  final Map<String, VoidCallback> _draftCommits = <String, VoidCallback>{};
   List<GlossaryCategory>? _indexedCategoryTree;
   Map<String, GlossaryCategory> _categoryIndex =
       const <String, GlossaryCategory>{};
-  Map<String, Set<String>> _descendantCategoryIdsById =
-      const <String, Set<String>>{};
+  Map<String, int> _categoryDfsEntry = const <String, int>{};
+  Map<String, int> _categoryDfsExit = const <String, int>{};
   Map<String, int> _subtreeEntryCountByCategoryId = const <String, int>{};
 
   void _bootstrapFromProviderState() {
@@ -173,10 +175,27 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   @override
   void dispose() {
+    for (final timer in _draftTimers.values) {
+      timer.cancel();
+    }
+    for (final commit in _draftCommits.values.toList(growable: false)) {
+      commit();
+    }
+    _draftTimers.clear();
+    _draftCommits.clear();
     _categoryRenameController?.dispose();
     _categoryTreeScrollController.dispose();
     _entryListScrollController.dispose();
     super.dispose();
+  }
+
+  void _scheduleDraftCommit(String key, VoidCallback commit) {
+    _draftTimers.remove(key)?.cancel();
+    _draftCommits[key] = commit;
+    _draftTimers[key] = Timer(const Duration(milliseconds: 300), () {
+      _draftTimers.remove(key);
+      _draftCommits.remove(key)?.call();
+    });
   }
 
   Future<String> _getDataDirectoryPath() async {
@@ -373,23 +392,23 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
   void _rebuildCategoryIndex(List<GlossaryCategory> categoryTree) {
     final categoryIndex = <String, GlossaryCategory>{};
-    final descendantCategoryIdsById = <String, Set<String>>{};
+    final dfsEntry = <String, int>{};
+    final dfsExit = <String, int>{};
     final subtreeEntryCountByCategoryId = <String, int>{};
+    int dfsClock = 0;
 
-    Set<String> walk(GlossaryCategory category) {
+    void walk(GlossaryCategory category) {
+      dfsEntry[category.id] = dfsClock++;
       categoryIndex[category.id] = category;
       int subtreeEntryCount = category.entryIds.length;
-      final descendants = <String>{};
 
       for (final GlossaryCategory child in category.children) {
-        descendants.add(child.id);
-        descendants.addAll(walk(child));
+        walk(child);
         subtreeEntryCount += subtreeEntryCountByCategoryId[child.id] ?? 0;
       }
 
-      descendantCategoryIdsById[category.id] = descendants;
       subtreeEntryCountByCategoryId[category.id] = subtreeEntryCount;
-      return descendants;
+      dfsExit[category.id] = dfsClock++;
     }
 
     for (final GlossaryCategory category in categoryTree) {
@@ -398,7 +417,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
 
     _indexedCategoryTree = categoryTree;
     _categoryIndex = categoryIndex;
-    _descendantCategoryIdsById = descendantCategoryIdsById;
+    _categoryDfsEntry = dfsEntry;
+    _categoryDfsExit = dfsExit;
     _subtreeEntryCountByCategoryId = subtreeEntryCountByCategoryId;
   }
 
@@ -424,9 +444,15 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     List<GlossaryCategory> categoryTree,
   ) {
     if (identical(categoryTree, _indexedCategoryTree)) {
-      final descendants = _descendantCategoryIdsById[sourceId];
-      if (descendants != null) {
-        return descendants.contains(targetId);
+      final sourceEntry = _categoryDfsEntry[sourceId];
+      final sourceExit = _categoryDfsExit[sourceId];
+      final targetEntry = _categoryDfsEntry[targetId];
+      final targetExit = _categoryDfsExit[targetId];
+      if (sourceEntry != null &&
+          sourceExit != null &&
+          targetEntry != null &&
+          targetExit != null) {
+        return sourceEntry < targetEntry && targetExit < sourceExit;
       }
     }
 
@@ -1333,8 +1359,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     return _readEntryIndex()[_selectedEntryId!];
   }
 
-  void _updateTerm(String value) {
-    final GlossaryEntry? entry = _selectedEntry;
+  void _updateTerm(String entryId, String value) {
+    final GlossaryEntry? entry = ref
+        .read(glossaryStateProvider)
+        .entryIndex[entryId];
     if (entry == null || entry.term == value) return;
 
     final GlossaryUpdateTermResult result = _glossaryNotifier.updateEntryTerm(
@@ -1402,7 +1430,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                     labelText: "意義",
                     border: OutlineInputBorder(),
                   ),
-                  onChanged: (value) => _updatePairMeaning(index, value),
+                  onChanged: (value) => _scheduleDraftCommit(
+                    "meaning:${selectedEntry.id}:$index",
+                    () => _updatePairMeaning(selectedEntry.id, index, value),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 AppTextField(
@@ -1414,7 +1445,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                     labelText: "例句",
                     border: OutlineInputBorder(),
                   ),
-                  onChanged: (value) => _updatePairExample(index, value),
+                  onChanged: (value) => _scheduleDraftCommit(
+                    "example:${selectedEntry.id}:$index",
+                    () => _updatePairExample(selectedEntry.id, index, value),
+                  ),
                 ),
               ],
             ),
@@ -1441,8 +1475,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  void _updateCustomPartOfSpeech(String value) {
-    final GlossaryEntry? entry = _selectedEntry;
+  void _updateCustomPartOfSpeech(String entryId, String value) {
+    final GlossaryEntry? entry = ref
+        .read(glossaryStateProvider)
+        .entryIndex[entryId];
     if (entry == null) return;
 
     if (entry.customPartOfSpeech == value) return;
@@ -1453,8 +1489,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  void _updatePairMeaning(int index, String value) {
-    final GlossaryEntry? entry = _selectedEntry;
+  void _updatePairMeaning(String entryId, int index, String value) {
+    final GlossaryEntry? entry = ref
+        .read(glossaryStateProvider)
+        .entryIndex[entryId];
     if (entry == null || index < 0 || index >= entry.pairs.length) return;
 
     if (entry.pairs[index].meaning == value) return;
@@ -1466,8 +1504,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     );
   }
 
-  void _updatePairExample(int index, String value) {
-    final GlossaryEntry? entry = _selectedEntry;
+  void _updatePairExample(String entryId, int index, String value) {
+    final GlossaryEntry? entry = ref
+        .read(glossaryStateProvider)
+        .entryIndex[entryId];
     if (entry == null || index < 0 || index >= entry.pairs.length) return;
 
     if (entry.pairs[index].example == value) return;
@@ -2034,29 +2074,23 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   labelText: "詞條名稱",
                   border: OutlineInputBorder(),
                 ),
-                onChanged: _updateTerm,
+                onChanged: (value) => _scheduleDraftCommit(
+                  "term:${selectedEntry.id}",
+                  () => _updateTerm(selectedEntry.id, value),
+                ),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<GlossaryPartOfSpeech>(
+              AppDropdownField<GlossaryPartOfSpeech>(
                 key: ValueKey("part_of_speech_${selectedEntry.id}"),
-                initialValue: selectedEntry.partOfSpeech,
-                isDense: true,
-                style:
+                value: selectedEntry.partOfSpeech,
+                labelText: "詞性",
+                textStyle:
                     Theme.of(context).textTheme.bodySmall ??
                     const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: "詞性",
-                  border: OutlineInputBorder(),
-                ),
-                items: GlossaryPartOfSpeech.values.map((partOfSpeech) {
-                  return DropdownMenuItem<GlossaryPartOfSpeech>(
+                options: GlossaryPartOfSpeech.values.map((partOfSpeech) {
+                  return DropdownOption<GlossaryPartOfSpeech>(
                     value: partOfSpeech,
-                    child: Text(
-                      partOfSpeech.label,
-                      style:
-                          Theme.of(context).textTheme.bodySmall ??
-                          const TextStyle(fontSize: 13),
-                    ),
+                    label: partOfSpeech.label,
                   );
                 }).toList(),
                 onChanged: (value) {
@@ -2075,24 +2109,24 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                     labelText: "自訂詞性",
                     border: OutlineInputBorder(),
                   ),
-                  onChanged: _updateCustomPartOfSpeech,
+                  onChanged: (value) => _scheduleDraftCommit(
+                    "partOfSpeech:${selectedEntry.id}",
+                    () => _updateCustomPartOfSpeech(selectedEntry.id, value),
+                  ),
                 ),
               ],
               const SizedBox(height: 12),
-              DropdownButtonFormField<GlossaryPolarity>(
+              AppDropdownField<GlossaryPolarity>(
                 key: ValueKey("polarity_${selectedEntry.id}"),
-                initialValue: selectedEntry.polarity,
-                isDense: true,
-                style:
+                value: selectedEntry.polarity,
+                labelText: "情感傾向",
+                textStyle:
                     Theme.of(context).textTheme.bodySmall ??
                     const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: "情感傾向",
-                  border: OutlineInputBorder(),
-                ),
-                items: GlossaryPolarity.values.map((polarity) {
-                  return DropdownMenuItem<GlossaryPolarity>(
+                options: GlossaryPolarity.values.map((polarity) {
+                  return DropdownOption<GlossaryPolarity>(
                     value: polarity,
+                    label: polarity.label,
                     child: Row(
                       children: [
                         Icon(
@@ -2154,7 +2188,9 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final Map<String, GlossaryEntry> entryIndex = ref.watch(
       glossaryStateProvider.select((glossaryState) => glossaryState.entryIndex),
     );
-    _rebuildCategoryIndex(categoryTree);
+    if (!identical(categoryTree, _indexedCategoryTree)) {
+      _rebuildCategoryIndex(categoryTree);
+    }
 
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

@@ -97,6 +97,7 @@ class SettingsManager extends ChangeNotifier {
   static const String _autoBackupEnabledKey = "auto_backup_enabled";
   static const String _autoBackupIntervalMinutesKey =
       "auto_backup_interval_minutes";
+  static const String _autoBackupMaxSizeMbKey = "auto_backup_max_size_mb";
   static const String _legacyAutoBackupEnabledKey = "autosave_enabled";
   static const String _legacyAutoBackupIntervalMinutesKey =
       "autosave_interval_minutes";
@@ -111,6 +112,9 @@ class SettingsManager extends ChangeNotifier {
   static const int _defaultAutoBackupIntervalMinutes = 5;
   static const int _minAutoBackupIntervalMinutes = 1;
   static const int _maxAutoBackupIntervalMinutes = 120;
+  static const int _defaultAutoBackupMaxSizeMb = 512;
+  static const int _minAutoBackupMaxSizeMb = 16;
+  static const int _maxAutoBackupMaxSizeMb = 10240;
 
   bool _showExitWarning = true;
   double _fontSize = _defaultFontSize;
@@ -119,6 +123,7 @@ class SettingsManager extends ChangeNotifier {
   int _autoSaveIntervalMinutes = _defaultAutoSaveIntervalMinutes;
   bool _autoBackupEnabled = false;
   int _autoBackupIntervalMinutes = _defaultAutoBackupIntervalMinutes;
+  int _autoBackupMaxSizeMb = _defaultAutoBackupMaxSizeMb;
   List<RecentProjectEntry> _recentProjects = [];
   bool _isInitialized = false;
 
@@ -129,6 +134,7 @@ class SettingsManager extends ChangeNotifier {
   int get autoSaveIntervalMinutes => _autoSaveIntervalMinutes;
   bool get autoBackupEnabled => _autoBackupEnabled;
   int get autoBackupIntervalMinutes => _autoBackupIntervalMinutes;
+  int get autoBackupMaxSizeMb => _autoBackupMaxSizeMb;
   List<RecentProjectEntry> get recentProjects =>
       List.unmodifiable(_recentProjects);
   bool get isInitialized => _isInitialized;
@@ -163,6 +169,9 @@ class SettingsManager extends ChangeNotifier {
                 _minAutoBackupIntervalMinutes,
                 _maxAutoBackupIntervalMinutes,
               );
+      _autoBackupMaxSizeMb =
+          (prefs.getInt(_autoBackupMaxSizeMbKey) ?? _defaultAutoBackupMaxSizeMb)
+              .clamp(_minAutoBackupMaxSizeMb, _maxAutoBackupMaxSizeMb);
 
       final savedRecentProjects =
           prefs.getStringList(_recentProjectsKey) ?? const [];
@@ -186,6 +195,7 @@ class SettingsManager extends ChangeNotifier {
       _autoSaveIntervalMinutes = _defaultAutoSaveIntervalMinutes;
       _autoBackupEnabled = false;
       _autoBackupIntervalMinutes = _defaultAutoBackupIntervalMinutes;
+      _autoBackupMaxSizeMb = _defaultAutoBackupMaxSizeMb;
       _recentProjects = [];
       debugPrint("Failed to load settings: $e");
     } finally {
@@ -304,6 +314,22 @@ class SettingsManager extends ChangeNotifier {
       } catch (e) {
         debugPrint("Failed to save AutoBackup interval setting: $e");
       }
+    }
+  }
+
+  Future<void> setAutoBackupMaxSizeMb(int value) async {
+    final normalized = value.clamp(
+      _minAutoBackupMaxSizeMb,
+      _maxAutoBackupMaxSizeMb,
+    );
+    if (_autoBackupMaxSizeMb == normalized) return;
+    _autoBackupMaxSizeMb = normalized;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_autoBackupMaxSizeMbKey, normalized);
+    } catch (e) {
+      debugPrint("Failed to save AutoBackup size setting: $e");
     }
   }
 

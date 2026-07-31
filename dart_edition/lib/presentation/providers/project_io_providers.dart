@@ -78,9 +78,32 @@ class AutoBackupResult {
     : this._(path: null, content: content, wasWritten: false);
 }
 
+class ProjectIoPayload {
+  final ProjectData snapshot;
+  final String xmlContent;
+
+  const ProjectIoPayload({required this.snapshot, required this.xmlContent});
+}
+
 class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   @override
   ProjectIoStatus build() => const ProjectIoStatus.idle();
+
+  Future<ProjectIoPayload> prepareProjectPayload(
+    ProjectData currentData,
+  ) async {
+    final useCase = ref.read(projectFileUseCaseProvider);
+    final baseInfoSnapshot = base_info_module.BaseInfoCodec.createSaveSnapshot(
+      data: currentData.baseInfoData,
+      contentText: currentData.contentText,
+    );
+    final snapshotData = snapshotProjectData(
+      currentData,
+      baseInfoOverride: baseInfoSnapshot,
+    );
+    final xmlContent = await useCase.generateProjectXml(snapshotData);
+    return ProjectIoPayload(snapshot: snapshotData, xmlContent: xmlContent);
+  }
 
   Future<ProjectLoadResult> createNewProject() async {
     state = const AsyncData(
@@ -191,6 +214,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     required ProjectFile? currentProject,
     required ProjectData currentData,
     required bool forceSaveAs,
+    ProjectIoPayload? preparedPayload,
   }) async {
     final shouldSaveAs = forceSaveAs || currentProject == null;
     final operation = shouldSaveAs
@@ -201,19 +225,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       final useCase = ref.read(projectFileUseCaseProvider);
       final projectToSave = currentProject ?? await useCase.createNewProject();
 
-      final baseInfoSnapshot =
-          base_info_module.BaseInfoCodec.createSaveSnapshot(
-            data: currentData.baseInfoData,
-            contentText: currentData.contentText,
-          );
-
-      final snapshotData = snapshotProjectData(
-        currentData,
-        baseInfoOverride: baseInfoSnapshot,
-      );
-
-      final xmlContent = await useCase.generateProjectXml(snapshotData);
-      projectToSave.content = xmlContent;
+      final payload =
+          preparedPayload ?? await prepareProjectPayload(currentData);
+      projectToSave.content = payload.xmlContent;
 
       final savedProject = shouldSaveAs
           ? await useCase.saveProjectAs(projectToSave)
@@ -239,6 +253,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   Future<ProjectFile> saveProjectAutoSave({
     required ProjectFile currentProject,
     required ProjectData currentData,
+    ProjectIoPayload? preparedPayload,
   }) async {
     state = const AsyncData(
       ProjectIoStatus(
@@ -248,17 +263,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
-      final baseInfoSnapshot =
-          base_info_module.BaseInfoCodec.createSaveSnapshot(
-            data: currentData.baseInfoData,
-            contentText: currentData.contentText,
-          );
-      final snapshotData = snapshotProjectData(
-        currentData,
-        baseInfoOverride: baseInfoSnapshot,
-      );
-      final xmlContent = await useCase.generateProjectXml(snapshotData);
-      currentProject.content = xmlContent;
+      final payload =
+          preparedPayload ?? await prepareProjectPayload(currentData);
+      currentProject.content = payload.xmlContent;
       final savedProject = await useCase.saveProjectToKnownLocation(
         currentProject,
       );
@@ -280,6 +287,8 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     required ProjectFile? currentProject,
     required ProjectData currentData,
     String? lastAutoBackupContent,
+    required int maxTotalBytes,
+    ProjectIoPayload? preparedPayload,
   }) async {
     state = const AsyncData(
       ProjectIoStatus(
@@ -289,20 +298,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
-      final baseInfoSnapshot =
-          base_info_module.BaseInfoCodec.createSaveSnapshot(
-            data: currentData.baseInfoData,
-            contentText: currentData.contentText,
-            updateLatestSave: false,
-          );
-      final snapshotData = snapshotProjectData(
-        currentData,
-        baseInfoOverride: baseInfoSnapshot,
-      );
-      final xmlContent = await useCase.generateProjectXml(
-        snapshotData,
-        updateLatestSave: false,
-      );
+      final payload =
+          preparedPayload ?? await prepareProjectPayload(currentData);
+      final xmlContent = payload.xmlContent;
       if (lastAutoBackupContent == xmlContent) {
         state = const AsyncData(ProjectIoStatus.idle());
         return AutoBackupResult.skipped(content: xmlContent);
@@ -315,6 +313,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       final backupPath = await useCase.saveProjectAutoBackup(
         projectName: projectName,
         content: xmlContent,
+        maxTotalBytes: maxTotalBytes,
       );
 
       state = const AsyncData(

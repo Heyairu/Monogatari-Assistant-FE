@@ -233,7 +233,6 @@ class AppTwoColumnTableEditor extends StatelessWidget {
   final String addTooltip;
   final String updateTooltip;
   final String deleteTooltip;
-  final EdgeInsetsGeometry fieldContentPadding;
   final int secondFieldMaxLines;
 
   const AppTwoColumnTableEditor({
@@ -251,10 +250,6 @@ class AppTwoColumnTableEditor extends StatelessWidget {
     this.addTooltip = "新增",
     this.updateTooltip = "更新",
     this.deleteTooltip = "刪除",
-    this.fieldContentPadding = const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 8,
-    ),
     this.secondFieldMaxLines = 1,
   }) : assert(secondFieldMaxLines > 0);
 
@@ -289,7 +284,6 @@ class AppTwoColumnTableEditor extends StatelessWidget {
                     labelText: firstLabel,
                     hintText: firstHint,
                     textInputAction: TextInputAction.next,
-                    contentPadding: fieldContentPadding,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -317,7 +311,6 @@ class AppTwoColumnTableEditor extends StatelessWidget {
               textInputAction: secondFieldMaxLines == 1
                   ? TextInputAction.done
                   : TextInputAction.newline,
-              contentPadding: fieldContentPadding,
               onSubmitted: secondFieldMaxLines == 1 ? (_) => _submit() : null,
             ),
           ],

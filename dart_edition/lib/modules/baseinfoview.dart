@@ -20,8 +20,8 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../bin/settings_manager.dart";
 import "../models/base_info_data.dart";
-import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/providers/word_count_providers.dart";
 
 export "../models/base_info_data.dart";
 
@@ -36,11 +36,9 @@ class BaseInfoCodec {
     bool updateLatestSave = true,
     WordCountMode wordCountMode = WordCountMode.characters,
   }) {
-    return data
-        .copyWith(
-          latestSave: updateLatestSave ? DateTime.now() : data.latestSave,
-        )
-        .withRecalculatedNowWords(contentText, mode: wordCountMode);
+    return data.copyWith(
+      latestSave: updateLatestSave ? DateTime.now() : data.latestSave,
+    );
   }
 
   static void _writeTextElement(
@@ -368,24 +366,13 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
 
     _subscriptions.add(
-      ref.listenManual<String>(editorContentProvider, (previous, next) {
-        if (previous == next) {
-          return;
-        }
-        _syncNowWords();
-      }),
-    );
-
-    _subscriptions.add(
-      ref.listenManual<AsyncValue<AppSettingsStateData>>(
-        settingsStateProvider,
+      ref.listenManual<ActiveChapterWordCountState>(
+        activeChapterWordCountProvider,
         (previous, next) {
-          final previousMode = previous?.valueOrNull?.wordCountMode;
-          final nextMode = next.valueOrNull?.wordCountMode;
-          if (previousMode == nextMode) {
+          if (previous?.count == next.count) {
             return;
           }
-          _syncNowWords();
+          _syncNowWords(next.count);
         },
       ),
     );
@@ -395,7 +382,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         return;
       }
       _syncControllersFromProvider(ref.read(baseInfoDataProvider));
-      _syncNowWords();
+      _syncNowWords(ref.read(activeChapterWordCountProvider).count);
     });
   }
 
@@ -469,15 +456,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     );
   }
 
-  void _syncNowWords() {
-    final settingsState = ref.read(settingsStateProvider).valueOrNull;
-    final contentText = ref.read(editorContentProvider);
-    final wordCountMode =
-        settingsState?.wordCountMode ?? WordCountMode.wordsAndCharacters;
-
-    ref
-        .read(baseInfoDataProvider.notifier)
-        .recalculateNowWords(contentText: contentText, mode: wordCountMode);
+  void _syncNowWords(int count) {
+    ref.read(baseInfoDataProvider.notifier).setNowWords(count);
   }
 
   void _addTag(String tagText) {
@@ -615,12 +595,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         AppTextField(
           controller: controller,
           selectAllOnFocus: false,
-          decoration: InputDecoration(
-            hintText: hint,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-          ),
+          hintText: hint,
         ),
       ],
     );
@@ -645,12 +620,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
         AppTextField(
           controller: _introController,
           selectAllOnFocus: false,
-          decoration: InputDecoration(
-            hintText: "輸入作品簡介",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-          ),
+          hintText: "輸入作品簡介",
           maxLines: 6,
         ),
       ],

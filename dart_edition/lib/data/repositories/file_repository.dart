@@ -19,11 +19,14 @@ abstract class FileRepository {
   Future<String> saveProjectAutoBackup({
     required String projectName,
     required String content,
+    required int maxTotalBytes,
   });
 
   Future<String> getAutoBackupDirectoryPath();
 
   Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo();
+
+  Future<AutoBackupCleanupResult> clearAutoBackups();
 
   Future<String> selectAutoBackupDirectory();
 
@@ -99,10 +102,12 @@ class DefaultFileRepository implements FileRepository {
   Future<String> saveProjectAutoBackup({
     required String projectName,
     required String content,
+    required int maxTotalBytes,
   }) {
     return FileService.saveProjectAutoBackup(
       projectName: projectName,
       content: content,
+      maxTotalBytes: maxTotalBytes,
     );
   }
 
@@ -183,6 +188,11 @@ class DefaultFileRepository implements FileRepository {
       data,
       updateLatestSave: updateLatestSave,
     );
+  }
+
+  @override
+  Future<AutoBackupCleanupResult> clearAutoBackups() {
+    return FileService.clearAutoBackups();
   }
 
   @override

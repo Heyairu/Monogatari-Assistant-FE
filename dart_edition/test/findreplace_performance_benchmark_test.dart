@@ -6,7 +6,7 @@ import "package:monogatari_assistant/bin/findreplace.dart";
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets("buildTextSpan benchmark with 100KB text and 1000 matches", (
+  testWidgets("buildTextSpan benchmark with 100KB text and capped matches", (
     tester,
   ) async {
     BuildContext? context;
@@ -28,7 +28,7 @@ void main() {
     final controller = HighlightTextEditingController(text: largeText);
 
     final List<TextSelection> matches = <TextSelection>[];
-    for (int i = 0; i < 1500; i++) {
+    for (int i = 0; i < 3000; i++) {
       final int start = i * 2;
       if (start + 1 >= largeText.length) {
         break;
@@ -64,7 +64,10 @@ void main() {
       'textLength=${largeText.length}',
     );
 
-    expect(controller.searchMatches.length, 1000);
+    expect(
+      controller.searchMatches.length,
+      HighlightTextEditingController.maxSearchResults,
+    );
     expect(averageMs, lessThan(250));
   });
 }

@@ -35,6 +35,79 @@ export "../models/character_data.dart";
 
 final _log = Logger("CharacterView");
 
+/// Owns the pending CharacterView draft for exactly one project session.
+///
+/// Project switching flushes the old registration before provider state is
+/// replaced. A view that is disposed a frame later can only unregister itself;
+/// it can never write its old controllers into the new project's provider.
+class CharacterDraftSessionCoordinator {
+  CharacterDraftSessionCoordinator._();
+
+  static final CharacterDraftSessionCoordinator instance =
+      CharacterDraftSessionCoordinator._();
+
+  _CharacterDraftRegistration? _registration;
+
+  void register({
+    required int sessionId,
+    required Object owner,
+    required VoidCallback flush,
+  }) {
+    _registration = _CharacterDraftRegistration(
+      sessionId: sessionId,
+      owner: owner,
+      flush: flush,
+    );
+  }
+
+  bool owns(int sessionId, Object owner) {
+    final registration = _registration;
+    return registration != null &&
+        registration.sessionId == sessionId &&
+        identical(registration.owner, owner);
+  }
+
+  void flush(int sessionId) {
+    final registration = _registration;
+    if (registration == null || registration.sessionId != sessionId) {
+      return;
+    }
+    registration.flush();
+  }
+
+  void flushAndClose(int sessionId) {
+    final registration = _registration;
+    if (registration == null || registration.sessionId != sessionId) {
+      return;
+    }
+    try {
+      registration.flush();
+    } finally {
+      if (identical(_registration, registration)) {
+        _registration = null;
+      }
+    }
+  }
+
+  void unregister({required int sessionId, required Object owner}) {
+    if (owns(sessionId, owner)) {
+      _registration = null;
+    }
+  }
+}
+
+class _CharacterDraftRegistration {
+  final int sessionId;
+  final Object owner;
+  final VoidCallback flush;
+
+  const _CharacterDraftRegistration({
+    required this.sessionId,
+    required this.owner,
+    required this.flush,
+  });
+}
+
 // MARK: - 滑桿結構(解決硬編碼問題)
 class TraitDefinition {
   final String xmlTitle; // XML 儲存用的 Title 或 Key
@@ -1191,7 +1264,9 @@ class CharacterCodec {
 }
 
 class CharacterView extends ConsumerStatefulWidget {
-  const CharacterView({super.key});
+  final int projectSessionId;
+
+  const CharacterView({super.key, this.projectSessionId = 0});
 
   @override
   ConsumerState<CharacterView> createState() => _CharacterViewState();
@@ -1452,6 +1527,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   void initState() {
     super.initState();
     _setupListeners();
+    CharacterDraftSessionCoordinator.instance.register(
+      sessionId: widget.projectSessionId,
+      owner: this,
+      flush: _flushPendingCharacterDraft,
+    );
     _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
@@ -1462,10 +1542,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   @override
   void dispose() {
-    if (_debounceTimer?.isActive ?? false) {
-      _debounceTimer!.cancel();
-      _saveCurrentCharacterData();
-    }
+    _debounceTimer?.cancel();
+    CharacterDraftSessionCoordinator.instance.unregister(
+      sessionId: widget.projectSessionId,
+      owner: this,
+    );
     _tabController.dispose();
     _newCharacterController.dispose();
 
@@ -2437,7 +2518,20 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   // 儲存當前角色資料
+  void _flushPendingCharacterDraft() {
+    if (_dirtyControllerKeys.isEmpty && !_structuredFieldsDirty) {
+      return;
+    }
+    _saveCurrentCharacterData(forceStructuredFields: false);
+  }
+
   void _saveCurrentCharacterData({bool forceStructuredFields = true}) {
+    if (!CharacterDraftSessionCoordinator.instance.owns(
+      widget.projectSessionId,
+      this,
+    )) {
+      return;
+    }
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     final currentName = selectedCharacter;
     if (currentName == null) return;
@@ -3184,10 +3278,6 @@ class CharacterTextField extends StatelessWidget {
         maxLines: maxLines,
         labelText: label,
         hintText: hintText,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
       ),
     );
   }

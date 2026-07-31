@@ -64,6 +64,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
     int autoSaveIntervalMinutes,
     bool autoBackupEnabled,
     int autoBackupIntervalMinutes,
+    int autoBackupMaxSizeMb,
   })
   get _settingsViewState => ref.watch(
     settingsStateProvider.select((state) {
@@ -77,6 +78,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
         autoSaveIntervalMinutes: settings?.autoSaveIntervalMinutes ?? 5,
         autoBackupEnabled: settings?.autoBackupEnabled ?? false,
         autoBackupIntervalMinutes: settings?.autoBackupIntervalMinutes ?? 5,
+        autoBackupMaxSizeMb: settings?.autoBackupMaxSizeMb ?? 512,
       );
     }),
   );
@@ -454,6 +456,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
   Widget _buildAutoBackupSetting() {
     final enabled = _settingsViewState.autoBackupEnabled;
     final interval = _settingsViewState.autoBackupIntervalMinutes;
+    final maxSizeMb = _settingsViewState.autoBackupMaxSizeMb;
     final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -488,6 +491,28 @@ class _SettingViewState extends ConsumerState<SettingView> {
                 await ref
                     .read(settingsStateProvider.notifier)
                     .setAutoBackupIntervalMinutes(value.round());
+              },
+            ),
+          ),
+        ),
+        Opacity(
+          opacity: enabled ? 1 : 0.5,
+          child: IgnorePointer(
+            ignoring: !enabled,
+            child: LabeledSlider(
+              title: "備份最高上限",
+              icon: Icons.storage_outlined,
+              value: maxSizeMb.clamp(16, 4096).toDouble(),
+              min: 16,
+              max: 4096,
+              divisions: 255,
+              layout: LabeledSliderLayout.inline,
+              inlineTitleWidth: 96,
+              valueLabelBuilder: (value) => "${value.round()} MB",
+              onChanged: (value) async {
+                await ref
+                    .read(settingsStateProvider.notifier)
+                    .setAutoBackupMaxSizeMb(value.round());
               },
             ),
           ),
@@ -565,12 +590,47 @@ class _SettingViewState extends ConsumerState<SettingView> {
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
+                Text(
+                  "${_formatBytes(info.totalBytes)} / $maxSizeMb MB ・ ${info.fileCount} 份",
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: info.fileCount == 0 ? null : _clearAutoBackups,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text("清理全部備份"),
+                ),
               ],
             );
           },
         ),
       ],
     );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024 * 1024) {
+      return "${(bytes / 1024).toStringAsFixed(1)} KB";
+    }
+    return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";
+  }
+
+  Future<void> _clearAutoBackups() async {
+    try {
+      final result = await ref
+          .read(projectFileUseCaseProvider)
+          .clearAutoBackups();
+      if (!mounted) return;
+      _refreshAutoBackupDirectoryInfo();
+      AppFeedback.success(
+        context,
+        "已清理 ${result.deletedFiles} 份備份，釋放 ${_formatBytes(result.freedBytes)}。",
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.error(context, e.toString());
+    }
   }
 
   Future<void> _openAutoBackupDirectory() async {

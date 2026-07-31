@@ -306,18 +306,6 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
   }
 
-  int _totalWordCountForMode(
-    List<SegmentData> segments,
-    WordCountMode wordCountMode,
-  ) {
-    return segments.fold(
-      0,
-      (sum, seg) =>
-          sum +
-          seg.chapters.fold(0, (s, c) => s + c.getWordCount(wordCountMode)),
-    );
-  }
-
   String get _contentText => ref.read(editorContentProvider);
 
   _SelectionSnapshot _selectionSnapshotFromValues({
@@ -934,6 +922,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             WordCountMode.wordsAndCharacters,
       ),
     );
+    final totalWordCount = ref.watch(totalWordsProvider);
     final selectedSegmentID = ref.watch(
       editorSelectionProvider.select(
         (selectionState) => selectionState.selectedSegID,
@@ -1005,7 +994,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          "全書共 ${_totalWordCountForMode(segments, wordCountMode)} 字",
+                          "全書共 $totalWordCount 字",
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ],

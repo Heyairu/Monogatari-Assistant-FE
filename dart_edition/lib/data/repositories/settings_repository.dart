@@ -10,6 +10,7 @@ class SettingsSnapshot {
   final int autoSaveIntervalMinutes;
   final bool autoBackupEnabled;
   final int autoBackupIntervalMinutes;
+  final int autoBackupMaxSizeMb;
   final List<RecentProjectEntry> recentProjects;
 
   const SettingsSnapshot({
@@ -20,6 +21,7 @@ class SettingsSnapshot {
     required this.autoSaveIntervalMinutes,
     required this.autoBackupEnabled,
     required this.autoBackupIntervalMinutes,
+    required this.autoBackupMaxSizeMb,
     required this.recentProjects,
   });
 }
@@ -41,6 +43,8 @@ abstract class SettingsRepository {
 
   Future<void> saveAutoBackupIntervalMinutes(int value);
 
+  Future<void> saveAutoBackupMaxSizeMb(int value);
+
   Future<void> saveRecentProjects(List<RecentProjectEntry> projects);
 }
 
@@ -54,6 +58,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   static const String _autoBackupEnabledKey = "auto_backup_enabled";
   static const String _autoBackupIntervalMinutesKey =
       "auto_backup_interval_minutes";
+  static const String _autoBackupMaxSizeMbKey = "auto_backup_max_size_mb";
   static const String _legacyAutoBackupEnabledKey = "autosave_enabled";
   static const String _legacyAutoBackupIntervalMinutesKey =
       "autosave_interval_minutes";
@@ -68,6 +73,9 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   static const int _defaultAutoBackupIntervalMinutes = 5;
   static const int _minAutoBackupIntervalMinutes = 1;
   static const int _maxAutoBackupIntervalMinutes = 120;
+  static const int _defaultAutoBackupMaxSizeMb = 512;
+  static const int _minAutoBackupMaxSizeMb = 16;
+  static const int _maxAutoBackupMaxSizeMb = 10240;
 
   @override
   Future<SettingsSnapshot> load() async {
@@ -99,6 +107,9 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
               _minAutoBackupIntervalMinutes,
               _maxAutoBackupIntervalMinutes,
             );
+    final autoBackupMaxSizeMb =
+        (prefs.getInt(_autoBackupMaxSizeMbKey) ?? _defaultAutoBackupMaxSizeMb)
+            .clamp(_minAutoBackupMaxSizeMb, _maxAutoBackupMaxSizeMb);
 
     final recentProjectStrings =
         prefs.getStringList(_recentProjectsKey) ?? const [];
@@ -123,6 +134,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
       autoSaveIntervalMinutes: autoSaveIntervalMinutes,
       autoBackupEnabled: autoBackupEnabled,
       autoBackupIntervalMinutes: autoBackupIntervalMinutes,
+      autoBackupMaxSizeMb: autoBackupMaxSizeMb,
       recentProjects: trimmedProjects,
     );
   }
@@ -172,6 +184,15 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
     await prefs.setInt(
       _autoBackupIntervalMinutesKey,
       value.clamp(_minAutoBackupIntervalMinutes, _maxAutoBackupIntervalMinutes),
+    );
+  }
+
+  @override
+  Future<void> saveAutoBackupMaxSizeMb(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _autoBackupMaxSizeMbKey,
+      value.clamp(_minAutoBackupMaxSizeMb, _maxAutoBackupMaxSizeMb),
     );
   }
 

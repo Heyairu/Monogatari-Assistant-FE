@@ -48,24 +48,15 @@ class AboutView extends StatelessWidget {
             const SizedBox(height: 8),
 
             // 應用名稱
-            Text(
-              "物語Assistant",
-              style: Theme.of(context).textTheme.titleLarge
-            ),
+            Text("物語Assistant", style: Theme.of(context).textTheme.titleLarge),
 
             const SizedBox(height: 8),
 
             // 版本狀態
-            Text(
-              "Beta 7",
-              style: Theme.of(context).textTheme.titleSmall
-            ),
+            Text("Beta 7", style: Theme.of(context).textTheme.titleSmall),
 
             // Version
-            Text(
-              "Ver 0.8.93",
-              style: Theme.of(context).textTheme.labelLarge
-            ),
+            Text("Ver 0.8.93", style: Theme.of(context).textTheme.labelLarge),
 
             const SizedBox(height: 32),
 
@@ -94,10 +85,7 @@ class AboutView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "主要功能",
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                  Text("主要功能", style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 16),
                   _buildFeatureItem(context, Icons.book, "故事設定管理"),
                   _buildFeatureItem(context, Icons.menu_book, "章節與段落編輯"),
@@ -113,7 +101,7 @@ class AboutView extends StatelessWidget {
             // 版權信息
             Text(
               "© 2025~2026 Heyairu(部屋伊琉).",
-              style: Theme.of(context).textTheme.bodyMedium
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
         ),

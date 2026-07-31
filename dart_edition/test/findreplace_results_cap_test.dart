@@ -9,31 +9,21 @@ void main() {
   testWidgets("updateSearchHighlights enforces max results cap", (
     tester,
   ) async {
-    BuildContext? context;
+    final controller = HighlightTextEditingController(text: 'a' * 4000);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (buildContext) {
-            context = buildContext;
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-
-    final controller = HighlightTextEditingController(text: 'a' * 2000);
-
-    // create 1500 matches spaced
+    // Create more matches than the controller is allowed to retain.
     final matches = <TextSelection>[];
-    for (int i = 0; i < 1500; i++) {
-      final start = i % 1800;
+    for (int i = 0; i < 3000; i++) {
+      final start = i % 3800;
       matches.add(TextSelection(baseOffset: start, extentOffset: start + 1));
     }
 
     controller.updateSearchHighlights(matches: matches, currentIndex: 0);
 
-    expect(controller.searchMatches.length <= 1000, isTrue);
-    expect(controller.searchMatches.length, 1000);
+    expect(
+      controller.searchMatches.length,
+      HighlightTextEditingController.maxSearchResults,
+    );
+    controller.dispose();
   });
 }

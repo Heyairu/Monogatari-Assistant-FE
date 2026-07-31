@@ -14,6 +14,7 @@
 
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "dart:async";
 import "dart:convert";
 import "dart:io";
 import "package:path_provider/path_provider.dart";
@@ -23,6 +24,7 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/plan_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../utils/latest_wins_writer.dart";
 
 export "../models/plan_data.dart";
 
@@ -379,6 +381,10 @@ class _PlanViewState extends ConsumerState<PlanView> {
       TextEditingController();
   final TextEditingController inspirationContentController =
       TextEditingController();
+  final FocusNode _inspirationTitleFocusNode = FocusNode();
+  final FocusNode _inspirationContentFocusNode = FocusNode();
+  late final Future<File> _inspirationFile;
+  late final LatestWinsWriter _inspirationWriter;
 
   List<InspirationFolder> inspirationFolders = [];
   List<InspirationNote> inspirationNotes = [];
@@ -388,24 +394,41 @@ class _PlanViewState extends ConsumerState<PlanView> {
   void initState() {
     super.initState();
 
+    _inspirationFile = _resolveInspirationFile();
+    _inspirationWriter = LatestWinsWriter(
+      write: (content) async {
+        try {
+          await writeTextAtomically(await _inspirationFile, content);
+        } catch (error) {
+          _log.warning("儲存靈感筆記失敗: $error");
+        }
+      },
+    );
+
     foreshadowTitleController.addListener(_onForeshadowTitleChanged);
     foreshadowNoteController.addListener(_onForeshadowNoteChanged);
     updatePlanTitleController.addListener(_onUpdatePlanTitleChanged);
     updatePlanNoteController.addListener(_onUpdatePlanNoteChanged);
     inspirationTitleController.addListener(_onInspirationTitleChanged);
     inspirationContentController.addListener(_onInspirationContentChanged);
+    _inspirationTitleFocusNode.addListener(_flushInspirationOnBlur);
+    _inspirationContentFocusNode.addListener(_flushInspirationOnBlur);
 
     _loadInspirationFromDisk();
   }
 
   @override
   void dispose() {
+    _scheduleInspirationSave(immediate: true);
+    unawaited(_inspirationWriter.close());
     foreshadowTitleController.removeListener(_onForeshadowTitleChanged);
     foreshadowNoteController.removeListener(_onForeshadowNoteChanged);
     updatePlanTitleController.removeListener(_onUpdatePlanTitleChanged);
     updatePlanNoteController.removeListener(_onUpdatePlanNoteChanged);
     inspirationTitleController.removeListener(_onInspirationTitleChanged);
     inspirationContentController.removeListener(_onInspirationContentChanged);
+    _inspirationTitleFocusNode.removeListener(_flushInspirationOnBlur);
+    _inspirationContentFocusNode.removeListener(_flushInspirationOnBlur);
 
     foreshadowTitleController.dispose();
     foreshadowNoteController.dispose();
@@ -413,6 +436,8 @@ class _PlanViewState extends ConsumerState<PlanView> {
     updatePlanNoteController.dispose();
     inspirationTitleController.dispose();
     inspirationContentController.dispose();
+    _inspirationTitleFocusNode.dispose();
+    _inspirationContentFocusNode.dispose();
     super.dispose();
   }
 
@@ -671,7 +696,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       setState(() {
         item.title = inspirationTitleController.text;
       });
-      _saveInspirationToDisk();
+      _scheduleInspirationSave();
     }
   }
 
@@ -680,7 +705,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
     if (item == null) return;
     if (item.content != inspirationContentController.text) {
       item.content = inspirationContentController.text;
-      _saveInspirationToDisk();
+      _scheduleInspirationSave();
     }
   }
 
@@ -828,10 +853,13 @@ class _PlanViewState extends ConsumerState<PlanView> {
     return "$dataPath/InspirationNotes.json";
   }
 
+  Future<File> _resolveInspirationFile() async {
+    return File(await _inspirationFilePath);
+  }
+
   Future<void> _loadInspirationFromDisk() async {
     try {
-      final filePath = await _inspirationFilePath;
-      final file = File(filePath);
+      final file = await _inspirationFile;
       if (!await file.exists()) {
         if (mounted) {
           setState(() {
@@ -875,18 +903,28 @@ class _PlanViewState extends ConsumerState<PlanView> {
     }
   }
 
-  Future<void> _saveInspirationToDisk() async {
-    try {
-      final payload = {
-        "folders": inspirationFolders.map((e) => e.toJson()).toList(),
-        "notes": inspirationNotes.map((e) => e.toJson()).toList(),
-        "rootOrder": _rootLayerOrder,
-      };
-      final filePath = await _inspirationFilePath;
-      final file = File(filePath);
-      await file.writeAsString(jsonEncode(payload));
-    } catch (e) {
-      _log.warning("儲存靈感筆記失敗: $e");
+  String _createInspirationSnapshot() {
+    return jsonEncode({
+      "folders": inspirationFolders.map((e) => e.toJson()).toList(),
+      "notes": inspirationNotes.map((e) => e.toJson()).toList(),
+      "rootOrder": List<String>.of(_rootLayerOrder),
+    });
+  }
+
+  void _scheduleInspirationSave({bool immediate = false}) {
+    if (_isLoadingInspiration) {
+      return;
+    }
+    _inspirationWriter.schedule(
+      _createInspirationSnapshot,
+      immediate: immediate,
+    );
+  }
+
+  void _flushInspirationOnBlur() {
+    if (!_inspirationTitleFocusNode.hasFocus &&
+        !_inspirationContentFocusNode.hasFocus) {
+      unawaited(_inspirationWriter.flush());
     }
   }
 
@@ -900,7 +938,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       _ensureRootLayerOrderIntegrity();
       selectedFolderId = folder.id;
     });
-    _saveInspirationToDisk();
+    _scheduleInspirationSave(immediate: true);
   }
 
   void _deleteInspirationFolder(String folderId) {
@@ -930,7 +968,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
         selectedFolderId = null;
       }
     });
-    _saveInspirationToDisk();
+    _scheduleInspirationSave(immediate: true);
   }
 
   void _addInspirationNote(String title) {
@@ -946,7 +984,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       selectedInspirationId = note.id;
       _syncInspirationControllers();
     });
-    _saveInspirationToDisk();
+    _scheduleInspirationSave(immediate: true);
   }
 
   void _deleteInspirationNote(String noteId) {
@@ -961,7 +999,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
         _syncInspirationControllers();
       }
     });
-    _saveInspirationToDisk();
+    _scheduleInspirationSave(immediate: true);
   }
 
   void _toggleFolderCollapsed(String folderId) {
@@ -1195,7 +1233,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
 
       _ensureRootLayerOrderIntegrity();
     });
-    _saveInspirationToDisk();
+    _scheduleInspirationSave(immediate: true);
   }
 
   Widget _buildForeshadowSection(List<ForeshadowItem> items) {
@@ -1698,6 +1736,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       children: [
         AppTextField(
           controller: inspirationTitleController,
+          focusNode: _inspirationTitleFocusNode,
           decoration: const InputDecoration(
             labelText: "靈感標題",
             border: OutlineInputBorder(),
@@ -1707,6 +1746,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
         const SizedBox(height: 8),
         AppTextField(
           controller: inspirationContentController,
+          focusNode: _inspirationContentFocusNode,
           decoration: const InputDecoration(
             labelText: "內容",
             border: OutlineInputBorder(),

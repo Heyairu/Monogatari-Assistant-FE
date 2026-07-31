@@ -183,6 +183,7 @@ mixin _$AppSettingsStateData {
   int get autoSaveIntervalMinutes => throw _privateConstructorUsedError;
   bool get autoBackupEnabled => throw _privateConstructorUsedError;
   int get autoBackupIntervalMinutes => throw _privateConstructorUsedError;
+  int get autoBackupMaxSizeMb => throw _privateConstructorUsedError;
   List<RecentProjectEntry> get recentProjects =>
       throw _privateConstructorUsedError;
 
@@ -208,6 +209,7 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
     int autoSaveIntervalMinutes,
     bool autoBackupEnabled,
     int autoBackupIntervalMinutes,
+    int autoBackupMaxSizeMb,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -237,6 +239,7 @@ class _$AppSettingsStateDataCopyWithImpl<
     Object? autoSaveIntervalMinutes = null,
     Object? autoBackupEnabled = null,
     Object? autoBackupIntervalMinutes = null,
+    Object? autoBackupMaxSizeMb = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -269,6 +272,10 @@ class _$AppSettingsStateDataCopyWithImpl<
                 ? _value.autoBackupIntervalMinutes
                 : autoBackupIntervalMinutes // ignore: cast_nullable_to_non_nullable
                       as int,
+            autoBackupMaxSizeMb: null == autoBackupMaxSizeMb
+                ? _value.autoBackupMaxSizeMb
+                : autoBackupMaxSizeMb // ignore: cast_nullable_to_non_nullable
+                      as int,
             recentProjects: null == recentProjects
                 ? _value.recentProjects
                 : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -296,6 +303,7 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
     int autoSaveIntervalMinutes,
     bool autoBackupEnabled,
     int autoBackupIntervalMinutes,
+    int autoBackupMaxSizeMb,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -321,6 +329,7 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
     Object? autoSaveIntervalMinutes = null,
     Object? autoBackupEnabled = null,
     Object? autoBackupIntervalMinutes = null,
+    Object? autoBackupMaxSizeMb = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -353,6 +362,10 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
             ? _value.autoBackupIntervalMinutes
             : autoBackupIntervalMinutes // ignore: cast_nullable_to_non_nullable
                   as int,
+        autoBackupMaxSizeMb: null == autoBackupMaxSizeMb
+            ? _value.autoBackupMaxSizeMb
+            : autoBackupMaxSizeMb // ignore: cast_nullable_to_non_nullable
+                  as int,
         recentProjects: null == recentProjects
             ? _value._recentProjects
             : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -373,6 +386,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     this.autoSaveIntervalMinutes = 5,
     this.autoBackupEnabled = false,
     this.autoBackupIntervalMinutes = 5,
+    this.autoBackupMaxSizeMb = 512,
     final List<RecentProjectEntry> recentProjects =
         const <RecentProjectEntry>[],
   }) : _recentProjects = recentProjects;
@@ -398,6 +412,9 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   @override
   @JsonKey()
   final int autoBackupIntervalMinutes;
+  @override
+  @JsonKey()
+  final int autoBackupMaxSizeMb;
   final List<RecentProjectEntry> _recentProjects;
   @override
   @JsonKey()
@@ -409,7 +426,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
   @override
   String toString() {
-    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, recentProjects: $recentProjects)';
+    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, recentProjects: $recentProjects)';
   }
 
   @override
@@ -437,6 +454,8 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
                   autoBackupIntervalMinutes,
                 ) ||
                 other.autoBackupIntervalMinutes == autoBackupIntervalMinutes) &&
+            (identical(other.autoBackupMaxSizeMb, autoBackupMaxSizeMb) ||
+                other.autoBackupMaxSizeMb == autoBackupMaxSizeMb) &&
             const DeepCollectionEquality().equals(
               other._recentProjects,
               _recentProjects,
@@ -453,6 +472,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     autoSaveIntervalMinutes,
     autoBackupEnabled,
     autoBackupIntervalMinutes,
+    autoBackupMaxSizeMb,
     const DeepCollectionEquality().hash(_recentProjects),
   );
 
@@ -478,6 +498,7 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
     final int autoSaveIntervalMinutes,
     final bool autoBackupEnabled,
     final int autoBackupIntervalMinutes,
+    final int autoBackupMaxSizeMb,
     final List<RecentProjectEntry> recentProjects,
   }) = _$AppSettingsStateDataImpl;
 
@@ -495,6 +516,8 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
   bool get autoBackupEnabled;
   @override
   int get autoBackupIntervalMinutes;
+  @override
+  int get autoBackupMaxSizeMb;
   @override
   List<RecentProjectEntry> get recentProjects;
 

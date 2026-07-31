@@ -1,6 +1,42 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
+InputDecoration appFieldDecoration(
+  BuildContext context, {
+  InputDecoration decoration = const InputDecoration(),
+}) {
+  final scheme = Theme.of(context).colorScheme;
+  final defaultBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+  );
+  final enabledBorder = defaultBorder.copyWith(
+    borderSide: BorderSide(color: scheme.outline),
+  );
+  final focusedBorder = defaultBorder.copyWith(
+    borderSide: BorderSide(color: scheme.primary, width: 2),
+  );
+  final errorBorder = defaultBorder.copyWith(
+    borderSide: BorderSide(color: scheme.error),
+  );
+
+  return decoration.copyWith(
+    isDense: true,
+    filled: true,
+    fillColor: scheme.surfaceContainerLowest,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: defaultBorder,
+    enabledBorder: enabledBorder,
+    disabledBorder: enabledBorder.copyWith(
+      borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.45)),
+    ),
+    focusedBorder: focusedBorder,
+    errorBorder: errorBorder,
+    focusedErrorBorder: errorBorder.copyWith(
+      borderSide: BorderSide(color: scheme.error, width: 2),
+    ),
+  );
+}
+
 /// A consistently decorated text form field for single and multiline input.
 class AppTextField extends StatelessWidget {
   final TextEditingController? controller;
@@ -21,11 +57,6 @@ class AppTextField extends StatelessWidget {
   final bool autofocus;
   final bool? selectAllOnFocus;
   final bool expands;
-  final bool isDense;
-  final bool? filled;
-  final Color? fillColor;
-  final EdgeInsetsGeometry? contentPadding;
-  final double borderRadius;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
   final TextCapitalization textCapitalization;
@@ -63,11 +94,6 @@ class AppTextField extends StatelessWidget {
     this.autofocus = false,
     this.selectAllOnFocus,
     this.expands = false,
-    this.isDense = true,
-    this.filled,
-    this.fillColor,
-    this.contentPadding,
-    this.borderRadius = 12,
     this.keyboardType,
     this.textInputAction,
     this.textCapitalization = TextCapitalization.none,
@@ -88,7 +114,6 @@ class AppTextField extends StatelessWidget {
          controller == null || initialValue == null,
          "controller and initialValue cannot both be supplied.",
        ),
-       assert(borderRadius >= 0),
        assert(
          !expands || (minLines == null && maxLines == null),
          "minLines and maxLines must be null when expands is true.",
@@ -96,21 +121,16 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final defaultBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(borderRadius),
-    );
-    final resolvedDecoration = (decoration ?? const InputDecoration()).copyWith(
-      labelText: labelText,
-      hintText: hintText,
-      helperText: helperText,
-      errorText: errorText,
-      prefixIcon: prefixIcon,
-      suffixIcon: suffixIcon,
-      isDense: isDense,
-      filled: filled,
-      fillColor: fillColor,
-      contentPadding: contentPadding,
-      border: decoration?.border ?? defaultBorder,
+    final resolvedDecoration = appFieldDecoration(
+      context,
+      decoration: (decoration ?? const InputDecoration()).copyWith(
+        labelText: labelText,
+        hintText: hintText,
+        helperText: helperText,
+        errorText: errorText,
+        prefixIcon: prefixIcon,
+        suffixIcon: suffixIcon,
+      ),
     );
 
     return TextFormField(
@@ -437,7 +457,6 @@ class _InlineEditableTextState extends State<InlineEditableText> {
         suffixIcon: suffix,
         onSubmitted: (_) => _submit(),
         onTapOutside: widget.onTapOutside,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       ),
     );
   }

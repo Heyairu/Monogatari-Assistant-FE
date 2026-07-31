@@ -39,10 +39,12 @@ class ProjectFileUseCase {
   Future<String> saveProjectAutoBackup({
     required String projectName,
     required String content,
+    required int maxTotalBytes,
   }) {
     return fileRepository.saveProjectAutoBackup(
       projectName: projectName,
       content: content,
+      maxTotalBytes: maxTotalBytes,
     );
   }
 
@@ -86,6 +88,10 @@ class ProjectFileUseCase {
       data,
       updateLatestSave: updateLatestSave,
     );
+  }
+
+  Future<AutoBackupCleanupResult> clearAutoBackups() {
+    return fileRepository.clearAutoBackups();
   }
 
   Future<ProjectData> loadProjectFromXml(ProjectFile projectFile) {

@@ -1,5 +1,6 @@
 {
 	"items": [
+		{"content": "所以也請大家抱持著這種心情，輕鬆地加入輕音部吧！","source": "《K-ON!》平沢唯"},
 		{"content": "咦？弦是需要換的嗎？","source": "《K-ON!》平沢唯"},
 		{"content": "那時候的我，妳不用擔心唷！\n因為我馬上就會找到的，我也能做到的事、能讓我熱忠的事……","source": "《K-ON!》平沢唯"},
 		{"content": "因為梓喵就是梓喵阿，小律就是小律，小澪就是小澪，小紬就是小紬阿。","source": "《K-ON!!》平沢唯"},
@@ -13,10 +14,13 @@
 		{"content": "能跟大家一起演奏，我非常幸福。","source": "《K-ON!!》中野梓"},
 		{"content": "請你們不要畢業……不用再整理社辦了……一直喝茶我也不會生氣……你們不要畢業啦……","source": "《K-ON!!》中野梓"},
 		{"content": "喝杯茶吧？","source": "《K-ON!!》琴吹紬"},
+		{"content": "沒有人能代替小律！","source": "《K-ON!!》琴吹紬"},
 		{"content": "London Bridge, Thames River, London Tower & London Eye!","source": "《映画 けいおん！》〈ごはんはおかず〉"},
 		{"content": "唯在整部K-ON總共喊了224次梓喵。","source": "k_on_htt_concert on Threads"},
 		{"content": "澪醬在粉絲俱樂部茶會上朗誦的詩詞，其實是歌曲ときめきシュガー的歌詞。","source": "k_on_htt_concert on Threads"},
 		{"content": "〈No, Thank You!〉的Thank正是放課後TeaTime五位成員名字的首字母。","source": "k_on_htt_concert on Threads"},
+
+		{"content": "媽的，死獸人，院內禁菸啦！","source": "《ヤニねこ》"},
 
 		{"content": "17歲，3月，我來到了東京，因為我不想輸，因為我沒有錯！","source": "《GBC》井芹仁菜"},
 
@@ -31,6 +35,7 @@
 		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "Monogatari Assistant"},
 		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant"},
 		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant"},
+		{"content": "Beta 8 介面重大改變！","source": "Monogatari Assistant"},
 		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant"},
 		{"content": "我恨蛸壺屋。","source": "Heyairu"},
 

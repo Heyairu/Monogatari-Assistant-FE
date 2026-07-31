@@ -63,6 +63,7 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
       autoSaveIntervalMinutes: snapshot.autoSaveIntervalMinutes,
       autoBackupEnabled: snapshot.autoBackupEnabled,
       autoBackupIntervalMinutes: snapshot.autoBackupIntervalMinutes,
+      autoBackupMaxSizeMb: snapshot.autoBackupMaxSizeMb,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -113,6 +114,15 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     await ref
         .read(settingsRepositoryProvider)
         .saveAutoBackupIntervalMinutes(normalized);
+  }
+
+  Future<void> setAutoBackupMaxSizeMb(int value) async {
+    final normalized = value.clamp(16, 10240);
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoBackupMaxSizeMb: normalized));
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveAutoBackupMaxSizeMb(normalized);
   }
 
   Future<void> addRecentProject({

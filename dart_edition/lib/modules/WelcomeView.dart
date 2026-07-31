@@ -428,6 +428,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
 
             // Start
             AppSectionCard(
+              margin: const EdgeInsets.all(4),
               padding: EdgeInsets.zero,
               useSectionLayout: false,
               elevation: 0,
@@ -503,6 +504,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
             ),
             // Did you know?
             AppSectionCard(
+              margin: const EdgeInsets.all(4),
               padding: EdgeInsets.zero,
               useSectionLayout: false,
               elevation: 0,
@@ -553,6 +555,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
             ),
             // Recent Files
             AppSectionCard(
+              margin: const EdgeInsets.all(4),
               padding: EdgeInsets.zero,
               useSectionLayout: false,
               elevation: 0,
@@ -631,6 +634,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
             ),
             // Features
             AppSectionCard(
+              margin: const EdgeInsets.all(4),
               padding: EdgeInsets.zero,
               useSectionLayout: false,
               elevation: 0,
@@ -654,26 +658,21 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                               style: Theme.of(context).textTheme.labelMedium,
                             ),
                             const SizedBox(height: 6),
-                            DropdownButtonFormField<String>(
+                            AppDropdownField<String>(
                               value: _selectedLanguage,
-                              isExpanded: true,
-                              style: dropdownTextStyle,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem<String>(
+                              textStyle: dropdownTextStyle,
+                              options: const [
+                                DropdownOption<String>(
                                   value: "JP",
-                                  child: Text("日式"),
+                                  label: "日式",
                                 ),
-                                DropdownMenuItem<String>(
+                                DropdownOption<String>(
                                   value: "ZH",
-                                  child: Text("中式"),
+                                  label: "中式",
                                 ),
-                                DropdownMenuItem<String>(
+                                DropdownOption<String>(
                                   value: "KR",
-                                  child: Text("韓式"),
+                                  label: "韓式",
                                 ),
                               ],
                               onChanged: (String? value) {
@@ -696,32 +695,27 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                               style: Theme.of(context).textTheme.labelMedium,
                             ),
                             const SizedBox(height: 6),
-                            DropdownButtonFormField<String>(
+                            AppDropdownField<String>(
                               value: effectiveGenderValue,
-                              isExpanded: true,
-                              style: dropdownTextStyle,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem<String>(
+                              textStyle: dropdownTextStyle,
+                              options: const [
+                                DropdownOption<String>(
                                   value: "all",
                                   enabled: false,
-                                  child: Text("全部（目前不可用）"),
+                                  label: "全部（目前不可用）",
                                 ),
-                                DropdownMenuItem<String>(
+                                DropdownOption<String>(
                                   value: "male",
-                                  child: Text("男性"),
+                                  label: "男性",
                                 ),
-                                DropdownMenuItem<String>(
+                                DropdownOption<String>(
                                   value: "neutral",
                                   enabled: false,
-                                  child: Text("中性（目前不可用）"),
+                                  label: "中性（目前不可用）",
                                 ),
-                                DropdownMenuItem<String>(
+                                DropdownOption<String>(
                                   value: "female",
-                                  child: Text("女性"),
+                                  label: "女性",
                                 ),
                               ],
                               onChanged: (String? value) {
@@ -746,19 +740,14 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                               style: Theme.of(context).textTheme.labelMedium,
                             ),
                             const SizedBox(height: 6),
-                            DropdownButtonFormField<int>(
+                            AppDropdownField<int>(
                               value: _generateCount,
-                              isExpanded: true,
-                              style: dropdownTextStyle,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [1, 3, 5, 10, 20]
+                              textStyle: dropdownTextStyle,
+                              options: const [1, 3, 5, 10, 20]
                                   .map(
-                                    (int value) => DropdownMenuItem<int>(
+                                    (int value) => DropdownOption<int>(
                                       value: value,
-                                      child: Text("$value"),
+                                      label: "$value",
                                     ),
                                   )
                                   .toList(),
@@ -842,6 +831,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
             ),
             // Sync
             AppSectionCard(
+              margin: const EdgeInsets.all(4),
               padding: EdgeInsets.zero,
               useSectionLayout: false,
               elevation: 0,

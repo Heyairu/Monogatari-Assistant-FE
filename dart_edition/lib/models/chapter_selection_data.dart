@@ -1,79 +1,12 @@
 import "package:freezed_annotation/freezed_annotation.dart";
 
-import "../bin/content_manager.dart";
 import "../bin/settings_manager.dart";
+import "../services/word_count_service.dart";
 
 part "chapter_selection_data.freezed.dart";
 
 int _generateChapterSelectionId() {
   return DateTime.now().microsecondsSinceEpoch;
-}
-
-class _WordCountCacheKey {
-  final String chapterUUID;
-  final WordCountMode mode;
-  final String chapterContent;
-
-  const _WordCountCacheKey({
-    required this.chapterUUID,
-    required this.mode,
-    required this.chapterContent,
-  });
-
-  @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        other is _WordCountCacheKey &&
-            other.chapterUUID == chapterUUID &&
-            other.mode == mode &&
-            other.chapterContent == chapterContent;
-  }
-
-  @override
-  int get hashCode => Object.hash(chapterUUID, mode, chapterContent);
-}
-
-final Map<_WordCountCacheKey, int> _wordCountCache =
-    <_WordCountCacheKey, int>{};
-
-const int _maxWordCountCacheEntries = 4096;
-
-void _removeChapterModeCacheEntries({
-  required String chapterUUID,
-  required WordCountMode mode,
-  String? keepContent,
-}) {
-  _wordCountCache.removeWhere((key, _) {
-    if (key.chapterUUID != chapterUUID || key.mode != mode) {
-      return false;
-    }
-    if (keepContent != null && key.chapterContent == keepContent) {
-      return false;
-    }
-    return true;
-  });
-}
-
-void _removeChapterCacheEntries(String chapterUUID) {
-  _wordCountCache.removeWhere((key, _) => key.chapterUUID == chapterUUID);
-}
-
-void _pruneWordCountCacheToChapterIds(Set<String> activeChapterIds) {
-  if (activeChapterIds.isEmpty) {
-    _wordCountCache.clear();
-    return;
-  }
-
-  _wordCountCache.removeWhere(
-    (key, _) => !activeChapterIds.contains(key.chapterUUID),
-  );
-}
-
-void _enforceWordCountCacheLimit() {
-  while (_wordCountCache.length > _maxWordCountCacheEntries) {
-    final firstKey = _wordCountCache.keys.first;
-    _wordCountCache.remove(firstKey);
-  }
 }
 
 @freezed
@@ -105,59 +38,33 @@ class ChapterData with _$ChapterData {
   String get id => chapterUUID;
 
   static void clearWordCountCacheForChapter(String chapterUUID) {
-    _removeChapterCacheEntries(chapterUUID);
+    WordCountService.instance.clearChapter(chapterUUID);
   }
 
   static void pruneWordCountCacheToChapterIds(Set<String> activeChapterIds) {
-    _pruneWordCountCacheToChapterIds(activeChapterIds);
-    _enforceWordCountCacheLimit();
+    WordCountService.instance.pruneToChapterIds(activeChapterIds);
   }
 
   static void clearAllWordCountCache() {
-    _wordCountCache.clear();
+    WordCountService.instance.clear();
   }
 
-  static int get debugWordCountCacheEntryCount => _wordCountCache.length;
+  static int get debugWordCountCacheEntryCount =>
+      WordCountService.instance.debugCacheEntryCount;
 
+  /// Returns only a current cached value. Missing/pending revisions never scan
+  /// chapter content synchronously on the UI isolate.
   int getWordCount(WordCountMode mode) {
-    // Keep only one cache entry per chapter+mode to avoid unbounded growth
-    // when content changes repeatedly.
-    _removeChapterModeCacheEntries(
-      chapterUUID: chapterUUID,
-      mode: mode,
-      keepContent: chapterContent,
-    );
-
-    final key = _WordCountCacheKey(
-      chapterUUID: chapterUUID,
-      mode: mode,
-      chapterContent: chapterContent,
-    );
-    final cached = _wordCountCache[key];
-    if (cached != null) {
-      return cached;
-    }
-
-    final count = ContentManager.calculateWordCount(chapterContent, mode: mode);
-    _wordCountCache[key] = count;
-    _enforceWordCountCacheLimit();
-    return count;
+    return WordCountService.instance.cachedCount(chapterUUID, mode) ?? 0;
   }
 
   void updateCachedWordCount(int count, WordCountMode mode) {
-    _removeChapterModeCacheEntries(
-      chapterUUID: chapterUUID,
+    WordCountService.instance.storeCount(
+      chapterId: chapterUUID,
+      content: chapterContent,
       mode: mode,
-      keepContent: chapterContent,
+      count: count,
     );
-
-    final key = _WordCountCacheKey(
-      chapterUUID: chapterUUID,
-      mode: mode,
-      chapterContent: chapterContent,
-    );
-    _wordCountCache[key] = count;
-    _enforceWordCountCacheLimit();
   }
 }
 

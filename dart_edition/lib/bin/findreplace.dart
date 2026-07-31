@@ -11,11 +11,12 @@
  */
 
 import "package:code_text_field/code_text_field.dart";
+import "package:flutter/foundation.dart" show kIsWeb;
 import "package:flutter/material.dart";
-import "package:flutter/foundation.dart"; // Added for compute
 import 'dart:async';
 
 import "ui_library.dart";
+import "../utils/cancellable_compute.dart";
 
 // Global normalization cache for character normalization
 final Map<String, String> _normalizationCache = <String, String>{};
@@ -58,6 +59,21 @@ class FindReplaceOptions {
 class HighlightTextEditingController extends CodeController {
   HighlightTextEditingController({super.text});
 
+  int _textRevision = 0;
+
+  /// Monotonically increases whenever the editor text changes.
+  ///
+  /// Async operations can compare this value before applying their result so
+  /// an A -> B -> A edit sequence cannot make stale work look current.
+  int get textRevision => _textRevision;
+
+  @override
+  void dispose() {
+    cancelFindAllMatches(this);
+    cancelReplaceAll(this);
+    super.dispose();
+  }
+
   @override
   set text(String newText) {
     super.text = newText;
@@ -67,6 +83,7 @@ class HighlightTextEditingController extends CodeController {
   set value(TextEditingValue newValue) {
     final bool textChanged = newValue.text != text;
     if (textChanged) {
+      _textRevision++;
       // Text edits make existing highlight ranges stale. Drop them before
       // CodeField asks for a new span so typing does not rebuild old indices.
       if (hasHighlights || currentMatchIndex != -1) {
@@ -247,31 +264,6 @@ class HighlightTextEditingController extends CodeController {
 
   bool _isRangeCovered(TextSelection selection, int start, int end) {
     return selection.start <= start && selection.end >= end;
-  }
-
-  bool _isRangeCoveredByAny(
-    List<TextSelection> selections,
-    int start,
-    int end,
-  ) {
-    for (final TextSelection selection in selections) {
-      if (_isRangeCovered(selection, start, end)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  List<TextSelection> _normalizeMatches(List<TextSelection> rawMatches) {
-    final int textLength = text.length;
-    final List<TextSelection> normalized = <TextSelection>[];
-    for (final TextSelection match in rawMatches) {
-      final normalizedSelection = _normalizeSelection(match, textLength);
-      if (normalizedSelection != null) {
-        normalized.add(normalizedSelection);
-      }
-    }
-    return normalized;
   }
 
   static TextSelection? _normalizeSelection(
@@ -525,6 +517,791 @@ class _SelectionCoverageIndex {
 
 // ==================== 搜尋與取代邏輯操作 ====================
 
+/// Replace All is intentionally bounded even though its implementation is
+/// streaming. These defaults still allow a 10 MiB one-character document to
+/// be processed without retaining one object per match.
+const int defaultReplaceAllMaxMatches = 16 * 1024 * 1024;
+// 32 Mi UTF-16 code units cap the worst-case Dart string payload at ~64 MiB.
+const int defaultReplaceAllMaxOutputCodeUnits = 32 * 1024 * 1024;
+const Duration defaultReplaceAllMaxDuration = Duration(seconds: 30);
+const int defaultReplaceAllConfirmationThreshold = 100 * 1000;
+
+final Expando<int> _replaceAllGenerations = Expando<int>(
+  "replaceAllGeneration",
+);
+final Expando<CancellableComputeOperation<Object?>> _replaceAllWorkers =
+    Expando<CancellableComputeOperation<Object?>>("replaceAllWorker");
+final Expando<int> _findGenerations = Expando<int>("findGeneration");
+final Expando<CancellableComputeOperation<Object?>> _findWorkers =
+    Expando<CancellableComputeOperation<Object?>>("findWorker");
+
+const Duration defaultFindMaxDuration = Duration(seconds: 2);
+const int defaultFindMaxInputCodeUnits = 2 * 1024 * 1024;
+const int defaultFindMaxRegexpCodeUnits = 512;
+const int _webFindMaxRegexpInputCodeUnits = 256 * 1024;
+
+enum ReplaceAllFailureReason {
+  invalidRegularExpression,
+  matchLimitExceeded,
+  outputLimitExceeded,
+  timeLimitExceeded,
+}
+
+@immutable
+class ReplaceAllResult {
+  final String? newText;
+  final int replacementCount;
+  final ReplaceAllFailureReason? failureReason;
+  final String? failureDetails;
+
+  const ReplaceAllResult.success({
+    required this.newText,
+    required this.replacementCount,
+  }) : failureReason = null,
+       failureDetails = null;
+
+  const ReplaceAllResult.noMatches()
+    : newText = null,
+      replacementCount = 0,
+      failureReason = null,
+      failureDetails = null;
+
+  const ReplaceAllResult.failure(
+    this.failureReason, {
+    this.failureDetails,
+    this.replacementCount = 0,
+  }) : newText = null;
+
+  bool get succeeded => failureReason == null;
+  bool get hasReplacements => succeeded && replacementCount > 0;
+}
+
+class _ReplaceAllParams {
+  final String text;
+  final String findText;
+  final String replaceText;
+  final FindReplaceOptions options;
+  final int maxMatches;
+  final int maxOutputCodeUnits;
+  final int maxElapsedMilliseconds;
+
+  const _ReplaceAllParams({
+    required this.text,
+    required this.findText,
+    required this.replaceText,
+    required this.options,
+    required this.maxMatches,
+    required this.maxOutputCodeUnits,
+    required this.maxElapsedMilliseconds,
+  });
+}
+
+class _ReplaceAllOperation {
+  final CancellableComputeOperation<Object?> _worker;
+
+  const _ReplaceAllOperation(this._worker);
+
+  Future<ReplaceAllResult> get value async {
+    try {
+      final Object? result = await _worker.value;
+      return result as ReplaceAllResult;
+    } on TimeoutException {
+      return const ReplaceAllResult.failure(
+        ReplaceAllFailureReason.timeLimitExceeded,
+      );
+    }
+  }
+
+  void cancel() => _worker.cancel();
+}
+
+class _BoundedReplacementBuffer {
+  static const int _chunkSize = 32 * 1024;
+
+  final int maxLength;
+  final List<String> _chunks = <String>[];
+  StringBuffer _pending = StringBuffer();
+  int _length = 0;
+  int _pendingLength = 0;
+
+  _BoundedReplacementBuffer(this.maxLength);
+
+  bool write(String value) {
+    if (value.length > maxLength - _length) {
+      return false;
+    }
+    if (value.isEmpty) {
+      return true;
+    }
+
+    if (value.length >= _chunkSize) {
+      _flushPending();
+      _chunks.add(value);
+    } else {
+      _pending.write(value);
+      _pendingLength += value.length;
+      if (_pendingLength >= _chunkSize) {
+        _flushPending();
+      }
+    }
+    _length += value.length;
+    return true;
+  }
+
+  bool writeRange(String source, int start, int end) {
+    final int rangeLength = end - start;
+    if (rangeLength > maxLength - _length) {
+      return false;
+    }
+    if (rangeLength > 0) {
+      return write(source.substring(start, end));
+    }
+    return true;
+  }
+
+  void _flushPending() {
+    if (_pendingLength == 0) {
+      return;
+    }
+    _chunks.add(_pending.toString());
+    _pending = StringBuffer();
+    _pendingLength = 0;
+  }
+
+  @override
+  String toString() {
+    _flushPending();
+    if (_chunks.isEmpty) {
+      return "";
+    }
+    if (_chunks.length == 1) {
+      return _chunks.single;
+    }
+    return _chunks.join();
+  }
+}
+
+bool _replaceAllTimedOut(Stopwatch stopwatch, int maxElapsedMilliseconds) {
+  return maxElapsedMilliseconds <= 0 ||
+      stopwatch.elapsedMilliseconds >= maxElapsedMilliseconds;
+}
+
+ReplaceAllResult _replaceAllFailure(
+  ReplaceAllFailureReason reason,
+  int replacementCount, {
+  String? details,
+}) {
+  return ReplaceAllResult.failure(
+    reason,
+    replacementCount: replacementCount,
+    failureDetails: details,
+  );
+}
+
+ReplaceAllResult _replaceAllRegexp(
+  _ReplaceAllParams params,
+  Stopwatch stopwatch,
+) {
+  late final RegExp regexp;
+  try {
+    // Regular-expression mode intentionally remains case-sensitive to match
+    // the existing Find behaviour.
+    regexp = RegExp(params.findText, caseSensitive: true);
+  } catch (error) {
+    return ReplaceAllResult.failure(
+      ReplaceAllFailureReason.invalidRegularExpression,
+      failureDetails: error.toString(),
+    );
+  }
+
+  final _BoundedReplacementBuffer output = _BoundedReplacementBuffer(
+    params.maxOutputCodeUnits,
+  );
+  int replacementCount = 0;
+  int lastEnd = 0;
+  int timeoutCheckCountdown = 0;
+
+  try {
+    for (final RegExpMatch match in regexp.allMatches(params.text)) {
+      if (timeoutCheckCountdown-- <= 0) {
+        timeoutCheckCountdown = 1024;
+        if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+          return _replaceAllFailure(
+            ReplaceAllFailureReason.timeLimitExceeded,
+            replacementCount,
+          );
+        }
+      }
+
+      // Find/highlight already ignores zero-length regular-expression
+      // matches. Replace All follows the same rule and, importantly, always
+      // makes progress for patterns such as ^, $, or lookarounds.
+      if (match.end <= match.start) {
+        continue;
+      }
+      if (replacementCount >= params.maxMatches) {
+        return _replaceAllFailure(
+          ReplaceAllFailureReason.matchLimitExceeded,
+          replacementCount,
+        );
+      }
+      if (!output.writeRange(params.text, lastEnd, match.start) ||
+          !_writeRegexpReplacement(output, params.replaceText, match)) {
+        return _replaceAllFailure(
+          ReplaceAllFailureReason.outputLimitExceeded,
+          replacementCount,
+        );
+      }
+
+      replacementCount++;
+      lastEnd = match.end;
+    }
+  } catch (error) {
+    return ReplaceAllResult.failure(
+      ReplaceAllFailureReason.invalidRegularExpression,
+      failureDetails: error.toString(),
+      replacementCount: replacementCount,
+    );
+  }
+
+  if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.timeLimitExceeded,
+      replacementCount,
+    );
+  }
+  if (replacementCount == 0) {
+    return const ReplaceAllResult.noMatches();
+  }
+  if (!output.writeRange(params.text, lastEnd, params.text.length)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.outputLimitExceeded,
+      replacementCount,
+    );
+  }
+  return ReplaceAllResult.success(
+    newText: output.toString(),
+    replacementCount: replacementCount,
+  );
+}
+
+bool _writeRegexpReplacement(
+  _BoundedReplacementBuffer output,
+  String template,
+  RegExpMatch match,
+) {
+  return _writeRegexpReplacementFromStage(output.write, template, match, 0);
+}
+
+bool _writeRegexpReplacementFromStage(
+  bool Function(String value) write,
+  String template,
+  RegExpMatch match,
+  int minimumGroup,
+) {
+  int literalStart = 0;
+  int i = 0;
+
+  while (i < template.length) {
+    final String marker = template[i];
+    if ((marker != r"$" && marker != r"\") ||
+        i + 1 >= template.length ||
+        !_isAsciiDigit(template.codeUnitAt(i + 1))) {
+      i++;
+      continue;
+    }
+
+    if (!write(template.substring(literalStart, i))) {
+      return false;
+    }
+
+    // The previous implementation replaced $0, $1, ... in ascending order.
+    // Therefore "$10" meant group 1 followed by a literal zero. Reading one
+    // digit here preserves that established behaviour without allocating a
+    // replacement string per match.
+    final int groupIndex = template.codeUnitAt(i + 1) - 0x30;
+    if (groupIndex < minimumGroup || groupIndex > match.groupCount) {
+      i += 2;
+      continue;
+    }
+
+    final String groupValue = match.group(groupIndex) ?? "";
+    if (!_writeRegexpReplacementFromStage(
+      write,
+      groupValue,
+      match,
+      groupIndex + 1,
+    )) {
+      return false;
+    }
+    i += 2;
+    literalStart = i;
+  }
+
+  return write(template.substring(literalStart));
+}
+
+bool _isAsciiDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
+
+String _expandRegexpReplacement(String template, RegExpMatch match) {
+  final StringBuffer output = StringBuffer();
+  _writeRegexpReplacementFromStage(
+    (String value) {
+      output.write(value);
+      return true;
+    },
+    template,
+    match,
+    0,
+  );
+  return output.toString();
+}
+
+ReplaceAllResult _replaceAllSingleCodeUnit(
+  _ReplaceAllParams params,
+  Stopwatch stopwatch,
+) {
+  final String text = params.text;
+  final int target = params.findText.codeUnitAt(0);
+  int replacementCount = 0;
+  int timeoutCheckCountdown = 0;
+
+  for (int index = 0; index < text.length; index++) {
+    if (timeoutCheckCountdown-- <= 0) {
+      timeoutCheckCountdown = 8192;
+      if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+        return _replaceAllFailure(
+          ReplaceAllFailureReason.timeLimitExceeded,
+          replacementCount,
+        );
+      }
+    }
+    if (text.codeUnitAt(index) != target) {
+      continue;
+    }
+    if (replacementCount >= params.maxMatches) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.matchLimitExceeded,
+        replacementCount,
+      );
+    }
+    replacementCount++;
+  }
+
+  if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.timeLimitExceeded,
+      replacementCount,
+    );
+  }
+  if (replacementCount == 0) {
+    return const ReplaceAllResult.noMatches();
+  }
+
+  final int outputLength =
+      text.length +
+      replacementCount * (params.replaceText.length - params.findText.length);
+  if (outputLength > params.maxOutputCodeUnits) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.outputLimitExceeded,
+      replacementCount,
+    );
+  }
+  return ReplaceAllResult.success(
+    newText: text.replaceAll(params.findText, params.replaceText),
+    replacementCount: replacementCount,
+  );
+}
+
+ReplaceAllResult _replaceAllExactText(
+  _ReplaceAllParams params,
+  Stopwatch stopwatch,
+) {
+  final String text = params.text;
+  final String findText = params.findText;
+  final bool wholeWord = params.options.wholeWord;
+  if (!wholeWord && findText.length == 1) {
+    return _replaceAllSingleCodeUnit(params, stopwatch);
+  }
+  final _BoundedReplacementBuffer? output = wholeWord
+      ? _BoundedReplacementBuffer(params.maxOutputCodeUnits)
+      : null;
+
+  int replacementCount = 0;
+  int searchStart = 0;
+  int lastEnd = 0;
+  int timeoutCheckCountdown = 0;
+
+  while (searchStart <= text.length - findText.length) {
+    if (timeoutCheckCountdown-- <= 0) {
+      timeoutCheckCountdown = 1024;
+      if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+        return _replaceAllFailure(
+          ReplaceAllFailureReason.timeLimitExceeded,
+          replacementCount,
+        );
+      }
+    }
+
+    final int matchStart = text.indexOf(findText, searchStart);
+    if (matchStart < 0) {
+      break;
+    }
+    final int matchEnd = matchStart + findText.length;
+    final bool hasWordBefore =
+        wholeWord && matchStart > 0 && isWordChar(text[matchStart - 1]);
+    final bool hasWordAfter =
+        wholeWord && matchEnd < text.length && isWordChar(text[matchEnd]);
+
+    if (hasWordBefore || hasWordAfter) {
+      searchStart = matchStart + 1;
+      continue;
+    }
+
+    if (replacementCount >= params.maxMatches) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.matchLimitExceeded,
+        replacementCount,
+      );
+    }
+    if (output != null &&
+        (!output.writeRange(text, lastEnd, matchStart) ||
+            !output.write(params.replaceText))) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.outputLimitExceeded,
+        replacementCount,
+      );
+    }
+
+    replacementCount++;
+    lastEnd = matchEnd;
+    searchStart = matchEnd;
+  }
+
+  if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.timeLimitExceeded,
+      replacementCount,
+    );
+  }
+  if (replacementCount == 0) {
+    return const ReplaceAllResult.noMatches();
+  }
+
+  if (output == null) {
+    final int outputLength =
+        text.length +
+        replacementCount * (params.replaceText.length - findText.length);
+    if (outputLength > params.maxOutputCodeUnits) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.outputLimitExceeded,
+        replacementCount,
+      );
+    }
+    return ReplaceAllResult.success(
+      newText: text.replaceAll(findText, params.replaceText),
+      replacementCount: replacementCount,
+    );
+  }
+
+  if (!output.writeRange(text, lastEnd, text.length)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.outputLimitExceeded,
+      replacementCount,
+    );
+  }
+  return ReplaceAllResult.success(
+    newText: output.toString(),
+    replacementCount: replacementCount,
+  );
+}
+
+ReplaceAllResult _replaceAllPlainText(
+  _ReplaceAllParams params,
+  Stopwatch stopwatch,
+) {
+  final String text = params.text;
+  final String findText = params.findText;
+  final FindReplaceOptions options = params.options;
+  final _BoundedReplacementBuffer output = _BoundedReplacementBuffer(
+    params.maxOutputCodeUnits,
+  );
+
+  int replacementCount = 0;
+  int lastEnd = 0;
+  int i = 0;
+  int timeoutCheckCountdown = 0;
+
+  bool isIgnoredPatternCharacter(String character) {
+    return (options.ignorePunctuation && isPunctuation(character)) ||
+        (options.ignoreWhitespace && isWhitespace(character));
+  }
+
+  bool hasEffectivePatternCharacter = false;
+  for (int patternIndex = 0; patternIndex < findText.length; patternIndex++) {
+    if (!isIgnoredPatternCharacter(findText[patternIndex])) {
+      hasEffectivePatternCharacter = true;
+      break;
+    }
+  }
+  if (!hasEffectivePatternCharacter) {
+    return const ReplaceAllResult.noMatches();
+  }
+
+  while (i < text.length) {
+    if (timeoutCheckCountdown-- <= 0) {
+      timeoutCheckCountdown = 1024;
+      if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+        return _replaceAllFailure(
+          ReplaceAllFailureReason.timeLimitExceeded,
+          replacementCount,
+        );
+      }
+    }
+
+    int textIndex = i;
+    int patternIndex = 0;
+    int comparableCharactersMatched = 0;
+    final int matchStart = i;
+
+    while (patternIndex < findText.length && textIndex < text.length) {
+      if (timeoutCheckCountdown-- <= 0) {
+        timeoutCheckCountdown = 1024;
+        if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+          return _replaceAllFailure(
+            ReplaceAllFailureReason.timeLimitExceeded,
+            replacementCount,
+          );
+        }
+      }
+
+      final String textChar = text[textIndex];
+      final String patternChar = findText[patternIndex];
+
+      if (options.ignorePunctuation && isPunctuation(textChar)) {
+        textIndex++;
+        continue;
+      }
+      if (options.ignoreWhitespace && isWhitespace(textChar)) {
+        textIndex++;
+        continue;
+      }
+      if (options.ignorePunctuation && isPunctuation(patternChar)) {
+        patternIndex++;
+        continue;
+      }
+      if (options.ignoreWhitespace && isWhitespace(patternChar)) {
+        patternIndex++;
+        continue;
+      }
+      if (!charsMatch(textChar, patternChar, options)) {
+        break;
+      }
+
+      textIndex++;
+      patternIndex++;
+      comparableCharactersMatched++;
+    }
+
+    while (patternIndex < findText.length) {
+      if (timeoutCheckCountdown-- <= 0) {
+        timeoutCheckCountdown = 1024;
+        if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+          return _replaceAllFailure(
+            ReplaceAllFailureReason.timeLimitExceeded,
+            replacementCount,
+          );
+        }
+      }
+
+      final String patternChar = findText[patternIndex];
+      if (options.ignorePunctuation && isPunctuation(patternChar)) {
+        patternIndex++;
+      } else if (options.ignoreWhitespace && isWhitespace(patternChar)) {
+        patternIndex++;
+      } else {
+        break;
+      }
+    }
+
+    bool matched = patternIndex == findText.length && textIndex > matchStart;
+    if (matched && options.wholeWord) {
+      if (matchStart > 0 && isWordChar(text[matchStart - 1])) {
+        matched = false;
+      } else if (textIndex < text.length && isWordChar(text[textIndex])) {
+        matched = false;
+      }
+    }
+
+    if (!matched) {
+      // If only ignorable text was traversed before the first comparable
+      // character failed (or EOF), retrying every ignored offset would scan
+      // the same suffix and degrade to O(N²).
+      i = comparableCharactersMatched == 0 && textIndex > i
+          ? textIndex + (textIndex < text.length ? 1 : 0)
+          : i + 1;
+      continue;
+    }
+
+    if (replacementCount >= params.maxMatches) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.matchLimitExceeded,
+        replacementCount,
+      );
+    }
+    if (!output.writeRange(text, lastEnd, matchStart) ||
+        !output.write(params.replaceText)) {
+      return _replaceAllFailure(
+        ReplaceAllFailureReason.outputLimitExceeded,
+        replacementCount,
+      );
+    }
+
+    replacementCount++;
+    lastEnd = textIndex;
+    i = textIndex;
+  }
+
+  if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.timeLimitExceeded,
+      replacementCount,
+    );
+  }
+  if (replacementCount == 0) {
+    return const ReplaceAllResult.noMatches();
+  }
+  if (!output.writeRange(text, lastEnd, text.length)) {
+    return _replaceAllFailure(
+      ReplaceAllFailureReason.outputLimitExceeded,
+      replacementCount,
+    );
+  }
+  return ReplaceAllResult.success(
+    newText: output.toString(),
+    replacementCount: replacementCount,
+  );
+}
+
+ReplaceAllResult _replaceAllTask(_ReplaceAllParams params) {
+  if (params.text.isEmpty || params.findText.isEmpty) {
+    return const ReplaceAllResult.noMatches();
+  }
+  if (params.maxMatches <= 0) {
+    return const ReplaceAllResult.failure(
+      ReplaceAllFailureReason.matchLimitExceeded,
+    );
+  }
+  if (params.maxOutputCodeUnits < 0) {
+    return const ReplaceAllResult.failure(
+      ReplaceAllFailureReason.outputLimitExceeded,
+    );
+  }
+
+  final Stopwatch stopwatch = Stopwatch()..start();
+  if (_replaceAllTimedOut(stopwatch, params.maxElapsedMilliseconds)) {
+    return const ReplaceAllResult.failure(
+      ReplaceAllFailureReason.timeLimitExceeded,
+    );
+  }
+
+  if (params.options.useRegexp) {
+    return _replaceAllRegexp(params, stopwatch);
+  }
+  if (params.options.matchCase &&
+      params.options.matchWidth &&
+      !params.options.ignorePunctuation &&
+      !params.options.ignoreWhitespace) {
+    return _replaceAllExactText(params, stopwatch);
+  }
+  return _replaceAllPlainText(params, stopwatch);
+}
+
+Object? _replaceAllTaskBridge(Object? message) {
+  return _replaceAllTask(message! as _ReplaceAllParams);
+}
+
+FindReplaceOptions _snapshotFindReplaceOptions(FindReplaceOptions options) {
+  return FindReplaceOptions(
+    matchCase: options.matchCase,
+    wholeWord: options.wholeWord,
+    useRegexp: options.useRegexp,
+    matchWidth: options.matchWidth,
+    ignorePunctuation: options.ignorePunctuation,
+    ignoreWhitespace: options.ignoreWhitespace,
+  );
+}
+
+_ReplaceAllOperation _startReplaceAllTextOperation(
+  String text,
+  String findText,
+  String replaceText,
+  FindReplaceOptions options, {
+  required int maxMatches,
+  required int maxOutputCodeUnits,
+  required Duration maxDuration,
+}) {
+  final Duration hardTimeout = maxDuration.isNegative
+      ? Duration.zero
+      : maxDuration + const Duration(milliseconds: 500);
+  final CancellableComputeOperation<Object?> worker = startCancellableCompute(
+    _replaceAllTaskBridge,
+    _ReplaceAllParams(
+      text: text,
+      findText: findText,
+      replaceText: replaceText,
+      options: _snapshotFindReplaceOptions(options),
+      maxMatches: maxMatches,
+      maxOutputCodeUnits: maxOutputCodeUnits,
+      maxElapsedMilliseconds: maxDuration.inMilliseconds,
+    ),
+    timeout: hardTimeout,
+    debugLabel: "replace-all",
+  );
+  return _ReplaceAllOperation(worker);
+}
+
+/// Cancels an in-flight Replace All operation for [textController].
+///
+/// Native platforms terminate the owned isolate. On web, where Dart cannot
+/// preempt synchronous regular-expression execution, the result is invalidated
+/// and will never be applied to the editor.
+void cancelReplaceAll(HighlightTextEditingController textController) {
+  _replaceAllGenerations[textController] =
+      (_replaceAllGenerations[textController] ?? 0) + 1;
+  _replaceAllWorkers[textController]?.cancel();
+  _replaceAllWorkers[textController] = null;
+}
+
+/// Searches and replaces in one background worker.
+///
+/// The worker either uses the VM's bounded literal replacement path or streams
+/// matches into bounded chunks. It never creates a `TextSelection` or
+/// prefix-index list, and regular expressions are not scanned again on the UI
+/// isolate.
+Future<ReplaceAllResult> replaceAllTextAsync(
+  String text,
+  String findText,
+  String replaceText,
+  FindReplaceOptions options, {
+  int maxMatches = defaultReplaceAllMaxMatches,
+  int maxOutputCodeUnits = defaultReplaceAllMaxOutputCodeUnits,
+  Duration maxDuration = defaultReplaceAllMaxDuration,
+}) {
+  if (text.isEmpty || findText.isEmpty) {
+    return Future<ReplaceAllResult>.value(const ReplaceAllResult.noMatches());
+  }
+  return _startReplaceAllTextOperation(
+    text,
+    findText,
+    replaceText,
+    options,
+    maxMatches: maxMatches,
+    maxOutputCodeUnits: maxOutputCodeUnits,
+    maxDuration: maxDuration,
+  ).value;
+}
+
 // 用於 Isolate 的參數封裝
 class _FindParams {
   final String text;
@@ -550,6 +1327,121 @@ class _HighlightUpdate {
     }
     return _SelectionCoverageIndex._(matches, prefixMaxEnds);
   }
+}
+
+enum FindSearchLimitReason {
+  inputTooLarge,
+  regularExpressionTooLarge,
+  unsafeRegularExpression,
+  timeLimitExceeded,
+}
+
+/// The result of one immutable find request.
+///
+/// Call [isCurrent] before applying it. A newer query, option change, editor
+/// revision, or explicit cancellation invalidates the request.
+@immutable
+class FindSearchResult {
+  final HighlightTextEditingController _controller;
+  final int _generation;
+  final int _textRevision;
+  final String _text;
+  final String _query;
+  final FindReplaceOptions _options;
+  final int? _maxResults;
+  final _HighlightUpdate _update;
+  final FindSearchLimitReason? limitReason;
+
+  const FindSearchResult._({
+    required HighlightTextEditingController controller,
+    required int generation,
+    required int textRevision,
+    required String text,
+    required String query,
+    required FindReplaceOptions options,
+    required int? maxResults,
+    required _HighlightUpdate update,
+    this.limitReason,
+  }) : _controller = controller,
+       _generation = generation,
+       _textRevision = textRevision,
+       _text = text,
+       _query = query,
+       _options = options,
+       _maxResults = maxResults,
+       _update = update;
+
+  List<TextSelection> get matches => _update.matches;
+
+  bool isCurrent(
+    HighlightTextEditingController controller,
+    String query,
+    FindReplaceOptions options, {
+    int? maxResults,
+  }) {
+    return identical(controller, _controller) &&
+        _findGenerations[controller] == _generation &&
+        controller.textRevision == _textRevision &&
+        controller.text == _text &&
+        query == _query &&
+        maxResults == _maxResults &&
+        _sameFindReplaceOptions(options, _options);
+  }
+
+  void applyHighlights(
+    HighlightTextEditingController controller, {
+    required int currentIndex,
+  }) {
+    controller.updateSearchHighlights(
+      matches: _update.matches,
+      currentIndex: currentIndex,
+      precomputedIndex: _update.buildSearchIndex(),
+    );
+  }
+}
+
+bool _sameFindReplaceOptions(
+  FindReplaceOptions left,
+  FindReplaceOptions right,
+) {
+  return left.matchCase == right.matchCase &&
+      left.wholeWord == right.wholeWord &&
+      left.useRegexp == right.useRegexp &&
+      left.matchWidth == right.matchWidth &&
+      left.ignorePunctuation == right.ignorePunctuation &&
+      left.ignoreWhitespace == right.ignoreWhitespace;
+}
+
+Object? _findAllMatchesTaskBridge(Object? message) {
+  return _findAllMatchesTask(message! as _FindParams);
+}
+
+final RegExp _nestedRegexpQuantifier = RegExp(
+  r"\([^)]*(?:\*|\+|\{\d+(?:,\d*)?\})[^)]*\)\s*(?:\*|\+|\{\d+(?:,\d*)?\})",
+);
+
+FindSearchLimitReason? _validateFindRequest(
+  String text,
+  String findText,
+  FindReplaceOptions options, {
+  required int maxInputCodeUnits,
+  required int maxRegexpCodeUnits,
+}) {
+  if (!options.useRegexp) {
+    return null;
+  }
+  if (text.length > maxInputCodeUnits) {
+    return FindSearchLimitReason.inputTooLarge;
+  }
+  if (findText.length > maxRegexpCodeUnits) {
+    return FindSearchLimitReason.regularExpressionTooLarge;
+  }
+  // Dart's RegExp engine has no per-match deadline. Reject the most common
+  // catastrophic-backtracking shape before it reaches either native or web.
+  if (_nestedRegexpQuantifier.hasMatch(findText)) {
+    return FindSearchLimitReason.unsafeRegularExpression;
+  }
+  return null;
 }
 
 // Isolate 執行的任務函數：搜尋 + 預計算索引
@@ -598,26 +1490,32 @@ Future<void> performFind(
     return;
   }
 
-  _HighlightUpdate? highlightUpdate;
   final List<TextSelection> searchMatches;
+  FindSearchResult? searchResult;
   final bool canReuseCurrentMatches =
       currentMatches.isNotEmpty &&
       textController.hasSameSearchMatches(currentMatches);
 
   if (canReuseCurrentMatches) {
+    cancelFindAllMatches(textController);
     searchMatches = currentMatches;
   } else {
-    // 找出所有匹配項 (使用 compute，背景執行 + 預計算索引)
-    highlightUpdate = await findAllMatchesAsync(
-      text,
+    searchResult = await findAllMatchesLatest(
+      textController,
       findText,
       options,
       maxResults: HighlightTextEditingController.maxSearchResults,
     );
-    if (textController.text != text) {
+    if (searchResult == null ||
+        !searchResult.isCurrent(
+          textController,
+          findText,
+          options,
+          maxResults: HighlightTextEditingController.maxSearchResults,
+        )) {
       return;
     }
-    searchMatches = highlightUpdate.matches;
+    searchMatches = searchResult.matches;
   }
 
   if (searchMatches.isEmpty) {
@@ -666,11 +1564,7 @@ Future<void> performFind(
     textController.updateCurrentSearchMatchIndex(newMatchIndex);
   } else {
     // 更新高亮顯示（傳遞預編譯的索引以避免重新計算）
-    textController.updateSearchHighlights(
-      matches: searchMatches,
-      currentIndex: newMatchIndex,
-      precomputedIndex: highlightUpdate!.buildSearchIndex(),
-    );
+    searchResult!.applyHighlights(textController, currentIndex: newMatchIndex);
   }
 
   final List<TextSelection> visibleMatches = textController.searchMatches;
@@ -749,21 +1643,10 @@ Future<void> performReplace(
           final regexMatch = regex.firstMatch(matchText);
 
           if (regexMatch != null) {
-            actualReplaceText = replaceText;
-            // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
-            for (int i = 0; i <= regexMatch.groupCount; i++) {
-              final groupValue = regexMatch.group(i) ?? "";
-              // 支援 $0, $1, $2, ... 語法
-              actualReplaceText = actualReplaceText.replaceAll(
-                "\$$i",
-                groupValue,
-              );
-              // 支援 \0, \1, \2, ... 反向引用語法
-              actualReplaceText = actualReplaceText.replaceAll(
-                "\\$i",
-                groupValue,
-              );
-            }
+            actualReplaceText = _expandRegexpReplacement(
+              replaceText,
+              regexMatch,
+            );
           }
         } catch (e) {
           if (context.mounted) {
@@ -829,8 +1712,12 @@ Future<void> performReplaceAll(
   String replaceText,
   FindReplaceOptions options,
   Function(List<TextSelection> matches, int index) onStateUpdate,
-  Function(String newText) onTextUpdate,
-) async {
+  Function(String newText) onTextUpdate, {
+  int maxMatches = defaultReplaceAllMaxMatches,
+  int maxOutputCodeUnits = defaultReplaceAllMaxOutputCodeUnits,
+  Duration maxDuration = defaultReplaceAllMaxDuration,
+  int confirmationThreshold = defaultReplaceAllConfirmationThreshold,
+}) async {
   if (findText.isEmpty) {
     return;
   }
@@ -840,66 +1727,93 @@ Future<void> performReplaceAll(
     return;
   }
 
-  // 找出所有匹配項 (Async)
-  final highlightUpdate = await findAllMatchesAsync(text, findText, options);
-  if (textController.text != text) {
+  final int generation = (_replaceAllGenerations[textController] ?? 0) + 1;
+  _replaceAllWorkers[textController]?.cancel();
+  _replaceAllGenerations[textController] = generation;
+  final int textRevision = textController.textRevision;
+
+  final _ReplaceAllOperation operation = _startReplaceAllTextOperation(
+    text,
+    findText,
+    replaceText,
+    options,
+    maxMatches: maxMatches,
+    maxOutputCodeUnits: maxOutputCodeUnits,
+    maxDuration: maxDuration,
+  );
+  _replaceAllWorkers[textController] = operation._worker;
+
+  late final ReplaceAllResult result;
+  try {
+    result = await operation.value;
+  } on CancellableComputeCancelledException {
+    return;
+  } catch (error) {
+    if (context.mounted &&
+        _replaceAllGenerations[textController] == generation &&
+        textController.textRevision == textRevision) {
+      AppFeedback.error(context, "全部取代失敗：$error");
+    }
+    return;
+  } finally {
+    if (identical(_replaceAllWorkers[textController], operation._worker)) {
+      _replaceAllWorkers[textController] = null;
+    }
+  }
+
+  // A second Replace All request, or any intervening edit (including A -> B
+  // -> A), invalidates this result before it can touch the controller.
+  if (!context.mounted ||
+      _replaceAllGenerations[textController] != generation ||
+      textController.textRevision != textRevision ||
+      textController.text != text) {
     return;
   }
-  final List<TextSelection> matches = highlightUpdate.matches;
 
-  if (matches.isEmpty) {
+  if (!result.succeeded) {
+    switch (result.failureReason!) {
+      case ReplaceAllFailureReason.invalidRegularExpression:
+        final String details = result.failureDetails ?? "格式無效";
+        AppFeedback.error(context, "正則表達式錯誤：$details");
+        break;
+      case ReplaceAllFailureReason.matchLimitExceeded:
+        AppFeedback.error(context, "全部取代已取消：匹配數超過 $maxMatches 筆，請縮小搜尋範圍。");
+        break;
+      case ReplaceAllFailureReason.outputLimitExceeded:
+        AppFeedback.error(context, "全部取代已取消：結果超過允許的文字大小，請分段處理。");
+        break;
+      case ReplaceAllFailureReason.timeLimitExceeded:
+        AppFeedback.error(context, "全部取代已取消：運算時間超過限制，請縮小搜尋範圍。");
+        break;
+    }
     return;
   }
 
-  String newText = text;
+  if (!result.hasReplacements) {
+    return;
+  }
+  final String newText = result.newText!;
 
-  // 如果是正則表達式模式，使用正則表達式替換來支援捕獲組
-  if (options.useRegexp) {
-    try {
-      // 正則表達式模式固定啟用大小寫相符
-      final regex = RegExp(findText, caseSensitive: true);
-      // replaceAllMapped 在 Dart 內部已經優化，這裡直接使用
-      newText = newText.replaceAllMapped(regex, (match) {
-        String replacement = replaceText;
-        // 替換捕獲組引用 $1, $2, ... 和 \1, \2, ...
-        for (int i = 0; i <= match.groupCount; i++) {
-          final groupValue = match.group(i) ?? "";
-          // 支援 $0, $1, $2, ... 語法
-          replacement = replacement.replaceAll("\$$i", groupValue);
-          // 支援 \0, \1, \2, ... 反向引用語法
-          replacement = replacement.replaceAll("\\$i", groupValue);
-        }
-        return replacement;
-      });
-    } catch (e) {
-      if (context.mounted) {
-        AppFeedback.error(context, "正則表達式錯誤: $e");
-      }
+  if (confirmationThreshold > 0 &&
+      result.replacementCount >= confirmationThreshold) {
+    final double approximateMiB = (newText.length * 2) / (1024 * 1024);
+    final bool confirmed = await AppDialog.confirm(
+      context: context,
+      title: "確認大量取代",
+      message:
+          "將取代 ${result.replacementCount} 處，"
+          "結果約 ${approximateMiB.toStringAsFixed(1)} MiB。確定繼續嗎？",
+      confirmLabel: "繼續取代",
+      barrierDismissible: false,
+      icon: Icons.warning_amber_rounded,
+    );
+    if (!confirmed ||
+        !context.mounted ||
+        _replaceAllGenerations[textController] != generation ||
+        textController.textRevision != textRevision ||
+        textController.text != text) {
       return;
     }
-  } else {
-    // 非正則表達式模式，使用 StringBuffer 優化大量取代的效能
-    // matches 必須是按順序排列的 (findAllMatchesSync 返回順序)
-    StringBuffer buffer = StringBuffer();
-    int lastEnd = 0;
-
-    for (final match in matches) {
-      // 添加匹配項之前的文字
-      if (match.start > lastEnd) {
-        buffer.write(text.substring(lastEnd, match.start));
-      }
-      // 添加取代文字
-      buffer.write(replaceText);
-      // 更新最後處理位置
-      lastEnd = match.end;
-    }
-
-    // 添加最後剩餘的文字
-    if (lastEnd < text.length) {
-      buffer.write(text.substring(lastEnd));
-    }
-
-    newText = buffer.toString();
   }
 
   textController.text = newText;
@@ -912,21 +1826,112 @@ Future<void> performReplaceAll(
 
 // ==================== 搜尋功能函數 ====================
 
-/// 找出所有匹配項 (Async) + 預編譯索引
-Future<_HighlightUpdate> findAllMatchesAsync(
-  String text,
+/// Runs one latest-only search for [textController].
+///
+/// Starting another search cancels the owned native isolate and invalidates
+/// the old result on every platform. The immutable request includes the editor
+/// revision, query, options, and result cap.
+Future<FindSearchResult?> findAllMatchesLatest(
+  HighlightTextEditingController textController,
   String findText,
   FindReplaceOptions options, {
   int? maxResults,
+  Duration maxDuration = defaultFindMaxDuration,
+  int maxInputCodeUnits = defaultFindMaxInputCodeUnits,
+  int maxRegexpCodeUnits = defaultFindMaxRegexpCodeUnits,
 }) async {
-  if (text.isEmpty || findText.isEmpty) {
-    return _HighlightUpdate(matches: [], prefixMaxEnds: []);
-  }
-  // 使用 compute 在背景 isolate 執行計算，避免阻塞 UI
-  return await compute(
-    _findAllMatchesTask,
-    _FindParams(text, findText, options, maxResults: maxResults),
+  final int generation = (_findGenerations[textController] ?? 0) + 1;
+  _findWorkers[textController]?.cancel();
+  _findGenerations[textController] = generation;
+
+  final String text = textController.text;
+  final int textRevision = textController.textRevision;
+  final FindReplaceOptions optionSnapshot = _snapshotFindReplaceOptions(
+    options,
   );
+  final emptyUpdate = _HighlightUpdate(matches: [], prefixMaxEnds: []);
+
+  FindSearchResult buildResult(
+    _HighlightUpdate update, {
+    FindSearchLimitReason? limitReason,
+  }) {
+    return FindSearchResult._(
+      controller: textController,
+      generation: generation,
+      textRevision: textRevision,
+      text: text,
+      query: findText,
+      options: optionSnapshot,
+      maxResults: maxResults,
+      update: update,
+      limitReason: limitReason,
+    );
+  }
+
+  if (text.isEmpty || findText.isEmpty) {
+    _findWorkers[textController] = null;
+    return buildResult(emptyUpdate);
+  }
+
+  final FindSearchLimitReason? validationFailure = _validateFindRequest(
+    text,
+    findText,
+    optionSnapshot,
+    maxInputCodeUnits:
+        kIsWeb && maxInputCodeUnits > _webFindMaxRegexpInputCodeUnits
+        ? _webFindMaxRegexpInputCodeUnits
+        : maxInputCodeUnits,
+    maxRegexpCodeUnits: maxRegexpCodeUnits,
+  );
+  if (validationFailure != null) {
+    _findWorkers[textController] = null;
+    return buildResult(emptyUpdate, limitReason: validationFailure);
+  }
+
+  final Duration hardTimeout = maxDuration.isNegative
+      ? Duration.zero
+      : maxDuration + const Duration(milliseconds: 250);
+  final CancellableComputeOperation<Object?> worker = startCancellableCompute(
+    _findAllMatchesTaskBridge,
+    _FindParams(text, findText, optionSnapshot, maxResults: maxResults),
+    timeout: hardTimeout,
+    debugLabel: "find-latest",
+  );
+  _findWorkers[textController] = worker;
+
+  try {
+    final Object? value = await worker.value;
+    if (_findGenerations[textController] != generation ||
+        textController.textRevision != textRevision ||
+        textController.text != text) {
+      return null;
+    }
+    return buildResult(value! as _HighlightUpdate);
+  } on CancellableComputeCancelledException {
+    return null;
+  } on TimeoutException {
+    if (_findGenerations[textController] != generation ||
+        textController.textRevision != textRevision ||
+        textController.text != text) {
+      return null;
+    }
+    return buildResult(
+      emptyUpdate,
+      limitReason: FindSearchLimitReason.timeLimitExceeded,
+    );
+  } finally {
+    if (identical(_findWorkers[textController], worker)) {
+      _findWorkers[textController] = null;
+    }
+  }
+}
+
+/// Cancels and invalidates any in-flight search for [textController].
+void cancelFindAllMatches(HighlightTextEditingController textController) {
+  _findGenerations[textController] =
+      (_findGenerations[textController] ?? 0) + 1;
+  _findWorkers[textController]?.cancel();
+  _findWorkers[textController] = null;
 }
 
 /// 找出所有匹配項 (Sync)
@@ -1089,6 +2094,10 @@ bool isWhitespace(String char) {
 
 /// 檢查兩個字元是否匹配（考慮搜尋選項）
 bool charsMatch(String char1, String char2, FindReplaceOptions options) {
+  if (options.matchCase && options.matchWidth) {
+    return char1 == char2;
+  }
+
   final String key1 =
       '${char1}_${options.matchCase ? 1 : 0}_${options.matchWidth ? 1 : 0}';
   final String key2 =
@@ -1543,8 +2552,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
 
     // Debounce notifying the host to avoid excessive searches while typing
     _debounceTimer?.cancel();
+    final optionSnapshot = _snapshotFindReplaceOptions(widget.options);
     _debounceTimer = Timer(const Duration(milliseconds: 100), () {
-      widget.onSearchChanged?.call(findText, widget.options);
+      widget.onSearchChanged?.call(findText, optionSnapshot);
     });
 
     // 強制刷新 UI (options/state changes should be immediate)
@@ -1555,7 +2565,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
 
   void _notifySearchChanged() {
     // 通知搜尋選項變化
-    widget.onSearchChanged?.call(widget.findController.text, widget.options);
+    widget.onSearchChanged?.call(
+      widget.findController.text,
+      _snapshotFindReplaceOptions(widget.options),
+    );
   }
 
   // 檢查文字中是否包含全形字元
@@ -2046,8 +3059,9 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
 
     // Debounce notifying the host to avoid excessive searches while typing
     _debounceTimer?.cancel();
+    final optionSnapshot = _snapshotFindReplaceOptions(widget.options);
     _debounceTimer = Timer(const Duration(milliseconds: 100), () {
-      widget.onSearchChanged?.call(findText, widget.options);
+      widget.onSearchChanged?.call(findText, optionSnapshot);
     });
 
     // 強制刷新 UI (options/state changes should be immediate)
@@ -2058,7 +3072,10 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
 
   void _notifySearchChanged() {
     // 通知搜尋選項變化
-    widget.onSearchChanged?.call(widget.findController.text, widget.options);
+    widget.onSearchChanged?.call(
+      widget.findController.text,
+      _snapshotFindReplaceOptions(widget.options),
+    );
   }
 
   // 檢查文字中是否包含全形字元

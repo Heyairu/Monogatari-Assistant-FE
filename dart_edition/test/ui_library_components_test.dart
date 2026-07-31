@@ -118,12 +118,37 @@ void main() {
             child: AppTextField(
               controller: controller,
               labelText: "Name",
+              decoration: const InputDecoration(
+                border: UnderlineInputBorder(),
+                filled: false,
+                contentPadding: EdgeInsets.zero,
+              ),
               validator: (value) =>
                   value == null || value.isEmpty ? "Name is required" : null,
             ),
           ),
         ),
       );
+
+      final inputDecoratorFinder = find.descendant(
+        of: find.byType(TextFormField),
+        matching: find.byType(InputDecorator),
+      );
+      final inputDecorator = tester.widget<InputDecorator>(
+        inputDecoratorFinder,
+      );
+      final fieldContext = tester.element(inputDecoratorFinder);
+      expect(inputDecorator.decoration.filled, isTrue);
+      expect(
+        inputDecorator.decoration.fillColor,
+        Theme.of(fieldContext).colorScheme.surfaceContainerLowest,
+      );
+      expect(
+        inputDecorator.decoration.contentPadding,
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      );
+      final border = inputDecorator.decoration.border as OutlineInputBorder;
+      expect(border.borderRadius, BorderRadius.circular(12));
 
       expect(formKey.currentState!.validate(), isFalse);
       await tester.pump();
@@ -132,6 +157,45 @@ void main() {
       await tester.enterText(find.byType(TextFormField), "Alice");
       expect(formKey.currentState!.validate(), isTrue);
       expect(controller.text, "Alice");
+    });
+
+    testWidgets("AppDropdownField matches AppTextField decoration", (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _testApp(
+          Column(
+            children: [
+              const AppTextField(labelText: "Text"),
+              AppDropdownField<String>(
+                value: "one",
+                labelText: "Dropdown",
+                options: const [
+                  DropdownOption(value: "one", label: "One"),
+                  DropdownOption(value: "two", label: "Two"),
+                ],
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final decorations = tester
+          .widgetList<InputDecorator>(find.byType(InputDecorator))
+          .map((widget) => widget.decoration)
+          .toList();
+      expect(decorations, hasLength(2));
+
+      final textDecoration = decorations.first;
+      final dropdownDecoration = decorations.last;
+      expect(dropdownDecoration.filled, textDecoration.filled);
+      expect(dropdownDecoration.fillColor, textDecoration.fillColor);
+      expect(dropdownDecoration.contentPadding, textDecoration.contentPadding);
+      expect(
+        (dropdownDecoration.border as OutlineInputBorder).borderRadius,
+        (textDecoration.border as OutlineInputBorder).borderRadius,
+      );
     });
 
     testWidgets("ItemActionBar invokes edit and delete callbacks", (

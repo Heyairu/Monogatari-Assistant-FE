@@ -144,6 +144,10 @@ class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
       (current) => current.withRecalculatedNowWords(contentText, mode: mode),
     );
   }
+
+  void setNowWords(int count) {
+    updateBaseInfoData((current) => current.copyWith(nowWords: count));
+  }
 }
 
 final baseInfoDataProvider =
@@ -504,10 +508,6 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     return snapshotWorldSettingsData(source);
   }
 
-  List<LocationData> _copyLocations(List<LocationData> source) {
-    return source.map((location) => location.deepCopy()).toList();
-  }
-
   ({List<LocationData> nodes, bool changed}) _updateLocationByIdRecursive(
     String id,
     List<LocationData> nodes,
@@ -679,11 +679,7 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     String id,
     LocationData Function(LocationData current) update,
   ) {
-    final result = _updateLocationByIdRecursive(
-      id,
-      _copyLocations(state),
-      update,
-    );
+    final result = _updateLocationByIdRecursive(id, state, update);
     if (!result.changed) {
       return false;
     }
@@ -698,12 +694,12 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
     }
 
     if (parentId == null) {
-      final next = [..._copyLocations(state), LocationData(localName: trimmed)];
+      final next = [...state, LocationData(localName: trimmed)];
       setWorldSettingsData(next);
       return true;
     }
 
-    final result = _addChildRecursive(parentId, trimmed, _copyLocations(state));
+    final result = _addChildRecursive(parentId, trimmed, state);
 
     if (!result.changed) {
       return false;
@@ -714,7 +710,7 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
   }
 
   bool removeLocationById(String id) {
-    final result = _removeNodeRecursive(id, _copyLocations(state));
+    final result = _removeNodeRecursive(id, state);
     if (!result.removed) {
       return false;
     }
@@ -732,7 +728,7 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
       return false;
     }
 
-    final next = _copyLocations(state);
+    final next = state;
     final sourceNode = _findLocationByIdRecursive(sourceId, next);
     if (sourceNode == null) {
       return false;
@@ -808,9 +804,9 @@ class CharacterDataNotifier
       return false;
     }
 
-    final next = character_model.copyCharacterDataMap(state);
+    final next = Map<String, character_model.CharacterEntryData>.of(state);
     next[normalizedName] = entry.deepCopy();
-    setCharacterData(next);
+    state = Map.unmodifiable(next);
     return true;
   }
 
@@ -836,9 +832,9 @@ class CharacterDataNotifier
       return false;
     }
 
-    final next = character_model.copyCharacterDataMap(state);
+    final next = Map<String, character_model.CharacterEntryData>.of(state);
     next[normalizedName] = updated.deepCopy();
-    setCharacterData(next);
+    state = Map.unmodifiable(next);
     return true;
   }
 
@@ -848,9 +844,9 @@ class CharacterDataNotifier
       return false;
     }
 
-    final next = character_model.copyCharacterDataMap(state)
+    final next = Map<String, character_model.CharacterEntryData>.of(state)
       ..remove(normalizedName);
-    setCharacterData(next);
+    state = Map.unmodifiable(next);
     return true;
   }
 
@@ -872,10 +868,10 @@ class CharacterDataNotifier
       return false;
     }
 
-    final next = character_model.copyCharacterDataMap(state)
+    final next = Map<String, character_model.CharacterEntryData>.of(state)
       ..remove(normalizedOldName)
       ..[normalizedNewName] = entry.deepCopy();
-    setCharacterData(next);
+    state = Map.unmodifiable(next);
     return true;
   }
 }
@@ -1143,8 +1139,10 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
   }
 
   void _setIfChanged(GlossaryStateData value, {required bool schedulePersist}) {
-    final snapshot = _createSnapshot(value);
-    state = snapshot;
+    state = GlossaryStateData(
+      categoryTree: List.unmodifiable(value.categoryTree),
+      entryIndex: Map.unmodifiable(value.entryIndex),
+    );
     if (schedulePersist) {
       _schedulePersist();
     }
@@ -1325,7 +1323,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
     }
 
     final HashMap<String, glossary_model.GlossaryEntry> nextEntryIndex =
-        _copyEntryIndex(state.entryIndex);
+        HashMap<String, glossary_model.GlossaryEntry>.of(state.entryIndex);
     final bool replaced = _replaceEntryInIndex(
       entryId: entryId,
       entryIndex: nextEntryIndex,
@@ -1337,7 +1335,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
 
     _setIfChanged(
       GlossaryStateData(
-        categoryTree: _copyCategoryTree(state.categoryTree),
+        categoryTree: state.categoryTree,
         entryIndex: nextEntryIndex,
       ),
       schedulePersist: true,
@@ -1356,8 +1354,8 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
 
   void _schedulePersist() {
     _persistDebounce?.cancel();
-    final GlossaryStateData snapshot = _createSnapshot(state);
     _persistDebounce = Timer(_persistDebounceDuration, () {
+      final GlossaryStateData snapshot = _createSnapshot(state);
       unawaited(_persistGlossaryNow(snapshot));
     });
   }
@@ -1392,7 +1390,7 @@ class GlossaryStateNotifier extends Notifier<GlossaryStateData> {
   }
 
   void setGlossaryState(GlossaryStateData value, {bool persist = true}) {
-    _setIfChanged(value, schedulePersist: persist);
+    _setIfChanged(_createSnapshot(value), schedulePersist: persist);
   }
 
   void hydrateFromStorage(GlossaryStateData value) {

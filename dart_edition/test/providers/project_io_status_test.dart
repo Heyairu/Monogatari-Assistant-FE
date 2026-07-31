@@ -95,64 +95,72 @@ void main() {
     expect(container.read(editorCoordinatorProvider).isLoading, false);
   });
 
-  test('saveProjectAutoBackup skips write when content matches last backup', () async {
-    final repository = _BlockingFileRepository();
-    final container = ProviderContainer(
-      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
-    );
-    addTearDown(container.dispose);
+  test(
+    'saveProjectAutoBackup skips write when content matches last backup',
+    () async {
+      final repository = _BlockingFileRepository();
+      final container = ProviderContainer(
+        overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(container.dispose);
 
-    final result = await container
-        .read(projectIoControllerProvider.notifier)
-        .saveProjectAutoBackup(
-          currentProject: ProjectFile(
-            fileName: 'test.mnproj',
-            filePath: null,
-            content: '',
-          ),
-          currentData: ProjectData.empty(),
-          lastAutoBackupContent: repository.generatedXml,
-        );
+      final result = await container
+          .read(projectIoControllerProvider.notifier)
+          .saveProjectAutoBackup(
+            currentProject: ProjectFile(
+              fileName: 'test.mnproj',
+              filePath: null,
+              content: '',
+            ),
+            currentData: ProjectData.empty(),
+            lastAutoBackupContent: repository.generatedXml,
+            maxTotalBytes: 512 * 1024 * 1024,
+          );
 
-    expect(result.wasWritten, false);
-    expect(result.path, isNull);
-    expect(result.content, repository.generatedXml);
-    expect(repository.autoBackupWriteCount, 0);
-    expect(repository.lastGenerateProjectXmlUpdateLatestSave, false);
-    expect(
-      container.read(projectIoControllerProvider).valueOrNull?.isBusy,
-      false,
-    );
-  });
+      expect(result.wasWritten, false);
+      expect(result.path, isNull);
+      expect(result.content, repository.generatedXml);
+      expect(repository.autoBackupWriteCount, 0);
+      expect(repository.lastGenerateProjectXmlUpdateLatestSave, true);
+      expect(
+        container.read(projectIoControllerProvider).valueOrNull?.isBusy,
+        false,
+      );
+    },
+  );
 
-  test('saveProjectAutoBackup writes when content differs from last backup', () async {
-    final repository = _BlockingFileRepository()
-      ..generatedXml = '<Project>changed</Project>';
-    final container = ProviderContainer(
-      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
-    );
-    addTearDown(container.dispose);
+  test(
+    'saveProjectAutoBackup writes when content differs from last backup',
+    () async {
+      final repository = _BlockingFileRepository()
+        ..generatedXml = '<Project>changed</Project>';
+      final container = ProviderContainer(
+        overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(container.dispose);
 
-    final result = await container
-        .read(projectIoControllerProvider.notifier)
-        .saveProjectAutoBackup(
-          currentProject: ProjectFile(
-            fileName: 'test.mnproj',
-            filePath: null,
-            content: '',
-          ),
-          currentData: ProjectData.empty(),
-          lastAutoBackupContent: '<Project>previous</Project>',
-        );
+      final result = await container
+          .read(projectIoControllerProvider.notifier)
+          .saveProjectAutoBackup(
+            currentProject: ProjectFile(
+              fileName: 'test.mnproj',
+              filePath: null,
+              content: '',
+            ),
+            currentData: ProjectData.empty(),
+            lastAutoBackupContent: '<Project>previous</Project>',
+            maxTotalBytes: 512 * 1024 * 1024,
+          );
 
-    expect(result.wasWritten, true);
-    expect(result.path, 'AutoBackup/test.mnproj');
-    expect(result.content, repository.generatedXml);
-    expect(repository.autoBackupWriteCount, 1);
-    expect(repository.lastAutoBackupProjectName, 'test');
-    expect(repository.lastAutoBackupContent, repository.generatedXml);
-    expect(repository.lastGenerateProjectXmlUpdateLatestSave, false);
-  });
+      expect(result.wasWritten, true);
+      expect(result.path, 'AutoBackup/test.mnproj');
+      expect(result.content, repository.generatedXml);
+      expect(repository.autoBackupWriteCount, 1);
+      expect(repository.lastAutoBackupProjectName, 'test');
+      expect(repository.lastAutoBackupContent, repository.generatedXml);
+      expect(repository.lastGenerateProjectXmlUpdateLatestSave, true);
+    },
+  );
 }
 
 class _BlockingFileRepository implements FileRepository {
@@ -209,6 +217,7 @@ class _BlockingFileRepository implements FileRepository {
   Future<String> saveProjectAutoBackup({
     required String projectName,
     required String content,
+    required int maxTotalBytes,
   }) {
     autoBackupWriteCount += 1;
     lastAutoBackupProjectName = projectName;
@@ -295,6 +304,13 @@ class _BlockingFileRepository implements FileRepository {
   }) {
     lastGenerateProjectXmlUpdateLatestSave = updateLatestSave;
     return Future.value(generatedXml);
+  }
+
+  @override
+  Future<AutoBackupCleanupResult> clearAutoBackups() {
+    return Future.value(
+      const AutoBackupCleanupResult(deletedFiles: 0, freedBytes: 0),
+    );
   }
 
   @override

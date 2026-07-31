@@ -31,7 +31,8 @@ class SharedPreferencesThemeRepository implements ThemeRepository {
     final savedThemeIndex = prefs.getInt(_themePreferenceKey);
     final savedColorValue = prefs.getInt(_colorPreferenceKey);
 
-    final mode = savedThemeIndex != null &&
+    final mode =
+        savedThemeIndex != null &&
             savedThemeIndex >= 0 &&
             savedThemeIndex < AppThemeMode.values.length
         ? AppThemeMode.values[savedThemeIndex]

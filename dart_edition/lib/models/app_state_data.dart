@@ -24,6 +24,7 @@ class AppSettingsStateData with _$AppSettingsStateData {
     @Default(5) int autoSaveIntervalMinutes,
     @Default(false) bool autoBackupEnabled,
     @Default(5) int autoBackupIntervalMinutes,
+    @Default(512) int autoBackupMaxSizeMb,
     @Default(<RecentProjectEntry>[]) List<RecentProjectEntry> recentProjects,
   }) = _AppSettingsStateData;
 }

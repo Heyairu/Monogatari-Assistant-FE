@@ -16,6 +16,8 @@ import "package:flutter/material.dart";
 import "package:flutter/scheduler.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
+import "../ui_library/forms.dart";
+
 export "../ui_library/collections.dart";
 export "../ui_library/dialogs.dart";
 export "../ui_library/feedback.dart";
@@ -597,14 +599,10 @@ class _AddItemInputState extends State<AddItemInput> {
     return Row(
       children: [
         Expanded(
-          child: TextField(
+          child: AppTextField(
             controller: _controller,
             enabled: widget.enabled,
-            decoration: InputDecoration(
-              hintText: widget.enabled ? "新增${widget.title}" : widget.title,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
+            hintText: widget.enabled ? "新增${widget.title}" : widget.title,
             onSubmitted: (value) {
               if (widget.enabled &&
                   (widget.allowEmpty || value.trim().isNotEmpty)) {
@@ -640,11 +638,13 @@ class DropdownOption<T> {
   final T value;
   final String label;
   final bool enabled;
+  final Widget? child;
 
   const DropdownOption({
     required this.value,
     required this.label,
     this.enabled = true,
+    this.child,
   });
 }
 
@@ -655,10 +655,8 @@ class AppDropdownField<T> extends StatelessWidget {
   final String? labelText;
   final String? hintText;
   final bool isExpanded;
-  final bool isDense;
   final double menuMaxHeight;
   final TextStyle? textStyle;
-  final EdgeInsetsGeometry? contentPadding;
 
   const AppDropdownField({
     super.key,
@@ -668,10 +666,8 @@ class AppDropdownField<T> extends StatelessWidget {
     this.labelText,
     this.hintText,
     this.isExpanded = true,
-    this.isDense = true,
     this.menuMaxHeight = 320,
     this.textStyle,
-    this.contentPadding,
   });
 
   TextStyle _normalizeStyle(BuildContext context) {
@@ -692,26 +688,25 @@ class AppDropdownField<T> extends StatelessWidget {
       key: ValueKey(value),
       initialValue: value,
       isExpanded: isExpanded,
-      isDense: isDense,
+      isDense: true,
       menuMaxHeight: menuMaxHeight,
       style: effectiveStyle,
       iconSize: 18,
-      decoration: InputDecoration(
-        labelText: labelText,
-        hintText: hintText,
-        border: const OutlineInputBorder(),
-        isDense: isDense,
-        contentPadding: contentPadding,
+      decoration: appFieldDecoration(
+        context,
+        decoration: InputDecoration(labelText: labelText, hintText: hintText),
       ),
       items: options.map((option) {
         return DropdownMenuItem<T>(
           value: option.value,
           enabled: option.enabled,
-          child: Text(
-            option.label,
-            overflow: TextOverflow.ellipsis,
-            style: effectiveStyle,
-          ),
+          child:
+              option.child ??
+              Text(
+                option.label,
+                overflow: TextOverflow.ellipsis,
+                style: effectiveStyle,
+              ),
         );
       }).toList(),
       onChanged: onChanged,

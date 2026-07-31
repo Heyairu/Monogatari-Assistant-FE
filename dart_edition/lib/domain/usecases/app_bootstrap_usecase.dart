@@ -5,10 +5,7 @@ class AppBootstrapSnapshot {
   final ThemeSettingsSnapshot theme;
   final SettingsSnapshot settings;
 
-  const AppBootstrapSnapshot({
-    required this.theme,
-    required this.settings,
-  });
+  const AppBootstrapSnapshot({required this.theme, required this.settings});
 }
 
 class AppBootstrapUseCase {

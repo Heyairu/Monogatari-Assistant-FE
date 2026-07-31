@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.StatFs
 import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -155,6 +156,42 @@ class MainActivity : FlutterActivity() {
         return fileUri.toString()
     }
 
+    private fun listAutoBackupFiles(): List<Map<String, Any>> {
+        val treeUriString = selectedBackupTreeUri() ?: return emptyList()
+        val treeUri = Uri.parse(treeUriString)
+        val directoryUri = ensureAutoBackupDirectoryUri(treeUri)
+        val directoryId = DocumentsContract.getDocumentId(directoryUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, directoryId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        val files = mutableListOf<Map<String, Any>>()
+        contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(mimeIndex) == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                val documentId = cursor.getString(idIndex)
+                files.add(
+                    mapOf(
+                        "name" to (cursor.getString(nameIndex) ?: ""),
+                        "uri" to DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId).toString(),
+                        "size" to (if (cursor.isNull(sizeIndex)) 0L else cursor.getLong(sizeIndex)),
+                        "modified" to (if (cursor.isNull(modifiedIndex)) 0L else cursor.getLong(modifiedIndex))
+                    )
+                )
+            }
+        }
+        return files
+    }
+
     private fun openSelectedAutoBackupDirectory() {
         val backupDirectoryUri = selectedAutoBackupDirectoryUri()
             ?: throw IllegalStateException("AutoBackup directory is not selected")
@@ -288,6 +325,32 @@ class MainActivity : FlutterActivity() {
                         result.error("NO_BACKUP_DIRECTORY", e.message, null)
                     } catch (e: Exception) {
                         result.error("WRITE_BACKUP_ERROR", "Failed to write backup file: ${e.message}", null)
+                    }
+                }
+                "listAutoBackupFiles" -> {
+                    try {
+                        result.success(listAutoBackupFiles())
+                    } catch (e: Exception) {
+                        result.error("LIST_BACKUP_ERROR", "Failed to list backup files: ${e.message}", null)
+                    }
+                }
+                "deleteAutoBackupFile" -> {
+                    val uriString = call.argument<String>("uri")
+                    if (uriString.isNullOrBlank()) {
+                        result.error("INVALID_ARGS", "Backup URI cannot be blank", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        result.success(DocumentsContract.deleteDocument(contentResolver, Uri.parse(uriString)))
+                    } catch (e: Exception) {
+                        result.error("DELETE_BACKUP_ERROR", "Failed to delete backup: ${e.message}", null)
+                    }
+                }
+                "getAvailableBackupBytes" -> {
+                    try {
+                        result.success(StatFs(Environment.getExternalStorageDirectory().path).availableBytes)
+                    } catch (e: Exception) {
+                        result.success(null)
                     }
                 }
                 else -> result.notImplemented()

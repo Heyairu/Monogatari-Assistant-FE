@@ -22,20 +22,25 @@ class _Violation {
 void main() {
   final Directory libDir = Directory('lib');
   if (!libDir.existsSync()) {
-    stderr.writeln('Cannot find lib/ directory from current working directory.');
+    stderr.writeln(
+      'Cannot find lib/ directory from current working directory.',
+    );
     exitCode = 2;
     return;
   }
 
-  final List<FileSystemEntity> entities =
-      libDir.listSync(recursive: true, followLinks: false);
+  final List<FileSystemEntity> entities = libDir.listSync(
+    recursive: true,
+    followLinks: false,
+  );
 
-  final List<File> dartFiles = entities
-      .whereType<File>()
-      .where((file) => file.path.endsWith('.dart'))
-      .where((file) => !file.path.endsWith('.g.dart'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final List<File> dartFiles =
+      entities
+          .whereType<File>()
+          .where((file) => file.path.endsWith('.dart'))
+          .where((file) => !file.path.endsWith('.g.dart'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
 
   final List<_Violation> violations = <_Violation>[];
 
@@ -116,38 +121,32 @@ List<_Violation> _findViolationsInBlock({
   required int blockStartLine,
 }) {
   final List<_Violation> violations = <_Violation>[];
-  final List<_StatementSegment> statements = _splitTopLevelStatements(blockBody);
+  final List<_StatementSegment> statements = _splitTopLevelStatements(
+    blockBody,
+  );
 
   for (final _StatementSegment segment in statements) {
     final String statement = segment.text.trim();
     if (statement.isEmpty) {
       continue;
     }
-    if (!statement.contains('=')) {
-      continue;
-    }
-
-    final Iterable<RegExpMatch> providerReads = RegExp(
-      r'ref\.(read|watch)\s*\(([^)]*)\)',
+    // Only reject a direct top-level assignment such as
+    // `_draft = ref.read(provider)`. Provider reads inside a callback passed to
+    // a listener/debouncer are not initState assignments and must not make the
+    // entire outer statement a false positive.
+    final RegExpMatch? directAssignment = RegExp(
+      r'^\s*(?:(?:late\s+)?(?:final|var|[A-Za-z_][\w<>,? ]*)\s+)?(?:this\.)?[A-Za-z_]\w*\s*=\s*ref\.(read|watch)\s*\(([^)]*)\)',
       multiLine: true,
       dotAll: true,
-    ).allMatches(statement);
-
-    if (providerReads.isEmpty) {
+    ).firstMatch(statement);
+    if (directAssignment == null) {
       continue;
     }
 
-    bool hasDisallowedRead = false;
-    for (final RegExpMatch match in providerReads) {
-      final String argument = (match.group(2) ?? '').replaceAll('\n', ' ').trim();
-      if (argument.contains('.notifier') || argument.contains('.future')) {
-        continue;
-      }
-      hasDisallowedRead = true;
-      break;
-    }
-
-    if (!hasDisallowedRead) {
+    final String argument = (directAssignment.group(2) ?? '')
+        .replaceAll('\n', ' ')
+        .trim();
+    if (argument.contains('.notifier') || argument.contains('.future')) {
       continue;
     }
 
@@ -155,7 +154,11 @@ List<_Violation> _findViolationsInBlock({
         blockStartLine + _lineDelta(blockBody, segment.startOffset);
     final String normalized = statement.replaceAll(RegExp(r'\s+'), ' ').trim();
     violations.add(
-      _Violation(filePath: filePath, line: statementLine, statement: normalized),
+      _Violation(
+        filePath: filePath,
+        line: statementLine,
+        statement: normalized,
+      ),
     );
   }
 

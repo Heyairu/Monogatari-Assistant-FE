@@ -63,6 +63,16 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   static const int _initialResultListLimit = 100;
   static const int _resultListPageSize = 100;
   static const int _fillerHitPositionLimit = 50;
+  static const _ProofreadingBudget _resultBudget = _ProofreadingBudget(
+    pairIssues: 65535,
+    symbolIssues: 65535,
+    sameTypeQuoteIssues: 65535,
+    lineEndingIssues: 65535,
+    punctuationChanges: 65535,
+    fillerWords: 65535,
+    fillerPositionsPerWord: 8192,
+    fillerPositionsTotal: 1048576,
+  );
   static const String _punctuationProfileKey =
       "proofreading_punctuation_profile";
   static const String _latinSentenceDetectionKey =
@@ -390,15 +400,20 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   String _lastObservedText = "";
   int _proofreadingRevision = 0;
   int _latestAppliedProofreadingRevision = 0;
+  bool _resultsTruncated = false;
+  _ProofreadingCounts _resultCounts = const _ProofreadingCounts.empty();
 
   @override
   void initState() {
     super.initState();
-    _lastObservedText = ref.read(editorContentProvider);
     _subscriptions.add(
       ref.listenManual<String>(editorContentProvider, (previous, next) {
+        if (previous == null) {
+          _lastObservedText = next;
+          return;
+        }
         _onSharedTextChanged(next);
-      }),
+      }, fireImmediately: true),
     );
     _loadPunctuationProfile();
     _loadFillerWords();
@@ -910,6 +925,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       fillerWords: _fillerWords,
       fillerWordsRevision: _fillerWordsRevision,
       options: _proofreadingOptions(),
+      budget: _resultBudget,
       revision: revision,
     );
 
@@ -968,6 +984,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           _lineEndingIssues = result.lineEndingIssues;
           _punctuationResult = result.punctuationResult;
           _fillerWordAnalysis = result.fillerWordAnalysis;
+          _resultsTruncated = result.isTruncated;
+          _resultCounts = result.counts;
           _proofreadingTextIndex = textIndex;
           _visiblePairIssueCount = _initialResultListLimit;
           _visiblePunctuationChangeCount = _initialResultListLimit;
@@ -2342,6 +2360,14 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                       text: "引號、括號閉合檢查",
                     ),
                     const SizedBox(height: 8),
+                    if (_resultsTruncated) ...[
+                      AppNoticeBanner(
+                        message:
+                            "結果數量過多，目前只保留各檢測的前段樣本；完整統計共 ${_resultCounts.combinedTotal} 筆。",
+                        tone: AppFeedbackTone.info,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _buildPairCheckResult(sourceText),
                     const Divider(height: 24),
                     SmallTitle(
@@ -2853,7 +2879,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("共偵測到 ${result.changes.length} 處可統一的標點。"),
+        Text("共偵測到 ${result.totalChanges} 處可統一的標點。"),
         const SizedBox(height: 6),
         _buildScrollableResultArea(
           controller: _punctuationScrollController,
@@ -3508,6 +3534,7 @@ class _ProofreadingRequest {
     required this.fillerWords,
     required this.fillerWordsRevision,
     required this.options,
+    required this.budget,
     required this.revision,
   });
 
@@ -3515,7 +3542,30 @@ class _ProofreadingRequest {
   final List<String> fillerWords;
   final int fillerWordsRevision;
   final _ProofreadingOptions options;
+  final _ProofreadingBudget budget;
   final int revision;
+}
+
+class _ProofreadingBudget {
+  const _ProofreadingBudget({
+    required this.pairIssues,
+    required this.symbolIssues,
+    required this.sameTypeQuoteIssues,
+    required this.lineEndingIssues,
+    required this.punctuationChanges,
+    required this.fillerWords,
+    required this.fillerPositionsPerWord,
+    required this.fillerPositionsTotal,
+  });
+
+  final int pairIssues;
+  final int symbolIssues;
+  final int sameTypeQuoteIssues;
+  final int lineEndingIssues;
+  final int punctuationChanges;
+  final int fillerWords;
+  final int fillerPositionsPerWord;
+  final int fillerPositionsTotal;
 }
 
 class _ProofreadingOptions {
@@ -3562,6 +3612,8 @@ class _ProofreadingResult {
     required this.lineEndingIssues,
     required this.punctuationResult,
     required this.fillerWordAnalysis,
+    required this.counts,
+    required this.isTruncated,
     required this.revision,
   });
 
@@ -3571,6 +3623,8 @@ class _ProofreadingResult {
   final List<_LineEndingIssue> lineEndingIssues;
   final _PunctuationNormalizationResult? punctuationResult;
   final _FillerWordAnalysis fillerWordAnalysis;
+  final _ProofreadingCounts counts;
+  final bool isTruncated;
   final int revision;
 }
 
@@ -3585,20 +3639,21 @@ class _ProofreadingAnalyzer {
   _ProofreadingOptions get options => request.options;
 
   _ProofreadingResult run() {
-    final List<_PairIssue> pairIssues = options.enablePairCheck
+    final _BoundedResult<_PairIssue> pairResult = options.enablePairCheck
         ? _checkPairClosures(text)
-        : const <_PairIssue>[];
-    final List<_ConsecutiveSymbolIssue> symbolIssues = options.enableSymbolCheck
+        : _BoundedResult<_PairIssue>.empty();
+    final _BoundedResult<_ConsecutiveSymbolIssue> symbolResult =
+        options.enableSymbolCheck
         ? _detectConsecutiveSymbols(text)
-        : const <_ConsecutiveSymbolIssue>[];
-    final List<_SameTypeQuoteIssue> sameTypeQuoteIssues =
+        : _BoundedResult<_ConsecutiveSymbolIssue>.empty();
+    final _BoundedResult<_SameTypeQuoteIssue> sameTypeQuoteResult =
         options.enableSymbolCheck
         ? _detectSameTypeQuoteNesting(text)
-        : const <_SameTypeQuoteIssue>[];
-    final List<_LineEndingIssue> lineEndingIssues =
+        : _BoundedResult<_SameTypeQuoteIssue>.empty();
+    final _BoundedResult<_LineEndingIssue> lineEndingResult =
         options.enableLineEndingCheck
         ? _detectLineEndingIssues(text)
-        : const <_LineEndingIssue>[];
+        : _BoundedResult<_LineEndingIssue>.empty();
     final _PunctuationNormalizationResult? punctuationResult =
         options.enablePunctuationNormalization
         ? _normalizePunctuation(text)
@@ -3608,17 +3663,32 @@ class _ProofreadingAnalyzer {
         : _FillerWordAnalysis.empty();
 
     return _ProofreadingResult(
-      pairIssues: pairIssues,
-      symbolIssues: symbolIssues,
-      sameTypeQuoteIssues: sameTypeQuoteIssues,
-      lineEndingIssues: lineEndingIssues,
+      pairIssues: pairResult.samples,
+      symbolIssues: symbolResult.samples,
+      sameTypeQuoteIssues: sameTypeQuoteResult.samples,
+      lineEndingIssues: lineEndingResult.samples,
       punctuationResult: punctuationResult,
       fillerWordAnalysis: fillerWordAnalysis,
+      counts: _ProofreadingCounts(
+        pairIssues: pairResult.totalCount,
+        symbolIssues: symbolResult.totalCount,
+        sameTypeQuoteIssues: sameTypeQuoteResult.totalCount,
+        lineEndingIssues: lineEndingResult.totalCount,
+        punctuationChanges: punctuationResult?.totalChanges ?? 0,
+        fillerWordMatches: fillerWordAnalysis.totalMatches,
+      ),
+      isTruncated:
+          pairResult.isTruncated ||
+          symbolResult.isTruncated ||
+          sameTypeQuoteResult.isTruncated ||
+          lineEndingResult.isTruncated ||
+          (punctuationResult?.isTruncated ?? false) ||
+          fillerWordAnalysis.isTruncated,
       revision: request.revision,
     );
   }
 
-  List<_PairIssue> _checkPairClosures(String text) {
+  _BoundedResult<_PairIssue> _checkPairClosures(String text) {
     final Map<String, String> closingToOpening = <String, String>{
       for (final MapEntry<String, String> entry
           in _ProofReadingViewState._openingToClosing.entries)
@@ -3632,7 +3702,7 @@ class _ProofreadingAnalyzer {
         .toSet();
 
     final List<_StackToken> stack = <_StackToken>[];
-    final List<_PairIssue> issues = <_PairIssue>[];
+    final collector = _BoundedCollector<_PairIssue>(request.budget.pairIssues);
 
     for (int i = 0; i < text.length; i++) {
       final String char = text[i];
@@ -3656,7 +3726,7 @@ class _ProofreadingAnalyzer {
       }
 
       if (stack.isEmpty) {
-        issues.add(
+        collector.add(
           _PairIssue(index: i, symbol: char, message: "出現未配對的右符號「$char」。"),
         );
         continue;
@@ -3666,7 +3736,7 @@ class _ProofreadingAnalyzer {
       final String expected =
           _ProofReadingViewState._openingToClosing[top.symbol] ?? "";
       if (char != expected) {
-        issues.add(
+        collector.add(
           _PairIssue(
             index: i,
             symbol: char,
@@ -3679,7 +3749,7 @@ class _ProofreadingAnalyzer {
     for (final _StackToken token in stack.reversed) {
       final String expected =
           _ProofReadingViewState._openingToClosing[token.symbol] ?? "";
-      issues.add(
+      collector.add(
         _PairIssue(
           index: token.index,
           symbol: token.symbol,
@@ -3688,12 +3758,16 @@ class _ProofreadingAnalyzer {
       );
     }
 
-    issues.sort((a, b) => a.index.compareTo(b.index));
-    return issues;
+    collector.samples.sort((a, b) => a.index.compareTo(b.index));
+    return collector.result;
   }
 
-  List<_ConsecutiveSymbolIssue> _detectConsecutiveSymbols(String text) {
-    final List<_ConsecutiveSymbolIssue> issues = <_ConsecutiveSymbolIssue>[];
+  _BoundedResult<_ConsecutiveSymbolIssue> _detectConsecutiveSymbols(
+    String text,
+  ) {
+    final collector = _BoundedCollector<_ConsecutiveSymbolIssue>(
+      request.budget.symbolIssues,
+    );
     int i = 0;
 
     while (i < text.length) {
@@ -3711,7 +3785,7 @@ class _ProofreadingAnalyzer {
         final String message = symbol == "…"
             ? "刪節號建議使用「……」，目前為「$sequence」。"
             : "連續$count個$category「$sequence」。";
-        issues.add(
+        collector.add(
           _ConsecutiveSymbolIssue(
             index: i,
             symbol: symbol,
@@ -3726,7 +3800,7 @@ class _ProofreadingAnalyzer {
       i = j;
     }
 
-    return issues;
+    return collector.result;
   }
 
   bool _shouldFlagConsecutiveSymbol(String symbol, int count) {
@@ -3736,8 +3810,10 @@ class _ProofreadingAnalyzer {
     return count >= 2;
   }
 
-  List<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
-    final List<_SameTypeQuoteIssue> issues = <_SameTypeQuoteIssue>[];
+  _BoundedResult<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
+    final collector = _BoundedCollector<_SameTypeQuoteIssue>(
+      request.budget.sameTypeQuoteIssues,
+    );
     final List<String> lines = text.split("\n");
     int lineStartOffset = 0;
 
@@ -3747,7 +3823,7 @@ class _ProofreadingAnalyzer {
         lineStartOffset,
       );
       if (asciiIssue != null) {
-        issues.add(asciiIssue);
+        collector.add(asciiIssue);
       }
 
       final _SameTypeQuoteIssue? cjkIssue = _detectCjkQuoteIssueInLine(
@@ -3755,13 +3831,13 @@ class _ProofreadingAnalyzer {
         lineStartOffset,
       );
       if (cjkIssue != null) {
-        issues.add(cjkIssue);
+        collector.add(cjkIssue);
       }
 
       lineStartOffset += line.length + 1;
     }
 
-    return issues;
+    return collector.result;
   }
 
   _SameTypeQuoteIssue? _detectAsciiQuoteIssueInLine(
@@ -3961,8 +4037,10 @@ class _ProofreadingAnalyzer {
     );
   }
 
-  List<_LineEndingIssue> _detectLineEndingIssues(String text) {
-    final List<_LineEndingIssue> issues = <_LineEndingIssue>[];
+  _BoundedResult<_LineEndingIssue> _detectLineEndingIssues(String text) {
+    final collector = _BoundedCollector<_LineEndingIssue>(
+      request.budget.lineEndingIssues,
+    );
     final List<String> lines = text.split("\n");
     final String code = _punctuationProfileCode(options.punctuationProfile);
     int lineStartOffset = 0;
@@ -4016,7 +4094,7 @@ class _ProofreadingAnalyzer {
 
         if (_shouldForceWarnLineEnding(trimmedRight, endingSymbol) ||
             !allowedSymbols.contains(endingSymbol)) {
-          issues.add(
+          collector.add(
             _LineEndingIssue(
               index: lineStartOffset + lastIndex,
               endingSymbol: endingSymbol,
@@ -4029,12 +4107,14 @@ class _ProofreadingAnalyzer {
       lineStartOffset += line.length + 1;
     }
 
-    return issues;
+    return collector.result;
   }
 
   _PunctuationNormalizationResult _normalizePunctuation(String text) {
     final StringBuffer buffer = StringBuffer();
-    final List<_PunctuationChange> changes = <_PunctuationChange>[];
+    final changes = _BoundedCollector<_PunctuationChange>(
+      request.budget.punctuationChanges,
+    );
     final _PunctuationProfile profile = options.punctuationProfile;
     final List<String> lines = text.split("\n");
     int lineStartOffset = 0;
@@ -4171,7 +4251,8 @@ class _ProofreadingAnalyzer {
 
     return _PunctuationNormalizationResult(
       normalizedText: buffer.toString(),
-      changes: changes,
+      changes: changes.samples,
+      totalChanges: changes.totalCount,
     );
   }
 
@@ -4206,57 +4287,24 @@ class _ProofreadingAnalyzer {
 
     final _FillerWordMatcher matcher =
         _fillerWordMatcher ?? _FillerWordMatcher(request.fillerWords);
-    final Map<String, List<int>> positionsByWord = matcher.findAll(text);
-    final List<_FillerWordHit> hits = <_FillerWordHit>[];
-    int totalMatches = 0;
-
-    for (final MapEntry<String, List<int>> entry in positionsByWord.entries) {
-      final List<int> positions = _nonOverlappingPositions(
-        entry.value,
-        entry.key.length,
-      );
-      if (positions.isEmpty) {
-        continue;
-      }
-      hits.add(
-        _FillerWordHit(
-          word: entry.key,
-          count: positions.length,
-          positions: positions,
-        ),
-      );
-      totalMatches += positions.length;
-    }
-
-    hits.sort((a, b) => b.count.compareTo(a.count));
+    final matchResult = matcher.findAll(
+      text,
+      maxWords: request.budget.fillerWords,
+      maxPositionsPerWord: request.budget.fillerPositionsPerWord,
+      maxPositionsTotal: request.budget.fillerPositionsTotal,
+    );
     final int effectiveChars = _countEffectiveChars(text);
     final double ratio = effectiveChars == 0
         ? 0
-        : totalMatches / effectiveChars.toDouble();
+        : matchResult.totalMatches / effectiveChars.toDouble();
 
     return _FillerWordAnalysis(
-      totalMatches: totalMatches,
+      totalMatches: matchResult.totalMatches,
       effectiveChars: effectiveChars,
       ratio: ratio,
-      hits: hits,
+      hits: matchResult.hits,
+      isTruncated: matchResult.isTruncated,
     );
-  }
-
-  List<int> _nonOverlappingPositions(List<int> positions, int wordLength) {
-    if (wordLength <= 0 || positions.isEmpty) {
-      return const <int>[];
-    }
-
-    final List<int> result = <int>[];
-    int nextAllowedStart = 0;
-    for (final int start in positions) {
-      if (start < nextAllowedStart) {
-        continue;
-      }
-      result.add(start);
-      nextAllowedStart = start + wordLength;
-    }
-    return result;
   }
 
   List<bool> _buildLatinStyleMaskForLine(
@@ -4807,9 +4855,18 @@ class _FillerWordMatcher {
     }
   }
 
-  Map<String, List<int>> findAll(String text) {
-    final Map<String, List<int>> positionsByWord = <String, List<int>>{};
+  _FillerMatchResult findAll(
+    String text, {
+    required int maxWords,
+    required int maxPositionsPerWord,
+    required int maxPositionsTotal,
+  }) {
+    final Map<String, _FillerMatchAccumulator> matches =
+        <String, _FillerMatchAccumulator>{};
     _FillerTrieNode node = _root;
+    var storedPositions = 0;
+    var totalMatches = 0;
+    var positionsTruncated = false;
 
     for (int i = 0; i < text.length; i++) {
       final String char = text[i];
@@ -4827,12 +4884,61 @@ class _FillerWordMatcher {
         if (start < 0) {
           continue;
         }
-        positionsByWord.putIfAbsent(word, () => <int>[]).add(start);
+        final accumulator = matches.putIfAbsent(
+          word,
+          _FillerMatchAccumulator.new,
+        );
+        if (start < accumulator.nextAllowedStart) {
+          continue;
+        }
+        accumulator.count++;
+        totalMatches++;
+        accumulator.nextAllowedStart = start + word.length;
+        if (accumulator.positions.length < maxPositionsPerWord &&
+            storedPositions < maxPositionsTotal) {
+          accumulator.positions.add(start);
+          storedPositions++;
+        } else {
+          positionsTruncated = true;
+        }
       }
     }
 
-    return positionsByWord;
+    final ranked = matches.entries.toList()
+      ..sort((a, b) => b.value.count.compareTo(a.value.count));
+    final retainedCount = ranked.length > maxWords ? maxWords : ranked.length;
+    final hits = <_FillerWordHit>[
+      for (var index = 0; index < retainedCount; index++)
+        _FillerWordHit(
+          word: ranked[index].key,
+          count: ranked[index].value.count,
+          positions: ranked[index].value.positions,
+        ),
+    ];
+    return _FillerMatchResult(
+      hits: hits,
+      totalMatches: totalMatches,
+      isTruncated: positionsTruncated || ranked.length > retainedCount,
+    );
   }
+}
+
+class _FillerMatchAccumulator {
+  int count = 0;
+  int nextAllowedStart = 0;
+  final List<int> positions = <int>[];
+}
+
+class _FillerMatchResult {
+  const _FillerMatchResult({
+    required this.hits,
+    required this.totalMatches,
+    required this.isTruncated,
+  });
+
+  final List<_FillerWordHit> hits;
+  final int totalMatches;
+  final bool isTruncated;
 }
 
 class _FillerTrieNode {
@@ -4932,12 +5038,15 @@ class _PunctuationNormalizationResult {
   const _PunctuationNormalizationResult({
     required this.normalizedText,
     required this.changes,
-  });
+    int? totalChanges,
+  }) : totalChanges = totalChanges ?? changes.length;
 
   final String normalizedText;
   final List<_PunctuationChange> changes;
+  final int totalChanges;
 
-  bool get hasChanges => changes.isNotEmpty;
+  bool get hasChanges => totalChanges > 0;
+  bool get isTruncated => totalChanges > changes.length;
 }
 
 class _FillerWordHit {
@@ -4958,16 +5067,82 @@ class _FillerWordAnalysis {
     required this.effectiveChars,
     required this.ratio,
     required this.hits,
+    this.isTruncated = false,
   });
 
   const _FillerWordAnalysis.empty()
     : totalMatches = 0,
       effectiveChars = 0,
       ratio = 0,
-      hits = const <_FillerWordHit>[];
+      hits = const <_FillerWordHit>[],
+      isTruncated = false;
 
   final int totalMatches;
   final int effectiveChars;
   final double ratio;
   final List<_FillerWordHit> hits;
+  final bool isTruncated;
+}
+
+class _ProofreadingCounts {
+  const _ProofreadingCounts({
+    required this.pairIssues,
+    required this.symbolIssues,
+    required this.sameTypeQuoteIssues,
+    required this.lineEndingIssues,
+    required this.punctuationChanges,
+    required this.fillerWordMatches,
+  });
+
+  const _ProofreadingCounts.empty()
+    : pairIssues = 0,
+      symbolIssues = 0,
+      sameTypeQuoteIssues = 0,
+      lineEndingIssues = 0,
+      punctuationChanges = 0,
+      fillerWordMatches = 0;
+
+  final int pairIssues;
+  final int symbolIssues;
+  final int sameTypeQuoteIssues;
+  final int lineEndingIssues;
+  final int punctuationChanges;
+  final int fillerWordMatches;
+
+  int get combinedTotal =>
+      pairIssues +
+      symbolIssues +
+      sameTypeQuoteIssues +
+      lineEndingIssues +
+      punctuationChanges +
+      fillerWordMatches;
+}
+
+class _BoundedCollector<T> {
+  _BoundedCollector(int limit) : _limit = limit < 0 ? 0 : limit;
+
+  final int _limit;
+  final List<T> samples = <T>[];
+  int totalCount = 0;
+
+  void add(T value) {
+    totalCount++;
+    if (samples.length < _limit) {
+      samples.add(value);
+    }
+  }
+
+  _BoundedResult<T> get result =>
+      _BoundedResult<T>(samples: samples, totalCount: totalCount);
+}
+
+class _BoundedResult<T> {
+  const _BoundedResult({required this.samples, required this.totalCount});
+
+  _BoundedResult.empty() : samples = <T>[], totalCount = 0;
+
+  final List<T> samples;
+  final int totalCount;
+
+  bool get isTruncated => totalCount > samples.length;
 }

@@ -579,6 +579,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   OutlineDragData? _currentDragData; // 新增
   TextEditingController? _renameListController; // 新增
   Timer? _autoScrollTimer;
+  Timer? _outlineDraftTimer;
+  VoidCallback? _pendingOutlineDraftCommit;
   ScrollController? _currentScrollController;
   final ScrollController _pageScrollController = ScrollController();
   final ScrollController _storylineListScrollController = ScrollController();
@@ -773,7 +775,101 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     // `ref.listen`. See build() for the guarded registration.
   }
 
+  void _scheduleOutlineDraft() {
+    final storylineId = selectedStorylineID;
+    if (storylineId == null) return;
+    final eventId = selectedEventID;
+    final sceneId = selectedSceneID;
+    final storylineName = storylineNameController.text;
+    final storylineType = storylineTypeController.text;
+    final storylineConflict = storylineConflictController.text;
+    final storylineMemo = storylineMemoController.text;
+    final eventName = eventNameController.text;
+    final eventConflict = eventConflictController.text;
+    final eventMemo = eventMemoController.text;
+    final sceneName = sceneNameController.text;
+    final sceneTime = sceneTimeController.text;
+    final sceneLocation = sceneLocationController.text;
+    final sceneFocus = sceneFocusController.text;
+    final sceneConflict = sceneConflictController.text;
+    final sceneMemo = sceneMemoController.text;
+
+    _pendingOutlineDraftCommit = () {
+      _outlineNotifier.updateOutlineData((current) {
+        final storylineIndex = current.indexWhere(
+          (item) => item.chapterUUID == storylineId,
+        );
+        if (storylineIndex < 0) return current;
+        final originalStoryline = current[storylineIndex];
+        var updatedStoryline = originalStoryline.copyWith(
+          storylineName: storylineName,
+          storylineType: storylineType,
+          conflictPoint: storylineConflict,
+          memo: storylineMemo,
+        );
+
+        if (eventId != null) {
+          final eventIndex = updatedStoryline.scenes.indexWhere(
+            (item) => item.storyEventUUID == eventId,
+          );
+          if (eventIndex >= 0) {
+            final originalEvent = updatedStoryline.scenes[eventIndex];
+            var updatedEvent = originalEvent.copyWith(
+              storyEvent: eventName,
+              conflictPoint: eventConflict,
+              memo: eventMemo,
+            );
+            if (sceneId != null) {
+              final sceneIndex = updatedEvent.scenes.indexWhere(
+                (item) => item.sceneUUID == sceneId,
+              );
+              if (sceneIndex >= 0) {
+                final scenes = [...updatedEvent.scenes];
+                scenes[sceneIndex] = scenes[sceneIndex].copyWith(
+                  sceneName: sceneName,
+                  time: sceneTime,
+                  location: sceneLocation,
+                  focusPoint: sceneFocus,
+                  conflictPoint: sceneConflict,
+                  memo: sceneMemo,
+                );
+                updatedEvent = updatedEvent.copyWith(scenes: scenes);
+              }
+            }
+            final events = [...updatedStoryline.scenes];
+            events[eventIndex] = updatedEvent;
+            updatedStoryline = updatedStoryline.copyWith(scenes: events);
+          }
+        }
+
+        if (updatedStoryline == originalStoryline) return current;
+        final next = [...current];
+        next[storylineIndex] = updatedStoryline;
+        return next;
+      });
+    };
+    _outlineDraftTimer?.cancel();
+    _outlineDraftTimer = Timer(const Duration(milliseconds: 300), () {
+      _outlineDraftTimer = null;
+      final commit = _pendingOutlineDraftCommit;
+      _pendingOutlineDraftCommit = null;
+      commit?.call();
+    });
+  }
+
+  void _flushOutlineDraft() {
+    _outlineDraftTimer?.cancel();
+    _outlineDraftTimer = null;
+    final commit = _pendingOutlineDraftCommit;
+    _pendingOutlineDraftCommit = null;
+    commit?.call();
+  }
+
   void _onStorylineNameChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     if (si != null && si >= 0 && si < storylines.length) {
       final storyline = storylines[si];
@@ -790,6 +886,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onStorylineTypeChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].storylineType != storylineTypeController.text) {
@@ -804,6 +904,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onStorylineConflictChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].conflictPoint != storylineConflictController.text) {
@@ -818,6 +922,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onStorylineMemoChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     if (si != null) {
       if (storylines[si].memo != storylineMemoController.text) {
@@ -831,6 +939,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onEventNameChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
@@ -848,6 +960,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onEventConflictChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
@@ -865,6 +981,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onEventMemoChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     if (si != null && ei != null) {
@@ -880,6 +1000,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneNameChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -899,6 +1023,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneTimeChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -917,6 +1045,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneLocationChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -935,6 +1067,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneFocusChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -953,6 +1089,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneConflictChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -972,6 +1112,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _onSceneMemoChanged() {
+    if (mounted) {
+      _scheduleOutlineDraft();
+      return;
+    }
     final si = selectedStorylineIndex;
     final ei = selectedEventIndex;
     final ci = selectedSceneIndex;
@@ -991,6 +1135,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   @override
   void dispose() {
+    _flushOutlineDraft();
     storylineNameController.removeListener(_onStorylineNameChanged);
     storylineTypeController.removeListener(_onStorylineTypeChanged);
     storylineConflictController.removeListener(_onStorylineConflictChanged);
@@ -1749,7 +1894,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             AppTextField(
               controller: storylineTypeController,
               decoration: const InputDecoration(
-                labelText: "類型 (如：懸疑、愛情)",
+                labelText: "類型 (如：開頭、中段、高潮、結尾)",
                 border: OutlineInputBorder(),
                 isDense: true,
               ),

@@ -160,6 +160,31 @@ class _SystemBridge {
     }
   }
 
+  static Future<List<Map<String, Object?>>> listAutoBackupFiles() async {
+    if (!Platform.isAndroid) return const [];
+    final result = await platform.invokeListMethod<dynamic>(
+      "listAutoBackupFiles",
+    );
+    return (result ?? const <dynamic>[])
+        .whereType<Map<dynamic, dynamic>>()
+        .map(
+          (entry) => entry.map(
+            (key, value) => MapEntry(key.toString(), value as Object?),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  static Future<void> deleteAutoBackupFile(String uri) async {
+    if (!Platform.isAndroid) return;
+    await platform.invokeMethod<void>("deleteAutoBackupFile", {"uri": uri});
+  }
+
+  static Future<int?> getAvailableBackupBytes() async {
+    if (!Platform.isAndroid) return null;
+    return platform.invokeMethod<int>("getAvailableBackupBytes");
+  }
+
   /// 建立 macOS security-scoped bookmark
   static Future<String?> createSecurityScopedBookmark(String filePath) async {
     if (!Platform.isMacOS || filePath.trim().isEmpty) {
@@ -1070,6 +1095,8 @@ class AutoBackupDirectoryInfo {
   final bool isDefault;
   final bool canReset;
   final bool isAndroid;
+  final int totalBytes;
+  final int fileCount;
 
   const AutoBackupDirectoryInfo({
     required this.path,
@@ -1077,6 +1104,32 @@ class AutoBackupDirectoryInfo {
     required this.isDefault,
     required this.canReset,
     required this.isAndroid,
+    this.totalBytes = 0,
+    this.fileCount = 0,
+  });
+}
+
+class AutoBackupCleanupResult {
+  final int deletedFiles;
+  final int freedBytes;
+
+  const AutoBackupCleanupResult({
+    required this.deletedFiles,
+    required this.freedBytes,
+  });
+}
+
+class _AutoBackupFileEntry {
+  final String name;
+  final String location;
+  final int size;
+  final DateTime modified;
+
+  const _AutoBackupFileEntry({
+    required this.name,
+    required this.location,
+    required this.size,
+    required this.modified,
   });
 }
 
@@ -1932,7 +1985,8 @@ class FileService {
     final hh = _twoDigits(now.hour);
     final min = _twoDigits(now.minute);
     final ss = _twoDigits(now.second);
-    return "${yy}${mm}${dd}_${hh}${min}${ss}";
+    final millis = now.millisecond.toString().padLeft(3, "0");
+    return "${yy}${mm}${dd}_${hh}${min}${ss}_$millis";
   }
 
   static String _sanitizeBackupProjectName(String projectName) {
@@ -2272,6 +2326,7 @@ class FileService {
   static Future<String> saveProjectAutoBackup({
     required String projectName,
     required String content,
+    required int maxTotalBytes,
   }) async {
     try {
       final safeProjectName = _sanitizeBackupProjectName(projectName);
@@ -2279,18 +2334,42 @@ class FileService {
       final backupName =
           "${safeProjectName}_backup_$timestamp$projectExtension";
 
+      final contentBytes = utf8.encode(content).length;
+      if (contentBytes > maxTotalBytes) {
+        throw FileException("單一專案備份已超過設定的 AutoBackup 容量上限，請提高上限。");
+      }
+      final availableBytes = await _availableBackupBytes();
+      if (availableBytes != null &&
+          availableBytes < contentBytes + (16 * 1024 * 1024)) {
+        throw FileException("AutoBackup 可用空間不足，請清理備份或更換目錄。");
+      }
+
+      late final String savedLocation;
       if (Platform.isAndroid) {
-        return await _SystemBridge.saveAutoBackupFile(
+        savedLocation = await _SystemBridge.saveAutoBackupFile(
           fileName: backupName,
           content: content,
         );
+      } else {
+        final backupDir = await _ensureAutoBackupDirectory();
+        final backupPath = path.join(backupDir.path, backupName);
+        final temporaryPath = "$backupPath.tmp";
+        await _FileIO.write(temporaryPath, content);
+        await File(temporaryPath).rename(backupPath);
+        savedLocation = backupPath;
       }
 
-      final backupDir = await _ensureAutoBackupDirectory();
-      final backupPath = path.join(backupDir.path, backupName);
-
-      await _FileIO.write(backupPath, content);
-      return backupPath;
+      try {
+        await _pruneAutoBackups(
+          projectName: safeProjectName,
+          maxTotalBytes: maxTotalBytes,
+          maxGenerations: 100,
+          maxAge: const Duration(days: 30),
+        );
+      } catch (error, stackTrace) {
+        debugPrint("AutoBackup cleanup failed: $error\n$stackTrace");
+      }
+      return savedLocation;
     } catch (e) {
       throw FileException("寫入 AutoBackup 失敗: ${e.toString()}");
     }
@@ -2303,6 +2382,8 @@ class FileService {
   }
 
   static Future<AutoBackupDirectoryInfo> getAutoBackupDirectoryInfo() async {
+    final inventory = await _listAutoBackupFiles();
+    final totalBytes = inventory.fold<int>(0, (sum, item) => sum + item.size);
     if (Platform.isAndroid) {
       final selectedUri = await _SystemBridge.getSelectedAutoBackupDirectory();
       return AutoBackupDirectoryInfo(
@@ -2311,6 +2392,8 @@ class FileService {
         isDefault: false,
         canReset: false,
         isAndroid: true,
+        totalBytes: totalBytes,
+        fileCount: inventory.length,
       );
     }
 
@@ -2325,7 +2408,132 @@ class FileService {
       isDefault: isDefault,
       canReset: !isDefault,
       isAndroid: false,
+      totalBytes: totalBytes,
+      fileCount: inventory.length,
     );
+  }
+
+  static Future<AutoBackupCleanupResult> clearAutoBackups() async {
+    final files = await _listAutoBackupFiles();
+    var deletedFiles = 0;
+    var freedBytes = 0;
+    for (final file in files) {
+      await _deleteAutoBackupFile(file);
+      deletedFiles++;
+      freedBytes += file.size;
+    }
+    return AutoBackupCleanupResult(
+      deletedFiles: deletedFiles,
+      freedBytes: freedBytes,
+    );
+  }
+
+  static Future<List<_AutoBackupFileEntry>> _listAutoBackupFiles() async {
+    if (Platform.isAndroid) {
+      final raw = await _SystemBridge.listAutoBackupFiles();
+      return raw
+          .map((entry) {
+            final modifiedMillis = entry["modified"] as int? ?? 0;
+            return _AutoBackupFileEntry(
+              name: entry["name"] as String? ?? "",
+              location: entry["uri"] as String? ?? "",
+              size: entry["size"] as int? ?? 0,
+              modified: DateTime.fromMillisecondsSinceEpoch(modifiedMillis),
+            );
+          })
+          .where((entry) => entry.name.endsWith(projectExtension))
+          .toList();
+    }
+
+    final directory = await _ensureAutoBackupDirectory();
+    final entries = <_AutoBackupFileEntry>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File || !entity.path.endsWith(projectExtension)) continue;
+      final stat = await entity.stat();
+      entries.add(
+        _AutoBackupFileEntry(
+          name: path.basename(entity.path),
+          location: entity.path,
+          size: stat.size,
+          modified: stat.modified,
+        ),
+      );
+    }
+    return entries;
+  }
+
+  static Future<void> _deleteAutoBackupFile(_AutoBackupFileEntry entry) async {
+    if (Platform.isAndroid) {
+      await _SystemBridge.deleteAutoBackupFile(entry.location);
+    } else {
+      await File(entry.location).delete();
+    }
+  }
+
+  static Future<void> _pruneAutoBackups({
+    required String projectName,
+    required int maxTotalBytes,
+    required int maxGenerations,
+    required Duration maxAge,
+  }) async {
+    final prefix = "${projectName}_backup_";
+    final files =
+        (await _listAutoBackupFiles())
+            .where((entry) => entry.name.startsWith(prefix))
+            .toList()
+          ..sort((a, b) => b.modified.compareTo(a.modified));
+    final cutoff = DateTime.now().subtract(maxAge);
+    var retainedBytes = 0;
+    for (var index = 0; index < files.length; index++) {
+      final file = files[index];
+      final exceedsGeneration = index >= maxGenerations;
+      final exceedsAge = file.modified.isBefore(cutoff);
+      final exceedsBytes = retainedBytes + file.size > maxTotalBytes;
+      if (exceedsGeneration || exceedsAge || exceedsBytes) {
+        await _deleteAutoBackupFile(file);
+      } else {
+        retainedBytes += file.size;
+      }
+    }
+  }
+
+  static Future<int?> _availableBackupBytes() async {
+    if (Platform.isAndroid) {
+      return _SystemBridge.getAvailableBackupBytes();
+    }
+    try {
+      final backupDir = await _ensureAutoBackupDirectory();
+      if (Platform.isWindows) {
+        final root = path.rootPrefix(backupDir.path).replaceAll("\\", "");
+        final result = await Process.run("wmic", [
+          "logicaldisk",
+          "where",
+          "DeviceID='$root'",
+          "get",
+          "FreeSpace",
+          "/value",
+        ]);
+        final match = RegExp(
+          r"FreeSpace=(\d+)",
+        ).firstMatch(result.stdout.toString());
+        if (match != null) return int.tryParse(match.group(1)!);
+        final driveName = root.replaceAll(":", "");
+        final fallback = await Process.run("powershell", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "(Get-PSDrive -Name '$driveName').Free",
+        ]);
+        return int.tryParse(fallback.stdout.toString().trim());
+      }
+      final result = await Process.run("df", ["-Pk", backupDir.path]);
+      final lines = result.stdout.toString().trim().split(RegExp(r"\r?\n"));
+      if (lines.length < 2) return null;
+      final columns = lines.last.trim().split(RegExp(r"\s+"));
+      return columns.length < 4 ? null : (int.tryParse(columns[3]) ?? 0) * 1024;
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<String> selectAutoBackupDirectory() async {

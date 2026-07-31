@@ -57,6 +57,11 @@ List<outline_module.StorylineData> snapshotOutlineData(
   List<outline_module.StorylineData> source,
 ) {
   outline_module.SceneData freezeScene(outline_module.SceneData scene) {
+    if (scene.people is UnmodifiableListView<String> &&
+        scene.item is UnmodifiableListView<String> &&
+        scene.doingThings is UnmodifiableListView<String>) {
+      return scene;
+    }
     final people = _freezeListCopy(scene.people);
     final item = _freezeListCopy(scene.item);
     final doingThings = _freezeListCopy(scene.doingThings);
@@ -65,16 +70,17 @@ List<outline_module.StorylineData> snapshotOutlineData(
         identical(doingThings, scene.doingThings)) {
       return scene;
     }
-    return scene.copyWith(
-      people: people,
-      item: item,
-      doingThings: doingThings,
-    );
+    return scene.copyWith(people: people, item: item, doingThings: doingThings);
   }
 
   outline_module.StoryEventData freezeEvent(
     outline_module.StoryEventData event,
   ) {
+    if (event.people is UnmodifiableListView<String> &&
+        event.item is UnmodifiableListView<String> &&
+        event.scenes is UnmodifiableListView<outline_module.SceneData>) {
+      return event;
+    }
     final people = _freezeListCopy(event.people);
     final item = _freezeListCopy(event.item);
     final List<outline_module.SceneData> scenes = [];
@@ -87,15 +93,18 @@ List<outline_module.StorylineData> snapshotOutlineData(
         identical(frozenScenes, event.scenes)) {
       return event;
     }
-    return event.copyWith(
-      people: people,
-      item: item,
-      scenes: frozenScenes,
-    );
+    return event.copyWith(people: people, item: item, scenes: frozenScenes);
   }
 
   final List<outline_module.StorylineData> frozen = [];
   for (final storyline in source) {
+    if (storyline.people is UnmodifiableListView<String> &&
+        storyline.item is UnmodifiableListView<String> &&
+        storyline.scenes
+            is UnmodifiableListView<outline_module.StoryEventData>) {
+      frozen.add(storyline);
+      continue;
+    }
     final people = _freezeListCopy(storyline.people);
     final item = _freezeListCopy(storyline.item);
     final List<outline_module.StoryEventData> events = [];
@@ -104,15 +113,12 @@ List<outline_module.StorylineData> snapshotOutlineData(
     }
     final frozenEvents = _freezeListView(events);
 
-    final nextStoryline = identical(people, storyline.people) &&
+    final nextStoryline =
+        identical(people, storyline.people) &&
             identical(item, storyline.item) &&
             identical(frozenEvents, storyline.scenes)
         ? storyline
-        : storyline.copyWith(
-            people: people,
-            item: item,
-            scenes: frozenEvents,
-          );
+        : storyline.copyWith(people: people, item: item, scenes: frozenEvents);
     frozen.add(nextStoryline);
   }
 
@@ -134,15 +140,39 @@ List<plan_module.UpdatePlanItem> snapshotUpdatePlanData(
 List<world_settings_module.LocationData> snapshotWorldSettingsData(
   List<world_settings_module.LocationData> source,
 ) {
-  final copied = source
-      .map((location) => location.deepCopy())
-      .toList(growable: false);
-  return _freezeListView(copied);
+  world_settings_module.LocationData freezeLocation(
+    world_settings_module.LocationData location,
+  ) {
+    if (location.customVal
+            is UnmodifiableListView<world_settings_module.LocationCustomize> &&
+        location.child
+            is UnmodifiableListView<world_settings_module.LocationData>) {
+      return location;
+    }
+    final customValues = _freezeListCopy(location.customVal);
+    final children = _freezeListView(
+      location.child.map(freezeLocation).toList(growable: false),
+    );
+    if (identical(customValues, location.customVal) &&
+        identical(children, location.child)) {
+      return location;
+    }
+    return location.copyWith(customVal: customValues, child: children);
+  }
+
+  if (source is UnmodifiableListView<world_settings_module.LocationData>) {
+    return source;
+  }
+  return _freezeListView(source.map(freezeLocation).toList(growable: false));
 }
 
 Map<String, character_model.CharacterEntryData> snapshotCharacterData(
   Map<String, character_model.CharacterEntryData> source,
 ) {
+  if (source
+      is UnmodifiableMapView<String, character_model.CharacterEntryData>) {
+    return source;
+  }
   final copied = character_model.copyCharacterDataMap(source);
   return _freezeMapView(copied);
 }
