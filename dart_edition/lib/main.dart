@@ -405,7 +405,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   Timer? _autoBackupTimer;
   bool _isWritingAutoSave = false;
   bool _isWritingAutoBackup = false;
-  String? _lastAutoBackupContent;
   int? _lastAutoBackupRevision;
   final ProjectIoSessionCoordinator _projectIoCoordinator =
       ProjectIoSessionCoordinator();
@@ -606,7 +605,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     });
   }
 
-  void _refreshActiveChapterWordCount() {
+  void _refreshActiveChapterWordCount({String? contentOverride}) {
     final String? activeChapterId = selectedChapID;
     final activeWordCountNotifier = ref.read(
       activeChapterWordCountProvider.notifier,
@@ -617,7 +616,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     }
 
     final WordCountMode mode = _settingsState.wordCountMode;
-    final String activeText = textController.text;
+    final String activeText = contentOverride ?? textController.text;
     final lookup = _wordCountService.observeChapter(
       chapterId: activeChapterId,
       content: activeText,
@@ -788,7 +787,13 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             previous?.selectedSegID == next.selectedSegID) {
           return;
         }
-        _refreshActiveChapterWordCount();
+        // Selection and editor content are separate provider updates. Resolve
+        // the newly selected chapter directly from the project model so the
+        // word-count cache never sees the new id paired with the old editor
+        // text during that brief transition.
+        _refreshActiveChapterWordCount(
+          contentOverride: ref.read(selectedChapterStoredContentProvider) ?? "",
+        );
       }),
     );
 
@@ -1062,6 +1067,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _autoBackupTimer = null;
 
     if (!settings.autoBackupEnabled) {
+      _resetAutoBackupBaseline();
       return;
     }
 
@@ -1099,7 +1105,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
             .saveProjectAutoBackup(
               currentProject: currentProject,
               currentData: currentData,
-              lastAutoBackupContent: _lastAutoBackupContent,
               maxTotalBytes: _settingsState.autoBackupMaxSizeMb * 1024 * 1024,
               preparedPayload: payload,
             );
@@ -1107,9 +1112,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       final result = runResult.value;
       if (result == null || !_projectIoCoordinator.isCurrent(session)) return;
       _lastAutoBackupRevision = revision;
-      if (result.wasWritten) {
-        _lastAutoBackupContent = result.content;
-      }
     } catch (error, stackTrace) {
       debugPrint("AutoBackup failed: $error\n$stackTrace");
     } finally {
@@ -1118,7 +1120,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   void _resetAutoBackupBaseline() {
-    _lastAutoBackupContent = null;
     _lastAutoBackupRevision = null;
   }
 
@@ -2719,7 +2720,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         () => ref.read(projectIoControllerProvider.notifier).createNewProject(),
       );
       final result = runResult.value;
-      if (result == null || !_projectIoCoordinator.isCurrent(switchSession)) {
+      if (!mounted ||
+          result == null ||
+          !_projectIoCoordinator.isCurrent(switchSession)) {
         return;
       }
 
@@ -2743,8 +2746,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
       _updateAllWordCounts();
     } catch (e) {
-      _showError("建立新專案失敗：${e.toString()}");
-      _beginProjectIoSession(currentProject);
+      if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
+        _showError("建立新專案失敗：${e.toString()}");
+        _beginProjectIoSession(currentProject);
+      }
     } finally {
       if (_projectIoCoordinator.isCurrent(switchSession)) {
         _beginProjectIoSession(currentProject);
@@ -2786,6 +2791,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         },
       );
       final loadResult = runResult.value;
+      if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
+        return;
+      }
       if (loadResult == null) {
         _beginProjectIoSession(currentProject);
         return;
@@ -2797,7 +2805,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       );
 
       if (hasNewerVersion) {
-        if (!mounted) {
+        if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
           return;
         }
         final shouldContinue =
@@ -2806,7 +2814,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               fileVersion: openedVersion ?? "unknown",
               supportedVersion: FileService.projectVersion,
             );
-        if (!mounted) {
+        if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
           return;
         }
         if (!shouldContinue) {
@@ -2831,16 +2839,21 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _resetProjectHistory();
 
+      // Start the background count immediately after applying the project.
+      // Persisting the recent-project entry can involve platform storage and
+      // must not delay the visible total word count.
+      _updateAllWordCounts();
+
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
-      if (!mounted) {
+      if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
         return;
       }
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
-
-      _updateAllWordCounts();
     } catch (e) {
-      _showError("開啟專案失敗：${e.toString()}");
-      _beginProjectIoSession(currentProject);
+      if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
+        _showError("開啟專案失敗：${e.toString()}");
+        _beginProjectIoSession(currentProject);
+      }
     } finally {
       if (_projectIoCoordinator.isCurrent(switchSession)) {
         _beginProjectIoSession(currentProject);
@@ -2888,7 +2901,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         },
       );
       final loadResult = runResult.value;
-      if (loadResult == null) return;
+      if (!mounted ||
+          loadResult == null ||
+          !_projectIoCoordinator.isCurrent(switchSession)) {
+        return;
+      }
       final projectFile = loadResult.projectFile;
       final openedVersion = loadResult.projectVersion;
       final hasNewerVersion = FileService.isProjectVersionNewerThanSupported(
@@ -2896,7 +2913,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       );
 
       if (hasNewerVersion) {
-        if (!mounted) {
+        if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
           return;
         }
         final shouldContinue =
@@ -2905,7 +2922,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
               fileVersion: openedVersion ?? "unknown",
               supportedVersion: FileService.projectVersion,
             );
-        if (!mounted) {
+        if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
           return;
         }
         if (!shouldContinue) {
@@ -2930,22 +2947,25 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
       _resetProjectHistory();
 
+      // Keep word-count refresh independent from recent-project persistence.
+      _updateAllWordCounts();
+
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
-      if (!mounted) {
+      if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
         return;
       }
       _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
-
-      _updateAllWordCounts();
     } catch (e) {
-      final message = e.toString();
-      _showError("開啟最近專案失敗：$message");
-      if (message.contains("檔案不存在")) {
-        unawaited(
-          ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
-        );
+      if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
+        final message = e.toString();
+        _showError("開啟最近專案失敗：$message");
+        if (message.contains("檔案不存在")) {
+          unawaited(
+            ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
+          );
+        }
+        _beginProjectIoSession(currentProject);
       }
-      _beginProjectIoSession(currentProject);
     } finally {
       if (_projectIoCoordinator.isCurrent(switchSession)) {
         _beginProjectIoSession(currentProject);
@@ -2956,6 +2976,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   Future<void> _deleteRecentProject(RecentProjectEntry entry) async {
     await ref.read(settingsStateProvider.notifier).removeRecentProject(entry);
+    if (!mounted) return;
     _showMessage("已從最近清單移除：${entry.fileName}");
   }
 

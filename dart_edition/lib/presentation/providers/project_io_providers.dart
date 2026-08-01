@@ -60,22 +60,12 @@ class ProjectLoadResult {
 
 class AutoBackupResult {
   final String? path;
-  final String content;
   final bool wasWritten;
 
-  const AutoBackupResult._({
-    required this.path,
-    required this.content,
-    required this.wasWritten,
-  });
+  const AutoBackupResult._({required this.path, required this.wasWritten});
 
-  const AutoBackupResult.written({
-    required String path,
-    required String content,
-  }) : this._(path: path, content: content, wasWritten: true);
-
-  const AutoBackupResult.skipped({required String content})
-    : this._(path: null, content: content, wasWritten: false);
+  const AutoBackupResult.written({required String path})
+    : this._(path: path, wasWritten: true);
 }
 
 class ProjectIoPayload {
@@ -286,7 +276,6 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   Future<AutoBackupResult> saveProjectAutoBackup({
     required ProjectFile? currentProject,
     required ProjectData currentData,
-    String? lastAutoBackupContent,
     required int maxTotalBytes,
     ProjectIoPayload? preparedPayload,
   }) async {
@@ -301,10 +290,6 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       final payload =
           preparedPayload ?? await prepareProjectPayload(currentData);
       final xmlContent = payload.xmlContent;
-      if (lastAutoBackupContent == xmlContent) {
-        state = const AsyncData(ProjectIoStatus.idle());
-        return AutoBackupResult.skipped(content: xmlContent);
-      }
 
       final projectName =
           currentProject?.nameWithoutExtension.trim().isNotEmpty == true
@@ -322,7 +307,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           message: "AutoBackup 已建立",
         ),
       );
-      return AutoBackupResult.written(path: backupPath, content: xmlContent);
+      return AutoBackupResult.written(path: backupPath);
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       rethrow;

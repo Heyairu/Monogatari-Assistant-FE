@@ -6,15 +6,16 @@ import "dart:io";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:path_provider/path_provider.dart";
 
-import "../../bin/file.dart" as file_module;
 import "../../bin/settings_manager.dart";
 import "../../models/character_data.dart" as character_model;
 import "../../models/glossary_data.dart" as glossary_model;
-import "../../modules/baseinfoview.dart" as base_info_module;
-import "../../modules/chapterselectionview.dart" as chapter_module;
-import "../../modules/outlineview.dart" as outline_module;
-import "../../modules/planview.dart" as plan_module;
-import "../../modules/worldsettingsview.dart";
+import "../../models/base_info_data.dart" as base_info_module;
+import "../../models/chapter_selection_data.dart" as chapter_module;
+import "../../models/outline_data.dart" as outline_module;
+import "../../models/plan_data.dart" as plan_module;
+import "../../models/project_data.dart";
+import "../../models/project_file.dart";
+import "../../models/world_settings_data.dart";
 import "project_snapshot_utils.dart";
 
 const Object _editorSelectionUnset = Object();
@@ -78,7 +79,7 @@ class BaseInfoDataNotifier extends Notifier<base_info_module.BaseInfoData> {
 
   @override
   base_info_module.BaseInfoData build() {
-    return _createSnapshot(file_module.ProjectData.empty().baseInfoData);
+    return _createSnapshot(ProjectData.empty().baseInfoData);
   }
 
   void setBaseInfoData(base_info_module.BaseInfoData value) {
@@ -203,7 +204,7 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
 
   @override
   List<chapter_module.SegmentData> build() {
-    return _createSnapshot(file_module.ProjectData.empty().segmentsData);
+    return _createSnapshot(ProjectData.empty().segmentsData);
   }
 
   void setSegmentsData(List<chapter_module.SegmentData> value) {
@@ -481,7 +482,7 @@ class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
 
   @override
   List<outline_module.StorylineData> build() {
-    return _createSnapshot(file_module.ProjectData.empty().outlineData);
+    return _createSnapshot(ProjectData.empty().outlineData);
   }
 
   void setOutlineData(List<outline_module.StorylineData> value) {
@@ -662,7 +663,7 @@ class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
 
   @override
   List<LocationData> build() {
-    return _createSnapshot(file_module.ProjectData.empty().worldSettingsData);
+    return _createSnapshot(ProjectData.empty().worldSettingsData);
   }
 
   void setWorldSettingsData(List<LocationData> value) {
@@ -774,7 +775,7 @@ class CharacterDataNotifier
 
   @override
   Map<String, character_model.CharacterEntryData> build() {
-    return _createSnapshot(file_module.ProjectData.empty().characterData);
+    return _createSnapshot(ProjectData.empty().characterData);
   }
 
   void setCharacterData(Map<String, character_model.CharacterEntryData> value) {
@@ -892,7 +893,7 @@ class ForeshadowDataNotifier
 
   @override
   List<plan_module.ForeshadowItem> build() {
-    return _createSnapshot(file_module.ProjectData.empty().foreshadowData);
+    return _createSnapshot(ProjectData.empty().foreshadowData);
   }
 
   void setForeshadowData(List<plan_module.ForeshadowItem> value) {
@@ -992,7 +993,7 @@ class UpdatePlanDataNotifier
 
   @override
   List<plan_module.UpdatePlanItem> build() {
-    return _createSnapshot(file_module.ProjectData.empty().updatePlanData);
+    return _createSnapshot(ProjectData.empty().updatePlanData);
   }
 
   void setUpdatePlanData(List<plan_module.UpdatePlanItem> value) {
@@ -2003,6 +2004,36 @@ final editorSelectionProvider =
       EditorSelectionNotifier.new,
     );
 
+/// The persisted content for the currently selected chapter.
+///
+/// Selection and editor content are stored in separate providers. During a
+/// chapter switch they therefore cannot be published in the same notification.
+/// Consumers that react to the selection change must read the chapter model,
+/// instead of temporarily pairing the new chapter id with the previous
+/// editor's text.
+final selectedChapterStoredContentProvider = Provider<String?>((ref) {
+  final selection = ref.watch(editorSelectionProvider);
+  final segmentID = selection.selectedSegID;
+  final chapterID = selection.selectedChapID;
+  if (segmentID == null || chapterID == null) {
+    return null;
+  }
+
+  final segments = ref.watch(segmentsDataProvider);
+  for (final segment in segments) {
+    if (segment.segmentUUID != segmentID) {
+      continue;
+    }
+    for (final chapter in segment.chapters) {
+      if (chapter.chapterUUID == chapterID) {
+        return chapter.chapterContent;
+      }
+    }
+    return null;
+  }
+  return null;
+});
+
 class TotalWordsNotifier extends Notifier<int> {
   @override
   int build() {
@@ -2018,24 +2049,24 @@ final totalWordsProvider = NotifierProvider<TotalWordsNotifier, int>(
   TotalWordsNotifier.new,
 );
 
-class CurrentProjectFileNotifier extends Notifier<file_module.ProjectFile?> {
+class CurrentProjectFileNotifier extends Notifier<ProjectFile?> {
   @override
-  file_module.ProjectFile? build() {
+  ProjectFile? build() {
     return null;
   }
 
-  void setCurrentProjectFile(file_module.ProjectFile? value) {
+  void setCurrentProjectFile(ProjectFile? value) {
     state = value;
   }
 }
 
 final currentProjectFileProvider =
-    NotifierProvider<CurrentProjectFileNotifier, file_module.ProjectFile?>(
+    NotifierProvider<CurrentProjectFileNotifier, ProjectFile?>(
       CurrentProjectFileNotifier.new,
     );
 
-final projectDataProvider = Provider<file_module.ProjectData>((ref) {
-  return file_module.ProjectData(
+final projectDataProvider = Provider<ProjectData>((ref) {
+  return ProjectData(
     baseInfoData: ref.watch(baseInfoDataProvider),
     segmentsData: ref.watch(segmentsDataProvider),
     outlineData: ref.watch(outlineDataProvider),

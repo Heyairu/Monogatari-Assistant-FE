@@ -20,6 +20,7 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../bin/settings_manager.dart";
 import "../models/base_info_data.dart";
+import "../models/codecs/xml_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/word_count_providers.dart";
 
@@ -46,67 +47,11 @@ class BaseInfoCodec {
     String name,
     String value,
   ) {
-    builder.element(
-      name,
-      nest: () {
-        builder.text(_encodeNewlines(value));
-      },
-    );
+    XmlTextCodec.writeTextElement(builder, name, value);
   }
 
   static String _readElementText(xml.XmlElement? element) {
-    if (element == null) return "";
-    if (element.children.isEmpty) {
-      return _decodeNewlines(element.innerText);
-    }
-    final cdataBuffer = StringBuffer();
-    for (final node in element.children) {
-      if (node is xml.XmlCDATA) {
-        cdataBuffer.write(node.text);
-      }
-    }
-    final cdataText = cdataBuffer.toString();
-    if (cdataText.isNotEmpty) {
-      return _decodeNewlines(cdataText);
-    }
-    final buffer = StringBuffer();
-    for (final node in element.children) {
-      if (node is xml.XmlText || node is xml.XmlCDATA) {
-        buffer.write(node.text);
-      }
-    }
-    final text = buffer.toString();
-    return _decodeNewlines(text.isNotEmpty ? text : element.innerText);
-  }
-
-  static String _encodeNewlines(String value) {
-    if (value.isEmpty) return value;
-    final normalized = value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-    final buffer = StringBuffer();
-    for (final codeUnit in normalized.codeUnits) {
-      switch (codeUnit) {
-        case 10: // \n
-          buffer.write("&#10;");
-          break;
-        case 35: // #
-          buffer.write("&#35;");
-          break;
-        case 59: // ;
-          buffer.write("&#59;");
-          break;
-        default:
-          buffer.writeCharCode(codeUnit);
-      }
-    }
-    return buffer.toString();
-  }
-
-  static String _decodeNewlines(String value) {
-    return value
-        .replaceAll("&#13;", "")
-        .replaceAll("&#10;", "\n")
-        .replaceAll("&#35;", "#")
-        .replaceAll("&#59;", ";");
+    return XmlTextCodec.readElementText(element);
   }
 
   /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段

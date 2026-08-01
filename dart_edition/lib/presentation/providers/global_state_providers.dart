@@ -4,7 +4,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../bin/settings_manager.dart";
 import "../../bin/ui_library.dart";
 import "../../models/app_state_data.dart";
-import "core_providers.dart";
+import "repository_providers.dart";
 
 export "../../models/app_state_data.dart";
 

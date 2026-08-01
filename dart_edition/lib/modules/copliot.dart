@@ -14,6 +14,7 @@
 
 import "dart:async";
 import "dart:convert";
+import "dart:typed_data";
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
@@ -54,6 +55,32 @@ class _CopilotMessage {
   });
 }
 
+class _CopilotSettingsSnapshot {
+  final String provider;
+  final String apiUrl;
+  final String model;
+  final String apiKey;
+
+  const _CopilotSettingsSnapshot({
+    required this.provider,
+    required this.apiUrl,
+    required this.model,
+    required this.apiKey,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    return other is _CopilotSettingsSnapshot &&
+        other.provider == provider &&
+        other.apiUrl == apiUrl &&
+        other.model == model &&
+        other.apiKey == apiKey;
+  }
+
+  @override
+  int get hashCode => Object.hash(provider, apiUrl, model, apiKey);
+}
+
 class _SendCopilotMessageIntent extends Intent {
   const _SendCopilotMessageIntent();
 }
@@ -70,6 +97,15 @@ class _CopilotViewState extends State<CopilotView> {
   static const String _apiUrlPrefsKey = "copilot_api_url";
   static const String _modelPrefsKey = "copilot_model";
   static const String _apiKeyPrefsKey = "copilot_api_key";
+  static const int _maxUiMessages = 200;
+  static const int _maxUiHistoryBytes = 1024 * 1024;
+  static const int _maxContextMessages = 24;
+  static const int _maxContextBytes = 128 * 1024;
+  static const int _maxRequestBytes = 256 * 1024;
+  static const int _maxModelResponseBytes = 1024 * 1024;
+  static const int _maxChatResponseBytes = 2 * 1024 * 1024;
+  static const int _maxOutputTokens = 4096;
+  static const Duration _settingsDebounce = Duration(milliseconds: 350);
 
   static const List<_ProviderPreset> _providerPresets = [
     _ProviderPreset(
@@ -123,6 +159,7 @@ class _CopilotViewState extends State<CopilotView> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _modelFocusNode = FocusNode();
   final ScrollController _conversationScrollController = ScrollController();
+  http.Client _httpClient = http.Client();
 
   final List<_CopilotMessage> _messages = [];
   List<String> _availableModels = [];
@@ -133,6 +170,10 @@ class _CopilotViewState extends State<CopilotView> {
   bool _showApiKey = false;
   String? _statusMessage;
   String? _errorMessage;
+  Timer? _settingsSaveTimer;
+  Future<void> _settingsWrite = Future<void>.value();
+  int _modelRequestGeneration = 0;
+  int _chatRequestGeneration = 0;
 
   @override
   void initState() {
@@ -142,6 +183,12 @@ class _CopilotViewState extends State<CopilotView> {
 
   @override
   void dispose() {
+    _modelRequestGeneration++;
+    _chatRequestGeneration++;
+    _settingsSaveTimer?.cancel();
+    final _CopilotSettingsSnapshot settingsSnapshot = _settingsSnapshot();
+    unawaited(_enqueueSettingsWrite(settingsSnapshot));
+    _httpClient.close();
     _providerController.dispose();
     _apiUrlController.dispose();
     _modelController.dispose();
@@ -169,12 +216,48 @@ class _CopilotViewState extends State<CopilotView> {
     });
   }
 
-  Future<void> _saveSettings() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_providerPrefsKey, _providerController.text.trim());
-    await prefs.setString(_apiUrlPrefsKey, _apiUrlController.text.trim());
-    await prefs.setString(_modelPrefsKey, _modelController.text.trim());
-    await prefs.setString(_apiKeyPrefsKey, _apiKeyController.text);
+  _CopilotSettingsSnapshot _settingsSnapshot() {
+    return _CopilotSettingsSnapshot(
+      provider: _providerController.text.trim(),
+      apiUrl: _apiUrlController.text.trim(),
+      model: _modelController.text.trim(),
+      apiKey: _apiKeyController.text,
+    );
+  }
+
+  void _scheduleSettingsSave() {
+    final snapshot = _settingsSnapshot();
+    _settingsSaveTimer?.cancel();
+    _settingsSaveTimer = Timer(
+      _settingsDebounce,
+      () => unawaited(_enqueueSettingsWrite(snapshot)),
+    );
+  }
+
+  Future<void> _persistSettingsNow() {
+    _settingsSaveTimer?.cancel();
+    _settingsSaveTimer = null;
+    return _enqueueSettingsWrite(_settingsSnapshot());
+  }
+
+  Future<void> _enqueueSettingsWrite(_CopilotSettingsSnapshot snapshot) {
+    _settingsWrite = _settingsWrite
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint("Copilot settings write failed: $error\n$stackTrace");
+        })
+        .then((_) async {
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          await Future.wait([
+            prefs.setString(_providerPrefsKey, snapshot.provider),
+            prefs.setString(_apiUrlPrefsKey, snapshot.apiUrl),
+            prefs.setString(_modelPrefsKey, snapshot.model),
+            prefs.setString(_apiKeyPrefsKey, snapshot.apiKey),
+          ]);
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint("Copilot settings write failed: $error\n$stackTrace");
+        });
+    return _settingsWrite;
   }
 
   void _selectProvider(String providerName) {
@@ -195,7 +278,7 @@ class _CopilotViewState extends State<CopilotView> {
       _statusMessage = null;
       _errorMessage = null;
     });
-    unawaited(_saveSettings());
+    _scheduleSettingsSave();
   }
 
   String _normalizeApiUrl(String apiUrl) {
@@ -258,8 +341,28 @@ class _CopilotViewState extends State<CopilotView> {
     };
   }
 
+  List<_CopilotMessage> _modelContextMessages() {
+    final selected = <_CopilotMessage>[];
+    int totalBytes = 0;
+    for (final message in _messages.reversed) {
+      if (message.role == _CopilotRole.system) continue;
+      final messageBytes = utf8.encode(message.content).length + 32;
+      if (selected.isNotEmpty &&
+          (selected.length >= _maxContextMessages ||
+              totalBytes + messageBytes > _maxContextBytes)) {
+        break;
+      }
+      if (messageBytes > _maxContextBytes && selected.isEmpty) {
+        throw const FormatException("最新訊息超過模型 context 大小上限，請縮短內容。");
+      }
+      selected.add(message);
+      totalBytes += messageBytes;
+    }
+    return selected.reversed.toList(growable: false);
+  }
+
   List<Map<String, String>> _buildOpenAiCompatibleMessages() {
-    return _messages
+    return _modelContextMessages()
         .where((message) => message.role != _CopilotRole.system)
         .map(
           (message) => {
@@ -271,7 +374,7 @@ class _CopilotViewState extends State<CopilotView> {
   }
 
   List<Map<String, Object>> _buildGeminiContents() {
-    return _messages
+    return _modelContextMessages()
         .where((message) => message.role != _CopilotRole.system)
         .map(
           (message) => {
@@ -292,6 +395,62 @@ class _CopilotViewState extends State<CopilotView> {
     return trimmed;
   }
 
+  Future<http.Response> _sendBoundedJsonRequest(
+    String method,
+    Uri uri, {
+    required Map<String, String> headers,
+    Object? jsonBody,
+    required Duration timeout,
+    required int maxResponseBytes,
+  }) async {
+    final request = http.Request(method, uri)..headers.addAll(headers);
+    if (jsonBody != null) {
+      final body = jsonEncode(jsonBody);
+      final bodyBytes = utf8.encode(body).length;
+      if (bodyBytes > _maxRequestBytes) {
+        throw const FormatException("Copilot request 超過 256 KiB 上限，請縮短訊息。");
+      }
+      request.body = body;
+    }
+
+    final client = _httpClient;
+    try {
+      return await (() async {
+        final streamed = await client.send(request);
+        final bytes = BytesBuilder(copy: false);
+        int received = 0;
+        await for (final chunk in streamed.stream) {
+          received += chunk.length;
+          if (received > maxResponseBytes) {
+            throw const FormatException("Copilot response 超過允許的大小上限。");
+          }
+          bytes.add(chunk);
+        }
+        return http.Response.bytes(
+          bytes.takeBytes(),
+          streamed.statusCode,
+          request: request,
+          headers: streamed.headers,
+          reasonPhrase: streamed.reasonPhrase,
+          isRedirect: streamed.isRedirect,
+          persistentConnection: streamed.persistentConnection,
+        );
+      })().timeout(timeout);
+    } on TimeoutException {
+      client.close();
+      if (mounted && identical(client, _httpClient)) {
+        _httpClient = http.Client();
+      }
+      rethrow;
+    } on FormatException {
+      client.close();
+      if (mounted && identical(client, _httpClient)) {
+        _httpClient = http.Client();
+      }
+      rethrow;
+    }
+  }
+
   Future<http.Response> _readModelsResponse() {
     final _ProviderPreset preset = _selectedProviderPreset();
     final _CopilotModelReadMethod method = preset.modelReadMethod;
@@ -299,44 +458,49 @@ class _CopilotViewState extends State<CopilotView> {
 
     switch (method) {
       case _CopilotModelReadMethod.gemini:
-        return http
-            .get(
-              _buildProviderEndpointUri(
-                "/v1beta/models",
-                query: apiKey.isEmpty ? null : {"key": apiKey},
-              ),
-              headers: _buildHeaders(readMethod: method),
-            )
-            .timeout(const Duration(seconds: 30));
+        return _sendBoundedJsonRequest(
+          "GET",
+          _buildProviderEndpointUri(
+            "/v1beta/models",
+            query: apiKey.isEmpty ? null : {"key": apiKey},
+          ),
+          headers: _buildHeaders(readMethod: method),
+          timeout: const Duration(seconds: 30),
+          maxResponseBytes: _maxModelResponseBytes,
+        );
       case _CopilotModelReadMethod.anthropic:
-        return http
-            .get(
-              _buildProviderEndpointUri("/models"),
-              headers: _buildHeaders(readMethod: method),
-            )
-            .timeout(const Duration(seconds: 30));
+        return _sendBoundedJsonRequest(
+          "GET",
+          _buildProviderEndpointUri("/models"),
+          headers: _buildHeaders(readMethod: method),
+          timeout: const Duration(seconds: 30),
+          maxResponseBytes: _maxModelResponseBytes,
+        );
       case _CopilotModelReadMethod.ollama:
         if (_isOllamaV1Url) {
-          return http
-              .get(
-                _buildProviderEndpointUri("/models"),
-                headers: _buildHeaders(readMethod: method),
-              )
-              .timeout(const Duration(seconds: 30));
+          return _sendBoundedJsonRequest(
+            "GET",
+            _buildProviderEndpointUri("/models"),
+            headers: _buildHeaders(readMethod: method),
+            timeout: const Duration(seconds: 30),
+            maxResponseBytes: _maxModelResponseBytes,
+          );
         }
-        return http
-            .get(
-              _buildProviderEndpointUri("/api/tags"),
-              headers: _buildHeaders(readMethod: method),
-            )
-            .timeout(const Duration(seconds: 30));
+        return _sendBoundedJsonRequest(
+          "GET",
+          _buildProviderEndpointUri("/api/tags"),
+          headers: _buildHeaders(readMethod: method),
+          timeout: const Duration(seconds: 30),
+          maxResponseBytes: _maxModelResponseBytes,
+        );
       case _CopilotModelReadMethod.openAiCompatible:
-        return http
-            .get(
-              _buildProviderEndpointUri("/models"),
-              headers: _buildHeaders(readMethod: method),
-            )
-            .timeout(const Duration(seconds: 30));
+        return _sendBoundedJsonRequest(
+          "GET",
+          _buildProviderEndpointUri("/models"),
+          headers: _buildHeaders(readMethod: method),
+          timeout: const Duration(seconds: 30),
+          maxResponseBytes: _maxModelResponseBytes,
+        );
     }
   }
 
@@ -349,13 +513,23 @@ class _CopilotViewState extends State<CopilotView> {
       _errorMessage = null;
     });
 
+    final generation = ++_modelRequestGeneration;
     try {
-      await _saveSettings();
+      await _persistSettingsNow();
+      if (!mounted || generation != _modelRequestGeneration) return;
+      final requestSettings = _settingsSnapshot();
       final _ProviderPreset preset = _selectedProviderPreset();
       final http.Response response = await _readModelsResponse();
+      if (!mounted ||
+          generation != _modelRequestGeneration ||
+          requestSettings != _settingsSnapshot()) {
+        return;
+      }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception("模型抓取失敗 (${response.statusCode})：${response.body}");
+        throw Exception(
+          "模型抓取失敗 (${response.statusCode})：${_responsePreview(response)}",
+        );
       }
 
       final Object? decoded = jsonDecode(response.body);
@@ -374,11 +548,13 @@ class _CopilotViewState extends State<CopilotView> {
         }
         _statusMessage = "已抓取 ${_availableModels.length} 個模型。";
       });
-      await _saveSettings();
+      await _persistSettingsNow();
     } catch (e) {
-      setState(() => _errorMessage = e.toString());
+      if (mounted && generation == _modelRequestGeneration) {
+        setState(() => _errorMessage = e.toString());
+      }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _modelRequestGeneration) {
         setState(() => _isLoadingModels = false);
       }
     }
@@ -442,17 +618,19 @@ class _CopilotViewState extends State<CopilotView> {
     String model,
     _CopilotModelReadMethod method,
   ) {
-    return http
-        .post(
-          _buildProviderEndpointUri("/chat/completions"),
-          headers: _buildHeaders(readMethod: method),
-          body: jsonEncode({
-            "model": model,
-            "messages": _buildOpenAiCompatibleMessages(),
-            "temperature": 0.7,
-          }),
-        )
-        .timeout(const Duration(seconds: 60));
+    return _sendBoundedJsonRequest(
+      "POST",
+      _buildProviderEndpointUri("/chat/completions"),
+      headers: _buildHeaders(readMethod: method),
+      jsonBody: {
+        "model": model,
+        "messages": _buildOpenAiCompatibleMessages(),
+        "temperature": 0.7,
+        "max_tokens": _maxOutputTokens,
+      },
+      timeout: const Duration(seconds: 60),
+      maxResponseBytes: _maxChatResponseBytes,
+    );
   }
 
   Future<http.Response> _readChatResponse(String model) {
@@ -462,47 +640,53 @@ class _CopilotViewState extends State<CopilotView> {
 
     switch (method) {
       case _CopilotModelReadMethod.gemini:
-        return http
-            .post(
-              _buildProviderEndpointUri(
-                "/v1beta/models/${Uri.encodeComponent(_normalizeGeminiModelName(model))}:generateContent",
-                query: apiKey.isEmpty ? null : {"key": apiKey},
-              ),
-              headers: _buildHeaders(readMethod: method),
-              body: jsonEncode({
-                "contents": _buildGeminiContents(),
-                "generationConfig": {"temperature": 0.7},
-              }),
-            )
-            .timeout(const Duration(seconds: 60));
+        return _sendBoundedJsonRequest(
+          "POST",
+          _buildProviderEndpointUri(
+            "/v1beta/models/${Uri.encodeComponent(_normalizeGeminiModelName(model))}:generateContent",
+            query: apiKey.isEmpty ? null : {"key": apiKey},
+          ),
+          headers: _buildHeaders(readMethod: method),
+          jsonBody: {
+            "contents": _buildGeminiContents(),
+            "generationConfig": {
+              "temperature": 0.7,
+              "maxOutputTokens": _maxOutputTokens,
+            },
+          },
+          timeout: const Duration(seconds: 60),
+          maxResponseBytes: _maxChatResponseBytes,
+        );
       case _CopilotModelReadMethod.anthropic:
-        return http
-            .post(
-              _buildProviderEndpointUri("/messages"),
-              headers: _buildHeaders(readMethod: method),
-              body: jsonEncode({
-                "model": model,
-                "max_tokens": 4096,
-                "messages": _buildOpenAiCompatibleMessages(),
-              }),
-            )
-            .timeout(const Duration(seconds: 60));
+        return _sendBoundedJsonRequest(
+          "POST",
+          _buildProviderEndpointUri("/messages"),
+          headers: _buildHeaders(readMethod: method),
+          jsonBody: {
+            "model": model,
+            "max_tokens": _maxOutputTokens,
+            "messages": _buildOpenAiCompatibleMessages(),
+          },
+          timeout: const Duration(seconds: 60),
+          maxResponseBytes: _maxChatResponseBytes,
+        );
       case _CopilotModelReadMethod.ollama:
         if (_isOllamaV1Url) {
           return _readOpenAiCompatibleChatResponse(model, method);
         }
-        return http
-            .post(
-              _buildProviderEndpointUri("/api/chat"),
-              headers: _buildHeaders(readMethod: method),
-              body: jsonEncode({
-                "model": model,
-                "messages": _buildOpenAiCompatibleMessages(),
-                "stream": false,
-                "options": {"temperature": 0.7},
-              }),
-            )
-            .timeout(const Duration(seconds: 60));
+        return _sendBoundedJsonRequest(
+          "POST",
+          _buildProviderEndpointUri("/api/chat"),
+          headers: _buildHeaders(readMethod: method),
+          jsonBody: {
+            "model": model,
+            "messages": _buildOpenAiCompatibleMessages(),
+            "stream": false,
+            "options": {"temperature": 0.7, "num_predict": _maxOutputTokens},
+          },
+          timeout: const Duration(seconds: 60),
+          maxResponseBytes: _maxChatResponseBytes,
+        );
       case _CopilotModelReadMethod.openAiCompatible:
         return _readOpenAiCompatibleChatResponse(model, method);
     }
@@ -528,6 +712,7 @@ class _CopilotViewState extends State<CopilotView> {
 
     setState(() {
       _messages.add(userMessage);
+      _trimUiHistory();
       _messageController.clear();
       _isSending = true;
       _statusMessage = null;
@@ -535,19 +720,32 @@ class _CopilotViewState extends State<CopilotView> {
     });
     _scrollConversationToBottom();
 
+    final generation = ++_chatRequestGeneration;
     try {
-      await _saveSettings();
+      await _persistSettingsNow();
+      if (!mounted || generation != _chatRequestGeneration) return;
+      final requestSettings = _settingsSnapshot();
       final _ProviderPreset preset = _selectedProviderPreset();
       final http.Response response = await _readChatResponse(model);
+      if (!mounted ||
+          generation != _chatRequestGeneration ||
+          requestSettings != _settingsSnapshot()) {
+        return;
+      }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception("對話請求失敗 (${response.statusCode})：${response.body}");
+        throw Exception(
+          "對話請求失敗 (${response.statusCode})：${_responsePreview(response)}",
+        );
       }
 
       final String reply = _extractAssistantReply(
         jsonDecode(response.body),
         preset.modelReadMethod,
       );
+      if (utf8.encode(reply).length > _maxUiHistoryBytes) {
+        throw const FormatException("模型回覆超過 UI history 的 1 MiB 上限。");
+      }
       setState(() {
         _messages.add(
           _CopilotMessage(
@@ -556,17 +754,47 @@ class _CopilotViewState extends State<CopilotView> {
             createdAt: DateTime.now(),
           ),
         );
+        _trimUiHistory();
       });
       _scrollConversationToBottom();
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _messageController.text = prompt;
-      });
+      if (mounted && generation == _chatRequestGeneration) {
+        setState(() {
+          _errorMessage = e.toString();
+          _messageController.text = prompt;
+        });
+      }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _chatRequestGeneration) {
         setState(() => _isSending = false);
       }
+    }
+  }
+
+  String _responsePreview(http.Response response) {
+    const maxCharacters = 2048;
+    final body = response.body;
+    return body.length <= maxCharacters
+        ? body
+        : "${body.substring(0, maxCharacters)}…";
+  }
+
+  void _trimUiHistory() {
+    int totalBytes = 0;
+    int keepFrom = _messages.length;
+    for (int index = _messages.length - 1; index >= 0; index--) {
+      final nextBytes = utf8.encode(_messages[index].content).length + 32;
+      final nextCount = _messages.length - index;
+      if (nextCount > _maxUiMessages ||
+          (totalBytes + nextBytes > _maxUiHistoryBytes &&
+              keepFrom < _messages.length)) {
+        break;
+      }
+      totalBytes += nextBytes;
+      keepFrom = index;
+    }
+    if (keepFrom > 0) {
+      _messages.removeRange(0, keepFrom);
     }
   }
 
@@ -752,7 +980,7 @@ class _CopilotViewState extends State<CopilotView> {
       labelText: "API URL",
       hintText: "https://api.openai.com/v1",
       prefixIcon: const Icon(Icons.link),
-      onChanged: (_) => unawaited(_saveSettings()),
+      onChanged: (_) => _scheduleSettingsSave(),
     );
   }
 
@@ -779,7 +1007,7 @@ class _CopilotViewState extends State<CopilotView> {
                     labelText: "使用模型",
                     hintText: "選擇或輸入模型 ID",
                     prefixIcon: const Icon(Icons.memory),
-                    onChanged: (_) => unawaited(_saveSettings()),
+                    onChanged: (_) => _scheduleSettingsSave(),
                   );
                 },
             optionsViewBuilder: (context, onSelected, options) {
@@ -803,7 +1031,7 @@ class _CopilotViewState extends State<CopilotView> {
                           title: Text(option),
                           onTap: () {
                             onSelected(option);
-                            unawaited(_saveSettings());
+                            _scheduleSettingsSave();
                           },
                         );
                       },
@@ -844,7 +1072,7 @@ class _CopilotViewState extends State<CopilotView> {
         onPressed: () => setState(() => _showApiKey = !_showApiKey),
         icon: Icon(_showApiKey ? Icons.visibility_off : Icons.visibility),
       ),
-      onChanged: (_) => unawaited(_saveSettings()),
+      onChanged: (_) => _scheduleSettingsSave(),
     );
   }
 
@@ -864,7 +1092,9 @@ class _CopilotViewState extends State<CopilotView> {
                 const MediumTitle(icon: Icons.forum_outlined, text: "對話紀錄"),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: _messages.isEmpty ? null : _clearConversation,
+                  onPressed: _messages.isEmpty || _isSending
+                      ? null
+                      : _clearConversation,
                   icon: const Icon(Icons.delete_outline),
                   label: const Text("清空"),
                 ),

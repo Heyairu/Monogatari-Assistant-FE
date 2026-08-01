@@ -30,6 +30,23 @@ import "package:shared_preferences/shared_preferences.dart";
 
 enum _PunctuationProfile { zhTw, zhHk, zhHans, jp, kr, enOther }
 
+String _punctuationProfileCode(_PunctuationProfile profile) {
+  switch (profile) {
+    case _PunctuationProfile.zhTw:
+      return "ZH-TW";
+    case _PunctuationProfile.zhHk:
+      return "ZH-HK";
+    case _PunctuationProfile.zhHans:
+      return "ZH-HANS";
+    case _PunctuationProfile.jp:
+      return "JP";
+    case _PunctuationProfile.kr:
+      return "KR";
+    case _PunctuationProfile.enOther:
+      return "EN/Other";
+  }
+}
+
 class ProofReadingView extends ConsumerStatefulWidget {
   const ProofReadingView({
     super.key,
@@ -362,6 +379,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   int _fillerWordsRevision = 0;
   String? _loadingError;
   bool _isLoadingFillerWords = true;
+  int _fillerWordLoadGeneration = 0;
+  bool _isDisposing = false;
 
   List<_PairIssue> _pairIssues = const <_PairIssue>[];
   List<_ConsecutiveSymbolIssue> _symbolIssues =
@@ -438,6 +457,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   @override
   void dispose() {
+    _isDisposing = true;
+    _fillerWordLoadGeneration++;
     for (final s in _subscriptions) {
       try {
         s.close();
@@ -495,6 +516,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   }
 
   Future<void> _loadFillerWords() async {
+    final generation = ++_fillerWordLoadGeneration;
     setState(() {
       _isLoadingFillerWords = true;
       _loadingError = null;
@@ -502,6 +524,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
     try {
       final String raw = await rootBundle.loadString(_fillerWordAssetPath);
+      if (!mounted || generation != _fillerWordLoadGeneration) return;
       final dynamic decoded = jsonDecode(raw);
 
       if (decoded is! Map<String, dynamic>) {
@@ -528,13 +551,17 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       });
       _scheduleBackgroundProofreading(immediate: true);
     } catch (error) {
-      setState(() {
-        _loadingError = "無法載入贅字詞庫：$error";
-      });
+      if (mounted && generation == _fillerWordLoadGeneration) {
+        setState(() {
+          _loadingError = "無法載入贅字詞庫：$error";
+        });
+      }
     } finally {
-      setState(() {
-        _isLoadingFillerWords = false;
-      });
+      if (mounted && generation == _fillerWordLoadGeneration) {
+        setState(() {
+          _isLoadingFillerWords = false;
+        });
+      }
     }
   }
 
@@ -639,23 +666,6 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
   }
 
-  String _punctuationProfileCode(_PunctuationProfile profile) {
-    switch (profile) {
-      case _PunctuationProfile.zhTw:
-        return "ZH-TW";
-      case _PunctuationProfile.zhHk:
-        return "ZH-HK";
-      case _PunctuationProfile.zhHans:
-        return "ZH-HANS";
-      case _PunctuationProfile.jp:
-        return "JP";
-      case _PunctuationProfile.kr:
-        return "KR";
-      case _PunctuationProfile.enOther:
-        return "EN/Other";
-    }
-  }
-
   Future<void> _setPunctuationProfile(_PunctuationProfile profile) async {
     if (profile == _punctuationProfile) {
       return;
@@ -718,206 +728,8 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
   }
 
-  bool _usesCjkPunctuationStyle(_PunctuationProfile profile) {
-    return profile == _PunctuationProfile.zhTw ||
-        profile == _PunctuationProfile.zhHk ||
-        profile == _PunctuationProfile.zhHans ||
-        profile == _PunctuationProfile.jp;
-  }
-
-  Map<String, String> _punctuationMapForProfile(_PunctuationProfile profile) {
-    switch (profile) {
-      case _PunctuationProfile.zhTw:
-      case _PunctuationProfile.zhHk:
-        return _zhHantPunctuationMap;
-      case _PunctuationProfile.zhHans:
-        return _zhHansPunctuationMap;
-      case _PunctuationProfile.jp:
-        return _jpPunctuationMap;
-      case _PunctuationProfile.kr:
-      case _PunctuationProfile.enOther:
-        return _latinPunctuationMap;
-    }
-  }
-
-  Set<String> _allowedLineEndingSymbolsForProfile(_PunctuationProfile profile) {
-    switch (profile) {
-      case _PunctuationProfile.zhTw:
-      case _PunctuationProfile.zhHk:
-      case _PunctuationProfile.zhHans:
-      case _PunctuationProfile.jp:
-        return _cjkLineEndingSymbols;
-      case _PunctuationProfile.kr:
-      case _PunctuationProfile.enOther:
-        return _latinLineEndingSymbols;
-    }
-  }
-
-  List<bool> _buildLatinStyleMaskForLine(
-    String line, {
-    Set<int>? maskBoundaryIndexes,
-  }) {
-    final List<bool> mask = List<bool>.filled(line.length, false);
-    if (!_enableLatinSentenceDetection || line.isEmpty) {
-      return mask;
-    }
-
-    final Map<String, String> closingToOpening = <String, String>{
-      for (final MapEntry<String, String> entry in _openingToClosing.entries)
-        if (entry.key != entry.value) entry.value: entry.key,
-    };
-    final Set<String> selfPairedSymbols = _openingToClosing.entries
-        .where((MapEntry<String, String> entry) => entry.key == entry.value)
-        .map((MapEntry<String, String> entry) => entry.key)
-        .toSet();
-
-    final List<_StackToken> stack = <_StackToken>[];
-    final List<({int start, int end})> ranges = <({int start, int end})>[];
-
-    for (int i = 0; i < line.length; i++) {
-      final String char = line[i];
-
-      if (selfPairedSymbols.contains(char)) {
-        if (stack.isNotEmpty && stack.last.symbol == char) {
-          final _StackToken open = stack.removeLast();
-          ranges.add((start: open.index, end: i));
-        } else {
-          stack.add(_StackToken(symbol: char, index: i));
-        }
-        continue;
-      }
-
-      if (_openingToClosing.containsKey(char)) {
-        stack.add(_StackToken(symbol: char, index: i));
-        continue;
-      }
-
-      if (!closingToOpening.containsKey(char) || stack.isEmpty) {
-        continue;
-      }
-
-      final String expectedOpening = closingToOpening[char] ?? "";
-      if (stack.last.symbol == expectedOpening) {
-        final _StackToken open = stack.removeLast();
-        ranges.add((start: open.index, end: i));
-      }
-    }
-
-    for (final ({int start, int end}) range in ranges) {
-      bool hasLatin = false;
-      bool hasCjk = false;
-      for (int i = range.start; i <= range.end; i++) {
-        if (_isAsciiLetter(line[i])) {
-          hasLatin = true;
-        }
-        if (_isCjkCharacter(line[i])) {
-          hasCjk = true;
-        }
-        if (hasLatin && hasCjk) {
-          break;
-        }
-      }
-
-      // 僅在成對區段幾乎為純拉丁內容時，才整段套用拉丁語境。
-      // 若同時含有 CJK 與拉丁文字，避免把整句 CJK 標點誤判為拉丁標點。
-      if (hasLatin && !hasCjk) {
-        for (int i = range.start; i <= range.end; i++) {
-          mask[i] = true;
-        }
-        maskBoundaryIndexes?.add(range.start);
-        maskBoundaryIndexes?.add(range.end);
-      }
-    }
-
-    int segmentStart = -1;
-    bool segmentHasLatin = false;
-
-    void flushSegment(int endExclusive) {
-      if (segmentStart < 0) {
-        return;
-      }
-      if (segmentHasLatin) {
-        for (int i = segmentStart; i < endExclusive; i++) {
-          if (!mask[i]) {
-            mask[i] = true;
-          }
-        }
-      }
-      segmentStart = -1;
-      segmentHasLatin = false;
-    }
-
-    for (int i = 0; i < line.length; i++) {
-      final String char = line[i];
-      if (mask[i] ||
-          _isCjkNonPunctuationMaskCharacter(char) ||
-          _isCjkPunctuationLeadingCjkText(line, i) ||
-          _isCjkPunctuationInCjkContext(line, i)) {
-        flushSegment(i);
-        continue;
-      }
-
-      if (segmentStart < 0) {
-        segmentStart = i;
-      }
-      if (_isAsciiLetter(char)) {
-        segmentHasLatin = true;
-      }
-    }
-    flushSegment(line.length);
-
-    return mask;
-  }
-
-  bool _isMathSymbol(String char) {
-    return "+-*/%^=<>±×÷~()[]{}（）［］｛｝".contains(char);
-  }
-
-  bool _isAllowedNumericContextChar(String char) {
-    return _isAsciiDigit(char) || _isMathSymbol(char) || _isWhitespace(char);
-  }
-
-  bool _isProtectedNumericDot(String text, int index) {
-    if (index < 0 || index >= text.length || text[index] != ".") {
-      return false;
-    }
-
-    int left = index - 1;
-    bool hasLeftDigit = false;
-    while (left >= 0 && _isAllowedNumericContextChar(text[left])) {
-      if (_isAsciiDigit(text[left])) {
-        hasLeftDigit = true;
-      }
-      left--;
-    }
-
-    int right = index + 1;
-    bool hasRightDigit = false;
-    while (right < text.length && _isAllowedNumericContextChar(text[right])) {
-      if (_isAsciiDigit(text[right])) {
-        hasRightDigit = true;
-      }
-      right++;
-    }
-
-    if (!hasLeftDigit || !hasRightDigit) {
-      return false;
-    }
-
-    final String segment = text.substring(left + 1, right);
-    if (RegExp(r"[A-Za-z]").hasMatch(segment)) {
-      return false;
-    }
-    if (RegExp(
-      r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]",
-    ).hasMatch(segment)) {
-      return false;
-    }
-
-    return true;
-  }
-
   Future<void> _runProofreading() async {
+    if (_isDisposing) return;
     final String text = widget.textController.text;
     final int revision = ++_proofreadingRevision;
     _pendingProofreadingRequest = _ProofreadingRequest(
@@ -943,7 +755,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
     _isProofreadingRunning = true;
     try {
-      while (mounted) {
+      while (mounted && !_isDisposing) {
         final _ProofreadingRequest? request = _pendingProofreadingRequest;
         if (request == null) {
           break;
@@ -954,6 +766,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         try {
           result = await _proofreadingWorker.analyze(request);
         } catch (error, stackTrace) {
+          if (_isDisposing || !mounted) return;
           debugPrint("Proofreading worker failed: $error\n$stackTrace");
           continue;
         }
@@ -998,7 +811,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       _isProofreadingRunning = false;
     }
 
-    if (mounted && _pendingProofreadingRequest != null) {
+    if (mounted && !_isDisposing && _pendingProofreadingRequest != null) {
       unawaited(_drainProofreadingRequests());
     }
   }
@@ -1129,346 +942,6 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       matches: matches,
       color: Colors.green,
     );
-  }
-
-  List<_SameTypeQuoteIssue> _detectSameTypeQuoteNesting(String text) {
-    final List<_SameTypeQuoteIssue> issues = <_SameTypeQuoteIssue>[];
-    final List<String> lines = text.split("\n");
-    int lineStartOffset = 0;
-
-    for (final String line in lines) {
-      final _SameTypeQuoteIssue? asciiIssue = _detectAsciiQuoteIssueInLine(
-        line,
-        lineStartOffset,
-      );
-      if (asciiIssue != null) {
-        issues.add(asciiIssue);
-      }
-
-      final _SameTypeQuoteIssue? cjkIssue = _detectCjkQuoteIssueInLine(
-        line,
-        lineStartOffset,
-      );
-      if (cjkIssue != null) {
-        issues.add(cjkIssue);
-      }
-
-      lineStartOffset += line.length + 1;
-    }
-
-    return issues;
-  }
-
-  _SameTypeQuoteIssue? _detectAsciiQuoteIssueInLine(
-    String line,
-    int lineStartOffset,
-  ) {
-    final List<_AsciiQuoteMarker> markers = _collectAsciiQuoteMarkers(line);
-    if (markers.length < 2) {
-      return null;
-    }
-
-    final String? startMessage = markers.first.symbol == "'"
-        ? "引號結構應以\" \"開頭，不應以' '開頭。"
-        : null;
-
-    int maxDepth = 0;
-    for (final _AsciiQuoteMarker marker in markers) {
-      if (marker.level > maxDepth) {
-        maxDepth = marker.level;
-      }
-    }
-
-    final String suggested = _applyAsciiQuoteSuggestion(line, markers);
-    final bool hasNestedIssue = maxDepth > 1;
-    if (!hasNestedIssue && startMessage == null) {
-      return null;
-    }
-
-    return _SameTypeQuoteIssue(
-      index: lineStartOffset + markers.first.index,
-      message: startMessage ?? "偵測到引號層級未交錯，建議以\" \"與' '交替。",
-      suggestion: suggested,
-    );
-  }
-
-  String _applyAsciiQuoteSuggestion(
-    String text,
-    List<_AsciiQuoteMarker> markers,
-  ) {
-    final List<String> chars = text.split("");
-    for (final _AsciiQuoteMarker marker in markers) {
-      if (marker.isOpen) {
-        chars[marker.index] = marker.level.isOdd ? '"' : "'";
-      } else {
-        chars[marker.index] = marker.level.isOdd ? '"' : "'";
-      }
-    }
-    return chars.join();
-  }
-
-  List<_AsciiQuoteMarker> _collectAsciiQuoteMarkers(String text) {
-    final List<int> positions = <int>[];
-    final List<String> symbols = <String>[];
-
-    for (int i = 0; i < text.length; i++) {
-      final String ch = text[i];
-      if (ch == '"' || (ch == "'" && _shouldConvertSingleQuote(text, i))) {
-        positions.add(i);
-        symbols.add(ch);
-      }
-    }
-
-    final int usableCount = positions.length.isOdd
-        ? positions.length - 1
-        : positions.length;
-    if (usableCount <= 0) {
-      return const <_AsciiQuoteMarker>[];
-    }
-
-    final List<_AsciiQuoteMarker> markers = <_AsciiQuoteMarker>[];
-    int depth = 0;
-
-    for (int k = 0; k < usableCount; k++) {
-      final int index = positions[k];
-      final String symbol = symbols[k];
-      final int remaining = usableCount - k;
-
-      final String prev = index > 0 ? text[index - 1] : "";
-      final String next = index < text.length - 1 ? text[index + 1] : "";
-      final bool likelyOpen = _isLikelyQuoteOpeningContext(prev, next);
-      final bool likelyClose = _isLikelyQuoteClosingContext(prev, next);
-
-      final bool isOpen;
-      if (depth == 0) {
-        isOpen = true;
-      } else if (likelyClose && !likelyOpen) {
-        isOpen = false;
-      } else if (likelyOpen && !likelyClose) {
-        isOpen = true;
-      } else if (remaining == depth) {
-        isOpen = false;
-      } else {
-        isOpen = remaining > depth + 1;
-      }
-
-      if (isOpen) {
-        final int level = depth + 1;
-        markers.add(
-          _AsciiQuoteMarker(
-            index: index,
-            symbol: symbol,
-            isOpen: true,
-            level: level,
-          ),
-        );
-        depth = level;
-      } else {
-        final int level = depth == 0 ? 1 : depth;
-        markers.add(
-          _AsciiQuoteMarker(
-            index: index,
-            symbol: symbol,
-            isOpen: false,
-            level: level,
-          ),
-        );
-        if (depth > 0) {
-          depth--;
-        }
-      }
-    }
-
-    return markers;
-  }
-
-  bool _isLikelyQuoteOpeningContext(String prev, String next) {
-    final bool prevAllowsOpen =
-        prev.isEmpty ||
-        _isWhitespace(prev) ||
-        "([{（［｛「『【《〈".contains(prev) ||
-        "，。！？；：、,.;:!?".contains(prev);
-
-    final bool nextLooksContent =
-        next.isNotEmpty &&
-        (_isAsciiLetter(next) || _isAsciiDigit(next) || _isCjkCharacter(next));
-
-    return prevAllowsOpen || nextLooksContent;
-  }
-
-  bool _isLikelyQuoteClosingContext(String prev, String next) {
-    final bool prevLooksContent =
-        prev.isNotEmpty &&
-        (_isAsciiLetter(prev) || _isAsciiDigit(prev) || _isCjkCharacter(prev));
-
-    final bool nextAllowsClose =
-        next.isEmpty ||
-        _isWhitespace(next) ||
-        ")]}）］｝」』】》〉，。！？；：、,.;:!?".contains(next);
-
-    return prevLooksContent || nextAllowsClose;
-  }
-
-  _SameTypeQuoteIssue? _detectCjkQuoteIssueInLine(
-    String line,
-    int lineStartOffset,
-  ) {
-    final List<int> positions = <int>[];
-    for (int i = 0; i < line.length; i++) {
-      final String ch = line[i];
-      if (ch == "「" || ch == "」" || ch == "『" || ch == "』") {
-        positions.add(i);
-      }
-    }
-
-    if (positions.length < 2) {
-      return null;
-    }
-
-    final String firstQuote = line[positions.first];
-    final String? startMessage = firstQuote == "『"
-        ? "引號結構應以「」開頭，不應以『』開頭。"
-        : null;
-
-    final List<String> chars = line.split("");
-    int depth = 0;
-    for (final int pos in positions) {
-      final String ch = line[pos];
-      final bool isOpen = ch == "「" || ch == "『";
-      if (isOpen) {
-        final int level = depth + 1;
-        chars[pos] = level.isOdd ? "「" : "『";
-        depth = level;
-      } else {
-        final int level = depth == 0 ? 1 : depth;
-        chars[pos] = level.isOdd ? "」" : "』";
-        if (depth > 0) {
-          depth--;
-        }
-      }
-    }
-
-    final String suggested = chars.join();
-    if (suggested == line && startMessage == null) {
-      return null;
-    }
-
-    return _SameTypeQuoteIssue(
-      index: lineStartOffset + positions.first,
-      message: startMessage ?? "偵測到引號層級未交錯，建議以「『』」為一循環交替。",
-      suggestion: suggested,
-    );
-  }
-
-  List<_ConsecutiveSymbolIssue> _detectConsecutiveSymbols(String text) {
-    final List<_ConsecutiveSymbolIssue> issues = <_ConsecutiveSymbolIssue>[];
-    int i = 0;
-
-    while (i < text.length) {
-      final String symbol = text[i];
-      int j = i + 1;
-      while (j < text.length && text[j] == symbol) {
-        j++;
-      }
-
-      final int count = j - i;
-      final String? category = _consecutiveSymbolCategory[symbol];
-      if (_shouldFlagConsecutiveSymbol(symbol, count) && category != null) {
-        final String sequence = text.substring(i, j);
-        final String message = symbol == "…"
-            ? "刪節號建議使用「……」，目前為「$sequence」。"
-            : "連續$count個$category「$sequence」。";
-        issues.add(
-          _ConsecutiveSymbolIssue(
-            index: i,
-            symbol: symbol,
-            count: count,
-            category: category,
-            sequence: sequence,
-            message: message,
-          ),
-        );
-      }
-
-      i = j;
-    }
-
-    return issues;
-  }
-
-  bool _shouldFlagConsecutiveSymbol(String symbol, int count) {
-    if (symbol == "…") {
-      return count != 2;
-    }
-
-    return count >= 2;
-  }
-
-  List<_LineEndingIssue> _detectLineEndingIssues(String text) {
-    final List<_LineEndingIssue> issues = <_LineEndingIssue>[];
-    final List<String> lines = text.split("\n");
-    final String code = _punctuationProfileCode(_punctuationProfile);
-    int lineStartOffset = 0;
-
-    for (final String line in lines) {
-      final String trimmedRight = line.replaceFirst(RegExp(r"\s+$"), "");
-      if (trimmedRight.isNotEmpty) {
-        final Set<int> maskBoundaryIndexes = <int>{};
-        final List<bool> latinMask = _buildLatinStyleMaskForLine(
-          trimmedRight,
-          maskBoundaryIndexes: maskBoundaryIndexes,
-        );
-        final int lastIndex = trimmedRight.length - 1;
-        final String endingSymbol = trimmedRight[lastIndex];
-        final bool useLatinStyle = latinMask.isNotEmpty && latinMask[lastIndex];
-        if (_isMaskedPunctuationCharacter(
-          line: trimmedRight,
-          char: endingSymbol,
-          index: lastIndex,
-          useLatinStyle: useLatinStyle,
-          maskBoundaryIndexes: maskBoundaryIndexes,
-        )) {
-          lineStartOffset += line.length + 1;
-          continue;
-        }
-
-        final Set<String> allowedSymbols = <String>{
-          ...useLatinStyle
-              ? _latinLineEndingSymbols
-              : _allowedLineEndingSymbolsForProfile(_punctuationProfile),
-        };
-        if (useLatinStyle && _latinAllowCjkQuoteBracketEnding) {
-          allowedSymbols.addAll(_latinEndingCjkQuoteBracketSymbols);
-        }
-        if (useLatinStyle && _latinAllowCjkQuestionExclamationEnding) {
-          allowedSymbols.addAll(_latinEndingCjkQuestionExclamationSymbols);
-        }
-        if (_numericDetectionAlwaysOn &&
-            _isProtectedNumericDot(trimmedRight, lastIndex)) {
-          allowedSymbols.add(".");
-        }
-
-        if (_shouldIgnoreLineEndingWarning(trimmedRight, endingSymbol)) {
-          lineStartOffset += line.length + 1;
-          continue;
-        }
-
-        if (_shouldForceWarnLineEnding(trimmedRight, endingSymbol) ||
-            !allowedSymbols.contains(endingSymbol)) {
-          issues.add(
-            _LineEndingIssue(
-              index: lineStartOffset + lastIndex,
-              endingSymbol: endingSymbol,
-              message: "[$code] 行尾未符合結尾規則，目前為「$endingSymbol」。",
-            ),
-          );
-        }
-      }
-
-      lineStartOffset += line.length + 1;
-    }
-
-    return issues;
   }
 
   void _applyPunctuationNormalization() {
@@ -1720,571 +1193,11 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     widget.onRequestFocusEditor?.call();
   }
 
-  List<_PairIssue> _checkPairClosures(String text) {
-    final Map<String, String> closingToOpening = <String, String>{
-      for (final MapEntry<String, String> entry in _openingToClosing.entries)
-        entry.value: entry.key,
-    };
-    final Set<String> selfPairedSymbols = _openingToClosing.entries
-        .where((MapEntry<String, String> entry) => entry.key == entry.value)
-        .map((MapEntry<String, String> entry) => entry.key)
-        .toSet();
-
-    final List<_StackToken> stack = <_StackToken>[];
-    final List<_PairIssue> issues = <_PairIssue>[];
-
-    for (int i = 0; i < text.length; i++) {
-      final String char = text[i];
-
-      if (selfPairedSymbols.contains(char)) {
-        if (stack.isNotEmpty && stack.last.symbol == char) {
-          stack.removeLast();
-        } else {
-          stack.add(_StackToken(symbol: char, index: i));
-        }
-        continue;
-      }
-
-      if (_openingToClosing.containsKey(char)) {
-        stack.add(_StackToken(symbol: char, index: i));
-        continue;
-      }
-
-      if (!closingToOpening.containsKey(char)) {
-        continue;
-      }
-
-      if (stack.isEmpty) {
-        issues.add(
-          _PairIssue(index: i, symbol: char, message: "出現未配對的右符號「$char」。"),
-        );
-        continue;
-      }
-
-      final _StackToken top = stack.removeLast();
-      final String expected = _openingToClosing[top.symbol] ?? "";
-      if (char != expected) {
-        issues.add(
-          _PairIssue(
-            index: i,
-            symbol: char,
-            message: "右符號「$char」與左符號「${top.symbol}」不匹配，預期為「$expected」。",
-          ),
-        );
-      }
-    }
-
-    for (final _StackToken token in stack.reversed) {
-      final String expected = _openingToClosing[token.symbol] ?? "";
-      issues.add(
-        _PairIssue(
-          index: token.index,
-          symbol: token.symbol,
-          message: "左符號「${token.symbol}」未閉合，缺少「$expected」。",
-        ),
-      );
-    }
-
-    issues.sort((a, b) => a.index.compareTo(b.index));
-    return issues;
-  }
-
-  _PunctuationNormalizationResult _normalizePunctuation(String text) {
-    final StringBuffer buffer = StringBuffer();
-    final List<_PunctuationChange> changes = <_PunctuationChange>[];
-    final _PunctuationProfile profile = _punctuationProfile;
-    final List<String> lines = text.split("\n");
-    int lineStartOffset = 0;
-
-    for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-      final String line = lines[lineIndex];
-      final Set<int> maskBoundaryIndexes = <int>{};
-      final List<bool> latinMask = _buildLatinStyleMaskForLine(
-        line,
-        maskBoundaryIndexes: maskBoundaryIndexes,
-      );
-      final Map<int, String> quoteReplacementMapDefault =
-          _buildQuoteReplacementMap(line, profile);
-      final Map<int, String> quoteReplacementMapLatin =
-          _buildQuoteReplacementMap(line, _PunctuationProfile.enOther);
-      final Map<String, String> punctuationMapDefault =
-          _punctuationMapForProfile(profile);
-
-      for (int i = 0; i < line.length; i++) {
-        final bool useLatinStyle = latinMask.isNotEmpty && latinMask[i];
-        final bool useCjkStyle =
-            !useLatinStyle && _usesCjkPunctuationStyle(profile);
-        final Map<int, String> quoteReplacementMap = useLatinStyle
-            ? quoteReplacementMapLatin
-            : quoteReplacementMapDefault;
-        final Map<String, String> punctuationMap = useLatinStyle
-            ? _latinPunctuationMap
-            : punctuationMapDefault;
-
-        if (useCjkStyle) {
-          if (line.startsWith("......", i)) {
-            buffer.write("……");
-            changes.add(
-              _PunctuationChange(
-                index: lineStartOffset + i,
-                from: "......",
-                to: "……",
-              ),
-            );
-            i += 5;
-            continue;
-          } else if (line.startsWith("...", i)) {
-            buffer.write("……");
-            changes.add(
-              _PunctuationChange(
-                index: lineStartOffset + i,
-                from: "...",
-                to: "……",
-              ),
-            );
-            i += 2;
-            continue;
-          }
-        } else {
-          if (line.startsWith("……", i)) {
-            buffer.write("...");
-            changes.add(
-              _PunctuationChange(
-                index: lineStartOffset + i,
-                from: "……",
-                to: "...",
-              ),
-            );
-            i += 1;
-            continue;
-          } else if (line.startsWith("…", i)) {
-            buffer.write("...");
-            changes.add(
-              _PunctuationChange(
-                index: lineStartOffset + i,
-                from: "…",
-                to: "...",
-              ),
-            );
-            continue;
-          } else if (line.startsWith("......", i)) {
-            buffer.write("...");
-            changes.add(
-              _PunctuationChange(
-                index: lineStartOffset + i,
-                from: "......",
-                to: "...",
-              ),
-            );
-            i += 5;
-            continue;
-          }
-        }
-
-        final String current = line[i];
-        String? replacement;
-        if (_isMaskedPunctuationCharacter(
-          line: line,
-          char: current,
-          index: i,
-          useLatinStyle: useLatinStyle,
-          maskBoundaryIndexes: maskBoundaryIndexes,
-        )) {
-          replacement = null;
-        } else if (current == "." &&
-            _numericDetectionAlwaysOn &&
-            _isProtectedNumericDot(line, i)) {
-          replacement = null;
-        } else if (current == "." &&
-            useCjkStyle &&
-            _shouldConvertPeriod(line, i)) {
-          replacement = "。";
-        } else if (current == "\"" ||
-            (current == "'" && _shouldConvertSingleQuote(line, i))) {
-          replacement = quoteReplacementMap[i];
-        } else {
-          replacement = punctuationMap[current];
-        }
-
-        if (replacement != null) {
-          buffer.write(replacement);
-          changes.add(
-            _PunctuationChange(
-              index: lineStartOffset + i,
-              from: current,
-              to: replacement,
-            ),
-          );
-        } else {
-          buffer.write(current);
-        }
-      }
-
-      if (lineIndex < lines.length - 1) {
-        buffer.write("\n");
-      }
-      lineStartOffset += line.length + 1;
-    }
-
-    final String normalizedText = buffer.toString();
-    return _PunctuationNormalizationResult(
-      normalizedText: normalizedText,
-      changes: changes,
-    );
-  }
-
-  Map<int, String> _buildQuoteReplacementMap(
-    String text,
-    _PunctuationProfile profile,
-  ) {
-    final Map<int, String> replacements = <int, String>{};
-    final List<_AsciiQuoteMarker> markers = _collectAsciiQuoteMarkers(text);
-    for (final _AsciiQuoteMarker marker in markers) {
-      if (profile == _PunctuationProfile.zhHans) {
-        if (marker.isOpen) {
-          replacements[marker.index] = marker.level.isOdd ? "“" : "‘";
-        } else {
-          replacements[marker.index] = marker.level.isOdd ? "”" : "’";
-        }
-      } else if (profile == _PunctuationProfile.kr ||
-          profile == _PunctuationProfile.enOther) {
-        if (marker.isOpen) {
-          replacements[marker.index] = marker.level.isOdd ? "\"" : "'";
-        } else {
-          replacements[marker.index] = marker.level.isOdd ? "\"" : "'";
-        }
-      } else {
-        if (marker.isOpen) {
-          replacements[marker.index] = marker.level.isOdd ? "「" : "『";
-        } else {
-          replacements[marker.index] = marker.level.isOdd ? "」" : "』";
-        }
-      }
-    }
-
-    return replacements;
-  }
-
-  bool _shouldConvertPeriod(String text, int index) {
-    final bool hasPrev = index > 0;
-    final bool hasNext = index < text.length - 1;
-    if (!hasPrev) {
-      return false;
-    }
-
-    final String prev = text[index - 1];
-    final String next = hasNext ? text[index + 1] : "";
-
-    final bool isDecimal =
-        hasNext && _isAsciiDigit(prev) && _isAsciiDigit(next);
-    if (isDecimal) {
-      return false;
-    }
-
-    final bool cjkBefore = _isCjkCharacter(prev);
-    final bool cjkOrBoundaryAfter =
-        !hasNext || _isCjkCharacter(next) || _isWhitespace(next);
-    return cjkBefore && cjkOrBoundaryAfter;
-  }
-
-  bool _shouldConvertSingleQuote(String text, int index) {
-    final bool hasPrev = index > 0;
-    final bool hasNext = index < text.length - 1;
-    if (!hasPrev || !hasNext) {
-      return false;
-    }
-
-    final String prev = text[index - 1];
-    final String next = text[index + 1];
-    final bool isWordApostrophe = _isAsciiLetter(prev) && _isAsciiLetter(next);
-    return !isWordApostrophe;
-  }
-
-  bool _isAsciiDigit(String char) {
-    if (char.isEmpty) {
-      return false;
-    }
-    final int code = char.codeUnitAt(0);
-    return code >= 48 && code <= 57;
-  }
-
-  bool _isAsciiLetter(String char) {
-    if (char.isEmpty) {
-      return false;
-    }
-    final int code = char.codeUnitAt(0);
-    final bool lower = code >= 97 && code <= 122;
-    final bool upper = code >= 65 && code <= 90;
-    return lower || upper;
-  }
-
-  bool _isWhitespace(String char) {
-    return char.trim().isEmpty;
-  }
-
-  bool _isCjkCharacter(String char) {
-    if (char.isEmpty) {
-      return false;
-    }
-    final int code = char.codeUnitAt(0);
-    return (code >= 0x3400 && code <= 0x4DBF) ||
-        (code >= 0x4E00 && code <= 0x9FFF) ||
-        (code >= 0xF900 && code <= 0xFAFF);
-  }
-
-  bool _isCjkNonPunctuationMaskCharacter(String char) {
-    if (!_isCjkCharacter(char)) {
-      return false;
-    }
-    return !"，。！？：；、…「」『』（）［］｛｝【】《》〈〉“”‘’".contains(char);
-  }
-
-  bool _isCjkPunctuationCharacter(String char) {
-    return _cjkPunctuationSymbols.contains(char);
-  }
-
-  bool _isCjkPunctuationLeadingCjkText(String line, int index) {
-    if (index < 0 || index >= line.length) {
-      return false;
-    }
-
-    final String char = line[index];
-    if (!_isCjkPunctuationCharacter(char)) {
-      return false;
-    }
-
-    int right = index + 1;
-    while (right < line.length && _isCjkPunctuationCharacter(line[right])) {
-      right++;
-    }
-
-    if (right >= line.length) {
-      return false;
-    }
-
-    return _isCjkCharacter(line[right]);
-  }
-
-  bool _isCjkPunctuationInCjkContext(String line, int index) {
-    if (!_latinAllowCjkPunctuationAroundCjkText) {
-      return false;
-    }
-    if (index < 0 || index >= line.length) {
-      return false;
-    }
-
-    final String char = line[index];
-    if (!_isCjkPunctuationCharacter(char)) {
-      return false;
-    }
-
-    int left = index - 1;
-    while (left >= 0 && _isCjkPunctuationCharacter(line[left])) {
-      left--;
-    }
-
-    int right = index + 1;
-    while (right < line.length && _isCjkPunctuationCharacter(line[right])) {
-      right++;
-    }
-
-    final bool leftInCjkContext = left < 0 || _isCjkCharacter(line[left]);
-    final bool rightInCjkContext =
-        right >= line.length || _isCjkCharacter(line[right]);
-
-    return leftInCjkContext || rightInCjkContext;
-  }
-
-  bool _shouldIgnoreLineEndingWarning(String line, String endingSymbol) {
-    if (_lineEndingIgnoreComma &&
-        (endingSymbol == "," ||
-            endingSymbol == "，" ||
-            (_punctuationProfile == _PunctuationProfile.jp &&
-                endingSymbol == "、"))) {
-      return true;
-    }
-    if (_lineEndingIgnoreDash && (endingSymbol == "—" || endingSymbol == "-")) {
-      return true;
-    }
-    if (_lineEndingIgnoreColon &&
-        (endingSymbol == ":" || endingSymbol == "：")) {
-      return true;
-    }
-    if (_lineEndingIgnoreSemicolon &&
-        (endingSymbol == ";" || endingSymbol == "；")) {
-      return true;
-    }
-    if (_lineEndingIgnoreEllipsis &&
-        (endingSymbol == "…" || line.endsWith("……") || line.endsWith("..."))) {
-      return true;
-    }
-    return false;
-  }
-
-  bool _shouldForceWarnLineEnding(String line, String endingSymbol) {
-    if (!_lineEndingIgnoreComma &&
-        (endingSymbol == "," ||
-            endingSymbol == "，" ||
-            (_punctuationProfile == _PunctuationProfile.jp &&
-                endingSymbol == "、"))) {
-      return true;
-    }
-    if (!_lineEndingIgnoreDash &&
-        (endingSymbol == "—" || endingSymbol == "-")) {
-      return true;
-    }
-    if (!_lineEndingIgnoreColon &&
-        (endingSymbol == ":" || endingSymbol == "：")) {
-      return true;
-    }
-    if (!_lineEndingIgnoreSemicolon &&
-        (endingSymbol == ";" || endingSymbol == "；")) {
-      return true;
-    }
-    if (!_lineEndingIgnoreEllipsis &&
-        (endingSymbol == "…" || line.endsWith("……") || line.endsWith("..."))) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _isMaskedPunctuationCharacter({
-    required String line,
-    required String char,
-    required int index,
-    required bool useLatinStyle,
-    required Set<int> maskBoundaryIndexes,
-  }) {
-    if (maskBoundaryIndexes.contains(index) &&
-        _maskQuoteSymbols.contains(char)) {
-      return true;
-    }
-
-    if (!useLatinStyle &&
-        (_maskScopedSymbols.contains(char) ||
-            _isCjkNonPunctuationMaskCharacter(char))) {
-      return true;
-    }
-
-    if (useLatinStyle &&
-        _isAllowedLatinEndingCjkSymbolInMask(line, index, char)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _isAllowedLatinEndingCjkSymbolInMask(
-    String line,
-    int index,
-    String char,
-  ) {
-    final bool isQuoteBracketAllowed =
-        _latinAllowCjkQuoteBracketEnding &&
-        _latinEndingCjkQuoteBracketSymbols.contains(char);
-    final bool isQuestionExclamationAllowed =
-        _latinAllowCjkQuestionExclamationEnding &&
-        _latinEndingCjkQuestionExclamationSymbols.contains(char);
-
-    if (!isQuoteBracketAllowed && !isQuestionExclamationAllowed) {
-      return false;
-    }
-
-    return _isLatinEndingContext(line, index);
-  }
-
-  bool _isLatinEndingContext(String line, int index) {
-    int left = index - 1;
-    while (left >= 0 && _isLatinEndingCjkSymbol(line[left])) {
-      left--;
-    }
-
-    final bool hasLatinBefore =
-        left >= 0 && (_isAsciiLetter(line[left]) || _isAsciiDigit(line[left]));
-    if (!hasLatinBefore) {
-      return false;
-    }
-
-    int right = index + 1;
-    while (right < line.length && _isLatinEndingCjkSymbol(line[right])) {
-      right++;
-    }
-
-    if (right >= line.length) {
-      return true;
-    }
-
-    final String next = line[right];
-    return _isWhitespace(next) ||
-        _isCjkPunctuationCharacter(next) ||
-        _isCjkCharacter(next);
-  }
-
-  bool _isLatinEndingCjkSymbol(String char) {
-    return _latinEndingCjkQuoteBracketSymbols.contains(char) ||
-        _latinEndingCjkQuestionExclamationSymbols.contains(char);
-  }
-
-  _FillerWordAnalysis _analyzeFillerWords(String text) {
-    if (text.trim().isEmpty || _fillerWords.isEmpty) {
-      return _FillerWordAnalysis.empty();
-    }
-
-    final List<_FillerWordHit> hits = <_FillerWordHit>[];
-    int totalMatches = 0;
-
-    for (final String word in _fillerWords) {
-      final RegExp pattern = RegExp(RegExp.escape(word));
-      final List<int> positions = pattern
-          .allMatches(text)
-          .map((Match match) => match.start)
-          .toList();
-      final int count = positions.length;
-      if (count > 0) {
-        hits.add(
-          _FillerWordHit(word: word, count: count, positions: positions),
-        );
-        totalMatches += count;
-      }
-    }
-
-    hits.sort((a, b) => b.count.compareTo(a.count));
-    final int effectiveChars = _countEffectiveChars(text);
-    final double ratio = effectiveChars == 0
-        ? 0
-        : totalMatches / effectiveChars.toDouble();
-
-    return _FillerWordAnalysis(
-      totalMatches: totalMatches,
-      effectiveChars: effectiveChars,
-      ratio: ratio,
-      hits: hits,
-    );
-  }
-
-  int _countEffectiveChars(String text) {
-    int count = 0;
-    for (int i = 0; i < text.length; i++) {
-      final String char = text[i];
-      if (_isCjkCharacter(char) ||
-          _isAsciiDigit(char) ||
-          _isAsciiLetter(char)) {
-        count++;
-      }
-    }
-    return count;
-  }
-
   ({int line, int column}) _lineColumnAt(String text, int index) {
-    final TextPositionIndex textIndex =
-        _proofreadingTextIndex.text.isEmpty && text.isNotEmpty
-        ? TextPositionIndex(text)
-        : _proofreadingTextIndex;
-    return textIndex.lineColumnFromOffset(index);
+    _proofreadingTextIndex = _proofreadingTextIndex.rebuildIfTextChanged(text);
+    return _proofreadingTextIndex.lineColumnFromOffset(index);
   }
 
-  // 警語元件
   Widget _buildWarningCard() {
     return const AppNoticeBanner(
       message: "本功能正在開發中，使用時可能出現錯誤。",
@@ -4456,23 +3369,6 @@ class _ProofreadingAnalyzer {
       case _PunctuationProfile.kr:
       case _PunctuationProfile.enOther:
         return _ProofReadingViewState._latinLineEndingSymbols;
-    }
-  }
-
-  String _punctuationProfileCode(_PunctuationProfile profile) {
-    switch (profile) {
-      case _PunctuationProfile.zhTw:
-        return "ZH-TW";
-      case _PunctuationProfile.zhHk:
-        return "ZH-HK";
-      case _PunctuationProfile.zhHans:
-        return "ZH-HANS";
-      case _PunctuationProfile.jp:
-        return "JP";
-      case _PunctuationProfile.kr:
-        return "KR";
-      case _PunctuationProfile.enOther:
-        return "EN/Other";
     }
   }
 

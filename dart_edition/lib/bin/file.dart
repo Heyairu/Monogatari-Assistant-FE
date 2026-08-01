@@ -29,6 +29,11 @@ import "../modules/outlineview.dart" as OutlineModule;
 import "../modules/planview.dart" as PlanModule;
 import "../modules/worldsettingsview.dart";
 import "../modules/characterview.dart";
+import "../models/project_data.dart";
+import "../models/project_file.dart";
+
+export "../models/project_data.dart";
+export "../models/project_file.dart";
 
 // MARK: - 1. IO (Input/Output)
 /// 負責底層磁碟讀寫操作
@@ -478,10 +483,8 @@ class ProjectManager {
     ProjectFile projectFile,
   ) async {
     try {
-      return compute(
-        FileService.parseProjectXMLWithMetadata,
-        projectFile.content,
-      );
+      final content = projectFile.takeContent();
+      return compute(FileService.parseProjectXMLWithMetadata, content);
     } catch (e) {
       throw FileException("解析專案檔案失敗：${e.toString()}");
     }
@@ -1018,107 +1021,6 @@ class ProjectManager {
   }
 }
 
-// MARK: - 4. Data Structures (資料結構)
-class ProjectData {
-  BaseInfoModule.BaseInfoData baseInfoData;
-  List<ChapterModule.SegmentData> segmentsData;
-  List<OutlineModule.StorylineData> outlineData;
-  List<PlanModule.ForeshadowItem> foreshadowData;
-  List<PlanModule.UpdatePlanItem> updatePlanData;
-  List<LocationData> worldSettingsData;
-  Map<String, CharacterEntryData> characterData;
-
-  // 狀態變數（需要被保存或重建的）
-  int totalWords;
-  String contentText;
-
-  // 標記數據是否已被修改
-  bool isDirty;
-
-  ProjectData({
-    required this.baseInfoData,
-    required this.segmentsData,
-    required this.outlineData,
-    required this.foreshadowData,
-    required this.updatePlanData,
-    required this.worldSettingsData,
-    required this.characterData,
-    this.totalWords = 0,
-    this.contentText = "",
-    this.isDirty = false,
-  });
-
-  /// 建立一個空的專案資料
-  factory ProjectData.empty() {
-    return ProjectData(
-      baseInfoData: BaseInfoModule.BaseInfoData(),
-      segmentsData: [
-        ChapterModule.SegmentData(
-          segmentName: "Seg 1",
-          chapters: [
-            ChapterModule.ChapterData(
-              chapterName: "Chapter 1",
-              chapterContent: "",
-            ),
-          ],
-        ),
-      ],
-      outlineData: [
-        OutlineModule.StorylineData(
-          storylineName: "序章",
-          storylineType: "開場",
-          scenes: [],
-          memo: "",
-        ),
-      ],
-      foreshadowData: [],
-      updatePlanData: [],
-      worldSettingsData: [LocationData(localName: "主要場景")],
-      characterData: {},
-      totalWords: 0,
-      contentText: "",
-      isDirty: false,
-    );
-  }
-}
-
-class ProjectParseResult {
-  final String? projectVersion;
-  final ProjectData data;
-
-  const ProjectParseResult({required this.projectVersion, required this.data});
-}
-
-class AutoBackupDirectoryInfo {
-  final String path;
-  final bool isConfigured;
-  final bool isDefault;
-  final bool canReset;
-  final bool isAndroid;
-  final int totalBytes;
-  final int fileCount;
-
-  const AutoBackupDirectoryInfo({
-    required this.path,
-    required this.isConfigured,
-    required this.isDefault,
-    required this.canReset,
-    required this.isAndroid,
-    this.totalBytes = 0,
-    this.fileCount = 0,
-  });
-}
-
-class AutoBackupCleanupResult {
-  final int deletedFiles;
-  final int freedBytes;
-
-  const AutoBackupCleanupResult({
-    required this.deletedFiles,
-    required this.freedBytes,
-  });
-}
-
 class _AutoBackupFileEntry {
   final String name;
   final String location;
@@ -1131,76 +1033,6 @@ class _AutoBackupFileEntry {
     required this.size,
     required this.modified,
   });
-}
-
-/// 專案檔案資料類
-class ProjectFile {
-  String fileName;
-  String? filePath;
-  String? uri;
-  String content;
-
-  ProjectFile({
-    required this.fileName,
-    required this.filePath,
-    this.uri,
-    required this.content,
-  });
-
-  /// 檢查是否為新檔案（未儲存）
-  bool get isNewFile => filePath == null && uri == null;
-
-  /// 獲取檔案名稱（不包含副檔名）
-  String get nameWithoutExtension {
-    if (fileName.contains(".")) {
-      return path.basenameWithoutExtension(fileName);
-    }
-    return fileName;
-  }
-
-  /// 獲取完整檔案名稱（包含副檔名）
-  String get fullFileName {
-    if (fileName.contains(".")) {
-      return fileName;
-    }
-    return "$fileName${FileService.projectExtension}";
-  }
-}
-
-/// 檔案資訊類
-class FileInfo {
-  final String name;
-  final String path;
-  final int size;
-  final DateTime modified;
-  final DateTime created;
-
-  FileInfo({
-    required this.name,
-    required this.path,
-    required this.size,
-    required this.modified,
-    required this.created,
-  });
-
-  /// 獲取人類可讀的檔案大小
-  String get readableSize {
-    if (size < 1024) return "$size B";
-    if (size < 1024 * 1024) return "${(size / 1024).toStringAsFixed(1)} KB";
-    if (size < 1024 * 1024 * 1024)
-      return "${(size / (1024 * 1024)).toStringAsFixed(1)} MB";
-    return "${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB";
-  }
-}
-
-/// 檔案操作例外類
-class FileException implements Exception {
-  final String message;
-
-  FileException(this.message);
-
-  @override
-  String toString() => "FileException: $message";
 }
 
 // MARK: - 5. Parsing (解析)
@@ -2108,11 +1940,7 @@ class FileService {
 
   /// 創建新專案
   static Future<ProjectFile> createNewProject() async {
-    return ProjectFile(
-      fileName: defaultFileName,
-      filePath: null,
-      content: generateProjectXML(ProjectData.empty()),
-    );
+    return ProjectFile(fileName: defaultFileName, filePath: null, content: "");
   }
 
   /// 開啟專案檔案
@@ -2217,6 +2045,7 @@ class FileService {
       if (Platform.isAndroid && projectFile.uri != null) {
         try {
           await _SystemBridge.writeToUri(projectFile.uri!, projectFile.content);
+          projectFile.content = "";
           return projectFile;
         } catch (e) {
           debugPrint("SAF Write failed (URI might be invalid or expired): $e");
@@ -2232,6 +2061,7 @@ class FileService {
         // 儲存到現有路徑
         try {
           await _FileIO.write(normalizedPath, projectFile.content);
+          projectFile.content = "";
           return projectFile;
         } catch (e) {
           // 在移動設備上，如果直接寫入失敗（常見於外部存儲權限問題），則退回到另存新檔
@@ -2246,6 +2076,7 @@ class FileService {
         return await saveProjectAs(projectFile);
       }
     } catch (e) {
+      projectFile.content = "";
       throw FileException("儲存檔案失敗: ${e.toString()}");
     }
   }
@@ -2257,6 +2088,7 @@ class FileService {
     try {
       if (Platform.isAndroid && projectFile.uri != null) {
         await _SystemBridge.writeToUri(projectFile.uri!, projectFile.content);
+        projectFile.content = "";
         return projectFile;
       }
 
@@ -2267,8 +2099,10 @@ class FileService {
 
       projectFile.filePath = normalizedPath;
       await _FileIO.write(normalizedPath, projectFile.content);
+      projectFile.content = "";
       return projectFile;
     } catch (e) {
+      projectFile.content = "";
       if (e is FileException) {
         rethrow;
       }
@@ -2279,9 +2113,10 @@ class FileService {
   /// 另存新檔
   static Future<ProjectFile> saveProjectAs(ProjectFile projectFile) async {
     try {
+      final content = projectFile.takeContent();
       final outputFileRaw = await _SystemBridge.saveProjectFileDialog(
         defaultName: "${projectFile.nameWithoutExtension}$projectExtension",
-        content: projectFile.content,
+        content: content,
       );
 
       // 如果使用者取消儲存
@@ -2302,7 +2137,7 @@ class FileService {
 
       // 在桌面平台上仍需要寫入檔案 (SystemBridge 可能只回傳路徑)
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        await _FileIO.write(normalizedPath, projectFile.content);
+        await _FileIO.write(normalizedPath, content);
       }
 
       final resolvedFileName = _looksLikeLocalPath(normalizedPath)
@@ -2315,7 +2150,7 @@ class FileService {
         fileName: resolvedFileName,
         filePath: normalizedLocalPath,
         uri: outputUri,
-        content: projectFile.content,
+        content: "",
       );
     } catch (e) {
       throw FileException("另存檔案失敗: ${e.toString()}");

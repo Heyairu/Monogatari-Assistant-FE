@@ -20,6 +20,7 @@ import "dart:math" as math;
 import "package:path_provider/path_provider.dart";
 import "package:uuid/uuid.dart";
 import "package:xml/xml.dart" as xml;
+import "../models/codecs/xml_text_codec.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
@@ -112,67 +113,11 @@ class WorldSettingsCodec {
     String name,
     String value,
   ) {
-    builder.element(
-      name,
-      nest: () {
-        builder.text(_encodeNewlines(value));
-      },
-    );
+    XmlTextCodec.writeTextElement(builder, name, value);
   }
 
   static String _readElementText(xml.XmlElement? element) {
-    if (element == null) return "";
-    if (element.children.isEmpty) {
-      return _decodeNewlines(element.innerText);
-    }
-    final cdataBuffer = StringBuffer();
-    for (final node in element.children) {
-      if (node is xml.XmlCDATA) {
-        cdataBuffer.write(node.text);
-      }
-    }
-    final cdataText = cdataBuffer.toString();
-    if (cdataText.isNotEmpty) {
-      return _decodeNewlines(cdataText);
-    }
-    final buffer = StringBuffer();
-    for (final node in element.children) {
-      if (node is xml.XmlText || node is xml.XmlCDATA) {
-        buffer.write(node.text);
-      }
-    }
-    final text = buffer.toString();
-    return _decodeNewlines(text.isNotEmpty ? text : element.innerText);
-  }
-
-  static String _encodeNewlines(String value) {
-    if (value.isEmpty) return value;
-    final normalized = value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-    final buffer = StringBuffer();
-    for (final codeUnit in normalized.codeUnits) {
-      switch (codeUnit) {
-        case 10: // \n
-          buffer.write("&#10;");
-          break;
-        case 35: // #
-          buffer.write("&#35;");
-          break;
-        case 59: // ;
-          buffer.write("&#59;");
-          break;
-        default:
-          buffer.writeCharCode(codeUnit);
-      }
-    }
-    return buffer.toString();
-  }
-
-  static String _decodeNewlines(String value) {
-    return value
-        .replaceAll("&#13;", "")
-        .replaceAll("&#10;", "\n")
-        .replaceAll("&#35;", "#")
-        .replaceAll("&#59;", ";");
+    return XmlTextCodec.readElementText(element);
   }
 
   static String? saveXML(List<LocationData> locations) {
@@ -207,7 +152,7 @@ class WorldSettingsCodec {
               "Key",
               attributes: {"Name": kv.key},
               nest: () {
-                builder.text(_encodeNewlines(kv.val));
+                builder.text(XmlTextCodec.encodeNewlines(kv.val));
               },
             );
           }
@@ -333,6 +278,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   final ScrollController _detailScrollController = ScrollController();
   Timer? _detailDraftTimer;
   VoidCallback? _pendingDetailCommit;
+  int _templateLoadGeneration = 0;
 
   @override
   void initState() {
@@ -374,6 +320,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   @override
   void dispose() {
+    _templateLoadGeneration++;
     _detailDraftTimer?.cancel();
     _pendingDetailCommit?.call();
     locationNameController.removeListener(_onNameChanged);
@@ -1249,21 +1196,25 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   Future<void> _loadTemplatesFromDisk() async {
+    final generation = ++_templateLoadGeneration;
     try {
       final filePath = await _worldTemplateFilePath;
+      if (!mounted || generation != _templateLoadGeneration) return;
       final file = File(filePath);
 
       if (!await file.exists()) {
-        _ensureBlankPresetExists();
+        if (!mounted || generation != _templateLoadGeneration) return;
+        setState(_ensureBlankPresetExists);
         return;
       }
 
       final xml = await file.readAsString();
+      if (!mounted || generation != _templateLoadGeneration) return;
       final presets = _parseAllTemplatesXML(xml);
 
       if (presets.isEmpty) {
         _log.info("讀檔成功但解析為空，保留現有預設。");
-        _ensureBlankPresetExists();
+        setState(_ensureBlankPresetExists);
         return;
       }
 
@@ -1276,7 +1227,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       });
     } catch (e) {
       _log.warning("讀取模板失敗：${e.toString()}");
-      _ensureBlankPresetExists();
+      if (mounted && generation == _templateLoadGeneration) {
+        setState(_ensureBlankPresetExists);
+      }
     }
   }
 

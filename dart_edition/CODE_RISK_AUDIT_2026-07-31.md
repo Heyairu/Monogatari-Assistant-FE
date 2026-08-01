@@ -97,7 +97,7 @@
 
 驗收：10 MB 重複字元文件 Replace All 的 peak heap 應接近輸入＋輸出大小，而不是與數百萬個 match object 成正比。
 
-## P1：高風險效能／資源問題
+## P1：高風險效能／資源問題 // OK
 
 ### H-01：字數管線重複運算，cache 加總退化為 O(C²) // OK
 
@@ -186,7 +186,7 @@ Editor controller listener 每次文字不同都呼叫 `rebuildIfTextChanged`（
 
 建議：依 `TextEditingDelta` 增量更新受影響區段；至少對大文件 debounce；小文件才走同步全文路徑。
 
-### H-10：搜尋背景工作不具 latest-wins
+### H-10：搜尋背景工作不具 latest-wins // OK
 
 Find bar 的 100 ms debounce 只能取消尚未開始的 timer（[`findreplace.dart#L1544`](lib/bin/findreplace.dart#L1544)）。一旦 `compute` 啟動便不可取消（[`findreplace.dart#L916`](lib/bin/findreplace.dart#L916)）；主畫面 await 後只檢查 `mounted`，沒有比對 query、options 或 text revision（[`main.dart#L1911`](lib/main.dart#L1911)）。
 
@@ -194,7 +194,7 @@ Find bar 的 100 ms debounce 只能取消尚未開始的 timer（[`findreplace.d
 
 建議：不可變 request snapshot + generation；單一長駐 worker/latest-only queue；回寫前核對完整 request；regex 設時間／資源上限。
 
-### H-11：CharacterView.dispose 可能把舊 draft 寫進新專案
+### H-11：CharacterView.dispose 可能把舊 draft 寫進新專案 // OK
 
 CharacterView 在 debounce 尚 active 時，`dispose` 會呼叫 `_saveCurrentCharacterData`（[`characterview.dart#L1464`](lib/modules/characterview.dart#L1464)）。專案切換的 `setState` 先套用新 provider data，舊 keyed subtree 到下一次 build 才 dispose（[`main.dart#L2652`](lib/main.dart#L2652)）。
 
@@ -202,7 +202,7 @@ CharacterView 在 debounce 尚 active 時，`dispose` 會呼叫 `_saveCurrentCha
 
 建議：切換前明確 flush 舊 session；dispose 只 cancel、不改 provider；所有 draft save 帶 session ID。
 
-### H-12：唯一 GitHub Actions workflow 實際不會執行
+### H-12：唯一 GitHub Actions workflow 實際不會執行 // OK
 
 Git repo root 是 `Monogatari-Assistant-FE`，但唯一 workflow 放在 [`dart_edition/.github/workflows/state-policy-guard.yml`](.github/workflows/state-policy-guard.yml)。GitHub Actions 只掃描 repo root 的 `.github/workflows`，所以目前完全不會發現它。
 
@@ -216,15 +216,15 @@ Git repo root 是 `Monogatari-Assistant-FE`，但唯一 workflow 放在 [`dart_e
 - 至少執行 format check、`flutter analyze`、`flutter test`、build_runner generate + clean diff；
 - 另加大型資料 benchmark／memory regression job。
 
-## P2：中等風險與維護成本
+## P2：中等風險與維護成本 // OK
 
-### M-01：Copilot 對話與 payload 無 budget
+### M-01：Copilot 對話與 payload 無 budget // OK
 
 `_messages` 沒有自動上限（[`copliot.dart#L127`](lib/modules/copliot.dart#L127)），每次 request 將完整歷史 JSON encode 並傳送（[`copliot.dart#L441`](lib/modules/copliot.dart#L441)），response 也完整 buffer／decode。使用者可手動 clear，但沒有 message、byte、token 或 response budget；頁面又是 root-lifetime。
 
 建議：UI history 與 model context 分離；context sliding window／摘要；request/response byte/token 上限；streaming response。
 
-### M-02：HTTP／async lifecycle 管理不完整
+### M-02：HTTP／async lifecycle 管理不完整 // OK
 
 Copilot 使用 top-level `http.get/post(...).timeout(...)`，State 沒有可 close 的 `http.Client`（[`copliot.dart#L143`](lib/modules/copliot.dart#L143)）。`Future.timeout` 停止等待，不保證中止底層 transport。
 
@@ -236,7 +236,7 @@ World template load、Proofreading filler load、new/open/recent project 也有 
 
 Copilot 設定欄位也在每字 `unawaited(_saveSettings())`，每次依序寫四個 SharedPreferences key（[`copliot.dart#L172`](lib/modules/copliot.dart#L172)）；應 debounce 並保存 snapshot。
 
-### M-03：大型檔案、重複邏輯與直接循環 import
+### M-03：大型檔案、重複邏輯與直接循環 import // OK
 
 可重現基線：
 
@@ -254,7 +254,7 @@ Copilot 設定欄位也在每字 `unawaited(_saveSettings())`，每次依序寫�
 
 建議：先抽 `models/codecs` 與純 domain service，再拆 presentation；校對 UI/worker 共用唯一 analyzer；用 dependency rule 禁止 presentation/provider 與 view 互相 import。
 
-### M-04：完整 XML 的陰影副本長駐
+### M-04：完整 XML 的陰影副本長駐 // OK
 
 除 History 外：
 
@@ -264,7 +264,7 @@ Copilot 設定欄位也在每字 `unawaited(_saveSettings())`，每次依序寫�
 
 建議：`ProjectFile` 在 parse/write 後只保留 metadata/path；backup baseline 改 project revision／hash，停用時立即清除。
 
-### M-05：狀態列 marquee 是不可取消的遞迴工作鏈
+### M-05：狀態列 marquee 是不可取消的遞迴工作鏈 // OK
 
 溢出文字使用 `ScrollController.animateTo → Future.delayed → animateTo → delay → _startScrolling()` 永久遞迴（[`statusbar.dart#L161`](lib/bin/statusbar.dart#L161)），未觀察 app inactive/minimized。`didUpdateWidget` 又會重新啟動（[`statusbar.dart#L130`](lib/bin/statusbar.dart#L130)），沒有 generation；宣告的 `AnimationController` 並未控制這條 ScrollController chain。
 
@@ -293,7 +293,7 @@ Copilot 設定欄位也在每字 `unawaited(_saveSettings())`，每次依序寫�
 
 建議：停止追蹤機器生成檔與絕對路徑；CI 驗證生成碼；移除 dead/duplicate code；全文 log 改成長度／hash 且只在明確 debug flag 啟用。
 
-### L-02：一個 controller cleanup 缺口
+### L-02：一個 controller cleanup 缺口 // OK
 
 Outline 動態建立 `_renameListController`，正常結束 rename 才 dispose；State.dispose 沒有處理它。正在 rename 時切換專案會略過明確 cleanup。整個 State 最終仍可 GC，所以不能直接證明為永久 leak，但應補上 `dispose` 以維持 ownership contract。
 

@@ -2,6 +2,8 @@ import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/bin/file.dart";
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test("parseProjectXMLWithMetadata loads version and chapter data once", () {
     const xmlContent = """
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,4 +31,20 @@ void main() {
       "Hello\nWorld",
     );
   });
+
+  test(
+    "load clears the transient raw XML after handing it to the parser",
+    () async {
+      const xmlContent = "<Project><ver>1.0</ver></Project>";
+      final projectFile = ProjectFile(
+        fileName: "test.mnproj",
+        filePath: "test.mnproj",
+        content: xmlContent,
+      );
+
+      await ProjectManager.loadProjectParseResultFromXML(projectFile);
+
+      expect(projectFile.content, isEmpty);
+    },
+  );
 }

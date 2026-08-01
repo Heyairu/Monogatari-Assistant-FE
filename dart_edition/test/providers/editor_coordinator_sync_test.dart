@@ -8,6 +8,60 @@ import 'package:monogatari_assistant/presentation/providers/editor_coordinator_p
 import 'package:monogatari_assistant/presentation/providers/project_state_providers.dart';
 
 void main() {
+  test(
+    'selected chapter content follows selection before editor content switches',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      const segmentId = 'segment-1';
+      const firstChapterId = 'chapter-1';
+      const secondChapterId = 'chapter-2';
+      const firstContent = 'first chapter editor text';
+      const secondContent = 'second chapter stored text';
+
+      container.read(segmentsDataProvider.notifier).setSegmentsData([
+        chapter_module.SegmentData(
+          segmentUUID: segmentId,
+          chapters: [
+            chapter_module.ChapterData(
+              chapterUUID: firstChapterId,
+              chapterContent: firstContent,
+            ),
+            chapter_module.ChapterData(
+              chapterUUID: secondChapterId,
+              chapterContent: secondContent,
+            ),
+          ],
+        ),
+      ]);
+      container.read(editorContentProvider.notifier).setContent(firstContent);
+      container
+          .read(editorSelectionProvider.notifier)
+          .setSelection(
+            selectedSegID: segmentId,
+            selectedChapID: firstChapterId,
+          );
+      expect(
+        container.read(selectedChapterStoredContentProvider),
+        firstContent,
+      );
+
+      container
+          .read(editorSelectionProvider.notifier)
+          .setSelection(
+            selectedSegID: segmentId,
+            selectedChapID: secondChapterId,
+          );
+
+      expect(container.read(editorContentProvider), firstContent);
+      expect(
+        container.read(selectedChapterStoredContentProvider),
+        secondContent,
+      );
+    },
+  );
+
   test('syncEditorToSelectedChapter skips unchanged editor content', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

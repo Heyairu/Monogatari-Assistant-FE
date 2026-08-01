@@ -1,12 +1,12 @@
 import "dart:collection";
 
-import "../../bin/file.dart";
+import "../../models/base_info_data.dart" as base_info_module;
+import "../../models/chapter_selection_data.dart" as chapter_module;
 import "../../models/character_data.dart" as character_model;
-import "../../modules/baseinfoview.dart" as base_info_module;
-import "../../modules/chapterselectionview.dart" as chapter_module;
-import "../../modules/outlineview.dart" as outline_module;
-import "../../modules/planview.dart" as plan_module;
-import "../../modules/worldsettingsview.dart" as world_settings_module;
+import "../../models/outline_data.dart" as outline_module;
+import "../../models/plan_data.dart" as plan_module;
+import "../../models/project_data.dart";
+import "../../models/world_settings_data.dart" as world_settings_module;
 
 List<T> _freezeListCopy<T>(List<T> source) {
   if (source is UnmodifiableListView<T>) {

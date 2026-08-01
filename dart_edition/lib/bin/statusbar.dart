@@ -108,35 +108,48 @@ class _ScrollingText extends StatefulWidget {
 }
 
 class _ScrollingTextState extends State<_ScrollingText>
-    with SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   late ScrollController _scrollController;
-  late AnimationController _animationController;
   bool _shouldScroll = false;
+  bool _isAppActive = true;
+  int _scrollGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    );
+    WidgetsBinding.instance.addObserver(this);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkScroll();
-    });
+    _scheduleScrollCheck();
   }
 
   @override
   void didUpdateWidget(_ScrollingText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text || oldWidget.style != widget.style) {
-      _animationController.reset();
-      _shouldScroll = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _checkScroll();
-      });
+      _stopScrolling(resetPosition: true);
+      _scheduleScrollCheck();
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final isActive = state == AppLifecycleState.resumed;
+    if (_isAppActive == isActive) return;
+    _isAppActive = isActive;
+    if (isActive) {
+      _scheduleScrollCheck();
+    } else {
+      _stopScrolling(resetPosition: false);
+    }
+  }
+
+  void _scheduleScrollCheck() {
+    final generation = ++_scrollGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _scrollGeneration) return;
+      _checkScroll();
+    });
   }
 
   void _checkScroll() {
@@ -144,53 +157,64 @@ class _ScrollingTextState extends State<_ScrollingText>
 
     if (_scrollController.hasClients) {
       final maxScroll = _scrollController.position.maxScrollExtent;
-      if (maxScroll > 0 && !_shouldScroll) {
+      if (maxScroll > 0 && !_shouldScroll && _isAppActive) {
         setState(() {
           _shouldScroll = true;
         });
-        _startScrolling();
+        final generation = ++_scrollGeneration;
+        _runMarquee(generation);
       } else if (maxScroll <= 0 && _shouldScroll) {
-        _animationController.stop();
-        setState(() {
-          _shouldScroll = false;
-        });
+        _stopScrolling(resetPosition: true);
       }
     }
   }
 
-  void _startScrolling() {
-    if (!mounted || !_shouldScroll) return;
+  bool _canContinue(int generation) {
+    return mounted &&
+        _isAppActive &&
+        _shouldScroll &&
+        generation == _scrollGeneration &&
+        _scrollController.hasClients;
+  }
 
-    _scrollController
-        .animateTo(
+  Future<void> _runMarquee(int generation) async {
+    try {
+      while (_canContinue(generation)) {
+        await _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: Duration(
             milliseconds: (widget.text.length * 200).clamp(2000, 30000),
           ),
           curve: Curves.linear,
-        )
-        .then((_) async {
-          if (!mounted) return;
-          await Future.delayed(const Duration(seconds: 1));
-          if (!mounted) return;
-          _scrollController
-              .animateTo(
-                0,
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.easeOut,
-              )
-              .then((_) async {
-                if (!mounted) return;
-                await Future.delayed(const Duration(seconds: 2));
-                if (!mounted) return;
-                _startScrolling();
-              });
-        });
+        );
+        if (!_canContinue(generation)) return;
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (!_canContinue(generation)) return;
+        await _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 1000),
+          curve: Curves.easeOut,
+        );
+        if (!_canContinue(generation)) return;
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    } catch (_) {
+      // jumpTo/dispose can cancel an in-flight animation; generation owns restart.
+    }
+  }
+
+  void _stopScrolling({required bool resetPosition}) {
+    _scrollGeneration++;
+    _shouldScroll = false;
+    if (resetPosition && _scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollGeneration++;
     _scrollController.dispose();
     super.dispose();
   }

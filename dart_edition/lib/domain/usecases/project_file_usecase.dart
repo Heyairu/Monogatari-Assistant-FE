@@ -1,5 +1,6 @@
-import "../../bin/file.dart";
-import "../../data/repositories/file_repository.dart";
+import "../../models/project_data.dart";
+import "../../models/project_file.dart";
+import "../repositories/file_repository.dart";
 
 class ProjectFileUseCase {
   final FileRepository fileRepository;
