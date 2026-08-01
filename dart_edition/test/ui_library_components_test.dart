@@ -1,4 +1,5 @@
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
@@ -295,6 +296,51 @@ void main() {
       expect(find.text("No rows"), findsOneWidget);
     });
 
+    testWidgets("AppTwoColumnTable clears selection on blank tap or Escape", (
+      tester,
+    ) async {
+      var selected = false;
+      var clearCount = 0;
+
+      await tester.pumpWidget(
+        _testApp(
+          AppTwoColumnTable(
+            firstHeader: "Setting",
+            secondHeader: "Value",
+            bodyHeight: 160,
+            onSelectionCleared: () {
+              selected = false;
+              clearCount++;
+            },
+            rows: [
+              AppTwoColumnTableRow(
+                firstCell: const Text("Weather"),
+                secondCell: const Text("Rainy"),
+                onTap: () => selected = true,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final table = find.byType(AppTwoColumnTable);
+      await tester.tap(find.text("Rainy"));
+      expect(selected, isTrue);
+
+      final tableRect = tester.getRect(table);
+      await tester.tapAt(Offset(tableRect.center.dx, tableRect.bottom - 8));
+      await tester.pump();
+      expect(selected, isFalse);
+      expect(clearCount, 1);
+
+      await tester.tap(find.text("Rainy"));
+      expect(selected, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(selected, isFalse);
+      expect(clearCount, 2);
+    });
+
     testWidgets("AppTwoColumnTableEditor shares add and edit behavior", (
       tester,
     ) async {
@@ -344,6 +390,46 @@ void main() {
 
       await tester.tap(find.byTooltip("刪除"));
       expect(deleted, isTrue);
+    });
+
+    testWidgets("AppEditableTableCell edits with a single click", (
+      tester,
+    ) async {
+      var value = "Original";
+      var canceled = false;
+
+      await tester.pumpWidget(
+        _testApp(
+          StatefulBuilder(
+            builder: (context, setState) => AppEditableTableCell(
+              value: value,
+              onEditCanceled: () => canceled = true,
+              onSubmitted: (nextValue) {
+                setState(() => value = nextValue);
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text("Original"));
+      await tester.pump();
+      expect(find.byType(TextFormField), findsOneWidget);
+
+      await tester.enterText(find.byType(TextFormField), "Modified");
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      expect(value, "Modified");
+      expect(find.text("Modified"), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+
+      await tester.tap(find.text("Modified"));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(canceled, isTrue);
+      expect(find.byType(TextFormField), findsNothing);
     });
 
     testWidgets("LabeledSlider exposes labels and value changes", (

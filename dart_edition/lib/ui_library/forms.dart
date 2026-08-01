@@ -166,6 +166,111 @@ class AppTextField extends StatelessWidget {
   }
 }
 
+/// A text field that suggests existing values without restricting free input.
+class AppComboBoxField extends StatefulWidget {
+  final TextEditingController controller;
+  final Iterable<String> options;
+  final String? labelText;
+  final String? hintText;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSelected;
+  final double optionsMaxHeight;
+
+  const AppComboBoxField({
+    super.key,
+    required this.controller,
+    required this.options,
+    this.labelText,
+    this.hintText,
+    this.onChanged,
+    this.onSelected,
+    this.optionsMaxHeight = 240,
+  }) : assert(optionsMaxHeight > 0);
+
+  @override
+  State<AppComboBoxField> createState() => _AppComboBoxFieldState();
+}
+
+class _AppComboBoxFieldState extends State<AppComboBoxField> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Iterable<String> _matchingOptions(TextEditingValue value) {
+    final options = widget.options
+        .map((option) => option.trim())
+        .where((option) => option.isNotEmpty)
+        .toSet();
+    final query = value.text.trim().toLowerCase();
+    if (query.isEmpty) return options;
+    return options.where((option) => option.toLowerCase().contains(query));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final optionsWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 320.0;
+        return RawAutocomplete<String>(
+          textEditingController: widget.controller,
+          focusNode: _focusNode,
+          optionsBuilder: _matchingOptions,
+          onSelected: widget.onSelected,
+          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            return AppTextField(
+              controller: controller,
+              focusNode: focusNode,
+              labelText: widget.labelText,
+              hintText: widget.hintText,
+              suffixIcon: const Icon(Icons.arrow_drop_down),
+              textInputAction: TextInputAction.next,
+              onChanged: widget.onChanged,
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            final optionList = options.toList(growable: false);
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
+                clipBehavior: Clip.antiAlias,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: widget.optionsMaxHeight,
+                    maxWidth: optionsWidth,
+                    minWidth: optionsWidth,
+                  ),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: optionList.length,
+                    itemBuilder: (context, index) {
+                      final option = optionList[index];
+                      return ListTile(
+                        key: ValueKey("app-combo-option-$option"),
+                        dense: true,
+                        title: Text(option, overflow: TextOverflow.ellipsis),
+                        onTap: () => onSelected(option),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 enum LabeledSliderLayout { stacked, inline }
 
 /// A slider with a title, formatted value, and optional endpoint labels.

@@ -792,38 +792,38 @@ class CharacterDataNotifier
   }
 
   bool setCharacterEntry({
-    required String name,
+    required String characterId,
     required character_model.CharacterEntryData entry,
   }) {
-    final normalizedName = name.trim();
-    if (normalizedName.isEmpty) {
+    final normalizedId = characterId.trim();
+    if (normalizedId.isEmpty) {
       return false;
     }
 
-    final current = state[normalizedName];
+    final current = state[normalizedId];
     if (current == entry) {
       return false;
     }
 
     final next = Map<String, character_model.CharacterEntryData>.of(state);
-    next[normalizedName] = entry.deepCopy();
+    next[normalizedId] = entry.deepCopy();
     state = Map.unmodifiable(next);
     return true;
   }
 
   bool updateCharacterEntry(
-    String name,
+    String characterId,
     character_model.CharacterEntryData Function(
       character_model.CharacterEntryData current,
     )
     update,
   ) {
-    final normalizedName = name.trim();
-    if (normalizedName.isEmpty) {
+    final normalizedId = characterId.trim();
+    if (normalizedId.isEmpty) {
       return false;
     }
 
-    final current = state[normalizedName];
+    final current = state[normalizedId];
     if (current == null) {
       return false;
     }
@@ -834,44 +834,39 @@ class CharacterDataNotifier
     }
 
     final next = Map<String, character_model.CharacterEntryData>.of(state);
-    next[normalizedName] = updated.deepCopy();
+    next[normalizedId] = updated.deepCopy();
     state = Map.unmodifiable(next);
     return true;
   }
 
-  bool removeCharacterEntry(String name) {
-    final normalizedName = name.trim();
-    if (normalizedName.isEmpty || !state.containsKey(normalizedName)) {
+  bool removeCharacterEntry(String characterId) {
+    final normalizedId = characterId.trim();
+    if (normalizedId.isEmpty || !state.containsKey(normalizedId)) {
       return false;
     }
 
     final next = Map<String, character_model.CharacterEntryData>.of(state)
-      ..remove(normalizedName);
+      ..remove(normalizedId);
     state = Map.unmodifiable(next);
     return true;
   }
 
   bool renameCharacterEntry({
-    required String oldName,
-    required String newName,
+    required String characterId,
+    required String displayName,
   }) {
-    final normalizedOldName = oldName.trim();
-    final normalizedNewName = newName.trim();
-    if (normalizedOldName.isEmpty || normalizedNewName.isEmpty) {
+    final normalizedId = characterId.trim();
+    final normalizedName = displayName.trim();
+    if (normalizedId.isEmpty || normalizedName.isEmpty) {
       return false;
     }
-    if (normalizedOldName == normalizedNewName) {
-      return false;
-    }
-
-    final entry = state[normalizedOldName];
-    if (entry == null || state.containsKey(normalizedNewName)) {
+    final entry = state[normalizedId];
+    if (entry == null || entry.displayName == normalizedName) {
       return false;
     }
 
     final next = Map<String, character_model.CharacterEntryData>.of(state)
-      ..remove(normalizedOldName)
-      ..[normalizedNewName] = entry.deepCopy();
+      ..[normalizedId] = entry.withDisplayName(normalizedName).deepCopy();
     state = Map.unmodifiable(next);
     return true;
   }
@@ -882,6 +877,28 @@ final characterDataProvider =
       CharacterDataNotifier,
       Map<String, character_model.CharacterEntryData>
     >(CharacterDataNotifier.new);
+
+class CharacterStatesNotifier
+    extends Notifier<List<character_model.CharacterState>> {
+  @override
+  List<character_model.CharacterState> build() => const [];
+
+  void setCharacterStates(List<character_model.CharacterState> value) {
+    state = List<character_model.CharacterState>.unmodifiable(
+      value.map(
+        (item) => item.copyWith(
+          possessions: List<String>.unmodifiable(item.possessions),
+        ),
+      ),
+    );
+  }
+}
+
+final characterStatesProvider =
+    NotifierProvider<
+      CharacterStatesNotifier,
+      List<character_model.CharacterState>
+    >(CharacterStatesNotifier.new);
 
 class ForeshadowDataNotifier
     extends Notifier<List<plan_module.ForeshadowItem>> {
@@ -2074,6 +2091,7 @@ final projectDataProvider = Provider<ProjectData>((ref) {
     updatePlanData: ref.watch(updatePlanDataProvider),
     worldSettingsData: ref.watch(worldSettingsDataProvider),
     characterData: ref.watch(characterDataProvider),
+    characterStates: ref.watch(characterStatesProvider),
     totalWords: ref.watch(totalWordsProvider),
     contentText: ref.watch(editorContentProvider),
   );

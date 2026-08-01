@@ -1,9 +1,10 @@
 import "package:freezed_annotation/freezed_annotation.dart";
+import "package:uuid/uuid.dart";
 
 part "outline_data.freezed.dart";
 
-int _generateOutlineId() {
-  return DateTime.now().microsecondsSinceEpoch;
+String _generateOutlineId() {
+  return const Uuid().v4();
 }
 
 @Freezed(equal: false)
@@ -33,7 +34,7 @@ class StorylineData with _$StorylineData {
   }) {
     final resolvedUUID = chapterUUID?.trim().isNotEmpty == true
         ? chapterUUID!.trim()
-        : _generateOutlineId().toString();
+        : _generateOutlineId();
 
     return StorylineData.raw(
       storylineName: storylineName,
@@ -86,7 +87,7 @@ class StoryEventData with _$StoryEventData {
   }) {
     final resolvedUUID = storyEventUUID?.trim().isNotEmpty == true
         ? storyEventUUID!.trim()
-        : _generateOutlineId().toString();
+        : _generateOutlineId();
 
     return StoryEventData.raw(
       storyEvent: storyEvent,
@@ -120,6 +121,7 @@ class SceneData with _$SceneData {
   const factory SceneData.raw({
     @Default("") String sceneName,
     @Default("") String time,
+    String? timePointIso8601,
     @Default("") String location,
     @Default("") String focusPoint,
     @Default("") String conflictPoint,
@@ -133,6 +135,7 @@ class SceneData with _$SceneData {
   factory SceneData({
     String sceneName = "",
     String time = "",
+    String? timePointIso8601,
     String location = "",
     String focusPoint = "",
     String conflictPoint = "",
@@ -144,11 +147,16 @@ class SceneData with _$SceneData {
   }) {
     final resolvedUUID = sceneUUID?.trim().isNotEmpty == true
         ? sceneUUID!.trim()
-        : _generateOutlineId().toString();
+        : _generateOutlineId();
+
+    final resolvedTimePoint = timePointIso8601?.trim().isNotEmpty == true
+        ? timePointIso8601!.trim()
+        : DateTime.tryParse(time)?.toIso8601String();
 
     return SceneData.raw(
       sceneName: sceneName,
       time: time,
+      timePointIso8601: resolvedTimePoint,
       location: location,
       focusPoint: focusPoint,
       conflictPoint: conflictPoint,

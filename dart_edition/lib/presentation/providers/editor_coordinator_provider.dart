@@ -21,6 +21,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final outline = ref.watch(outlineDataProvider);
   final world = ref.watch(worldSettingsDataProvider);
   final character = ref.watch(characterDataProvider);
+  final characterStates = ref.watch(characterStatesProvider);
   final foreshadow = ref.watch(foreshadowDataProvider);
   final updatePlan = ref.watch(updatePlanDataProvider);
 
@@ -38,6 +39,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
     identityHashCode(outline),
     identityHashCode(world),
     identityHashCode(character),
+    identityHashCode(characterStates),
     identityHashCode(foreshadow),
     identityHashCode(updatePlan),
   );
@@ -411,6 +413,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       updatePlanData: ref.read(updatePlanDataProvider),
       worldSettingsData: ref.read(worldSettingsDataProvider),
       characterData: ref.read(characterDataProvider),
+      characterStates: ref.read(characterStatesProvider),
       totalWords: ref.read(totalWordsProvider),
       contentText: ref.read(editorContentProvider),
     );
@@ -447,6 +450,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     ref
         .read(characterDataProvider.notifier)
         .updateCharacterData((_) => snapshot.characterData);
+    ref
+        .read(characterStatesProvider.notifier)
+        .setCharacterStates(snapshot.characterStates);
 
     // Evict normalization cache used by the editor find/replace highlighter
     // to avoid unbounded memory growth across project switches.

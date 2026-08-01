@@ -420,6 +420,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     tempValController.clear();
   }
 
+  void _clearCustomValueSelection() {
+    if (selectedCustomValueId == null) return;
+    setState(_clearCustomValueEditor);
+  }
+
   void _saveCustomValue(String locationId) {
     final key = tempKeyController.text.trim();
     if (key.isEmpty) return;
@@ -442,6 +447,35 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     });
 
     setState(_clearCustomValueEditor);
+  }
+
+  void _updateCustomValueCell(
+    String locationId,
+    String itemId, {
+    String? key,
+    String? value,
+  }) {
+    final nextKey = key?.trim();
+    if (nextKey != null && nextKey.isEmpty) return;
+    _updateLocationById(locationId, (current) {
+      final nextCustomValues = current.customVal
+          .map((item) {
+            if (item.id != itemId) return item;
+            return item.copyWith(
+              key: nextKey ?? item.key,
+              val: value ?? item.val,
+            );
+          })
+          .toList(growable: false);
+      return current.copyWith(customVal: nextCustomValues);
+    });
+
+    if (selectedCustomValueId == itemId) {
+      setState(() {
+        if (nextKey != null) tempKeyController.text = nextKey;
+        if (value != null) tempValController.text = value;
+      });
+    }
   }
 
   void _deleteSelectedCustomValue(String locationId) {
@@ -892,6 +926,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             firstHeader: "設定",
             secondHeader: "鍵值",
             bodyHeight: 200,
+            onSelectionCleared: _clearCustomValueSelection,
             emptyState: const AppEmptyState(
               title: "尚無自訂值",
               description: "在下方輸入設定與鍵值後新增",
@@ -908,8 +943,32 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                     key: ValueKey(item.id),
                     selected: selectedCustomValueId == item.id,
                     showDivider: index != location.customVal.length - 1,
-                    firstCell: Text(item.key),
-                    secondCell: Text(item.val),
+                    firstCell: AppEditableTableCell(
+                      key: ValueKey("custom-key-${item.id}"),
+                      value: item.key,
+                      selected: selectedCustomValueId == item.id,
+                      onEditStarted: () =>
+                          _selectCustomValueForEditing(location.id, item),
+                      onEditCanceled: _clearCustomValueSelection,
+                      onSubmitted: (value) => _updateCustomValueCell(
+                        location.id,
+                        item.id,
+                        key: value,
+                      ),
+                    ),
+                    secondCell: AppEditableTableCell(
+                      key: ValueKey("custom-value-${item.id}"),
+                      value: item.val,
+                      selected: selectedCustomValueId == item.id,
+                      onEditStarted: () =>
+                          _selectCustomValueForEditing(location.id, item),
+                      onEditCanceled: _clearCustomValueSelection,
+                      onSubmitted: (value) => _updateCustomValueCell(
+                        location.id,
+                        item.id,
+                        value: value,
+                      ),
+                    ),
                     onTap: () {
                       _selectCustomValueForEditing(location.id, item);
                     },

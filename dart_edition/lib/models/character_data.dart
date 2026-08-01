@@ -1,6 +1,86 @@
 import "package:freezed_annotation/freezed_annotation.dart";
+import "package:uuid/uuid.dart";
 
 part "character_data.freezed.dart";
+
+const _uuid = Uuid();
+
+enum CustomFieldType { text, number, boolean, list }
+
+class CustomFieldValue {
+  final CustomFieldType type;
+  final String rawValue;
+
+  const CustomFieldValue({
+    this.type = CustomFieldType.text,
+    this.rawValue = "",
+  });
+
+  String get displayValue {
+    if (type != CustomFieldType.list) return rawValue;
+    return rawValue
+        .split(RegExp(r"\r?\n|,"))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .join("、");
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is CustomFieldValue &&
+      other.type == type &&
+      other.rawValue == rawValue;
+
+  @override
+  int get hashCode => Object.hash(type, rawValue);
+}
+
+@freezed
+class CharacterAlias with _$CharacterAlias {
+  const factory CharacterAlias({
+    @Default("nickname") String type,
+    @Default(<String>[]) List<String> values,
+  }) = _CharacterAlias;
+}
+
+@freezed
+class CharacterConflict with _$CharacterConflict {
+  const factory CharacterConflict({
+    @Default("") String obstacle,
+    @Default("") String resolution,
+  }) = _CharacterConflict;
+}
+
+@freezed
+class CharacterRelationship with _$CharacterRelationship {
+  const factory CharacterRelationship({
+    @Default("") String person,
+    @Default("") String relationship,
+  }) = _CharacterRelationship;
+}
+
+@freezed
+class CharacterAdvancedProfile with _$CharacterAdvancedProfile {
+  const factory CharacterAdvancedProfile({
+    @Default(<String, double>{}) Map<String, double> commonAbilities,
+    @Default(<String, double>{}) Map<String, double> socialTraits,
+    @Default(<String, double>{}) Map<String, double> approaches,
+    @Default(<String, double>{}) Map<String, double> personalityTraits,
+  }) = _CharacterAdvancedProfile;
+}
+
+@freezed
+class CharacterState with _$CharacterState {
+  const factory CharacterState({
+    required String characterId,
+    String? storyTimePointId,
+    @Default("") String location,
+    @Default("") String healthStatus,
+    @Default("") String emotion,
+    @Default("") String alignment,
+    @Default(<String>[]) List<String> possessions,
+  }) = _CharacterState;
+}
 
 class CharacterDataKeys {
   CharacterDataKeys._();
@@ -40,7 +120,6 @@ class CharacterDataKeys {
     "language",
     "interest",
     "habit",
-    "alignment",
     "belief",
     "limit",
     "future",
@@ -65,12 +144,25 @@ class CharacterDataKeys {
 
   static const otherKeys = ["originalName", "otherText"];
 
+  static const profileKeys = [
+    "roleOrOccupation",
+    "appearanceSummary",
+    "personalitySummary",
+    "speechStyle",
+    "motivation",
+    "goal",
+    "valuesAndBeliefs",
+    "relationshipSummary",
+    "notes",
+  ];
+
   static const allControllerKeys = [
     ...basicKeys,
     ...appearanceKeys,
     ...personalityKeys,
     ...socialKeys,
     ...otherKeys,
+    ...profileKeys,
   ];
 }
 
@@ -94,6 +186,28 @@ class CharacterEntryData with _$CharacterEntryData {
   const CharacterEntryData._();
 
   const factory CharacterEntryData({
+    @Default("") String characterId,
+    @Default("") String displayName,
+    @Default(<CharacterAlias>[]) List<CharacterAlias> aliases,
+    @Default("") String roleOrOccupation,
+    @Default("") String age,
+    @Default("") String gender,
+    @Default("") String appearanceSummary,
+    @Default("") String personalitySummary,
+    @Default("") String speechStyle,
+    @Default("") String motivation,
+    @Default("") String goal,
+    @Default(<CharacterConflict>[]) List<CharacterConflict> conflicts,
+    @Default("") String valuesAndBeliefs,
+    @Default("") String fear,
+    @Default("") String relationshipSummary,
+    @Default(<CharacterRelationship>[])
+    List<CharacterRelationship> relationships,
+    @Default("") String notes,
+    @Default(CharacterAdvancedProfile()) CharacterAdvancedProfile advanced,
+    @Default(<String, CustomFieldValue>{})
+    Map<String, CustomFieldValue> customFields,
+    @Default(<String, String>{}) Map<String, String> legacyFields,
     @Default(<String, String>{}) Map<String, String> textFields,
     String? alignment,
     @Default(<CharacterHinderEvent>[]) List<CharacterHinderEvent> hinderEvents,
@@ -123,6 +237,8 @@ class CharacterEntryData with _$CharacterEntryData {
   factory CharacterEntryData.withName(String name) {
     final trimmed = name.trim();
     return CharacterEntryData(
+      characterId: _uuid.v4(),
+      displayName: trimmed,
       textFields: trimmed.isEmpty
           ? const <String, String>{}
           : {"name": trimmed},
@@ -132,6 +248,8 @@ class CharacterEntryData with _$CharacterEntryData {
   factory CharacterEntryData.fromLegacyMap(
     Map<String, dynamic> source, {
     String? fallbackName,
+    String? characterId,
+    bool migrateLegacyRelationshipLists = true,
   }) {
     final normalizedTextFields = <String, String>{};
 
@@ -150,36 +268,123 @@ class CharacterEntryData with _$CharacterEntryData {
       normalizedTextFields["name"] = trimmedFallbackName;
     }
 
+    final displayName =
+        (normalizedTextFields["name"] ?? trimmedFallbackName ?? "").trim();
+    final aliases = <CharacterAlias>[];
+    final nickname = (normalizedTextFields["nickname"] ?? "").trim();
+    final originalName = (normalizedTextFields["originalName"] ?? "").trim();
+    if (nickname.isNotEmpty) {
+      aliases.add(CharacterAlias(type: "nickname", values: [nickname]));
+    }
+    if (originalName.isNotEmpty) {
+      aliases.add(CharacterAlias(type: "originalName", values: [originalName]));
+    }
+
+    final hinderEvents = _readHinderEvents(source["hinderEvents"]);
+    final likeItemList = _readStringList(source["likeItemList"]);
+    final admireItemList = _readStringList(source["admireItemList"]);
+    final hateItemList = _readStringList(source["hateItemList"]);
+    final fearItemList = _readStringList(source["fearItemList"]);
+    final relationships = migrateLegacyRelationshipLists
+        ? _readLegacyRelationships(source)
+        : const <CharacterRelationship>[];
+    final commonAbilityValues = _readDoubleList(source["commonAbilityValues"]);
+    final socialItemValues = _readDoubleList(source["socialItemValues"]);
+    final approachValues = _readDoubleList(source["approachValues"]);
+    final traitsValues = _readDoubleList(source["traitsValues"]);
+
     return CharacterEntryData(
+      characterId: characterId?.trim().isNotEmpty == true
+          ? characterId!.trim()
+          : _uuid.v4(),
+      displayName: displayName,
+      aliases: aliases,
+      roleOrOccupation: normalizedTextFields["occupation"] ?? "",
+      age: normalizedTextFields["age"] ?? "",
+      gender: normalizedTextFields["gender"] ?? "",
+      personalitySummary: normalizedTextFields["personality"] ?? "",
+      speechStyle: normalizedTextFields["language"] ?? "",
+      goal: normalizedTextFields["intention"] ?? "",
+      conflicts: hinderEvents
+          .map(
+            (event) => CharacterConflict(
+              obstacle: event.event,
+              resolution: event.solve,
+            ),
+          )
+          .toList(growable: false),
+      valuesAndBeliefs: normalizedTextFields["belief"] ?? "",
+      fear: normalizedTextFields["fear"] ?? "",
+      relationshipSummary:
+          normalizedTextFields["relationshipSummary"] ??
+          normalizedTextFields["family"] ??
+          "",
+      relationships: relationships,
+      notes:
+          normalizedTextFields["otherText"] ??
+          normalizedTextFields["otherValues"] ??
+          "",
+      advanced: CharacterAdvancedProfile(
+        commonAbilities: _sliderMap(commonAbilityValues, commonAbilityIds),
+        socialTraits: _sliderMap(socialItemValues, socialTraitIds),
+        approaches: _sliderMap(approachValues, approachIds),
+        personalityTraits: _sliderMap(traitsValues, personalityTraitIds),
+      ),
+      legacyFields: _legacyCompatibilityFields(normalizedTextFields),
       textFields: normalizedTextFields,
       alignment: _readNullableString(source["alignment"]),
-      hinderEvents: _readHinderEvents(source["hinderEvents"]),
+      hinderEvents: hinderEvents,
       loveToDoList: _readStringList(source["loveToDoList"]),
       hateToDoList: _readStringList(source["hateToDoList"]),
       wantToDoList: _readStringList(source["wantToDoList"]),
       fearToDoList: _readStringList(source["fearToDoList"]),
       proficientToDoList: _readStringList(source["proficientToDoList"]),
       unProficientToDoList: _readStringList(source["unProficientToDoList"]),
-      commonAbilityValues: _readDoubleList(source["commonAbilityValues"]),
+      commonAbilityValues: commonAbilityValues,
       howToShowLove: _readBoolMap(source["howToShowLove"]),
       howToShowGoodwill: _readBoolMap(source["howToShowGoodwill"]),
       handleHatePeople: _readBoolMap(source["handleHatePeople"]),
-      socialItemValues: _readDoubleList(source["socialItemValues"]),
+      socialItemValues: socialItemValues,
       relationship: _readNullableString(source["relationship"]),
       isFindNewLove: _readBool(source["isFindNewLove"]),
       isHarem: _readBool(source["isHarem"]),
-      approachValues: _readDoubleList(source["approachValues"]),
-      traitsValues: _readDoubleList(source["traitsValues"]),
-      likeItemList: _readStringList(source["likeItemList"]),
-      admireItemList: _readStringList(source["admireItemList"]),
-      hateItemList: _readStringList(source["hateItemList"]),
-      fearItemList: _readStringList(source["fearItemList"]),
+      approachValues: approachValues,
+      traitsValues: traitsValues,
+      likeItemList: migrateLegacyRelationshipLists
+          ? const <String>[]
+          : likeItemList,
+      admireItemList: migrateLegacyRelationshipLists
+          ? const <String>[]
+          : admireItemList,
+      hateItemList: migrateLegacyRelationshipLists
+          ? const <String>[]
+          : hateItemList,
+      fearItemList: migrateLegacyRelationshipLists
+          ? const <String>[]
+          : fearItemList,
       familiarItemList: _readStringList(source["familiarItemList"]),
     );
   }
 
   CharacterEntryData deepCopy() {
     return copyWith(
+      aliases: aliases
+          .map(
+            (alias) => alias.copyWith(values: List<String>.from(alias.values)),
+          )
+          .toList(growable: false),
+      conflicts: conflicts.map((conflict) => conflict.copyWith()).toList(),
+      relationships: relationships
+          .map((relationship) => relationship.copyWith())
+          .toList(growable: false),
+      advanced: advanced.copyWith(
+        commonAbilities: Map<String, double>.from(advanced.commonAbilities),
+        socialTraits: Map<String, double>.from(advanced.socialTraits),
+        approaches: Map<String, double>.from(advanced.approaches),
+        personalityTraits: Map<String, double>.from(advanced.personalityTraits),
+      ),
+      customFields: Map<String, CustomFieldValue>.from(customFields),
+      legacyFields: Map<String, String>.from(legacyFields),
       textFields: Map<String, String>.from(textFields),
       hinderEvents: hinderEvents
           .map((event) => event.copyWith())
@@ -211,9 +416,28 @@ class CharacterEntryData with _$CharacterEntryData {
     return copyWith(textFields: nextTextFields);
   }
 
+  CharacterEntryData withDisplayName(String value) {
+    final normalized = value.trim();
+    return copyWith(displayName: normalized).withTextField("name", normalized);
+  }
+
   Map<String, dynamic> toLegacyMap() {
     return <String, dynamic>{
       ...textFields,
+      "name": displayName,
+      "displayName": displayName,
+      "roleOrOccupation": roleOrOccupation,
+      "age": age.isNotEmpty ? age : textFields["age"] ?? "",
+      "gender": gender.isNotEmpty ? gender : textFields["gender"] ?? "",
+      "appearanceSummary": appearanceSummary,
+      "personalitySummary": personalitySummary,
+      "speechStyle": speechStyle,
+      "motivation": motivation,
+      "goal": goal,
+      "valuesAndBeliefs": valuesAndBeliefs,
+      "fear": fear,
+      "relationshipSummary": relationshipSummary,
+      "notes": notes,
       "alignment": alignment,
       "hinderEvents": hinderEvents
           .map(
@@ -248,6 +472,117 @@ class CharacterEntryData with _$CharacterEntryData {
   }
 }
 
+const commonAbilityIds = <String>[
+  "cooking",
+  "cleaning",
+  "finance",
+  "fitness",
+  "art",
+  "music",
+  "dance",
+  "handicraft",
+  "social",
+  "leadership",
+  "analysis",
+  "creativity",
+  "memory",
+  "observation",
+  "adaptability",
+  "learning",
+];
+
+const socialTraitIds = <String>[
+  "introversion_extroversion",
+  "emotion_reason",
+  "passive_active",
+  "conservative_open",
+  "cautious_adventurous",
+  "dependent_independent",
+  "compliant_stubborn",
+  "pessimistic_optimistic",
+  "serious_humorous",
+  "shy_outgoing",
+];
+
+const approachIds = <String>[
+  "low_key_high_profile",
+  "passive_proactive",
+  "cunning_honest",
+  "immature_mature",
+  "calm_impulsive",
+  "taciturn_talkative",
+  "obstinate_obedient",
+  "unrestrained_disciplined",
+  "serious_frivolous",
+  "reserved_frank",
+  "indifferent_curious",
+  "dull_perceptive",
+];
+
+const personalityTraitIds = <String>[
+  "attitude",
+  "expression",
+  "aptitude",
+  "mindset",
+  "shamelessness",
+  "temper",
+  "manners",
+  "willpower",
+  "desire",
+  "courage",
+  "eloquence",
+  "vigilance",
+  "self_esteem",
+  "confidence",
+  "archetype",
+];
+
+Map<String, double> _sliderMap(List<double> values, List<String> ids) {
+  final result = <String, double>{};
+  for (var index = 0; index < values.length && index < ids.length; index++) {
+    result[ids[index]] = values[index];
+  }
+  return result;
+}
+
+Map<String, String> _legacyCompatibilityFields(Map<String, String> fields) {
+  const compatibilityKeys = <String>{
+    "address",
+    "blood",
+    "earFeatures",
+    "eyebrowFeatures",
+    "curious",
+    "otherValues",
+    "otherText",
+  };
+  return {
+    for (final entry in fields.entries)
+      if (compatibilityKeys.contains(entry.key) && entry.value.isNotEmpty)
+        entry.key: entry.value,
+  };
+}
+
+List<CharacterRelationship> _readLegacyRelationships(
+  Map<String, dynamic> source,
+) {
+  final result = <CharacterRelationship>[];
+  void addItems(String relationship, dynamic values) {
+    for (final person in _readStringList(values)) {
+      final normalized = person.trim();
+      if (normalized.isEmpty) continue;
+      result.add(
+        CharacterRelationship(person: normalized, relationship: relationship),
+      );
+    }
+  }
+
+  addItems("喜歡", source["likeItemList"]);
+  addItems("憧憬", source["admireItemList"]);
+  addItems("討厭", source["hateItemList"]);
+  addItems("害怕", source["fearItemList"]);
+  return result;
+}
+
 Map<String, CharacterEntryData> copyCharacterDataMap(
   Map<String, CharacterEntryData> source,
 ) {
@@ -257,18 +592,26 @@ Map<String, CharacterEntryData> copyCharacterDataMap(
 Map<String, CharacterEntryData> parseCharacterDataMapFromLegacy(
   Map<String, Map<String, dynamic>> source,
 ) {
-  return source.map(
-    (name, data) => MapEntry(
-      name,
-      CharacterEntryData.fromLegacyMap(data, fallbackName: name),
-    ),
-  );
+  final result = <String, CharacterEntryData>{};
+  for (final entry in source.entries) {
+    final character = CharacterEntryData.fromLegacyMap(
+      entry.value,
+      fallbackName: entry.key,
+    );
+    result[character.characterId] = character;
+  }
+  return result;
 }
 
 Map<String, Map<String, dynamic>> convertCharacterDataMapToLegacy(
   Map<String, CharacterEntryData> source,
 ) {
-  return source.map((name, data) => MapEntry(name, data.toLegacyMap()));
+  return source.map(
+    (id, data) => MapEntry(
+      data.displayName.isEmpty ? id : data.displayName,
+      data.toLegacyMap(),
+    ),
+  );
 }
 
 String? _readNullableString(dynamic value) {

@@ -13,6 +13,7 @@ class ProjectData {
   List<UpdatePlanItem> updatePlanData;
   List<LocationData> worldSettingsData;
   Map<String, CharacterEntryData> characterData;
+  List<CharacterState> characterStates;
   int totalWords;
   String contentText;
   bool isDirty;
@@ -25,6 +26,7 @@ class ProjectData {
     required this.updatePlanData,
     required this.worldSettingsData,
     required this.characterData,
+    this.characterStates = const <CharacterState>[],
     this.totalWords = 0,
     this.contentText = "",
     this.isDirty = false,
@@ -51,6 +53,7 @@ class ProjectData {
       updatePlanData: [],
       worldSettingsData: [LocationData(localName: "主要場景")],
       characterData: {},
+      characterStates: const <CharacterState>[],
     );
   }
 }
@@ -58,6 +61,25 @@ class ProjectData {
 class ProjectParseResult {
   final String? projectVersion;
   final ProjectData data;
+  final List<ProjectMigrationWarning> migrationWarnings;
+  final bool wasMigrated;
 
-  const ProjectParseResult({required this.projectVersion, required this.data});
+  const ProjectParseResult({
+    required this.projectVersion,
+    required this.data,
+    this.migrationWarnings = const <ProjectMigrationWarning>[],
+    this.wasMigrated = false,
+  });
+}
+
+class ProjectMigrationWarning {
+  final String code;
+  final String message;
+  final String? originalText;
+
+  const ProjectMigrationWarning({
+    required this.code,
+    required this.message,
+    this.originalText,
+  });
 }

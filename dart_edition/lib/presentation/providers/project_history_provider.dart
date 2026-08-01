@@ -125,6 +125,7 @@ class ProjectHistoryEntry {
       updatePlanData: snapshot.updatePlanData,
       worldSettingsData: snapshot.worldSettingsData,
       characterData: snapshot.characterData,
+      characterStates: snapshot.characterStates,
       totalWords: snapshot.totalWords,
       contentText: snapshot.contentText,
       isDirty: snapshot.isDirty,

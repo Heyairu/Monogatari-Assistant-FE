@@ -2848,7 +2848,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
         return;
       }
-      _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
+      final migrationSuffix = loadResult.wasMigrated
+          ? "（已在記憶體升級至 ${FileService.projectVersion}，${loadResult.migrationWarnings.length} 項警告）"
+          : "";
+      for (final warning in loadResult.migrationWarnings) {
+        debugPrint(
+          "Project migration warning [${warning.code}]: ${warning.message}",
+        );
+      }
+      _showMessage(
+        "專案開啟成功：${projectFile.nameWithoutExtension}$migrationSuffix",
+      );
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         _showError("開啟專案失敗：${e.toString()}");
@@ -2954,7 +2964,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
         return;
       }
-      _showMessage("專案開啟成功：${projectFile.nameWithoutExtension}");
+      final migrationSuffix = loadResult.wasMigrated
+          ? "（已在記憶體升級至 ${FileService.projectVersion}，${loadResult.migrationWarnings.length} 項警告）"
+          : "";
+      for (final warning in loadResult.migrationWarnings) {
+        debugPrint(
+          "Project migration warning [${warning.code}]: ${warning.message}",
+        );
+      }
+      _showMessage(
+        "專案開啟成功：${projectFile.nameWithoutExtension}$migrationSuffix",
+      );
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         final message = e.toString();

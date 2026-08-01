@@ -189,6 +189,13 @@ ProjectData snapshotProjectData(
     updatePlanData: snapshotUpdatePlanData(source.updatePlanData),
     worldSettingsData: snapshotWorldSettingsData(source.worldSettingsData),
     characterData: snapshotCharacterData(source.characterData),
+    characterStates: List<character_model.CharacterState>.unmodifiable(
+      source.characterStates.map(
+        (state) => state.copyWith(
+          possessions: List<String>.unmodifiable(state.possessions),
+        ),
+      ),
+    ),
     totalWords: source.totalWords,
     contentText: source.contentText,
     isDirty: source.isDirty,

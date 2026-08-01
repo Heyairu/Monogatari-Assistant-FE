@@ -657,13 +657,20 @@ class CharacterCodec {
         builder.element("Name", nest: "Characters");
 
         for (final entry in characterData.entries) {
-          final characterName = entry.key;
-          final data = entry.value.toLegacyMap();
+          final character = entry.value;
+          final characterId = character.characterId.isEmpty
+              ? entry.key
+              : character.characterId;
+          final characterName = character.displayName.isEmpty
+              ? character.textFields["name"] ?? ""
+              : character.displayName;
+          final data = character.toLegacyMap();
 
           builder.element(
             "Character",
-            attributes: {"Name": characterName},
+            attributes: {"Id": characterId, "Name": characterName},
             nest: () {
+              _saveProfile(builder, character);
               // Basic Info
               builder.element(
                 "BasicInfo",
@@ -685,6 +692,11 @@ class CharacterCodec {
                 "Personality",
                 nest: () {
                   _saveStrings(builder, data, personalityKeys);
+                  _writeTextElement(
+                    builder,
+                    "alignment",
+                    character.alignment ?? "",
+                  );
 
                   final hinderEvents = _asHinderEvents(data["hinderEvents"]);
                   if (hinderEvents.isNotEmpty) {
@@ -750,6 +762,7 @@ class CharacterCodec {
                           final def = TraitDefinitions.commonAbilities[i];
                           _saveSlider(
                             builder,
+                            commonAbilityIds[i],
                             def.xmlTitle,
                             def.xmlLeft,
                             def.xmlRight,
@@ -825,6 +838,7 @@ class CharacterCodec {
                           final def = TraitDefinitions.socialItems[i];
                           _saveSlider(
                             builder,
+                            socialTraitIds[i],
                             def.xmlTitle,
                             def.xmlLeft,
                             def.xmlRight,
@@ -870,6 +884,7 @@ class CharacterCodec {
                           final def = TraitDefinitions.approaches[i];
                           _saveSlider(
                             builder,
+                            approachIds[i],
                             def.xmlTitle,
                             def.xmlLeft,
                             def.xmlRight,
@@ -896,6 +911,7 @@ class CharacterCodec {
                           final def = TraitDefinitions.traits[i];
                           _saveSlider(
                             builder,
+                            personalityTraitIds[i],
                             def.xmlTitle,
                             def.xmlLeft,
                             def.xmlRight,
@@ -940,6 +956,324 @@ class CharacterCodec {
     );
 
     return builder.buildDocument().toXmlString(pretty: true, indent: "  ");
+  }
+
+  static const _profileTextFields = <String>[
+    "roleOrOccupation",
+    "age",
+    "gender",
+    "appearanceSummary",
+    "personalitySummary",
+    "speechStyle",
+    "motivation",
+    "goal",
+    "valuesAndBeliefs",
+    "fear",
+    "relationshipSummary",
+    "notes",
+  ];
+
+  static void _saveProfile(
+    xml.XmlBuilder builder,
+    CharacterEntryData character,
+  ) {
+    final values = <String, String>{
+      "roleOrOccupation": character.roleOrOccupation,
+      "age": character.age,
+      "gender": character.gender,
+      "appearanceSummary": character.appearanceSummary,
+      "personalitySummary": character.personalitySummary,
+      "speechStyle": character.speechStyle,
+      "motivation": character.motivation,
+      "goal": character.goal,
+      "valuesAndBeliefs": character.valuesAndBeliefs,
+      "fear": character.fear,
+      "relationshipSummary": character.relationshipSummary,
+      "notes": character.notes,
+    };
+    builder.element(
+      "Profile",
+      nest: () {
+        for (final key in _profileTextFields) {
+          _writeTextElement(builder, key, values[key] ?? "");
+        }
+        if (character.aliases.isNotEmpty) {
+          builder.element(
+            "Aliases",
+            nest: () {
+              for (final alias in character.aliases) {
+                for (final value in alias.values) {
+                  builder.element(
+                    "Alias",
+                    attributes: {"Type": alias.type},
+                    nest: value,
+                  );
+                }
+              }
+            },
+          );
+        }
+        if (character.conflicts.isNotEmpty) {
+          builder.element(
+            "Conflicts",
+            nest: () {
+              for (final conflict in character.conflicts) {
+                builder.element(
+                  "Conflict",
+                  nest: () {
+                    _writeTextElement(builder, "Obstacle", conflict.obstacle);
+                    _writeTextElement(
+                      builder,
+                      "Resolution",
+                      conflict.resolution,
+                    );
+                  },
+                );
+              }
+            },
+          );
+        }
+        builder.element(
+          "Relationships",
+          nest: () {
+            for (final relationship in character.relationships) {
+              builder.element(
+                "Relationship",
+                nest: () {
+                  _writeTextElement(builder, "Person", relationship.person);
+                  _writeTextElement(
+                    builder,
+                    "Description",
+                    relationship.relationship,
+                  );
+                },
+              );
+            }
+          },
+        );
+        _saveCustomFieldMap(builder, character.customFields);
+        _saveStringMap(builder, "LegacyFields", character.legacyFields);
+      },
+    );
+  }
+
+  static void _saveStringMap(
+    xml.XmlBuilder builder,
+    String tagName,
+    Map<String, String> values,
+  ) {
+    if (values.isEmpty) return;
+    builder.element(
+      tagName,
+      nest: () {
+        for (final entry in values.entries) {
+          builder.element(
+            "Field",
+            attributes: {"Key": entry.key},
+            nest: entry.value,
+          );
+        }
+      },
+    );
+  }
+
+  static void _saveCustomFieldMap(
+    xml.XmlBuilder builder,
+    Map<String, CustomFieldValue> values,
+  ) {
+    if (values.isEmpty) return;
+    builder.element(
+      "CustomFields",
+      nest: () {
+        for (final entry in values.entries) {
+          builder.element(
+            "Field",
+            attributes: {"Key": entry.key, "Type": entry.value.type.name},
+            nest: () {
+              if (entry.value.type == CustomFieldType.list) {
+                for (final item in entry.value.rawValue.split("\n")) {
+                  if (item.trim().isNotEmpty) {
+                    _writeTextElement(builder, "Item", item.trim());
+                  }
+                }
+              } else {
+                builder.text(entry.value.rawValue);
+              }
+            },
+          );
+        }
+      },
+    );
+  }
+
+  static CharacterEntryData _loadProfile(
+    xml.XmlElement characterNode,
+    CharacterEntryData fallback,
+  ) {
+    final profile = characterNode.findElements("Profile").firstOrNull;
+    if (profile == null) return fallback;
+
+    String value(String key, String oldValue) {
+      final element = profile.findElements(key).firstOrNull;
+      return element == null ? oldValue : _readElementText(element);
+    }
+
+    final aliasesByType = <String, List<String>>{};
+    final aliasesNode = profile.findElements("Aliases").firstOrNull;
+    if (aliasesNode != null) {
+      for (final alias in aliasesNode.findElements("Alias")) {
+        final aliasValue = _readElementText(alias);
+        if (aliasValue.isEmpty) continue;
+        aliasesByType
+            .putIfAbsent(alias.getAttribute("Type") ?? "other", () => [])
+            .add(aliasValue);
+      }
+    }
+
+    final conflicts = <CharacterConflict>[];
+    final conflictsNode = profile.findElements("Conflicts").firstOrNull;
+    if (conflictsNode != null) {
+      for (final conflict in conflictsNode.findElements("Conflict")) {
+        conflicts.add(
+          CharacterConflict(
+            obstacle: _readElementText(
+              conflict.findElements("Obstacle").firstOrNull,
+            ),
+            resolution: _readElementText(
+              conflict.findElements("Resolution").firstOrNull,
+            ),
+          ),
+        );
+      }
+    }
+
+    final relationships = <CharacterRelationship>[];
+    final relationshipsNode = profile.findElements("Relationships").firstOrNull;
+    if (relationshipsNode != null) {
+      for (final relationship in relationshipsNode.findElements(
+        "Relationship",
+      )) {
+        relationships.add(
+          CharacterRelationship(
+            person: _readElementText(
+              relationship.findElements("Person").firstOrNull,
+            ),
+            relationship: _readElementText(
+              relationship.findElements("Description").firstOrNull,
+            ),
+          ),
+        );
+      }
+    }
+
+    var restoredRelationshipSummary = value(
+      "relationshipSummary",
+      fallback.relationshipSummary,
+    );
+    final legacyFamily = (fallback.textFields["family"] ?? "").trim();
+    final legacyImpression = (fallback.textFields["impression"] ?? "").trim();
+    final legacyRelationship = fallback.relationship?.trim() ?? "";
+    final retainedRelationships = relationships
+        .where((relationship) {
+          final description = relationship.relationship.trim();
+          if (relationship.person == "家庭／重要背景" &&
+              legacyFamily.isNotEmpty &&
+              description == legacyFamily) {
+            if (restoredRelationshipSummary.isEmpty) {
+              restoredRelationshipSummary = description;
+            }
+            return false;
+          }
+          if (relationship.person == "他人印象" &&
+              legacyImpression.isNotEmpty &&
+              description == legacyImpression) {
+            return false;
+          }
+          if (relationship.person == "感情狀態" &&
+              legacyRelationship.isNotEmpty &&
+              description == legacyRelationship) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+
+    return fallback.copyWith(
+      aliases: aliasesByType.isEmpty
+          ? fallback.aliases
+          : aliasesByType.entries
+                .map(
+                  (entry) =>
+                      CharacterAlias(type: entry.key, values: entry.value),
+                )
+                .toList(growable: false),
+      roleOrOccupation: value("roleOrOccupation", fallback.roleOrOccupation),
+      age: value("age", fallback.age),
+      gender: value("gender", fallback.gender),
+      appearanceSummary: value("appearanceSummary", fallback.appearanceSummary),
+      personalitySummary: value(
+        "personalitySummary",
+        fallback.personalitySummary,
+      ),
+      speechStyle: value("speechStyle", fallback.speechStyle),
+      motivation: value("motivation", fallback.motivation),
+      goal: value("goal", fallback.goal),
+      conflicts: conflicts.isEmpty ? fallback.conflicts : conflicts,
+      relationships: relationshipsNode == null
+          ? fallback.relationships
+          : retainedRelationships,
+      valuesAndBeliefs: value("valuesAndBeliefs", fallback.valuesAndBeliefs),
+      fear: value("fear", fallback.fear),
+      relationshipSummary: restoredRelationshipSummary,
+      notes: value("notes", fallback.notes),
+      customFields: _loadCustomFieldMap(profile),
+      legacyFields: {
+        ...fallback.legacyFields,
+        ..._loadStringMap(profile, "LegacyFields"),
+      },
+    );
+  }
+
+  static Map<String, String> _loadStringMap(
+    xml.XmlElement parent,
+    String tagName,
+  ) {
+    final result = <String, String>{};
+    final node = parent.findElements(tagName).firstOrNull;
+    if (node == null) return result;
+    for (final field in node.findElements("Field")) {
+      final key = field.getAttribute("Key");
+      if (key != null && key.isNotEmpty) {
+        result[key] = _readElementText(field);
+      }
+    }
+    return result;
+  }
+
+  static Map<String, CustomFieldValue> _loadCustomFieldMap(
+    xml.XmlElement parent,
+  ) {
+    final result = <String, CustomFieldValue>{};
+    final node = parent.findElements("CustomFields").firstOrNull;
+    if (node == null) return result;
+    for (final field in node.findElements("Field")) {
+      final key = field.getAttribute("Key");
+      if (key == null || key.isEmpty) continue;
+      final typeName = field.getAttribute("Type") ?? "text";
+      final type = CustomFieldType.values.firstWhere(
+        (candidate) => candidate.name == typeName,
+        orElse: () => CustomFieldType.text,
+      );
+      result[key] = CustomFieldValue(
+        type: type,
+        rawValue:
+            type == CustomFieldType.list &&
+                field.findElements("Item").isNotEmpty
+            ? field.findElements("Item").map(_readElementText).join("\n")
+            : _readElementText(field),
+      );
+    }
+    return result;
   }
 
   static void _saveList(
@@ -1004,6 +1338,7 @@ class CharacterCodec {
 
   static void _saveSlider(
     xml.XmlBuilder builder,
+    String id,
     String title,
     String leftTag,
     String rightTag,
@@ -1011,7 +1346,12 @@ class CharacterCodec {
   ) {
     builder.element(
       "slider",
-      attributes: {"Title": title, "leftTag": leftTag, "rightTag": rightTag},
+      attributes: {
+        "Id": id,
+        "Title": title.isEmpty ? id : title,
+        "leftTag": leftTag,
+        "rightTag": rightTag,
+      },
       nest: value.toStringAsFixed(1),
     );
   }
@@ -1030,8 +1370,9 @@ class CharacterCodec {
 
   // 自已解析的 Type 區塊載入，避免專案載入時重複序列化與解析。
   static Map<String, CharacterEntryData>? loadElement(
-    xml.XmlElement typeElement,
-  ) {
+    xml.XmlElement typeElement, {
+    bool? migrateLegacyRelationshipLists,
+  }) {
     try {
       final nameElement = typeElement.findAllElements("Name").firstOrNull;
       if (nameElement?.innerText != "Characters") return null;
@@ -1039,7 +1380,11 @@ class CharacterCodec {
       final characterData = <String, CharacterEntryData>{};
 
       for (final charNode in typeElement.findAllElements("Character")) {
-        final characterName = charNode.getAttribute("Name") ?? "";
+        final characterName =
+            charNode.getAttribute("DisplayName") ??
+            charNode.getAttribute("Name") ??
+            "";
+        final characterId = charNode.getAttribute("Id");
 
         final data = <String, dynamic>{};
 
@@ -1059,6 +1404,7 @@ class CharacterCodec {
         final personality = charNode.findAllElements("Personality").firstOrNull;
         if (personality != null) {
           _loadStrings(data, personality, personalityKeys);
+          data["alignment"] = _getText(personality, "alignment");
           data["hinderEvents"] = _parseHinderEvents(personality);
         }
 
@@ -1080,6 +1426,7 @@ class CharacterCodec {
           data["commonAbilityValues"] = _parseSliders(
             ability,
             "commonAbilitySliders",
+            commonAbilityIds,
           );
         }
 
@@ -1101,13 +1448,25 @@ class CharacterCodec {
             "handleHatePeople",
           );
           data["otherHatePeople"] = _getText(social, "otherHatePeople");
-          data["socialItemValues"] = _parseSliders(social, "socialItemSliders");
+          data["socialItemValues"] = _parseSliders(
+            social,
+            "socialItemSliders",
+            socialTraitIds,
+          );
           data["relationship"] = _getText(social, "relationship");
           data["isFindNewLove"] = _getText(social, "isFindNewLove") == "true";
           data["isHarem"] = _getText(social, "isHarem") == "true";
           data["otherRelationship"] = _getText(social, "otherRelationship");
-          data["approachValues"] = _parseSliders(social, "approachSliders");
-          data["traitsValues"] = _parseSliders(social, "traitsSliders");
+          data["approachValues"] = _parseSliders(
+            social,
+            "approachSliders",
+            approachIds,
+          );
+          data["traitsValues"] = _parseSliders(
+            social,
+            "traitsSliders",
+            personalityTraitIds,
+          );
         }
 
         // Other
@@ -1122,10 +1481,16 @@ class CharacterCodec {
           data["otherText"] = _getText(other, "otherText");
         }
 
-        characterData[characterName] = CharacterEntryData.fromLegacyMap(
+        var character = CharacterEntryData.fromLegacyMap(
           data,
           fallbackName: characterName,
+          characterId: characterId,
+          migrateLegacyRelationshipLists:
+              migrateLegacyRelationshipLists ??
+              charNode.findElements("Profile").isEmpty,
         );
+        character = _loadProfile(charNode, character);
+        characterData[character.characterId] = character;
       }
 
       return characterData.isNotEmpty ? characterData : null;
@@ -1195,16 +1560,39 @@ class CharacterCodec {
     return list;
   }
 
-  static List<double> _parseSliders(xml.XmlElement node, String tagName) {
-    final list = <double>[];
+  static List<double> _parseSliders(
+    xml.XmlElement node,
+    String tagName,
+    List<String> stableIds,
+  ) {
+    final byId = <String, double>{};
+    final legacyValues = <double>[];
     final parent = node.findAllElements(tagName).firstOrNull;
     if (parent != null) {
       for (final slider in parent.findAllElements("slider")) {
         final val = double.tryParse(slider.innerText) ?? 0;
-        list.add(val);
+        final id = slider.getAttribute("Id") ?? slider.getAttribute("Title");
+        if (id != null && id.isNotEmpty && stableIds.contains(id)) {
+          byId[id] = val;
+        } else {
+          legacyValues.add(val);
+        }
       }
     }
-    return list;
+    if (byId.isEmpty) {
+      return legacyValues;
+    }
+    var legacyIndex = 0;
+    return stableIds
+        .map((id) {
+          final value = byId[id];
+          if (value != null) return value;
+          if (legacyIndex < legacyValues.length) {
+            return legacyValues[legacyIndex++];
+          }
+          return 50.0;
+        })
+        .toList(growable: false);
   }
 }
 
@@ -1239,6 +1627,24 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   CharacterDataNotifier get _characterNotifier =>
       ref.read(characterDataProvider.notifier);
 
+  String _displayNameFor(String characterId) {
+    final entry = characterData[characterId];
+    if (entry == null) return characterId;
+    return entry.displayName.isEmpty
+        ? entry.textFields["name"] ?? characterId
+        : entry.displayName;
+  }
+
+  List<String> get _relationshipCharacterOptions {
+    final names = <String>{};
+    for (final characterId in characters) {
+      if (characterId == selectedCharacter) continue;
+      final name = _displayNameFor(characterId).trim();
+      if (name.isNotEmpty) names.add(name);
+    }
+    return names.toList(growable: false);
+  }
+
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
 
@@ -1253,6 +1659,20 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   final TextEditingController _hinderEventController = TextEditingController();
   final TextEditingController _solveController = TextEditingController();
   int? selectedHinderIndex;
+
+  // Core aliases and relationships.
+  List<String> nicknames = [];
+  List<CharacterRelationship> characterRelationships = [];
+  final TextEditingController _relationshipPersonController =
+      TextEditingController();
+  final TextEditingController _relationshipDescriptionController =
+      TextEditingController();
+  int? selectedCharacterRelationshipIndex;
+
+  // Inline custom-field creator.
+  final TextEditingController _customFieldNameController =
+      TextEditingController();
+  CustomFieldType _newCustomFieldType = CustomFieldType.text;
 
   // Ability Lists - 能力列表
   List<String> loveToDoList = [];
@@ -1405,9 +1825,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     Map<String, CharacterEntryData> next, {
     bool forceLoadSelected = false,
   }) {
-    final names = next.keys.toList(growable: false);
+    final ids = next.keys.toList(growable: false);
 
-    if (names.isEmpty) {
+    if (ids.isEmpty) {
       if (selectedCharacter != null || selectedCharacterIndex != null) {
         setState(() {
           selectedCharacter = null;
@@ -1419,28 +1839,15 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     if (selectedCharacter == null || !next.containsKey(selectedCharacter)) {
-      // During rename, provider update can arrive before local selected key
-      // is committed; prefer the current name field text if it exists.
-      final pendingName = _controllers["name"]?.text.trim() ?? "";
-      if (pendingName.isNotEmpty && next.containsKey(pendingName)) {
-        final pendingIndex = names.indexOf(pendingName);
-        setState(() {
-          selectedCharacter = pendingName;
-          selectedCharacterIndex = pendingIndex >= 0 ? pendingIndex : 0;
-          _loadCharacterData(selectedCharacter!);
-        });
-        return;
-      }
-
       setState(() {
-        selectedCharacter = names.first;
+        selectedCharacter = ids.first;
         selectedCharacterIndex = 0;
         _loadCharacterData(selectedCharacter!);
       });
       return;
     }
 
-    final nextIndex = names.indexOf(selectedCharacter!);
+    final nextIndex = ids.indexOf(selectedCharacter!);
     if (selectedCharacterIndex != nextIndex || forceLoadSelected) {
       setState(() {
         selectedCharacterIndex = nextIndex;
@@ -1477,7 +1884,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       owner: this,
       flush: _flushPendingCharacterDraft,
     );
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() {});
@@ -1503,6 +1910,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     _hinderEventController.dispose();
     _solveController.dispose();
+    _relationshipPersonController.dispose();
+    _relationshipDescriptionController.dispose();
+    _customFieldNameController.dispose();
     super.dispose();
   }
 
@@ -1585,16 +1995,17 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               emptyDescription: "請新增第一個角色",
               emptyIcon: Icons.person_add_alt_outlined,
               itemBuilder: (context, index) {
-                final name = characters[index];
+                final characterId = characters[index];
+                final name = _displayNameFor(characterId);
                 final isSelected = selectedCharacterIndex == index;
 
                 return DraggableCardNode<String>(
-                  key: ValueKey(name),
-                  dragData: name,
-                  nodeId: name,
+                  key: ValueKey(characterId),
+                  dragData: characterId,
+                  nodeId: characterId,
                   nodeType: NodeType.item,
                   isDragging: _isDragging,
-                  isThisDragging: _currentDragData == name,
+                  isThisDragging: _currentDragData == characterId,
                   isSelected: isSelected,
 
                   title: Text(
@@ -1618,7 +2029,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                   onDragStarted: () {
                     setState(() {
                       _isDragging = true;
-                      _currentDragData = name;
+                      _currentDragData = characterId;
                     });
                   },
                   onDragEnd: () {
@@ -1714,11 +2125,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             controller: _tabController,
             isScrollable: true,
             tabs: const [
-              Tab(text: "基本資料"),
-              Tab(text: "個性＆價值觀"),
-              Tab(text: "能力＆才華"),
-              Tab(text: "社交相關"),
-              Tab(text: "其他"),
+              Tab(text: "角色卡"),
+              Tab(text: "自訂資料"),
+              Tab(text: "進階設定"),
             ],
           ),
           Padding(
@@ -1742,18 +2151,344 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Widget _buildCurrentTab() {
     switch (_tabController.index) {
       case 0:
-        return _buildBasicInfoTab();
+        return _buildCoreProfileTab();
       case 1:
-        return _buildPersonalityTab();
+        return _buildCustomFieldsTab();
       case 2:
-        return _buildAbilityTab();
-      case 3:
-        return _buildSocialTab();
-      case 4:
-        return _buildOtherTab();
+        return _buildAdvancedSettingsTab();
       default:
         return Container();
     }
+  }
+
+  Widget _buildCoreProfileTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SmallTitle(icon: Icons.badge_outlined, text: "基本識別"),
+        const SizedBox(height: 16),
+        _buildNameField("姓名（必填）：", _controllers["name"]!),
+        _buildTextField("身份／職業：", _controllers["roleOrOccupation"]!),
+        _buildTextField("年齡：", _controllers["age"]!),
+        _buildTextField("性別：", _controllers["gender"]!),
+        _buildTextField("生日：", _controllers["birthday"]!),
+        const SizedBox(height: 8),
+        CardList(
+          title: "暱稱",
+          icon: Icons.alternate_email,
+          items: nicknames,
+          onAdd: (value) {
+            final nickname = value.trim();
+            if (nickname.isEmpty || nicknames.contains(nickname)) return;
+            setState(() => nicknames = [...nicknames, nickname]);
+            _markAsModified(structuredFields: true);
+          },
+          onRemove: (index) {
+            setState(() => nicknames = [...nicknames]..removeAt(index));
+            _markAsModified(structuredFields: true);
+          },
+        ),
+        const Divider(height: 32),
+        SmallTitle(icon: Icons.face_retouching_natural, text: "外觀摘要"),
+        const SizedBox(height: 16),
+        _buildTextField("身高：", _controllers["height"]!),
+        _buildTextField("體重：", _controllers["weight"]!),
+        _buildTextField("髮色：", _controllers["hair"]!),
+        _buildTextField("瞳色：", _controllers["eye"]!),
+        _buildTextField("外觀摘要：", _controllers["appearanceSummary"]!),
+        const Divider(height: 32),
+        SmallTitle(icon: Icons.psychology_alt_outlined, text: "性格與故事核心"),
+        const SizedBox(height: 16),
+        _buildMultilineField("個性：", _controllers["personality"]!),
+        _buildTextField("MBTI：", _controllers["mbti"]!),
+        _buildTextField("說話風格：", _controllers["speechStyle"]!),
+        _buildTextField("動機：", _controllers["motivation"]!),
+        _buildTextField("目標：", _controllers["goal"]!),
+        _buildTextField("價值觀與信念：", _controllers["valuesAndBeliefs"]!),
+        _buildTextField("恐懼：", _controllers["fear"]!),
+        const SizedBox(height: 8),
+        SmallTitle(icon: Icons.warning_amber, text: "阻礙與解決方式"),
+        const SizedBox(height: 8),
+        _buildHinderTable(),
+        const SizedBox(height: 16),
+        AppTwoColumnTableEditor(
+          firstController: _hinderEventController,
+          secondController: _solveController,
+          firstLabel: "阻礙事件",
+          secondLabel: "解決方式（可留空）",
+          isEditing: selectedHinderIndex != null,
+          onSubmit: (_, _) => _addHinderEvent(),
+          onDelete: _deleteHinderEvent,
+        ),
+        const Divider(height: 32),
+        SmallTitle(icon: Icons.notes_outlined, text: "人物關係描述"),
+        const SizedBox(height: 16),
+        _buildTextField("人物關係：", _controllers["relationshipSummary"]!),
+        const SizedBox(height: 16),
+        SmallTitle(icon: Icons.people_outline, text: "人物關係"),
+        const SizedBox(height: 8),
+        _buildRelationshipTable(),
+        const SizedBox(height: 8),
+        AppTwoColumnTableEditor(
+          firstController: _relationshipPersonController,
+          secondController: _relationshipDescriptionController,
+          firstLabel: "人物",
+          firstHint: "選擇角色或自行輸入",
+          secondLabel: "關係",
+          isEditing: selectedCharacterRelationshipIndex != null,
+          firstFieldBuilder: (context, controller) => AppComboBoxField(
+            controller: controller,
+            options: _relationshipCharacterOptions,
+            labelText: "人物",
+            hintText: "選擇角色或自行輸入",
+          ),
+          onSubmit: (_, _) => _addCharacterRelationship(),
+          onDelete: _deleteCharacterRelationship,
+        ),
+        const Divider(height: 32),
+        SmallTitle(icon: Icons.notes_outlined, text: "備註"),
+        const SizedBox(height: 16),
+        _buildMultilineField("備註：", _controllers["notes"]!),
+      ],
+    );
+  }
+
+  Widget _buildAdvancedSettingsTab() {
+    return Column(
+      children: [
+        ExpansionTile(
+          title: const Text("詳細基本資料與外觀"),
+          subtitle: Text("居住地、五官與服裝"),
+          children: [_buildBasicInfoTab()],
+        ),
+        ExpansionTile(
+          title: const Text("性格工具"),
+          subtitle: Text("習慣、陣營與性格量表"),
+          children: [_buildPersonalityTab()],
+        ),
+        ExpansionTile(
+          title: const Text("喜好與能力"),
+          subtitle: Text("能力清單與生活技能量表"),
+          children: [_buildAbilityTab()],
+        ),
+        ExpansionTile(
+          title: const Text("社交問卷"),
+          subtitle: Text("社交行為、傾向與戀愛概況"),
+          children: [_buildSocialTab()],
+        ),
+        ExpansionTile(
+          title: const Text("其他舊欄位"),
+          subtitle: Text("原文姓名、喜惡與其他補充"),
+          children: [_buildOtherTab()],
+        ),
+      ],
+    );
+  }
+
+  String _customFieldTypeLabel(CustomFieldType type) {
+    return switch (type) {
+      CustomFieldType.text => "文字",
+      CustomFieldType.number => "滑桿",
+      CustomFieldType.boolean => "核取方塊",
+      CustomFieldType.list => "清單",
+    };
+  }
+
+  Widget _buildCustomFieldsTab() {
+    final characterId = selectedCharacter;
+    final fields = characterId == null
+        ? const <String, CustomFieldValue>{}
+        : characterData[characterId]?.customFields ??
+              const <String, CustomFieldValue>{};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SmallTitle(icon: Icons.tune, text: "自訂資料"),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 320,
+              child: AddItemInput(
+                title: "欄位名稱",
+                controller: _customFieldNameController,
+                onAdd: (_) => _addCustomField(),
+              ),
+            ),
+            SizedBox(
+              width: 200,
+              child: AppDropdownField<CustomFieldType>(
+                value: _newCustomFieldType,
+                labelText: "型別",
+                options: CustomFieldType.values
+                    .map<DropdownOption<CustomFieldType>>(
+                      (type) => DropdownOption(
+                        value: type,
+                        label: _customFieldTypeLabel(type),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _newCustomFieldType = value);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        if (fields.isEmpty)
+          const AppEmptyState(
+            title: "尚無自訂資料",
+            description: "輸入欄位名稱並選擇型別後新增",
+            icon: Icons.tune_outlined,
+          )
+        else
+          for (final field in fields.entries) ...[
+            _buildEditableCustomField(field.key, field.value),
+            const SizedBox(height: 12),
+          ],
+      ],
+    );
+  }
+
+  Widget _buildEditableCustomField(String key, CustomFieldValue field) {
+    final Widget editor = switch (field.type) {
+      CustomFieldType.text => AppTextField(
+        key: ValueKey("custom-text-$key"),
+        initialValue: field.rawValue,
+        labelText: key,
+        onChanged: (value) => _updateCustomField(
+          key,
+          CustomFieldValue(type: field.type, rawValue: value),
+        ),
+      ),
+      CustomFieldType.number => Builder(
+        builder: (context) {
+          final value = (double.tryParse(field.rawValue) ?? 50).clamp(0, 100);
+          return LabeledSlider(
+            title: key,
+            value: value.toDouble(),
+            min: 0,
+            max: 100,
+            divisions: 100,
+            valueLabelBuilder: (next) => "${next.round()}%",
+            onChanged: (next) => _updateCustomField(
+              key,
+              CustomFieldValue(
+                type: field.type,
+                rawValue: next.toStringAsFixed(0),
+              ),
+            ),
+          );
+        },
+      ),
+      CustomFieldType.boolean => CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(key),
+        value: field.rawValue.toLowerCase() == "true",
+        onChanged: (value) => _updateCustomField(
+          key,
+          CustomFieldValue(
+            type: field.type,
+            rawValue: (value ?? false).toString(),
+          ),
+        ),
+      ),
+      CustomFieldType.list => CardList(
+        title: key,
+        icon: Icons.list_alt,
+        showHeader: false,
+        items: field.rawValue
+            .split(RegExp(r"\r?\n|,"))
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false),
+        onAdd: (value) {
+          final items = field.rawValue
+              .split(RegExp(r"\r?\n|,"))
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+          if (value.trim().isNotEmpty) items.add(value.trim());
+          _updateCustomField(
+            key,
+            CustomFieldValue(type: field.type, rawValue: items.join("\n")),
+          );
+        },
+        onRemove: (index) {
+          final items =
+              field.rawValue
+                  .split(RegExp(r"\r?\n|,"))
+                  .map((item) => item.trim())
+                  .where((item) => item.isNotEmpty)
+                  .toList()
+                ..removeAt(index);
+          _updateCustomField(
+            key,
+            CustomFieldValue(type: field.type, rawValue: items.join("\n")),
+          );
+        },
+      ),
+    };
+    return Row(
+      crossAxisAlignment: field.type == CustomFieldType.list
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Expanded(child: editor),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: "移除$key",
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => _removeCustomField(key),
+        ),
+      ],
+    );
+  }
+
+  void _addCustomField() {
+    final key = _customFieldNameController.text.trim();
+    if (key.isEmpty) return;
+    final defaultValue = switch (_newCustomFieldType) {
+      CustomFieldType.text => "",
+      CustomFieldType.number => "50",
+      CustomFieldType.boolean => "false",
+      CustomFieldType.list => "",
+    };
+    _updateCustomField(
+      key,
+      CustomFieldValue(type: _newCustomFieldType, rawValue: defaultValue),
+    );
+    _customFieldNameController.clear();
+  }
+
+  void _updateCustomField(String key, CustomFieldValue value) {
+    final characterId = selectedCharacter;
+    if (characterId == null) return;
+    _saveCurrentCharacterData();
+    _characterNotifier.updateCharacterEntry(
+      characterId,
+      (current) =>
+          current.copyWith(customFields: {...current.customFields, key: value}),
+    );
+    _emitCharacterDataChanged();
+  }
+
+  void _removeCustomField(String key) {
+    final characterId = selectedCharacter;
+    if (characterId == null) return;
+    _saveCurrentCharacterData();
+    _characterNotifier.updateCharacterEntry(characterId, (current) {
+      final fields = Map<String, CustomFieldValue>.from(current.customFields)
+        ..remove(key);
+      return current.copyWith(customFields: fields);
+    });
+    _emitCharacterDataChanged();
   }
 
   // MARK: - 角色基本資訊
@@ -1762,23 +2497,14 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildNameField("姓名：", _controllers["name"]!),
-        _buildTextField("暱稱：", _controllers["nickname"]!),
-        _buildTextField("年齡：", _controllers["age"]!),
-        _buildTextField("性別：", _controllers["gender"]!),
-        _buildTextField("職業：", _controllers["occupation"]!),
-        _buildTextField("生日：", _controllers["birthday"]!),
+        const SizedBox(height: 16),
         _buildTextField("出生地：", _controllers["native"]!),
         _buildTextField("居住地：", _controllers["live"]!),
         _buildTextField("住址：", _controllers["address"]!),
         const Divider(height: 32),
         SmallTitle(icon: Icons.face, text: "外觀"),
         const SizedBox(height: 8),
-        _buildTextField("身高：", _controllers["height"]!),
-        _buildTextField("體重：", _controllers["weight"]!),
         _buildTextField("血型：", _controllers["blood"]!),
-        _buildTextField("髮色：", _controllers["hair"]!),
-        _buildTextField("瞳色：", _controllers["eye"]!),
         _buildTextField("膚色：", _controllers["skin"]!),
         _buildTextField("臉型：", _controllers["faceFeatures"]!),
         _buildTextField("眼型：", _controllers["eyeFeatures"]!),
@@ -1788,42 +2514,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _buildTextField("眉型：", _controllers["eyebrowFeatures"]!),
         _buildTextField("體格：", _controllers["body"]!),
         _buildTextField("服裝：", _controllers["dress"]!),
-
-        AppSectionCard(
-          padding: EdgeInsets.zero,
-          useSectionLayout: false,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SmallTitle(icon: Icons.description, text: "故事相關"),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _controllers["intention"]!,
-                  decoration: const InputDecoration(
-                    labelText: "故事中的動機、目標？",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SmallTitle(icon: Icons.warning_amber, text: "阻礙主角的事件？"),
-                const SizedBox(height: 8),
-                _buildHinderTable(),
-                const SizedBox(height: 8),
-                AppTwoColumnTableEditor(
-                  firstController: _hinderEventController,
-                  secondController: _solveController,
-                  firstLabel: "阻礙事件",
-                  secondLabel: "解決方式",
-                  isEditing: selectedHinderIndex != null,
-                  onSubmit: (_, _) => _addHinderEvent(),
-                  onDelete: _deleteHinderEvent,
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1834,8 +2524,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTextField("MBTI：", _controllers["mbti"]!),
-        _buildMultilineField("個性：", _controllers["personality"]!),
+        const SizedBox(height: 16),
         _buildTextField("口頭禪、慣用語：", _controllers["language"]!),
         _buildTextField("興趣：", _controllers["interest"]!),
         _buildTextField("習慣、癖好：", _controllers["habit"]!),
@@ -1904,6 +2593,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const SizedBox(height: 16),
         CardList(
           title: "熱愛做的事情",
           icon: Icons.favorite,
@@ -1977,6 +2667,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const SizedBox(height: 16),
         _buildMultilineField("來自他人的印象", _controllers["impression"]!),
         const SizedBox(height: 8),
         _buildTextField("最受他人欣賞/喜愛的特點", _controllers["likable"]!),
@@ -2111,6 +2802,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const SizedBox(height: 16),
         AppTextField(
           controller: _controllers["originalName"]!,
           decoration: const InputDecoration(
@@ -2121,7 +2813,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
         const SizedBox(height: 16),
         CardList(
-          title: "喜歡的人事物",
+          title: "喜歡的事物",
           icon: Icons.thumb_up_alt_outlined,
           items: likeItemList,
           onAdd: _addLikeItem,
@@ -2129,7 +2821,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
         const SizedBox(height: 16),
         CardList(
-          title: "憧憬的人事物",
+          title: "憧憬的事物",
           icon: Icons.auto_awesome,
           items: admireItemList,
           onAdd: _addAdmireItem,
@@ -2137,7 +2829,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
         const SizedBox(height: 16),
         CardList(
-          title: "討厭的人事物",
+          title: "討厭的事物",
           icon: Icons.thumb_down_alt_outlined,
           items: hateItemList,
           onAdd: _addHateItem,
@@ -2145,7 +2837,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
         const SizedBox(height: 16),
         CardList(
-          title: "害怕的人事物",
+          title: "害怕的事物",
           icon: Icons.bug_report,
           items: fearItemList,
           onAdd: _addFearItem,
@@ -2153,7 +2845,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
         const SizedBox(height: 16),
         CardList(
-          title: "習慣的人事物",
+          title: "習慣的事物",
           icon: Icons.history,
           items: familiarItemList,
           onAdd: _addFamiliarItem,
@@ -2235,6 +2927,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       firstHeader: "阻礙事件",
       secondHeader: "解決方式",
       bodyHeight: 200,
+      onSelectionCleared: _clearHinderEventSelection,
       emptyState: const AppEmptyState(
         title: "尚無阻礙事件",
         description: "在下方輸入事件與解決方式後新增",
@@ -2250,13 +2943,110 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             return AppTwoColumnTableRow(
               selected: selectedHinderIndex == index,
               showDivider: index != hinderEvents.length - 1,
-              firstCell: Text(event["event"] ?? ""),
-              secondCell: Text(event["solve"] ?? ""),
+              firstCell: AppEditableTableCell(
+                key: ValueKey("hinder-event-$index"),
+                value: event["event"] ?? "",
+                selected: selectedHinderIndex == index,
+                onEditStarted: () {
+                  setState(() {
+                    selectedHinderIndex = index;
+                    _hinderEventController.text = event["event"] ?? "";
+                    _solveController.text = event["solve"] ?? "";
+                  });
+                },
+                onEditCanceled: _clearHinderEventSelection,
+                onSubmitted: (value) =>
+                    _updateHinderEventCell(index, event: value),
+              ),
+              secondCell: AppEditableTableCell(
+                key: ValueKey("hinder-solve-$index"),
+                value: event["solve"] ?? "",
+                selected: selectedHinderIndex == index,
+                onEditStarted: () {
+                  setState(() {
+                    selectedHinderIndex = index;
+                    _hinderEventController.text = event["event"] ?? "";
+                    _solveController.text = event["solve"] ?? "";
+                  });
+                },
+                onEditCanceled: _clearHinderEventSelection,
+                onSubmitted: (value) =>
+                    _updateHinderEventCell(index, solve: value),
+              ),
               onTap: () {
                 setState(() {
                   selectedHinderIndex = index;
                   _hinderEventController.text = event["event"] ?? "";
                   _solveController.text = event["solve"] ?? "";
+                });
+              },
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildRelationshipTable() {
+    return AppTwoColumnTable(
+      firstHeader: "人物",
+      secondHeader: "關係",
+      bodyHeight: 200,
+      onSelectionCleared: _clearCharacterRelationshipSelection,
+      emptyState: const AppEmptyState(
+        title: "尚無人物關係",
+        description: "在下方輸入人物與關係後新增",
+        icon: Icons.people_outline,
+        compact: true,
+      ),
+      rows: characterRelationships
+          .asMap()
+          .entries
+          .map((entry) {
+            final index = entry.key;
+            final relationship = entry.value;
+            return AppTwoColumnTableRow(
+              selected: selectedCharacterRelationshipIndex == index,
+              showDivider: index != characterRelationships.length - 1,
+              firstCell: AppEditableTableCell(
+                key: ValueKey("relationship-person-$index"),
+                value: relationship.person,
+                selected: selectedCharacterRelationshipIndex == index,
+                onEditStarted: () {
+                  setState(() {
+                    selectedCharacterRelationshipIndex = index;
+                    _relationshipPersonController.text = relationship.person;
+                    _relationshipDescriptionController.text =
+                        relationship.relationship;
+                  });
+                },
+                onEditCanceled: _clearCharacterRelationshipSelection,
+                onSubmitted: (value) =>
+                    _updateCharacterRelationshipCell(index, person: value),
+              ),
+              secondCell: AppEditableTableCell(
+                key: ValueKey("relationship-description-$index"),
+                value: relationship.relationship,
+                selected: selectedCharacterRelationshipIndex == index,
+                onEditStarted: () {
+                  setState(() {
+                    selectedCharacterRelationshipIndex = index;
+                    _relationshipPersonController.text = relationship.person;
+                    _relationshipDescriptionController.text =
+                        relationship.relationship;
+                  });
+                },
+                onEditCanceled: _clearCharacterRelationshipSelection,
+                onSubmitted: (value) => _updateCharacterRelationshipCell(
+                  index,
+                  relationship: value,
+                ),
+              ),
+              onTap: () {
+                setState(() {
+                  selectedCharacterRelationshipIndex = index;
+                  _relationshipPersonController.text = relationship.person;
+                  _relationshipDescriptionController.text =
+                      relationship.relationship;
                 });
               },
             );
@@ -2478,28 +3268,24 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return;
     }
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    final currentName = selectedCharacter;
-    if (currentName == null) return;
+    final currentId = selectedCharacter;
+    if (currentId == null) return;
     if (forceStructuredFields) {
       _structuredFieldsDirty = true;
     }
 
-    final desiredName = (_controllers["name"]?.text ?? "").trim();
-    final targetName = desiredName.isEmpty ? currentName : desiredName;
+    final currentEntry = characterData[currentId];
+    final controllerName = (_controllers["name"]?.text ?? "").trim();
+    final persistedName = (currentEntry?.displayName ?? "").trim();
+    final targetName = _dirtyControllerKeys.contains("name")
+        ? (controllerName.isEmpty ? persistedName : controllerName)
+        : (persistedName.isEmpty ? controllerName : persistedName);
     final currentData = characterData;
 
-    if (targetName != currentName && currentData.containsKey(targetName)) {
-      _setNameFieldTextSilently(currentName);
-      if (mounted) {
-        AppFeedback.warning(context, "角色名稱已存在");
-      }
-      return;
-    }
-
     final baseEntry =
-        currentData[currentName] ??
+        currentData[currentId] ??
         _loadedCharacterEntrySnapshot ??
-        CharacterEntryData.withName(currentName);
+        CharacterEntryData.withName(targetName);
     final nextEntry = _buildDraftCharacterEntry(
       targetName,
       baseEntry: baseEntry,
@@ -2507,54 +3293,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       includeStructuredFields: _structuredFieldsDirty,
     );
 
-    if (targetName == currentName) {
-      final didUpdate = _characterNotifier.setCharacterEntry(
-        name: currentName,
-        entry: nextEntry,
-      );
-      if (didUpdate) {
-        _emitCharacterDataChanged();
-      }
-      _commitSavedCharacterEntrySnapshot(nextEntry);
-      _setNameFieldTextSilently(targetName);
-      return;
-    }
-
-    final orderedNames = currentData.keys.toList(growable: true);
-    final currentIndex = orderedNames.indexOf(currentName);
-    if (currentIndex < 0) {
-      return;
-    }
-
-    orderedNames[currentIndex] = targetName;
-
-    final nextCharacterData = <String, CharacterEntryData>{};
-    for (final name in orderedNames) {
-      if (name == targetName) {
-        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(nextEntry);
-        continue;
-      }
-
-      final entry = currentData[name];
-      if (entry != null) {
-        nextCharacterData[name] = CharacterCodec.copyCharacterEntry(entry);
-      }
-    }
-
-    // Update local selection first so provider listener does not fallback-load
-    // during rename, which can reset the text field selection.
-    selectedCharacter = targetName;
-    selectedCharacterIndex = currentIndex;
-
-    _characterNotifier.setCharacterData(nextCharacterData);
-    _emitCharacterDataChanged();
+    final didUpdate = _characterNotifier.setCharacterEntry(
+      characterId: currentId,
+      entry: nextEntry,
+    );
+    if (didUpdate) _emitCharacterDataChanged();
     _commitSavedCharacterEntrySnapshot(nextEntry);
     _setNameFieldTextSilently(targetName);
-
-    setState(() {
-      selectedCharacter = targetName;
-      selectedCharacterIndex = currentIndex;
-    });
   }
 
   void _commitSavedCharacterEntrySnapshot(CharacterEntryData entry) {
@@ -2582,43 +3327,85 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     if (!includeStructuredFields) {
-      return nextEntry.withTextField("name", fallbackName);
+      return _applyCoreProfile(nextEntry, fallbackName);
     }
 
-    return nextEntry
+    return _applyCoreProfile(
+      nextEntry.copyWith(
+        alignment: selectedAlignment,
+        hinderEvents: hinderEvents
+            .map(
+              (event) => CharacterHinderEvent(
+                event: event["event"] ?? "",
+                solve: event["solve"] ?? "",
+              ),
+            )
+            .toList(growable: false),
+        loveToDoList: List<String>.from(loveToDoList),
+        hateToDoList: List<String>.from(hateToDoList),
+        wantToDoList: List<String>.from(wantToDoList),
+        fearToDoList: List<String>.from(fearToDoList),
+        proficientToDoList: List<String>.from(proficientToDoList),
+        unProficientToDoList: List<String>.from(unProficientToDoList),
+        commonAbilityValues: List<double>.from(commonAbilityValues),
+        howToShowLove: Map<String, bool>.from(howToShowLove),
+        howToShowGoodwill: Map<String, bool>.from(howToShowGoodwill),
+        handleHatePeople: Map<String, bool>.from(handleHatePeople),
+        socialItemValues: List<double>.from(socialItemValues),
+        relationship: selectedRelationship,
+        isFindNewLove: isFindNewLove,
+        isHarem: isHarem,
+        approachValues: List<double>.from(approachValues),
+        traitsValues: List<double>.from(traitsValues),
+        likeItemList: List<String>.from(likeItemList),
+        admireItemList: List<String>.from(admireItemList),
+        hateItemList: List<String>.from(hateItemList),
+        fearItemList: List<String>.from(fearItemList),
+        familiarItemList: List<String>.from(familiarItemList),
+      ),
+      fallbackName,
+    );
+  }
+
+  CharacterEntryData _applyCoreProfile(
+    CharacterEntryData entry,
+    String displayName,
+  ) {
+    final aliases = <CharacterAlias>[
+      ...entry.aliases.where((alias) => alias.type != "nickname"),
+      if (nicknames.isNotEmpty)
+        CharacterAlias(type: "nickname", values: List<String>.from(nicknames)),
+    ];
+    return entry
         .copyWith(
-          alignment: selectedAlignment,
-          hinderEvents: hinderEvents
+          displayName: displayName,
+          aliases: aliases,
+          roleOrOccupation: _controllers["roleOrOccupation"]?.text ?? "",
+          age: _controllers["age"]?.text ?? "",
+          gender: _controllers["gender"]?.text ?? "",
+          appearanceSummary: _controllers["appearanceSummary"]?.text ?? "",
+          personalitySummary: _controllers["personalitySummary"]?.text ?? "",
+          speechStyle: _controllers["speechStyle"]?.text ?? "",
+          motivation: _controllers["motivation"]?.text ?? "",
+          goal: _controllers["goal"]?.text ?? "",
+          conflicts: hinderEvents
               .map(
-                (event) => CharacterHinderEvent(
-                  event: event["event"] ?? "",
-                  solve: event["solve"] ?? "",
+                (event) => CharacterConflict(
+                  obstacle: event["event"] ?? "",
+                  resolution: event["solve"] ?? "",
                 ),
               )
               .toList(growable: false),
-          loveToDoList: List<String>.from(loveToDoList),
-          hateToDoList: List<String>.from(hateToDoList),
-          wantToDoList: List<String>.from(wantToDoList),
-          fearToDoList: List<String>.from(fearToDoList),
-          proficientToDoList: List<String>.from(proficientToDoList),
-          unProficientToDoList: List<String>.from(unProficientToDoList),
-          commonAbilityValues: List<double>.from(commonAbilityValues),
-          howToShowLove: Map<String, bool>.from(howToShowLove),
-          howToShowGoodwill: Map<String, bool>.from(howToShowGoodwill),
-          handleHatePeople: Map<String, bool>.from(handleHatePeople),
-          socialItemValues: List<double>.from(socialItemValues),
-          relationship: selectedRelationship,
-          isFindNewLove: isFindNewLove,
-          isHarem: isHarem,
-          approachValues: List<double>.from(approachValues),
-          traitsValues: List<double>.from(traitsValues),
-          likeItemList: List<String>.from(likeItemList),
-          admireItemList: List<String>.from(admireItemList),
-          hateItemList: List<String>.from(hateItemList),
-          fearItemList: List<String>.from(fearItemList),
-          familiarItemList: List<String>.from(familiarItemList),
+          valuesAndBeliefs: _controllers["valuesAndBeliefs"]?.text ?? "",
+          fear: _controllers["fear"]?.text ?? "",
+          relationshipSummary: _controllers["relationshipSummary"]?.text ?? "",
+          relationships: characterRelationships
+              .map((relationship) => relationship.copyWith())
+              .toList(growable: false),
+          notes: _controllers["notes"]?.text ?? "",
         )
-        .withTextField("name", fallbackName);
+        .withTextField("name", displayName)
+        .withTextField("nickname", nicknames.firstOrNull ?? "");
   }
 
   void _setNameFieldTextSilently(String value) {
@@ -2723,18 +3510,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   // 載入角色資料
-  void _loadCharacterData(String characterName) {
+  void _loadCharacterData(String characterId) {
     _isLoading = true;
-    final data = characterData[characterName];
+    final data = characterData[characterId];
 
     if (data == null) {
       _clearAllFields();
       if (_controllers.containsKey("name")) {
-        _controllers["name"]!.text = characterName;
+        _controllers["name"]!.text = "";
       }
-      _loadedCharacterEntrySnapshot = CharacterEntryData.withName(
-        characterName,
-      );
+      _loadedCharacterEntrySnapshot = null;
       _dirtyControllerKeys.clear();
       _structuredFieldsDirty = false;
       _isLoading = false;
@@ -2751,7 +3536,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     // Fallback for name if empty
     if ((_controllers["name"]?.text ?? "").isEmpty) {
-      _controllers["name"]?.text = characterName;
+      _controllers["name"]?.text = data.displayName;
     }
 
     selectedAlignment = normalizedData["alignment"]?.toString().replaceAll(
@@ -2759,6 +3544,23 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       "\n",
     );
     hinderEvents = _readHinderEvents(normalizedData, "hinderEvents");
+    nicknames = data.aliases
+        .where((alias) => alias.type == "nickname")
+        .expand((alias) => alias.values)
+        .where((value) => value.trim().isNotEmpty)
+        .toList(growable: false);
+    if (nicknames.isEmpty) {
+      final legacyNickname = (normalizedData["nickname"] ?? "")
+          .toString()
+          .trim();
+      if (legacyNickname.isNotEmpty) nicknames = [legacyNickname];
+    }
+    characterRelationships = _mergeDuplicateCharacterRelationships(
+      data.relationships,
+    );
+    selectedCharacterRelationshipIndex = null;
+    _relationshipPersonController.clear();
+    _relationshipDescriptionController.clear();
 
     loveToDoList = _readStringList(normalizedData, "loveToDoList");
     hateToDoList = _readStringList(normalizedData, "hateToDoList");
@@ -2817,6 +3619,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     selectedAlignment = null;
     hinderEvents.clear();
+    nicknames = [];
+    characterRelationships = [];
+    selectedCharacterRelationshipIndex = null;
     loveToDoList.clear();
     hateToDoList.clear();
     wantToDoList.clear();
@@ -2849,6 +3654,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     // Clear helpers
     _hinderEventController.clear();
     _solveController.clear();
+    _relationshipPersonController.clear();
+    _relationshipDescriptionController.clear();
     _loadedCharacterEntrySnapshot = null;
     _dirtyControllerKeys.clear();
     _structuredFieldsDirty = false;
@@ -2858,19 +3665,15 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     final name = _newCharacterController.text.trim();
     if (name.isEmpty) return;
 
-    if (characters.contains(name)) {
-      AppFeedback.warning(context, "角色名稱已存在");
-      return;
-    }
-
     // 確保現有更動被儲存
     if (selectedCharacter != null) {
       _saveCurrentCharacterData();
     }
 
+    final entry = CharacterEntryData.withName(name);
     final added = _characterNotifier.setCharacterEntry(
-      name: name,
-      entry: CharacterEntryData.withName(name),
+      characterId: entry.characterId,
+      entry: entry,
     );
     if (!added) {
       return;
@@ -2879,9 +3682,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     setState(() {
       _newCharacterController.clear();
-      selectedCharacter = name;
-      selectedCharacterIndex = characters.indexOf(name);
-      _loadCharacterData(name);
+      selectedCharacter = entry.characterId;
+      selectedCharacterIndex = characters.indexOf(entry.characterId);
+      _loadCharacterData(entry.characterId);
     });
   }
 
@@ -2889,14 +3692,14 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (index < 0 || index >= characters.length) {
       return;
     }
-    final characterName = characters[index];
+    final characterId = characters[index];
 
     // 確保現有更動被儲存
     if (selectedCharacter != null) {
       _saveCurrentCharacterData();
     }
 
-    final removed = _characterNotifier.removeCharacterEntry(characterName);
+    final removed = _characterNotifier.removeCharacterEntry(characterId);
     if (!removed) {
       return;
     }
@@ -2912,7 +3715,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         return;
       }
 
-      if (selectedCharacter == characterName) {
+      if (selectedCharacter == characterId) {
         final nextIndex = index.clamp(0, nextCharacters.length - 1);
         selectedCharacterIndex = nextIndex;
         selectedCharacter = nextCharacters[nextIndex];
@@ -2924,8 +3727,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   void _addHinderEvent() {
-    if (_hinderEventController.text.isNotEmpty &&
-        _solveController.text.isNotEmpty) {
+    if (_hinderEventController.text.isNotEmpty) {
       setState(() {
         if (selectedHinderIndex != null) {
           // Update existing
@@ -2948,6 +3750,24 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
   }
 
+  void _updateHinderEventCell(int index, {String? event, String? solve}) {
+    if (index < 0 || index >= hinderEvents.length) return;
+    setState(() {
+      final current = hinderEvents[index];
+      final nextEvent = event?.trim() ?? current["event"] ?? "";
+      if (nextEvent.isEmpty) return;
+      hinderEvents[index] = {
+        "event": nextEvent,
+        "solve": solve?.trim() ?? current["solve"] ?? "",
+      };
+      if (selectedHinderIndex == index) {
+        _hinderEventController.text = hinderEvents[index]["event"] ?? "";
+        _solveController.text = hinderEvents[index]["solve"] ?? "";
+      }
+      _saveCurrentCharacterData();
+    });
+  }
+
   void _deleteHinderEvent() {
     if (selectedHinderIndex != null) {
       setState(() {
@@ -2958,6 +3778,171 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _saveCurrentCharacterData();
       });
     }
+  }
+
+  void _clearHinderEventSelection() {
+    if (selectedHinderIndex == null) return;
+    setState(() {
+      selectedHinderIndex = null;
+      _hinderEventController.clear();
+      _solveController.clear();
+    });
+  }
+
+  void _addCharacterRelationship() {
+    final person = _relationshipPersonController.text.trim();
+    final relationship = _relationshipDescriptionController.text.trim();
+    if (person.isEmpty) return;
+    setState(() {
+      final value = CharacterRelationship(
+        person: person,
+        relationship: relationship,
+      );
+      final selectedIndex = selectedCharacterRelationshipIndex;
+      final duplicateIndex = _findCharacterRelationshipIndex(
+        person,
+        excluding: selectedIndex,
+      );
+      if (duplicateIndex >= 0) {
+        final existing = characterRelationships[duplicateIndex];
+        characterRelationships[duplicateIndex] = existing.copyWith(
+          relationship: _appendRelationshipDescription(
+            existing.relationship,
+            relationship,
+          ),
+        );
+        if (selectedIndex != null &&
+            selectedIndex >= 0 &&
+            selectedIndex < characterRelationships.length) {
+          characterRelationships.removeAt(selectedIndex);
+        }
+      } else if (selectedIndex != null &&
+          selectedIndex >= 0 &&
+          selectedIndex < characterRelationships.length) {
+        characterRelationships[selectedIndex] = value;
+        selectedCharacterRelationshipIndex = null;
+      } else {
+        characterRelationships.add(value);
+      }
+      selectedCharacterRelationshipIndex = null;
+      _relationshipPersonController.clear();
+      _relationshipDescriptionController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
+  int _findCharacterRelationshipIndex(String person, {int? excluding}) {
+    final key = person.trim().toLowerCase();
+    if (key.isEmpty) return -1;
+    for (var index = 0; index < characterRelationships.length; index++) {
+      if (index == excluding) continue;
+      if (characterRelationships[index].person.trim().toLowerCase() == key) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  String _appendRelationshipDescription(String existing, String incoming) {
+    final current = existing.trim();
+    final addition = incoming.trim();
+    if (current.isEmpty) return addition;
+    if (addition.isEmpty) return current;
+    if (current.split("、").map((value) => value.trim()).contains(addition)) {
+      return current;
+    }
+    return "$current、$addition";
+  }
+
+  List<CharacterRelationship> _mergeDuplicateCharacterRelationships(
+    Iterable<CharacterRelationship> relationships,
+  ) {
+    final merged = <CharacterRelationship>[];
+    final indexes = <String, int>{};
+    for (final relationship in relationships) {
+      final person = relationship.person.trim();
+      if (person.isEmpty) {
+        merged.add(relationship.copyWith());
+        continue;
+      }
+      final key = person.toLowerCase();
+      final existingIndex = indexes[key];
+      if (existingIndex == null) {
+        indexes[key] = merged.length;
+        merged.add(
+          relationship.copyWith(
+            person: person,
+            relationship: relationship.relationship.trim(),
+          ),
+        );
+        continue;
+      }
+      final existing = merged[existingIndex];
+      merged[existingIndex] = existing.copyWith(
+        relationship: _appendRelationshipDescription(
+          existing.relationship,
+          relationship.relationship,
+        ),
+      );
+    }
+    return merged;
+  }
+
+  void _updateCharacterRelationshipCell(
+    int index, {
+    String? person,
+    String? relationship,
+  }) {
+    if (index < 0 || index >= characterRelationships.length) return;
+    final current = characterRelationships[index];
+    final nextPerson = person?.trim() ?? current.person;
+    if (nextPerson.isEmpty) return;
+    setState(() {
+      final previousLength = characterRelationships.length;
+      characterRelationships[index] = current.copyWith(
+        person: nextPerson,
+        relationship: relationship?.trim() ?? current.relationship,
+      );
+      characterRelationships = _mergeDuplicateCharacterRelationships(
+        characterRelationships,
+      );
+      if (characterRelationships.length == previousLength &&
+          index < characterRelationships.length) {
+        selectedCharacterRelationshipIndex = index;
+        _relationshipPersonController.text =
+            characterRelationships[index].person;
+        _relationshipDescriptionController.text =
+            characterRelationships[index].relationship;
+      } else {
+        selectedCharacterRelationshipIndex = null;
+        _relationshipPersonController.clear();
+        _relationshipDescriptionController.clear();
+      }
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _deleteCharacterRelationship() {
+    final index = selectedCharacterRelationshipIndex;
+    if (index == null || index < 0 || index >= characterRelationships.length) {
+      return;
+    }
+    setState(() {
+      characterRelationships.removeAt(index);
+      selectedCharacterRelationshipIndex = null;
+      _relationshipPersonController.clear();
+      _relationshipDescriptionController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _clearCharacterRelationshipSelection() {
+    if (selectedCharacterRelationshipIndex == null) return;
+    setState(() {
+      selectedCharacterRelationshipIndex = null;
+      _relationshipPersonController.clear();
+      _relationshipDescriptionController.clear();
+    });
   }
 
   void _addLoveToDo(String value) {

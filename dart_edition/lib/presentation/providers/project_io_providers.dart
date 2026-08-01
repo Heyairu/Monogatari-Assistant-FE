@@ -50,11 +50,15 @@ class ProjectLoadResult {
   final ProjectFile projectFile;
   final ProjectData data;
   final String? projectVersion;
+  final List<ProjectMigrationWarning> migrationWarnings;
+  final bool wasMigrated;
 
   const ProjectLoadResult({
     required this.projectFile,
     required this.data,
     this.projectVersion,
+    this.migrationWarnings = const <ProjectMigrationWarning>[],
+    this.wasMigrated = false,
   });
 }
 
@@ -193,6 +197,8 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         projectFile: projectFile,
         data: snapshot,
         projectVersion: parseResult.projectVersion,
+        migrationWarnings: parseResult.migrationWarnings,
+        wasMigrated: parseResult.wasMigrated,
       );
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);

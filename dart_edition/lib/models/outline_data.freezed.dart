@@ -921,6 +921,7 @@ abstract class _StoryEventData extends StoryEventData {
 mixin _$SceneData {
   String get sceneName => throw _privateConstructorUsedError;
   String get time => throw _privateConstructorUsedError;
+  String? get timePointIso8601 => throw _privateConstructorUsedError;
   String get location => throw _privateConstructorUsedError;
   String get focusPoint => throw _privateConstructorUsedError;
   String get conflictPoint => throw _privateConstructorUsedError;
@@ -934,6 +935,7 @@ mixin _$SceneData {
     required TResult Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -950,6 +952,7 @@ mixin _$SceneData {
     TResult? Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -966,6 +969,7 @@ mixin _$SceneData {
     TResult Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -1007,6 +1011,7 @@ abstract class $SceneDataCopyWith<$Res> {
   $Res call({
     String sceneName,
     String time,
+    String? timePointIso8601,
     String location,
     String focusPoint,
     String conflictPoint,
@@ -1035,6 +1040,7 @@ class _$SceneDataCopyWithImpl<$Res, $Val extends SceneData>
   $Res call({
     Object? sceneName = null,
     Object? time = null,
+    Object? timePointIso8601 = freezed,
     Object? location = null,
     Object? focusPoint = null,
     Object? conflictPoint = null,
@@ -1054,6 +1060,10 @@ class _$SceneDataCopyWithImpl<$Res, $Val extends SceneData>
                 ? _value.time
                 : time // ignore: cast_nullable_to_non_nullable
                       as String,
+            timePointIso8601: freezed == timePointIso8601
+                ? _value.timePointIso8601
+                : timePointIso8601 // ignore: cast_nullable_to_non_nullable
+                      as String?,
             location: null == location
                 ? _value.location
                 : location // ignore: cast_nullable_to_non_nullable
@@ -1104,6 +1114,7 @@ abstract class _$$SceneDataImplCopyWith<$Res>
   $Res call({
     String sceneName,
     String time,
+    String? timePointIso8601,
     String location,
     String focusPoint,
     String conflictPoint,
@@ -1131,6 +1142,7 @@ class __$$SceneDataImplCopyWithImpl<$Res>
   $Res call({
     Object? sceneName = null,
     Object? time = null,
+    Object? timePointIso8601 = freezed,
     Object? location = null,
     Object? focusPoint = null,
     Object? conflictPoint = null,
@@ -1150,6 +1162,10 @@ class __$$SceneDataImplCopyWithImpl<$Res>
             ? _value.time
             : time // ignore: cast_nullable_to_non_nullable
                   as String,
+        timePointIso8601: freezed == timePointIso8601
+            ? _value.timePointIso8601
+            : timePointIso8601 // ignore: cast_nullable_to_non_nullable
+                  as String?,
         location: null == location
             ? _value.location
             : location // ignore: cast_nullable_to_non_nullable
@@ -1193,6 +1209,7 @@ class _$SceneDataImpl extends _SceneData {
   const _$SceneDataImpl({
     this.sceneName = "",
     this.time = "",
+    this.timePointIso8601,
     this.location = "",
     this.focusPoint = "",
     this.conflictPoint = "",
@@ -1212,6 +1229,8 @@ class _$SceneDataImpl extends _SceneData {
   @override
   @JsonKey()
   final String time;
+  @override
+  final String? timePointIso8601;
   @override
   @JsonKey()
   final String location;
@@ -1256,7 +1275,7 @@ class _$SceneDataImpl extends _SceneData {
 
   @override
   String toString() {
-    return 'SceneData.raw(sceneName: $sceneName, time: $time, location: $location, focusPoint: $focusPoint, conflictPoint: $conflictPoint, people: $people, item: $item, doingThings: $doingThings, memo: $memo, sceneUUID: $sceneUUID)';
+    return 'SceneData.raw(sceneName: $sceneName, time: $time, timePointIso8601: $timePointIso8601, location: $location, focusPoint: $focusPoint, conflictPoint: $conflictPoint, people: $people, item: $item, doingThings: $doingThings, memo: $memo, sceneUUID: $sceneUUID)';
   }
 
   /// Create a copy of SceneData
@@ -1273,6 +1292,7 @@ class _$SceneDataImpl extends _SceneData {
     required TResult Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -1287,6 +1307,7 @@ class _$SceneDataImpl extends _SceneData {
     return raw(
       sceneName,
       time,
+      timePointIso8601,
       location,
       focusPoint,
       conflictPoint,
@@ -1304,6 +1325,7 @@ class _$SceneDataImpl extends _SceneData {
     TResult? Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -1318,6 +1340,7 @@ class _$SceneDataImpl extends _SceneData {
     return raw?.call(
       sceneName,
       time,
+      timePointIso8601,
       location,
       focusPoint,
       conflictPoint,
@@ -1335,6 +1358,7 @@ class _$SceneDataImpl extends _SceneData {
     TResult Function(
       String sceneName,
       String time,
+      String? timePointIso8601,
       String location,
       String focusPoint,
       String conflictPoint,
@@ -1351,6 +1375,7 @@ class _$SceneDataImpl extends _SceneData {
       return raw(
         sceneName,
         time,
+        timePointIso8601,
         location,
         focusPoint,
         conflictPoint,
@@ -1397,6 +1422,7 @@ abstract class _SceneData extends SceneData {
   const factory _SceneData({
     final String sceneName,
     final String time,
+    final String? timePointIso8601,
     final String location,
     final String focusPoint,
     final String conflictPoint,
@@ -1412,6 +1438,8 @@ abstract class _SceneData extends SceneData {
   String get sceneName;
   @override
   String get time;
+  @override
+  String? get timePointIso8601;
   @override
   String get location;
   @override

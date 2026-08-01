@@ -213,6 +213,13 @@ class OutlineCodec {
                           if (sc.time.isNotEmpty) {
                             _writeTextElement(builder, "Time", sc.time);
                           }
+                          if (sc.timePointIso8601?.isNotEmpty == true) {
+                            _writeTextElement(
+                              builder,
+                              "TimePoint",
+                              sc.timePointIso8601!,
+                            );
+                          }
                           if (sc.location.isNotEmpty) {
                             _writeTextElement(builder, "Location", sc.location);
                           }
@@ -300,9 +307,7 @@ class OutlineCodec {
       for (final storylineNode in typeElement.findAllElements("Storyline")) {
         final storylineName = storylineNode.getAttribute("Name") ?? "";
         final storylineType = storylineNode.getAttribute("Type") ?? "";
-        final storylineUUID =
-            storylineNode.getAttribute("UUID") ??
-            DateTime.now().millisecondsSinceEpoch.toString();
+        final storylineUUID = storylineNode.getAttribute("UUID");
 
         final storylineMemo = _readElementText(
           storylineNode.findAllElements("Memo").firstOrNull,
@@ -336,9 +341,7 @@ class OutlineCodec {
         final events = <StoryEventData>[];
         for (final eventNode in storylineNode.findElements("Event")) {
           final eventName = eventNode.getAttribute("Name") ?? "";
-          final eventUUID =
-              eventNode.getAttribute("UUID") ??
-              DateTime.now().millisecondsSinceEpoch.toString();
+          final eventUUID = eventNode.getAttribute("UUID");
 
           final eventMemo = _readElementText(
             eventNode.findAllElements("Memo").firstOrNull,
@@ -374,9 +377,7 @@ class OutlineCodec {
           final scenes = <SceneData>[];
           for (final sceneNode in eventNode.findElements("Scene")) {
             final sceneName = sceneNode.getAttribute("Name") ?? "";
-            final sceneUUID =
-                sceneNode.getAttribute("UUID") ??
-                DateTime.now().millisecondsSinceEpoch.toString();
+            final sceneUUID = sceneNode.getAttribute("UUID");
 
             final scenePeople = <String>[];
             final scenePeopleNode = sceneNode
@@ -421,6 +422,9 @@ class OutlineCodec {
                 sceneUUID: sceneUUID,
                 time: _readElementText(
                   sceneNode.findAllElements("Time").firstOrNull,
+                ),
+                timePointIso8601: _readElementText(
+                  sceneNode.findAllElements("TimePoint").firstOrNull,
                 ),
                 location: _readElementText(
                   sceneNode.findAllElements("Location").firstOrNull,
@@ -485,6 +489,24 @@ class OutlineAdjustView extends ConsumerStatefulWidget {
 }
 
 class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
+  String _resolveCharacterReference(String value) {
+    final normalized = value.trim();
+    final characters = ref.read(characterDataProvider);
+    if (characters.containsKey(normalized)) return normalized;
+    final matches = characters.entries
+        .where((entry) => entry.value.displayName == normalized)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    return matches.length == 1 ? matches.single : value;
+  }
+
+  String _characterReferenceLabel(String value) {
+    final character = ref.read(characterDataProvider)[value];
+    return character?.displayName.isNotEmpty == true
+        ? character!.displayName
+        : value;
+  }
+
   String? selectedStorylineID;
   String? selectedEventID;
   String? selectedSceneID;
@@ -1555,6 +1577,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   Widget build(BuildContext context) {
     // Watch actual outline data for the UI.
     final outlineStorylines = ref.watch(outlineDataProvider);
+    ref.watch(
+      characterDataProvider.select((characters) => characters.hashCode),
+    );
     _ensureOutlineIndexCurrent(outlineStorylines);
     _bootstrapSelectionFromProviderIfNeeded();
 
@@ -2285,11 +2310,16 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             CardList(
               title: "預設人物",
               icon: Icons.person,
-              items: event.people,
+              items: event.people.map(_characterReferenceLabel).toList(),
               onAdd: (item) {
                 setState(() {
                   _updateEventAt(si, ei, (current) {
-                    return current.copyWith(people: [...current.people, item]);
+                    return current.copyWith(
+                      people: [
+                        ...current.people,
+                        _resolveCharacterReference(item),
+                      ],
+                    );
                   });
                 });
                 _notifyChange();
@@ -2784,11 +2814,16 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             CardList(
               title: "人物",
               icon: Icons.person,
-              items: scene.people,
+              items: scene.people.map(_characterReferenceLabel).toList(),
               onAdd: (item) {
                 setState(() {
                   _updateSceneAt(si, ei, ci, (current) {
-                    return current.copyWith(people: [...current.people, item]);
+                    return current.copyWith(
+                      people: [
+                        ...current.people,
+                        _resolveCharacterReference(item),
+                      ],
+                    );
                   });
                 });
                 _notifyChange();

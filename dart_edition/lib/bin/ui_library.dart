@@ -409,6 +409,9 @@ class _TitleWithIcon extends StatelessWidget {
           softWrap: false,
           overflow: TextOverflow.ellipsis,
         ),
+        // Keep title-adjacent actions from crowding the heading when a Row
+        // uses Spacer between this widget and its trailing controls.
+        const SizedBox(width: 16),
       ],
     );
   }
@@ -718,6 +721,7 @@ class AppDropdownField<T> extends StatelessWidget {
 class CardList extends StatelessWidget {
   final String title;
   final IconData icon;
+  final bool showHeader;
   final List<String> items;
   final ValueChanged<String> onAdd;
   final ValueChanged<int> onRemove;
@@ -726,6 +730,7 @@ class CardList extends StatelessWidget {
     super.key,
     required this.title,
     required this.icon,
+    this.showHeader = true,
     this.items = const [],
     required this.onAdd,
     required this.onRemove,
@@ -736,14 +741,16 @@ class CardList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(title, style: Theme.of(context).textTheme.titleSmall),
-          ],
-        ),
-        const SizedBox(height: 12),
+        if (showHeader) ...[
+          Row(
+            children: [
+              Icon(icon, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
 
         // 現有項目
         if (items.isNotEmpty) ...[

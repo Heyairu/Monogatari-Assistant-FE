@@ -31,6 +31,8 @@ import "../modules/worldsettingsview.dart";
 import "../modules/characterview.dart";
 import "../models/project_data.dart";
 import "../models/project_file.dart";
+import "../models/project_migrator.dart";
+import "../models/codecs/character_state_codec.dart";
 
 export "../models/project_data.dart";
 export "../models/project_file.dart";
@@ -981,7 +983,10 @@ class ProjectManager {
 
         if (selectedModules.contains("Outline")) {
           buffer.writeln(
-            _ProjectMerger.generateOutlineMD(currentData.outlineData),
+            _ProjectMerger.generateOutlineMD(
+              currentData.outlineData,
+              currentData.characterData,
+            ),
           );
           buffer.writeln("---");
           buffer.writeln();
@@ -1050,6 +1055,7 @@ class _ProjectParser {
     List<PlanModule.UpdatePlanItem>? loadedUpdatePlans;
     List<LocationData>? loadedWorldSettings;
     Map<String, CharacterEntryData>? loadedCharacterData;
+    List<CharacterState>? loadedCharacterStates;
 
     // 計算 contentText 和 totalWords
     String contentText = "";
@@ -1107,7 +1113,17 @@ class _ProjectParser {
               break;
 
             case "Characters":
-              loadedCharacterData ??= CharacterCodec.loadElement(element);
+              loadedCharacterData ??= CharacterCodec.loadElement(
+                element,
+                migrateLegacyRelationshipLists:
+                    ProjectMigrator.requiresMigration(projectVersion),
+              );
+              break;
+
+            case "CharacterStates":
+              loadedCharacterStates ??= CharacterStateCodec.loadElement(
+                element,
+              );
               break;
           }
         } catch (e) {
@@ -1188,19 +1204,28 @@ class _ProjectParser {
           .length;
     }
 
+    final decodedData = ProjectData(
+      baseInfoData: parsedBaseInfo,
+      segmentsData: parsedSegments,
+      outlineData: parsedOutline,
+      foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
+      updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
+      worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
+      characterData: loadedCharacterData ?? defaultData.characterData,
+      characterStates: loadedCharacterStates ?? defaultData.characterStates,
+      totalWords: totalWords,
+      contentText: contentText,
+    );
+    final migration = ProjectMigrator.migrate(
+      sourceVersion: projectVersion,
+      parsedData: decodedData,
+    );
+
     return ProjectParseResult(
       projectVersion: projectVersion,
-      data: ProjectData(
-        baseInfoData: parsedBaseInfo,
-        segmentsData: parsedSegments,
-        outlineData: parsedOutline,
-        foreshadowData: loadedForeshadow ?? defaultData.foreshadowData,
-        updatePlanData: loadedUpdatePlans ?? defaultData.updatePlanData,
-        worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
-        characterData: loadedCharacterData ?? defaultData.characterData,
-        totalWords: totalWords,
-        contentText: contentText,
-      ),
+      data: migration.data,
+      migrationWarnings: migration.warnings,
+      wasMigrated: migration.wasMigrated,
     );
   }
 
@@ -1272,6 +1297,14 @@ class _ProjectMerger {
       buffer.write(characterXml);
     }
 
+    final characterStatesXml = CharacterStateCodec.saveXML(
+      data.characterStates,
+    );
+    if (characterStatesXml != null) {
+      buffer.writeln();
+      buffer.write(characterStatesXml);
+    }
+
     buffer.writeln("</Project>");
 
     return buffer.toString();
@@ -1333,8 +1366,12 @@ class _ProjectMerger {
   /// 生成 Outline Markdown
   static String generateOutlineMD(
     List<OutlineModule.StorylineData> storylines,
+    Map<String, CharacterEntryData> characters,
   ) {
     final buffer = StringBuffer();
+    String peopleLabel(List<String> people) => people
+        .map((value) => characters[value]?.displayName ?? value)
+        .join(", ");
     buffer.writeln("# 大綱 (Outline)");
     buffer.writeln();
     for (final storyline in storylines) {
@@ -1345,7 +1382,7 @@ class _ProjectMerger {
       if (storyline.conflictPoint.isNotEmpty)
         buffer.writeln("衝突點: ${storyline.conflictPoint}");
       if (storyline.people.isNotEmpty)
-        buffer.writeln("人物: ${storyline.people.join(", ")}");
+        buffer.writeln("人物: ${peopleLabel(storyline.people)}");
       if (storyline.item.isNotEmpty)
         buffer.writeln("物件: ${storyline.item.join(", ")}");
 
@@ -1356,7 +1393,7 @@ class _ProjectMerger {
         if (event.conflictPoint.isNotEmpty)
           buffer.writeln("  - 衝突: ${event.conflictPoint}");
         if (event.people.isNotEmpty)
-          buffer.writeln("  - 人物: ${event.people.join(", ")}");
+          buffer.writeln("  - 人物: ${peopleLabel(event.people)}");
         if (event.item.isNotEmpty)
           buffer.writeln("  - 物件: ${event.item.join(", ")}");
 
@@ -1365,7 +1402,7 @@ class _ProjectMerger {
           if (scene.doingThings.isNotEmpty)
             buffer.writeln("    - 行動: ${scene.doingThings.join(", ")}");
           if (scene.people.isNotEmpty)
-            buffer.writeln("    - 人物: ${scene.people.join(", ")}");
+            buffer.writeln("    - 人物: ${peopleLabel(scene.people)}");
           if (scene.item.isNotEmpty)
             buffer.writeln("    - 物件: ${scene.item.join(", ")}");
         }
@@ -1704,10 +1741,10 @@ class _ProjectMerger {
       // Other
       buffer.writeln("\n### 其他");
       writeSimpleField("originalName");
-      writeList("喜歡的人事物", "likeItemList");
-      writeList("憧憬的人事物", "admireItemList");
-      writeList("討厭的人事物", "hateItemList");
-      writeList("害怕的人事物", "fearItemList");
+      writeList("喜歡的事物", "likeItemList");
+      writeList("憧憬的事物", "admireItemList");
+      writeList("討厭的事物", "hateItemList");
+      writeList("害怕的事物", "fearItemList");
       writeList("習慣的人事物", "familiarItemList");
       writeSimpleField("otherText");
 
@@ -1726,7 +1763,7 @@ class FileService {
   static const String projectExtension = ".mnproj"; // MonogatariAssistant 專案檔案
   static const String textExtension = ".txt";
   static const String markdownExtension = ".md";
-  static const String projectVersion = "1.06"; // 專案結構版本
+  static const String projectVersion = ProjectMigrator.currentVersion;
   static const String autoBackupFolderNameDesktop = "autosave";
   static const String autoBackupFolderNameMobile = "MonoAshi_Backup";
   static const String _customAutoBackupDirectoryKey =
