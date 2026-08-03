@@ -30,6 +30,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
+import "../models/world_settings_data.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "character_relationship_operations.dart" as relationship_operations;
 
@@ -108,6 +109,13 @@ class _CharacterDraftRegistration {
     required this.owner,
     required this.flush,
   });
+}
+
+class _WorldDirectoryOption {
+  final String label;
+  final String targetName;
+
+  const _WorldDirectoryOption({required this.label, required this.targetName});
 }
 
 // MARK: - 滑桿結構(解決硬編碼問題)
@@ -1814,6 +1822,51 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     return names.toList(growable: false);
   }
 
+  String _worldDirectoryPathLabel(List<String> path) {
+    if (path.length <= 3) return "\\${path.join("\\")}";
+    return "\\${path.first}\\...\\${path[path.length - 2]}\\${path.last}";
+  }
+
+  List<_WorldDirectoryOption> get _worldDirectoryOptions {
+    final options = <_WorldDirectoryOption>[];
+
+    void collect(LocationData node, List<String> ancestors) {
+      final targetName = node.localName.trim();
+      final path = [...ancestors, targetName];
+      if (targetName.isNotEmpty &&
+          (node.nodeType == WorldNodeType.location ||
+              node.nodeType == WorldNodeType.organization)) {
+        options.add(
+          _WorldDirectoryOption(
+            label: _worldDirectoryPathLabel(path),
+            targetName: targetName,
+          ),
+        );
+      }
+
+      for (final child in node.child) {
+        collect(child, path);
+      }
+    }
+
+    for (final node in ref.read(worldSettingsDataProvider)) {
+      collect(node, const <String>[]);
+    }
+    return options;
+  }
+
+  List<String> get _worldDirectoryOptionLabels => _worldDirectoryOptions
+      .map((option) => option.label)
+      .toList(growable: false);
+
+  String _worldDirectoryTargetName(String label) {
+    final normalizedLabel = label.trim();
+    for (final option in _worldDirectoryOptions) {
+      if (option.label == normalizedLabel) return option.targetName;
+    }
+    return normalizedLabel;
+  }
+
   // New character input controller
   final TextEditingController _newCharacterController = TextEditingController();
 
@@ -2170,6 +2223,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     // keeping the listener below for selection sync. Register the listener
     // only once during build to avoid duplicate registrations.
     ref.watch(characterDataProvider.select((m) => m.hashCode));
+    ref.watch(worldSettingsDataProvider);
     _hydrateInitialCharacterDataIfNeeded();
     if (!_registeredCharacterDataListener) {
       ref.listen<Map<String, CharacterEntryData>>(characterDataProvider, (
@@ -2262,7 +2316,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                           )
                         : null,
                   ),
-                  subtitle: Text("${_characterTypeFor(characterId)}"),
+                  subtitle: Text("角色類型：${_characterTypeFor(characterId)}"),
                   trailing: ItemActionBar(
                     actions: [
                       ItemAction.delete(
@@ -2550,6 +2604,19 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               selectedIndex: selectedOrganizationIndex,
               firstController: _organizationNameController,
               secondController: _organizationDescriptionController,
+              firstHint: "選擇地點或組織，或自行輸入",
+              firstFieldBuilder: (context, controller) => AppComboBoxField(
+                controller: controller,
+                options: _worldDirectoryOptionLabels,
+                labelText: "組織",
+                hintText: "選擇地點或組織，或自行輸入",
+                onSelected: (value) {
+                  controller.text = _worldDirectoryTargetName(value);
+                  controller.selection = TextSelection.collapsed(
+                    offset: controller.text.length,
+                  );
+                },
+              ),
               onSelectedIndexChanged: (value) =>
                   selectedOrganizationIndex = value,
               onSubmit: () => _submitProfileTableEntry(

@@ -503,7 +503,14 @@ void main() {
     await tester.tap(relationshipSection);
     await tester.pumpAndSettle();
 
-    final combo = find.byType(AppComboBoxField);
+    final relationshipEditor = find.byWidgetPredicate(
+      (widget) =>
+          widget is AppTwoColumnTableEditor && widget.firstLabel == "人物",
+    );
+    final combo = find.descendant(
+      of: relationshipEditor,
+      matching: find.byType(AppComboBoxField),
+    );
     await tester.ensureVisible(combo);
     await tester.pumpAndSettle();
     final comboWidget = tester.widget<AppComboBoxField>(combo);
@@ -525,10 +532,6 @@ void main() {
     final relationshipField = _findTextFieldByLabel(tester, "關係");
     await tester.enterText(relationshipField, "朋友");
     await tester.pump();
-    final relationshipEditor = find.byWidgetPredicate(
-      (widget) =>
-          widget is AppTwoColumnTableEditor && widget.firstLabel == "人物",
-    );
     final addButton = find.descendant(
       of: relationshipEditor,
       matching: find.byTooltip("新增"),
@@ -583,6 +586,123 @@ void main() {
       ]),
     );
   });
+
+  testWidgets(
+    "organization combo shows WorldSettings paths and stores target name",
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 2400);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final alice = CharacterEntryData.withName("Alice");
+      container
+          .read(characterDataProvider.notifier)
+          .setCharacterEntry(characterId: alice.characterId, entry: alice);
+      container.read(worldSettingsDataProvider.notifier).setWorldSettingsData([
+        LocationData(
+          localName: "世界",
+          nodeType: WorldNodeType.location,
+          child: [
+            LocationData(
+              localName: "王都",
+              nodeType: WorldNodeType.location,
+              child: [
+                LocationData(
+                  localName: "冒險者公會",
+                  nodeType: WorldNodeType.organization,
+                  child: [
+                    LocationData(
+                      localName: "調查局",
+                      nodeType: WorldNodeType.organization,
+                    ),
+                  ],
+                ),
+                LocationData(localName: "古老規則", nodeType: WorldNodeType.rule),
+                LocationData(localName: "聖劍", nodeType: WorldNodeType.item),
+              ],
+            ),
+          ],
+        ),
+        LocationData(localName: "中央政府", nodeType: WorldNodeType.organization),
+      ]);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(home: Scaffold(body: CharacterView())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final relationshipSection = find.text("人物關係描述");
+      await tester.ensureVisible(relationshipSection);
+      await tester.tap(relationshipSection);
+      await tester.pumpAndSettle();
+
+      final organizationEditor = find.byWidgetPredicate(
+        (widget) =>
+            widget is AppTwoColumnTableEditor && widget.firstLabel == "組織",
+      );
+      await tester.ensureVisible(organizationEditor);
+      await tester.pumpAndSettle();
+      final organizationCombo = find.descendant(
+        of: organizationEditor,
+        matching: find.byType(AppComboBoxField),
+      );
+      expect(organizationCombo, findsOneWidget);
+
+      final comboWidget = tester.widget<AppComboBoxField>(organizationCombo);
+      expect(
+        comboWidget.options,
+        containsAll([
+          r"\世界",
+          r"\世界\王都",
+          r"\世界\王都\冒險者公會",
+          r"\世界\...\冒險者公會\調查局",
+          r"\中央政府",
+        ]),
+      );
+      expect(comboWidget.options, isNot(contains(contains("古老規則"))));
+      expect(comboWidget.options, isNot(contains(contains("聖劍"))));
+
+      final organizationFields = find.descendant(
+        of: organizationEditor,
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(organizationFields.first, "調查局");
+      await tester.pumpAndSettle();
+      final targetOption = find.byKey(
+        const ValueKey(r"app-combo-option-\世界\...\冒險者公會\調查局"),
+      );
+      expect(targetOption, findsOneWidget);
+      await tester.tap(targetOption);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(organizationFields.first).controller!.text,
+        "調查局",
+      );
+
+      await tester.enterText(organizationFields.at(1), "探員");
+      await tester.pump();
+      final addButton = find.descendant(
+        of: organizationEditor,
+        matching: find.byTooltip("新增"),
+      );
+      await tester.tap(addButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(characterDataProvider)[alice.characterId]!.organizations,
+        const [CharacterProfileTableEntry(name: "調查局", description: "探員")],
+      );
+      expect(find.text("調查局"), findsOneWidget);
+      expect(find.text(r"\世界\...\冒險者公會\調查局"), findsNothing);
+    },
+  );
 }
 
 Finder _findTextFieldByLabel(WidgetTester tester, String label) {
