@@ -268,10 +268,12 @@ void main() {
       expect(find.text("Value"), findsOneWidget);
       expect(find.text("Weather"), findsOneWidget);
       final header = tester.widget<ColoredBox>(
-        find.ancestor(
-          of: find.text("Setting"),
-          matching: find.byType(ColoredBox),
-        ),
+        find
+            .ancestor(
+              of: find.text("Setting"),
+              matching: find.byType(ColoredBox),
+            )
+            .first,
       );
       final headerContext = tester.element(find.text("Setting"));
       expect(
@@ -294,6 +296,38 @@ void main() {
       );
 
       expect(find.text("No rows"), findsOneWidget);
+    });
+
+    testWidgets("AppThreeColumnTable renders three headers and row values", (
+      tester,
+    ) async {
+      var selected = false;
+      await tester.pumpWidget(
+        _testApp(
+          AppThreeColumnTable(
+            firstHeader: "Item",
+            secondHeader: "Quantity",
+            thirdHeader: "Description",
+            rows: [
+              AppThreeColumnTableRow(
+                firstCell: const Text("Pocket watch"),
+                secondCell: const Text("1"),
+                thirdCell: const Text("Family heirloom"),
+                onTap: () => selected = true,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.text("Item"), findsOneWidget);
+      expect(find.text("Quantity"), findsOneWidget);
+      expect(find.text("Description"), findsOneWidget);
+      expect(find.text("Pocket watch"), findsOneWidget);
+      expect(find.text("1"), findsOneWidget);
+      expect(find.text("Family heirloom"), findsOneWidget);
+      await tester.tap(find.text("Pocket watch"));
+      expect(selected, isTrue);
     });
 
     testWidgets("AppTwoColumnTable clears selection on blank tap or Escape", (

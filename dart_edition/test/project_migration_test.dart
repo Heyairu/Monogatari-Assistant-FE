@@ -284,6 +284,7 @@ void main() {
     );
     final currentCharacter = current.data.characterData.values.single;
     expect(current.wasMigrated, isFalse);
+    expect(currentCharacter.characterType, defaultCharacterType);
     expect(currentCharacter.likeItemList, ["Tea"]);
     expect(currentCharacter.relationships, isEmpty);
   });
@@ -310,6 +311,20 @@ void main() {
     expect(loaded.values.single.characterId, characterId);
     expect(loaded.values.single.commonAbilityValues.take(2), [10.0, 20.0]);
 
+    final legacyPossessionData = CharacterEntryData.fromLegacyMap({
+      "name": "Legacy",
+      "possessions": [
+        {"name": "Old key", "description": "Legacy description"},
+      ],
+    });
+    expect(legacyPossessionData.possessions, const [
+      CharacterPossessionEntry(
+        name: "Old key",
+        quantity: "",
+        description: "Legacy description",
+      ),
+    ]);
+
     final customized = loaded.values.single.copyWith(
       aliases: const [
         CharacterAlias(type: "nickname", values: ["A", "Ally"]),
@@ -317,6 +332,20 @@ void main() {
       relationships: const [
         CharacterRelationship(person: "Bob", relationship: "Friend"),
         CharacterRelationship(person: "Carol", relationship: "Rival"),
+      ],
+      characterType: "主角",
+      organizations: const [
+        CharacterProfileTableEntry(name: "調查局", description: "探員"),
+      ],
+      possessions: const [
+        CharacterPossessionEntry(
+          name: "懷錶",
+          quantity: "1 個",
+          description: "父親遺物",
+        ),
+      ],
+      statusEntries: const [
+        CharacterProfileTableEntry(name: "受傷", description: "左臂包紮中"),
       ],
       likeItemList: const ["Tea"],
       admireItemList: const ["Antique clocks"],
@@ -362,6 +391,19 @@ void main() {
     expect(
       reopened.characterData[characterId]!.relationships,
       customized.relationships,
+    );
+    expect(reopened.characterData[characterId]!.characterType, "主角");
+    expect(
+      reopened.characterData[characterId]!.organizations,
+      customized.organizations,
+    );
+    expect(
+      reopened.characterData[characterId]!.possessions,
+      customized.possessions,
+    );
+    expect(
+      reopened.characterData[characterId]!.statusEntries,
+      customized.statusEntries,
     );
     expect(reopened.characterData[characterId]!.likeItemList, ["Tea"]);
     expect(reopened.characterData[characterId]!.admireItemList, [

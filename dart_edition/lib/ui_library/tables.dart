@@ -245,6 +245,200 @@ class AppTwoColumnTableRow extends StatelessWidget {
   }
 }
 
+/// A consistent three-column table surface for compact editor data.
+class AppThreeColumnTable extends StatelessWidget {
+  final String firstHeader;
+  final String secondHeader;
+  final String thirdHeader;
+  final List<Widget> rows;
+  final Widget? emptyState;
+  final int firstFlex;
+  final int secondFlex;
+  final int thirdFlex;
+  final double? bodyHeight;
+  final VoidCallback? onSelectionCleared;
+
+  const AppThreeColumnTable({
+    super.key,
+    required this.firstHeader,
+    required this.secondHeader,
+    required this.thirdHeader,
+    required this.rows,
+    this.emptyState,
+    this.firstFlex = 2,
+    this.secondFlex = 1,
+    this.thirdFlex = 3,
+    this.bodyHeight,
+    this.onSelectionCleared,
+  }) : assert(firstFlex > 0),
+       assert(secondFlex > 0),
+       assert(thirdFlex > 0),
+       assert(bodyHeight == null || bodyHeight > 0);
+
+  Widget _buildBody() {
+    if (rows.isEmpty) {
+      final empty = emptyState ?? const SizedBox.shrink();
+      final body = bodyHeight == null
+          ? empty
+          : SizedBox(height: bodyHeight, child: empty);
+      return onSelectionCleared == null
+          ? body
+          : GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: onSelectionCleared,
+              child: body,
+            );
+    }
+
+    final body = bodyHeight == null
+        ? Column(mainAxisSize: MainAxisSize.min, children: rows)
+        : SizedBox(
+            height: bodyHeight,
+            child: ListView.builder(
+              primary: false,
+              padding: EdgeInsets.zero,
+              itemCount: rows.length,
+              itemBuilder: (context, index) => rows[index],
+            ),
+          );
+    return onSelectionCleared == null
+        ? body
+        : GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: onSelectionCleared,
+            child: body,
+          );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final headerStyle = theme.textTheme.titleSmall?.copyWith(
+      color: theme.colorScheme.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+    final table = Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColoredBox(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: firstFlex,
+                    child: Text(firstHeader, style: headerStyle),
+                  ),
+                  Expanded(
+                    flex: secondFlex,
+                    child: Text(secondHeader, style: headerStyle),
+                  ),
+                  Expanded(
+                    flex: thirdFlex,
+                    child: Text(thirdHeader, style: headerStyle),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _buildBody(),
+        ],
+      ),
+    );
+    if (onSelectionCleared == null) return table;
+
+    return Focus(
+      onKeyEvent: (node, event) {
+        if (node.hasPrimaryFocus &&
+            event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          onSelectionCleared!.call();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Builder(
+        builder: (context) => Listener(
+          onPointerDown: (_) => Focus.of(context).requestFocus(),
+          child: table,
+        ),
+      ),
+    );
+  }
+}
+
+/// Standard row layout for [AppThreeColumnTable].
+class AppThreeColumnTableRow extends StatelessWidget {
+  final Widget firstCell;
+  final Widget secondCell;
+  final Widget thirdCell;
+  final VoidCallback? onTap;
+  final bool selected;
+  final int firstFlex;
+  final int secondFlex;
+  final int thirdFlex;
+  final bool showDivider;
+
+  const AppThreeColumnTableRow({
+    super.key,
+    required this.firstCell,
+    required this.secondCell,
+    required this.thirdCell,
+    this.onTap,
+    this.selected = false,
+    this.firstFlex = 2,
+    this.secondFlex = 1,
+    this.thirdFlex = 3,
+    this.showDivider = true,
+  }) : assert(firstFlex > 0),
+       assert(secondFlex > 0),
+       assert(thirdFlex > 0);
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Container(
+      decoration: BoxDecoration(
+        border: showDivider
+            ? Border(bottom: BorderSide(color: Colors.grey.shade300))
+            : null,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: firstFlex,
+            child: Padding(padding: const EdgeInsets.all(12), child: firstCell),
+          ),
+          Expanded(
+            flex: secondFlex,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: secondCell,
+            ),
+          ),
+          Expanded(
+            flex: thirdFlex,
+            child: Padding(padding: const EdgeInsets.all(12), child: thirdCell),
+          ),
+        ],
+      ),
+    );
+    return Material(
+      color: selected
+          ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+          : Colors.transparent,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+    );
+  }
+}
+
 /// A table cell that switches to a text field with a single click.
 ///
 /// Press Enter or click outside the field to save. Escape cancels the edit.

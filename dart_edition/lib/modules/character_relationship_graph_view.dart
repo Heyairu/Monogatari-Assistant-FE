@@ -725,9 +725,19 @@ class _CharacterRelationshipGraphViewState
               ),
             ),
             IconButton(
+              tooltip: "開啟人物編輯",
+              onPressed: widget.onOpenCharacter == null
+                  ? null : () => widget.onOpenCharacter!(node.id),
+              icon: const Icon(Icons.edit_rounded),
+              style: IconButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            IconButton(
               tooltip: "關閉",
               onPressed: () => _showGlobalPreview(graph, _viewportSize),
               icon: const Icon(Icons.close),
+              style: IconButton.styleFrom(foregroundColor: Colors.redAccent),
             ),
           ],
         ),
@@ -760,13 +770,6 @@ class _CharacterRelationshipGraphViewState
               onPressed: () => _createTargetFromNode(node.id),
               icon: const Icon(Icons.person_add_alt),
               label: const Text("建立目標人物"),
-            ),
-            OutlinedButton.icon(
-              onPressed: widget.onOpenCharacter == null
-                  ? null
-                  : () => widget.onOpenCharacter!(node.id),
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text("開啟人物編輯"),
             ),
           ],
         ),

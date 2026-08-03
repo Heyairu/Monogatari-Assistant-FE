@@ -191,9 +191,50 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    Future<void> expandSection(String title) async {
+      final section = find.text(title);
+      await tester.ensureVisible(section);
+      await tester.tap(section);
+      await tester.pumpAndSettle();
+    }
+
     expect(find.text("暱稱"), findsOneWidget);
+    expect(find.text("角色類型"), findsOneWidget);
+    expect(find.text(defaultCharacterType), findsOneWidget);
+    expect(find.text("角色類型：$defaultCharacterType"), findsOneWidget);
+    await expandSection("角色類型");
+    for (final characterType in characterTypeOptions) {
+      expect(
+        find.widgetWithText(RadioListTile<String>, characterType),
+        findsOneWidget,
+      );
+    }
+    expect(find.text("角色狀態"), findsOneWidget);
+    await expandSection("性格與故事核心");
     expect(find.text("阻礙與解決方式"), findsOneWidget);
-    final relationshipSummaryField = _findTextFieldByLabel(tester, "人物關係：");
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppTwoColumnTableEditor && widget.firstLabel == "阻礙事件",
+      ),
+      findsOneWidget,
+    );
+
+    final protagonistOption = find.text("主角");
+    await tester.ensureVisible(protagonistOption);
+    await tester.pumpAndSettle();
+    await tester.tap(protagonistOption);
+    await tester.pumpAndSettle();
+    expect(find.text("角色類型：主角"), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1200));
+    expect(
+      container.read(characterDataProvider)[alice.characterId]!.characterType,
+      "主角",
+    );
+
+    await expandSection("人物關係描述");
+    expect(find.text("所屬組織"), findsOneWidget);
+    final relationshipSummaryField = _findTextFieldByLabel(tester, "人物關係簡述：");
     expect(relationshipSummaryField, findsOneWidget);
     expect(find.text("人物關係"), findsOneWidget);
 
@@ -205,6 +246,59 @@ void main() {
           .read(characterDataProvider)[alice.characterId]!
           .relationshipSummary,
       "相識多年的朋友",
+    );
+
+    final organizationEditor = find.byWidgetPredicate(
+      (widget) =>
+          widget is AppTwoColumnTableEditor && widget.firstLabel == "組織",
+    );
+    await tester.ensureVisible(organizationEditor);
+    await tester.pumpAndSettle();
+    final organizationFields = find.descendant(
+      of: organizationEditor,
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(organizationFields.at(0), "調查局");
+    await tester.enterText(organizationFields.at(1), "探員");
+    tester
+        .widget<AppTwoColumnTableEditor>(organizationEditor)
+        .onSubmit("調查局", "探員");
+    await tester.pumpAndSettle();
+    expect(
+      container.read(characterDataProvider)[alice.characterId]!.organizations,
+      const [CharacterProfileTableEntry(name: "調查局", description: "探員")],
+    );
+
+    await expandSection("角色狀態");
+    expect(find.text("擁有物品"), findsOneWidget);
+    expect(find.byType(AppThreeColumnTable), findsOneWidget);
+    final possessionEditor = find.byKey(const ValueKey("possession-editor"));
+    await tester.ensureVisible(possessionEditor);
+    await tester.pumpAndSettle();
+    final possessionFields = find.descendant(
+      of: possessionEditor,
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(possessionFields.at(0), "懷錶");
+    await tester.enterText(possessionFields.at(1), "1 個");
+    await tester.enterText(possessionFields.at(2), "父親遺物");
+    final possessionAddButton = find.descendant(
+      of: possessionEditor,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == "新增",
+      ),
+    );
+    tester.widget<IconButton>(possessionAddButton).onPressed?.call();
+    await tester.pumpAndSettle();
+    expect(
+      container.read(characterDataProvider)[alice.characterId]!.possessions,
+      const [
+        CharacterPossessionEntry(
+          name: "懷錶",
+          quantity: "1 個",
+          description: "父親遺物",
+        ),
+      ],
     );
 
     final advancedTab = find.widgetWithText(Tab, "進階設定");
@@ -332,12 +426,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final relationshipSection = find.text("人物關係描述");
+    await tester.ensureVisible(relationshipSection);
+    await tester.tap(relationshipSection);
+    await tester.pumpAndSettle();
+
     final relationshipRow = find.text("Bob");
     await tester.ensureVisible(relationshipRow);
     await tester.tap(relationshipRow);
     await tester.pumpAndSettle();
 
-    final relationshipEditor = find.byType(AppTwoColumnTableEditor).at(1);
+    final relationshipEditor = find.byWidgetPredicate(
+      (widget) =>
+          widget is AppTwoColumnTableEditor && widget.firstLabel == "人物",
+    );
     expect(
       tester.widget<AppTwoColumnTableEditor>(relationshipEditor).isEditing,
       isTrue,
@@ -396,6 +498,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final relationshipSection = find.text("人物關係描述");
+    await tester.ensureVisible(relationshipSection);
+    await tester.tap(relationshipSection);
+    await tester.pumpAndSettle();
+
     final combo = find.byType(AppComboBoxField);
     await tester.ensureVisible(combo);
     await tester.pumpAndSettle();
@@ -418,7 +525,10 @@ void main() {
     final relationshipField = _findTextFieldByLabel(tester, "關係");
     await tester.enterText(relationshipField, "朋友");
     await tester.pump();
-    final relationshipEditor = find.byType(AppTwoColumnTableEditor).at(1);
+    final relationshipEditor = find.byWidgetPredicate(
+      (widget) =>
+          widget is AppTwoColumnTableEditor && widget.firstLabel == "人物",
+    );
     final addButton = find.descendant(
       of: relationshipEditor,
       matching: find.byTooltip("新增"),

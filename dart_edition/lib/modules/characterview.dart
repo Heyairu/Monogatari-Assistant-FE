@@ -1061,6 +1061,20 @@ class CharacterCodec {
             }
           },
         );
+        _writeTextElement(builder, "CharacterType", character.characterType);
+        _saveProfileTable(
+          builder,
+          "Organizations",
+          "Organization",
+          character.organizations,
+        );
+        _savePossessionTable(builder, character.possessions);
+        _saveProfileTable(
+          builder,
+          "StatusEntries",
+          "Status",
+          character.statusEntries,
+        );
         _saveCustomFieldMap(builder, character.customFields);
         _saveStringMap(builder, "LegacyFields", character.legacyFields);
       },
@@ -1081,6 +1095,51 @@ class CharacterCodec {
             "Field",
             attributes: {"Key": entry.key},
             nest: entry.value,
+          );
+        }
+      },
+    );
+  }
+
+  static void _saveProfileTable(
+    xml.XmlBuilder builder,
+    String containerTag,
+    String entryTag,
+    List<CharacterProfileTableEntry> entries,
+  ) {
+    if (entries.isEmpty) return;
+    builder.element(
+      containerTag,
+      nest: () {
+        for (final entry in entries) {
+          builder.element(
+            entryTag,
+            nest: () {
+              _writeTextElement(builder, "Name", entry.name);
+              _writeTextElement(builder, "Description", entry.description);
+            },
+          );
+        }
+      },
+    );
+  }
+
+  static void _savePossessionTable(
+    xml.XmlBuilder builder,
+    List<CharacterPossessionEntry> entries,
+  ) {
+    if (entries.isEmpty) return;
+    builder.element(
+      "Possessions",
+      nest: () {
+        for (final entry in entries) {
+          builder.element(
+            "Possession",
+            nest: () {
+              _writeTextElement(builder, "Name", entry.name);
+              _writeTextElement(builder, "Quantity", entry.quantity);
+              _writeTextElement(builder, "Description", entry.description);
+            },
           );
         }
       },
@@ -1176,6 +1235,47 @@ class CharacterCodec {
       }
     }
 
+    List<CharacterProfileTableEntry> loadProfileTable(
+      String containerTag,
+      String entryTag,
+      List<CharacterProfileTableEntry> fallbackEntries,
+    ) {
+      final container = profile.findElements(containerTag).firstOrNull;
+      if (container == null) return fallbackEntries;
+      return container
+          .findElements(entryTag)
+          .map(
+            (entry) => CharacterProfileTableEntry(
+              name: _readElementText(entry.findElements("Name").firstOrNull),
+              description: _readElementText(
+                entry.findElements("Description").firstOrNull,
+              ),
+            ),
+          )
+          .where((entry) => entry.name.trim().isNotEmpty)
+          .toList(growable: false);
+    }
+
+    List<CharacterPossessionEntry> loadPossessions() {
+      final container = profile.findElements("Possessions").firstOrNull;
+      if (container == null) return fallback.possessions;
+      return container
+          .findElements("Possession")
+          .map(
+            (entry) => CharacterPossessionEntry(
+              name: _readElementText(entry.findElements("Name").firstOrNull),
+              quantity: _readElementText(
+                entry.findElements("Quantity").firstOrNull,
+              ),
+              description: _readElementText(
+                entry.findElements("Description").firstOrNull,
+              ),
+            ),
+          )
+          .where((entry) => entry.name.trim().isNotEmpty)
+          .toList(growable: false);
+    }
+
     var restoredRelationshipSummary = value(
       "relationshipSummary",
       fallback.relationshipSummary,
@@ -1232,6 +1332,21 @@ class CharacterCodec {
       relationships: relationshipsNode == null
           ? fallback.relationships
           : retainedRelationships,
+      characterType:
+          value("CharacterType", fallback.characterType).trim().isEmpty
+          ? defaultCharacterType
+          : value("CharacterType", fallback.characterType),
+      organizations: loadProfileTable(
+        "Organizations",
+        "Organization",
+        fallback.organizations,
+      ),
+      possessions: loadPossessions(),
+      statusEntries: loadProfileTable(
+        "StatusEntries",
+        "Status",
+        fallback.statusEntries,
+      ),
       valuesAndBeliefs: value("valuesAndBeliefs", fallback.valuesAndBeliefs),
       fear: value("fear", fallback.fear),
       relationshipSummary: restoredRelationshipSummary,
@@ -1657,6 +1772,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   String _nanoIdFor(String characterId) =>
       normalizeCharacterNanoId(characterData[characterId]?.nanoId);
 
+  String _characterTypeFor(String characterId) {
+    if (characterId == selectedCharacter) return selectedCharacterType;
+    final value = characterData[characterId]?.characterType ?? "";
+    return characterTypeOptions.contains(value) ? value : defaultCharacterType;
+  }
+
   Set<String> get _duplicateCharacterIds {
     final counts = <String, int>{};
     for (final characterId in characters) {
@@ -1716,6 +1837,28 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   final TextEditingController _relationshipDescriptionController =
       TextEditingController();
   int? selectedCharacterRelationshipIndex;
+
+  // Core profile tables.
+  String selectedCharacterType = defaultCharacterType;
+  List<CharacterProfileTableEntry> organizations = [];
+  List<CharacterPossessionEntry> possessions = [];
+  List<CharacterProfileTableEntry> statusEntries = [];
+  final TextEditingController _organizationNameController =
+      TextEditingController();
+  final TextEditingController _organizationDescriptionController =
+      TextEditingController();
+  final TextEditingController _possessionNameController =
+      TextEditingController();
+  final TextEditingController _possessionQuantityController =
+      TextEditingController();
+  final TextEditingController _possessionDescriptionController =
+      TextEditingController();
+  final TextEditingController _statusNameController = TextEditingController();
+  final TextEditingController _statusDescriptionController =
+      TextEditingController();
+  int? selectedOrganizationIndex;
+  int? selectedPossessionIndex;
+  int? selectedStatusIndex;
 
   // Inline custom-field creator.
   final TextEditingController _customFieldNameController =
@@ -2008,6 +2151,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _solveController.dispose();
     _relationshipPersonController.dispose();
     _relationshipDescriptionController.dispose();
+    _organizationNameController.dispose();
+    _organizationDescriptionController.dispose();
+    _possessionNameController.dispose();
+    _possessionQuantityController.dispose();
+    _possessionDescriptionController.dispose();
+    _statusNameController.dispose();
+    _statusDescriptionController.dispose();
     _customFieldNameController.dispose();
     super.dispose();
   }
@@ -2112,6 +2262,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                           )
                         : null,
                   ),
+                  subtitle: Text("${_characterTypeFor(characterId)}"),
                   trailing: ItemActionBar(
                     actions: [
                       ItemAction.delete(
@@ -2199,9 +2350,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       return AppSectionCard(
         padding: EdgeInsets.zero,
         useSectionLayout: false,
-        child: SizedBox(
+        child: const SizedBox(
           height: 400,
-          child: const AppEmptyState(
+          child: AppEmptyState(
             title: "請選取一個角色",
             description: "從左側列表選擇要編輯的角色",
             icon: Icons.person_outline,
@@ -2264,6 +2415,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         const SizedBox(height: 16),
         _buildNameField("姓名（必填）：", _controllers["name"]!),
         _buildTextField("身份／職業：", _controllers["roleOrOccupation"]!),
+        const SizedBox(height: 8),
         _buildTextField("年齡：", _controllers["age"]!),
         _buildTextField("性別：", _controllers["gender"]!),
         _buildTextField("生日：", _controllers["birthday"]!),
@@ -2284,64 +2436,215 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           },
         ),
         const Divider(height: 32),
-        SmallTitle(icon: Icons.face_retouching_natural, text: "外觀摘要"),
-        const SizedBox(height: 16),
-        _buildTextField("身高：", _controllers["height"]!),
-        _buildTextField("體重：", _controllers["weight"]!),
-        _buildTextField("髮色：", _controllers["hair"]!),
-        _buildTextField("瞳色：", _controllers["eye"]!),
-        _buildTextField("外觀摘要：", _controllers["appearanceSummary"]!),
-        const Divider(height: 32),
-        SmallTitle(icon: Icons.psychology_alt_outlined, text: "性格與故事核心"),
-        const SizedBox(height: 16),
-        _buildMultilineField("個性：", _controllers["personality"]!),
-        _buildTextField("MBTI：", _controllers["mbti"]!),
-        _buildTextField("說話風格：", _controllers["speechStyle"]!),
-        _buildTextField("動機：", _controllers["motivation"]!),
-        _buildTextField("目標：", _controllers["goal"]!),
-        _buildTextField("價值觀與信念：", _controllers["valuesAndBeliefs"]!),
-        _buildTextField("恐懼：", _controllers["fear"]!),
-        const SizedBox(height: 8),
-        SmallTitle(icon: Icons.warning_amber, text: "阻礙與解決方式"),
-        const SizedBox(height: 8),
-        _buildHinderTable(),
-        const SizedBox(height: 16),
-        AppTwoColumnTableEditor(
-          firstController: _hinderEventController,
-          secondController: _solveController,
-          firstLabel: "阻礙事件",
-          secondLabel: "解決方式（可留空）",
-          isEditing: selectedHinderIndex != null,
-          onSubmit: (_, _) => _addHinderEvent(),
-          onDelete: _deleteHinderEvent,
+        ExpansionTile(
+          title: SmallTitle(icon: Icons.theater_comedy, text: "角色類型"),
+          subtitle: Text(selectedCharacterType),
+          children: [_buildCharacterTypeOptions(), const SizedBox(height: 8)],
         ),
-        const Divider(height: 32),
-        SmallTitle(icon: Icons.notes_outlined, text: "人物關係描述"),
-        const SizedBox(height: 16),
-        _buildTextField("人物關係：", _controllers["relationshipSummary"]!),
-        const SizedBox(height: 16),
-        SmallTitle(icon: Icons.people_outline, text: "人物關係"),
         const SizedBox(height: 8),
-        _buildRelationshipTable(),
+        ExpansionTile(
+          title: SmallTitle(icon: Icons.face_retouching_natural, text: "外觀摘要"),
+          subtitle: const Text("紀錄角色大致外觀。"),
+          children: [
+            const SizedBox(height: 16),
+            _buildTextField("身高：", _controllers["height"]!),
+            _buildTextField("體重：", _controllers["weight"]!),
+            _buildTextField("髮色：", _controllers["hair"]!),
+            _buildTextField("瞳色：", _controllers["eye"]!),
+            _buildTextField("外觀摘要：", _controllers["appearanceSummary"]!),
+          ],
+        ),
         const SizedBox(height: 8),
-        AppTwoColumnTableEditor(
-          firstController: _relationshipPersonController,
-          secondController: _relationshipDescriptionController,
-          firstLabel: "人物",
-          firstHint: "選擇角色或自行輸入",
-          secondLabel: "關係",
-          isEditing: selectedCharacterRelationshipIndex != null,
-          firstFieldBuilder: (context, controller) => AppComboBoxField(
-            controller: controller,
-            options: _relationshipCharacterOptions,
-            labelText: "人物",
-            hintText: "選擇角色或自行輸入",
-            onSelected: (value) {
-              controller.text = _characterNameFromLabel(value);
-            },
+        ExpansionTile(
+          title: SmallTitle(
+            icon: Icons.psychology_alt_outlined,
+            text: "性格與故事核心",
           ),
-          onSubmit: (_, _) => _addCharacterRelationship(),
-          onDelete: _deleteCharacterRelationship,
+          subtitle: const Text("紀錄角色個性，以及在故事中遇到的困難。"),
+          children: [
+            const SizedBox(height: 16),
+            _buildMultilineField("個性：", _controllers["personality"]!),
+            _buildTextField("MBTI：", _controllers["mbti"]!),
+            _buildTextField("說話風格：", _controllers["speechStyle"]!),
+            _buildTextField("動機：", _controllers["motivation"]!),
+            _buildTextField("目標：", _controllers["goal"]!),
+            _buildTextField("價值觀與信念：", _controllers["valuesAndBeliefs"]!),
+            _buildTextField("恐懼：", _controllers["fear"]!),
+            const SizedBox(height: 8),
+            _buildProfileTableSection<Map<String, String>>(
+              title: "阻礙與解決方式",
+              icon: Icons.warning_amber,
+              firstHeader: "阻礙事件",
+              secondHeader: "解決方式",
+              emptyDescription: "在下方輸入事件與解決方式後新增",
+              keyPrefix: "hinder",
+              entries: hinderEvents,
+              firstValueOf: (entry) => entry["event"] ?? "",
+              secondValueOf: (entry) => entry["solve"] ?? "",
+              selectedIndex: selectedHinderIndex,
+              firstController: _hinderEventController,
+              secondController: _solveController,
+              onSelectedIndexChanged: (value) => selectedHinderIndex = value,
+              onSubmit: _addHinderEvent,
+              onDelete: _deleteHinderEvent,
+              onFirstSubmitted: (index, value) =>
+                  _updateHinderEventCell(index, event: value),
+              onSecondSubmitted: (index, value) =>
+                  _updateHinderEventCell(index, solve: value),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ExpansionTile(
+          title: SmallTitle(icon: Icons.notes_outlined, text: "人物關係描述"),
+          subtitle: const Text("描述角色與其他人的連結。"),
+          children: [
+            const SizedBox(height: 16),
+            _buildTextField("人物關係簡述：", _controllers["relationshipSummary"]!),
+            const SizedBox(height: 16),
+            _buildProfileTableSection<CharacterRelationship>(
+              title: "人物關係",
+              icon: Icons.people_outline,
+              firstHeader: "人物",
+              secondHeader: "關係",
+              emptyDescription: "在下方輸入人物與關係後新增",
+              keyPrefix: "relationship",
+              entries: characterRelationships,
+              firstValueOf: (entry) => entry.person,
+              secondValueOf: (entry) => entry.relationship,
+              selectedIndex: selectedCharacterRelationshipIndex,
+              firstController: _relationshipPersonController,
+              secondController: _relationshipDescriptionController,
+              firstHint: "選擇角色或自行輸入",
+              secondFieldLabel: "關係",
+              onSelectedIndexChanged: (value) =>
+                  selectedCharacterRelationshipIndex = value,
+              firstFieldBuilder: (context, controller) => AppComboBoxField(
+                controller: controller,
+                options: _relationshipCharacterOptions,
+                labelText: "人物",
+                hintText: "選擇角色或自行輸入",
+                onSelected: (value) {
+                  controller.text = _characterNameFromLabel(value);
+                },
+              ),
+              onSubmit: _addCharacterRelationship,
+              onDelete: _deleteCharacterRelationship,
+              onFirstSubmitted: (index, value) =>
+                  _updateCharacterRelationshipCell(index, person: value),
+              onSecondSubmitted: (index, value) =>
+                  _updateCharacterRelationshipCell(index, relationship: value),
+            ),
+            const SizedBox(height: 16),
+            _buildProfileTableSection(
+              title: "所屬組織",
+              icon: Icons.corporate_fare_outlined,
+              firstHeader: "組織",
+              secondHeader: "身分／職位",
+              emptyDescription: "在下方輸入組織與身分或職位後新增",
+              keyPrefix: "organization",
+              entries: organizations,
+              firstValueOf: (entry) => entry.name,
+              secondValueOf: (entry) => entry.description,
+              selectedIndex: selectedOrganizationIndex,
+              firstController: _organizationNameController,
+              secondController: _organizationDescriptionController,
+              onSelectedIndexChanged: (value) =>
+                  selectedOrganizationIndex = value,
+              onSubmit: () => _submitProfileTableEntry(
+                entries: organizations,
+                selectedIndex: selectedOrganizationIndex,
+                firstController: _organizationNameController,
+                secondController: _organizationDescriptionController,
+                onSelectedIndexChanged: (value) =>
+                    selectedOrganizationIndex = value,
+              ),
+              onDelete: () => _deleteProfileTableEntry(
+                entries: organizations,
+                selectedIndex: selectedOrganizationIndex,
+                firstController: _organizationNameController,
+                secondController: _organizationDescriptionController,
+                onSelectedIndexChanged: (value) =>
+                    selectedOrganizationIndex = value,
+              ),
+              onFirstSubmitted: (index, value) => _updateProfileTableEntry(
+                entries: organizations,
+                index: index,
+                name: value,
+                firstController: _organizationNameController,
+                secondController: _organizationDescriptionController,
+                onSelectedIndexChanged: (value) =>
+                    selectedOrganizationIndex = value,
+              ),
+              onSecondSubmitted: (index, value) => _updateProfileTableEntry(
+                entries: organizations,
+                index: index,
+                description: value,
+                firstController: _organizationNameController,
+                secondController: _organizationDescriptionController,
+                onSelectedIndexChanged: (value) =>
+                    selectedOrganizationIndex = value,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ExpansionTile(
+          title: SmallTitle(icon: Icons.sensors_rounded, text: "角色狀態"),
+          subtitle: const Text("角色的大致狀態。"),
+          children: [
+            const SizedBox(height: 16),
+            _buildProfileTableSection(
+              title: "角色狀態",
+              icon: Icons.monitor_heart_outlined,
+              firstHeader: "狀態",
+              secondHeader: "說明",
+              emptyDescription: "在下方輸入狀態與說明後新增",
+              keyPrefix: "status",
+              entries: statusEntries,
+              firstValueOf: (entry) => entry.name,
+              secondValueOf: (entry) => entry.description,
+              selectedIndex: selectedStatusIndex,
+              firstController: _statusNameController,
+              secondController: _statusDescriptionController,
+              onSelectedIndexChanged: (value) => selectedStatusIndex = value,
+              onSubmit: () => _submitProfileTableEntry(
+                entries: statusEntries,
+                selectedIndex: selectedStatusIndex,
+                firstController: _statusNameController,
+                secondController: _statusDescriptionController,
+                onSelectedIndexChanged: (value) => selectedStatusIndex = value,
+              ),
+              onDelete: () => _deleteProfileTableEntry(
+                entries: statusEntries,
+                selectedIndex: selectedStatusIndex,
+                firstController: _statusNameController,
+                secondController: _statusDescriptionController,
+                onSelectedIndexChanged: (value) => selectedStatusIndex = value,
+              ),
+              onFirstSubmitted: (index, value) => _updateProfileTableEntry(
+                entries: statusEntries,
+                index: index,
+                name: value,
+                firstController: _statusNameController,
+                secondController: _statusDescriptionController,
+                onSelectedIndexChanged: (value) => selectedStatusIndex = value,
+              ),
+              onSecondSubmitted: (index, value) => _updateProfileTableEntry(
+                entries: statusEntries,
+                index: index,
+                description: value,
+                firstController: _statusNameController,
+                secondController: _statusDescriptionController,
+                onSelectedIndexChanged: (value) => selectedStatusIndex = value,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildPossessionTableSection(),
+            const SizedBox(height: 8),
+          ],
         ),
         const Divider(height: 32),
         SmallTitle(icon: Icons.notes_outlined, text: "備註"),
@@ -2357,7 +2660,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ExpansionTile(
           title: const Text("識別設定"),
           subtitle: const Text("供角色重名時辨識用的 8 位 NanoID"),
-          children: [_buildTextField("NanoID：", _controllers["nanoId"]!)],
+          children: [
+            const SizedBox(height: 16),
+            _buildTextField("NanoID：", _controllers["nanoId"]!),
+          ],
         ),
         ExpansionTile(
           title: const Text("詳細基本資料與外觀"),
@@ -3023,138 +3329,310 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
-  // 阻礙事件表格
-
-  Widget _buildHinderTable() {
-    return AppTwoColumnTable(
-      firstHeader: "阻礙事件",
-      secondHeader: "解決方式",
-      bodyHeight: 200,
-      onSelectionCleared: _clearHinderEventSelection,
-      emptyState: const AppEmptyState(
-        title: "尚無阻礙事件",
-        description: "在下方輸入事件與解決方式後新增",
-        icon: Icons.warning_amber_outlined,
-        compact: true,
-      ),
-      rows: hinderEvents
-          .asMap()
-          .entries
-          .map((entry) {
-            final index = entry.key;
-            final event = entry.value;
-            return AppTwoColumnTableRow(
-              selected: selectedHinderIndex == index,
-              showDivider: index != hinderEvents.length - 1,
-              firstCell: AppEditableTableCell(
-                key: ValueKey("hinder-event-$index"),
-                value: event["event"] ?? "",
-                selected: selectedHinderIndex == index,
-                onEditStarted: () {
-                  setState(() {
-                    selectedHinderIndex = index;
-                    _hinderEventController.text = event["event"] ?? "";
-                    _solveController.text = event["solve"] ?? "";
-                  });
-                },
-                onEditCanceled: _clearHinderEventSelection,
-                onSubmitted: (value) =>
-                    _updateHinderEventCell(index, event: value),
-              ),
-              secondCell: AppEditableTableCell(
-                key: ValueKey("hinder-solve-$index"),
-                value: event["solve"] ?? "",
-                selected: selectedHinderIndex == index,
-                onEditStarted: () {
-                  setState(() {
-                    selectedHinderIndex = index;
-                    _hinderEventController.text = event["event"] ?? "";
-                    _solveController.text = event["solve"] ?? "";
-                  });
-                },
-                onEditCanceled: _clearHinderEventSelection,
-                onSubmitted: (value) =>
-                    _updateHinderEventCell(index, solve: value),
-              ),
-              onTap: () {
-                setState(() {
-                  selectedHinderIndex = index;
-                  _hinderEventController.text = event["event"] ?? "";
-                  _solveController.text = event["solve"] ?? "";
-                });
-              },
-            );
-          })
-          .toList(growable: false),
+  Widget _buildCharacterTypeOptions() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final optionWidth = constraints.maxWidth >= 720
+            ? (constraints.maxWidth - 16) / 3
+            : constraints.maxWidth >= 480
+            ? (constraints.maxWidth - 8) / 2
+            : constraints.maxWidth;
+        return RadioGroup<String>(
+          groupValue: selectedCharacterType,
+          onChanged: (value) {
+            if (value == null || value == selectedCharacterType) return;
+            setState(() {
+              selectedCharacterType = value;
+              _markAsModified(structuredFields: true);
+            });
+          },
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: characterTypeOptions
+                .map(
+                  (type) => SizedBox(
+                    width: optionWidth,
+                    child: RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(type),
+                      value: type,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildRelationshipTable() {
-    return AppTwoColumnTable(
-      firstHeader: "人物",
-      secondHeader: "關係",
-      bodyHeight: 200,
-      onSelectionCleared: _clearCharacterRelationshipSelection,
-      emptyState: const AppEmptyState(
-        title: "尚無人物關係",
-        description: "在下方輸入人物與關係後新增",
-        icon: Icons.people_outline,
-        compact: true,
-      ),
-      rows: characterRelationships
-          .asMap()
-          .entries
-          .map((entry) {
-            final index = entry.key;
-            final relationship = entry.value;
-            return AppTwoColumnTableRow(
-              selected: selectedCharacterRelationshipIndex == index,
-              showDivider: index != characterRelationships.length - 1,
-              firstCell: AppEditableTableCell(
-                key: ValueKey("relationship-person-$index"),
-                value: relationship.person,
-                selected: selectedCharacterRelationshipIndex == index,
-                onEditStarted: () {
-                  setState(() {
-                    selectedCharacterRelationshipIndex = index;
-                    _relationshipPersonController.text = relationship.person;
-                    _relationshipDescriptionController.text =
-                        relationship.relationship;
-                  });
-                },
-                onEditCanceled: _clearCharacterRelationshipSelection,
-                onSubmitted: (value) =>
-                    _updateCharacterRelationshipCell(index, person: value),
+  Widget _buildProfileTableSection<T>({
+    required String title,
+    required IconData icon,
+    required String firstHeader,
+    required String secondHeader,
+    required String emptyDescription,
+    required String keyPrefix,
+    required List<T> entries,
+    required String Function(T entry) firstValueOf,
+    required String Function(T entry) secondValueOf,
+    required int? selectedIndex,
+    required TextEditingController firstController,
+    required TextEditingController secondController,
+    required ValueChanged<int?> onSelectedIndexChanged,
+    required VoidCallback onSubmit,
+    required VoidCallback onDelete,
+    required void Function(int index, String value) onFirstSubmitted,
+    required void Function(int index, String value) onSecondSubmitted,
+    String? firstHint,
+    String? secondFieldLabel,
+    AppTwoColumnTableFieldBuilder? firstFieldBuilder,
+  }) {
+    void clearSelection() {
+      if (selectedIndex == null) return;
+      setState(() {
+        onSelectedIndexChanged(null);
+        firstController.clear();
+        secondController.clear();
+      });
+    }
+
+    void select(int index) {
+      if (index < 0 || index >= entries.length) return;
+      setState(() {
+        onSelectedIndexChanged(index);
+        firstController.text = firstValueOf(entries[index]);
+        secondController.text = secondValueOf(entries[index]);
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SmallTitle(icon: icon, text: title),
+        const SizedBox(height: 8),
+        AppTwoColumnTable(
+          firstHeader: firstHeader,
+          secondHeader: secondHeader,
+          bodyHeight: 200,
+          onSelectionCleared: clearSelection,
+          emptyState: AppEmptyState(
+            title: "尚無$title",
+            description: emptyDescription,
+            icon: icon,
+            compact: true,
+          ),
+          rows: entries
+              .asMap()
+              .entries
+              .map((mapEntry) {
+                final index = mapEntry.key;
+                final entry = mapEntry.value;
+                final isSelected = selectedIndex == index;
+                return AppTwoColumnTableRow(
+                  selected: isSelected,
+                  showDivider: index != entries.length - 1,
+                  firstCell: AppEditableTableCell(
+                    key: ValueKey("$keyPrefix-name-$index"),
+                    value: firstValueOf(entry),
+                    selected: isSelected,
+                    onEditStarted: () => select(index),
+                    onEditCanceled: clearSelection,
+                    onSubmitted: (value) => onFirstSubmitted(index, value),
+                  ),
+                  secondCell: AppEditableTableCell(
+                    key: ValueKey("$keyPrefix-description-$index"),
+                    value: secondValueOf(entry),
+                    selected: isSelected,
+                    onEditStarted: () => select(index),
+                    onEditCanceled: clearSelection,
+                    onSubmitted: (value) => onSecondSubmitted(index, value),
+                  ),
+                  onTap: () => select(index),
+                );
+              })
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 8),
+        AppTwoColumnTableEditor(
+          firstController: firstController,
+          secondController: secondController,
+          firstLabel: firstHeader,
+          firstHint: firstHint,
+          secondLabel: secondFieldLabel ?? "$secondHeader（可留空）",
+          isEditing: selectedIndex != null,
+          canSubmit: (first, second) => first.trim().isNotEmpty,
+          firstFieldBuilder: firstFieldBuilder,
+          onSubmit: (_, _) => onSubmit(),
+          onDelete: onDelete,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPossessionTableSection() {
+    void clearSelection() {
+      if (selectedPossessionIndex == null) return;
+      setState(() {
+        selectedPossessionIndex = null;
+        _possessionNameController.clear();
+        _possessionQuantityController.clear();
+        _possessionDescriptionController.clear();
+      });
+    }
+
+    void select(int index) {
+      if (index < 0 || index >= possessions.length) return;
+      setState(() {
+        selectedPossessionIndex = index;
+        _possessionNameController.text = possessions[index].name;
+        _possessionQuantityController.text = possessions[index].quantity;
+        _possessionDescriptionController.text = possessions[index].description;
+      });
+    }
+
+    Widget editorField(
+      TextEditingController controller,
+      String label, {
+      TextInputAction textInputAction = TextInputAction.next,
+    }) {
+      return AppTextField(
+        controller: controller,
+        labelText: label,
+        textInputAction: textInputAction,
+        onSubmitted: textInputAction == TextInputAction.done
+            ? (_) => _submitPossessionEntry()
+            : null,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SmallTitle(icon: Icons.inventory_2_outlined, text: "擁有物品"),
+        const SizedBox(height: 8),
+        AppThreeColumnTable(
+          key: const ValueKey("possessions-table"),
+          firstHeader: "物品",
+          secondHeader: "數量",
+          thirdHeader: "說明",
+          bodyHeight: 200,
+          onSelectionCleared: clearSelection,
+          emptyState: const AppEmptyState(
+            title: "尚無擁有物品",
+            description: "在下方輸入物品、數量與說明後新增",
+            icon: Icons.inventory_2_outlined,
+            compact: true,
+          ),
+          rows: possessions
+              .asMap()
+              .entries
+              .map((mapEntry) {
+                final index = mapEntry.key;
+                final entry = mapEntry.value;
+                final isSelected = selectedPossessionIndex == index;
+                return AppThreeColumnTableRow(
+                  selected: isSelected,
+                  showDivider: index != possessions.length - 1,
+                  firstCell: AppEditableTableCell(
+                    key: ValueKey("possession-name-$index"),
+                    value: entry.name,
+                    selected: isSelected,
+                    onEditStarted: () => select(index),
+                    onEditCanceled: clearSelection,
+                    onSubmitted: (value) =>
+                        _updatePossessionEntry(index, name: value),
+                  ),
+                  secondCell: AppEditableTableCell(
+                    key: ValueKey("possession-quantity-$index"),
+                    value: entry.quantity,
+                    selected: isSelected,
+                    onEditStarted: () => select(index),
+                    onEditCanceled: clearSelection,
+                    onSubmitted: (value) =>
+                        _updatePossessionEntry(index, quantity: value),
+                  ),
+                  thirdCell: AppEditableTableCell(
+                    key: ValueKey("possession-description-$index"),
+                    value: entry.description,
+                    selected: isSelected,
+                    onEditStarted: () => select(index),
+                    onEditCanceled: clearSelection,
+                    onSubmitted: (value) =>
+                        _updatePossessionEntry(index, description: value),
+                  ),
+                  onTap: () => select(index),
+                );
+              })
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 8),
+        ListenableBuilder(
+          key: const ValueKey("possession-editor"),
+          listenable: Listenable.merge([
+            _possessionNameController,
+            _possessionQuantityController,
+            _possessionDescriptionController,
+          ]),
+          builder: (context, child) {
+            final canSubmit = _possessionNameController.text.trim().isNotEmpty;
+            final fields = <Widget>[
+              editorField(_possessionNameController, "物品"),
+              editorField(_possessionQuantityController, "數量"),
+              editorField(
+                _possessionDescriptionController,
+                "說明（可留空）",
+                textInputAction: TextInputAction.done,
               ),
-              secondCell: AppEditableTableCell(
-                key: ValueKey("relationship-description-$index"),
-                value: relationship.relationship,
-                selected: selectedCharacterRelationshipIndex == index,
-                onEditStarted: () {
-                  setState(() {
-                    selectedCharacterRelationshipIndex = index;
-                    _relationshipPersonController.text = relationship.person;
-                    _relationshipDescriptionController.text =
-                        relationship.relationship;
-                  });
-                },
-                onEditCanceled: _clearCharacterRelationshipSelection,
-                onSubmitted: (value) => _updateCharacterRelationshipCell(
-                  index,
-                  relationship: value,
-                ),
-              ),
-              onTap: () {
-                setState(() {
-                  selectedCharacterRelationshipIndex = index;
-                  _relationshipPersonController.text = relationship.person;
-                  _relationshipDescriptionController.text =
-                      relationship.relationship;
-                });
+            ];
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final actionBar = ItemActionBar(
+                  actions: [
+                    ItemAction.edit(
+                      icon: selectedPossessionIndex == null
+                          ? Icons.add
+                          : Icons.save_outlined,
+                      tooltip: selectedPossessionIndex == null ? "新增" : "更新",
+                      onPressed: canSubmit ? _submitPossessionEntry : null,
+                    ),
+                    ItemAction.delete(
+                      tooltip: "刪除",
+                      onPressed: selectedPossessionIndex == null
+                          ? null
+                          : _deletePossessionEntry,
+                    ),
+                  ],
+                );
+                if (constraints.maxWidth < 640) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ...fields.expand(
+                        (field) => [field, const SizedBox(height: 8)],
+                      ),
+                      Align(alignment: Alignment.centerRight, child: actionBar),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(flex: 2, child: fields[0]),
+                    const SizedBox(width: 8),
+                    Expanded(child: fields[1]),
+                    const SizedBox(width: 8),
+                    Expanded(flex: 3, child: fields[2]),
+                    const SizedBox(width: 8),
+                    actionBar,
+                  ],
+                );
               },
             );
-          })
-          .toList(growable: false),
+          },
+        ),
+      ],
     );
   }
 
@@ -3509,6 +3987,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           relationships: characterRelationships
               .map((relationship) => relationship.copyWith())
               .toList(growable: false),
+          characterType: selectedCharacterType,
+          organizations: organizations
+              .map((entry) => entry.copyWith())
+              .toList(growable: false),
+          possessions: possessions
+              .map((entry) => entry.copyWith())
+              .toList(growable: false),
+          statusEntries: statusEntries
+              .map((entry) => entry.copyWith())
+              .toList(growable: false),
           notes: _controllers["notes"]?.text ?? "",
         )
         .withTextField("name", displayName)
@@ -3668,6 +4156,22 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     selectedCharacterRelationshipIndex = null;
     _relationshipPersonController.clear();
     _relationshipDescriptionController.clear();
+    selectedCharacterType = characterTypeOptions.contains(data.characterType)
+        ? data.characterType
+        : defaultCharacterType;
+    organizations = List<CharacterProfileTableEntry>.from(data.organizations);
+    possessions = List<CharacterPossessionEntry>.from(data.possessions);
+    statusEntries = List<CharacterProfileTableEntry>.from(data.statusEntries);
+    selectedOrganizationIndex = null;
+    selectedPossessionIndex = null;
+    selectedStatusIndex = null;
+    _organizationNameController.clear();
+    _organizationDescriptionController.clear();
+    _possessionNameController.clear();
+    _possessionQuantityController.clear();
+    _possessionDescriptionController.clear();
+    _statusNameController.clear();
+    _statusDescriptionController.clear();
 
     loveToDoList = _readStringList(normalizedData, "loveToDoList");
     hateToDoList = _readStringList(normalizedData, "hateToDoList");
@@ -3729,6 +4233,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     nicknames = [];
     characterRelationships = [];
     selectedCharacterRelationshipIndex = null;
+    selectedCharacterType = defaultCharacterType;
+    organizations = [];
+    possessions = [];
+    statusEntries = [];
+    selectedOrganizationIndex = null;
+    selectedPossessionIndex = null;
+    selectedStatusIndex = null;
     loveToDoList.clear();
     hateToDoList.clear();
     wantToDoList.clear();
@@ -3763,6 +4274,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _solveController.clear();
     _relationshipPersonController.clear();
     _relationshipDescriptionController.clear();
+    _organizationNameController.clear();
+    _organizationDescriptionController.clear();
+    _possessionNameController.clear();
+    _possessionQuantityController.clear();
+    _possessionDescriptionController.clear();
+    _statusNameController.clear();
+    _statusDescriptionController.clear();
     _loadedCharacterEntrySnapshot = null;
     _dirtyControllerKeys.clear();
     _structuredFieldsDirty = false;
@@ -3833,6 +4351,140 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     });
   }
 
+  void _submitProfileTableEntry({
+    required List<CharacterProfileTableEntry> entries,
+    required int? selectedIndex,
+    required TextEditingController firstController,
+    required TextEditingController secondController,
+    required ValueChanged<int?> onSelectedIndexChanged,
+  }) {
+    final name = firstController.text.trim();
+    if (name.isEmpty) return;
+    final nextEntry = CharacterProfileTableEntry(
+      name: name,
+      description: secondController.text.trim(),
+    );
+    setState(() {
+      if (selectedIndex != null &&
+          selectedIndex >= 0 &&
+          selectedIndex < entries.length) {
+        entries[selectedIndex] = nextEntry;
+      } else {
+        entries.add(nextEntry);
+      }
+      onSelectedIndexChanged(null);
+      firstController.clear();
+      secondController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _updateProfileTableEntry({
+    required List<CharacterProfileTableEntry> entries,
+    required int index,
+    String? name,
+    String? description,
+    required TextEditingController firstController,
+    required TextEditingController secondController,
+    required ValueChanged<int?> onSelectedIndexChanged,
+  }) {
+    if (index < 0 || index >= entries.length) return;
+    final current = entries[index];
+    final nextName = name?.trim() ?? current.name;
+    if (nextName.isEmpty) return;
+    setState(() {
+      entries[index] = current.copyWith(
+        name: nextName,
+        description: description?.trim() ?? current.description,
+      );
+      onSelectedIndexChanged(index);
+      firstController.text = entries[index].name;
+      secondController.text = entries[index].description;
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _deleteProfileTableEntry({
+    required List<CharacterProfileTableEntry> entries,
+    required int? selectedIndex,
+    required TextEditingController firstController,
+    required TextEditingController secondController,
+    required ValueChanged<int?> onSelectedIndexChanged,
+  }) {
+    if (selectedIndex == null ||
+        selectedIndex < 0 ||
+        selectedIndex >= entries.length) {
+      return;
+    }
+    setState(() {
+      entries.removeAt(selectedIndex);
+      onSelectedIndexChanged(null);
+      firstController.clear();
+      secondController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _submitPossessionEntry() {
+    final name = _possessionNameController.text.trim();
+    if (name.isEmpty) return;
+    final nextEntry = CharacterPossessionEntry(
+      name: name,
+      quantity: _possessionQuantityController.text.trim(),
+      description: _possessionDescriptionController.text.trim(),
+    );
+    setState(() {
+      final index = selectedPossessionIndex;
+      if (index != null && index >= 0 && index < possessions.length) {
+        possessions[index] = nextEntry;
+      } else {
+        possessions.add(nextEntry);
+      }
+      selectedPossessionIndex = null;
+      _possessionNameController.clear();
+      _possessionQuantityController.clear();
+      _possessionDescriptionController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _updatePossessionEntry(
+    int index, {
+    String? name,
+    String? quantity,
+    String? description,
+  }) {
+    if (index < 0 || index >= possessions.length) return;
+    final current = possessions[index];
+    final nextName = name?.trim() ?? current.name;
+    if (nextName.isEmpty) return;
+    setState(() {
+      possessions[index] = current.copyWith(
+        name: nextName,
+        quantity: quantity?.trim() ?? current.quantity,
+        description: description?.trim() ?? current.description,
+      );
+      selectedPossessionIndex = index;
+      _possessionNameController.text = possessions[index].name;
+      _possessionQuantityController.text = possessions[index].quantity;
+      _possessionDescriptionController.text = possessions[index].description;
+      _saveCurrentCharacterData();
+    });
+  }
+
+  void _deletePossessionEntry() {
+    final index = selectedPossessionIndex;
+    if (index == null || index < 0 || index >= possessions.length) return;
+    setState(() {
+      possessions.removeAt(index);
+      selectedPossessionIndex = null;
+      _possessionNameController.clear();
+      _possessionQuantityController.clear();
+      _possessionDescriptionController.clear();
+      _saveCurrentCharacterData();
+    });
+  }
+
   void _addHinderEvent() {
     if (_hinderEventController.text.isNotEmpty) {
       setState(() {
@@ -3885,15 +4537,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _saveCurrentCharacterData();
       });
     }
-  }
-
-  void _clearHinderEventSelection() {
-    if (selectedHinderIndex == null) return;
-    setState(() {
-      selectedHinderIndex = null;
-      _hinderEventController.clear();
-      _solveController.clear();
-    });
   }
 
   void _addCharacterRelationship() {
@@ -4010,15 +4653,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _relationshipPersonController.clear();
       _relationshipDescriptionController.clear();
       _saveCurrentCharacterData();
-    });
-  }
-
-  void _clearCharacterRelationshipSelection() {
-    if (selectedCharacterRelationshipIndex == null) return;
-    setState(() {
-      selectedCharacterRelationshipIndex = null;
-      _relationshipPersonController.clear();
-      _relationshipDescriptionController.clear();
     });
   }
 

@@ -11,13 +11,13 @@ const _nanoIdAlphabet =
 final _secureRandom = math.Random.secure();
 
 String generateCharacterNanoId() => String.fromCharCodes(
-      List<int>.generate(
-        8,
-        (_) => _nanoIdAlphabet.codeUnitAt(
-          _secureRandom.nextInt(_nanoIdAlphabet.length),
-        ),
-      ),
-    );
+  List<int>.generate(
+    8,
+    (_) => _nanoIdAlphabet.codeUnitAt(
+      _secureRandom.nextInt(_nanoIdAlphabet.length),
+    ),
+  ),
+);
 
 String normalizeCharacterNanoId(String? value) {
   final normalized = value?.trim() ?? "";
@@ -27,6 +27,17 @@ String normalizeCharacterNanoId(String? value) {
 }
 
 enum CustomFieldType { text, number, boolean, list }
+
+const defaultCharacterType = "次要配角";
+
+const characterTypeOptions = <String>[
+  "主角",
+  "重要配角",
+  defaultCharacterType,
+  "主要反派",
+  "次要反派",
+  "其他",
+];
 
 class CustomFieldValue {
   final CustomFieldType type;
@@ -78,6 +89,38 @@ class CharacterRelationship with _$CharacterRelationship {
     @Default("") String person,
     @Default("") String relationship,
   }) = _CharacterRelationship;
+}
+
+@freezed
+class CharacterProfileTableEntry with _$CharacterProfileTableEntry {
+  const factory CharacterProfileTableEntry({
+    @Default("") String name,
+    @Default("") String description,
+  }) = _CharacterProfileTableEntry;
+
+  factory CharacterProfileTableEntry.fromMap(Map<dynamic, dynamic> source) {
+    return CharacterProfileTableEntry(
+      name: source["name"]?.toString() ?? "",
+      description: source["description"]?.toString() ?? "",
+    );
+  }
+}
+
+@freezed
+class CharacterPossessionEntry with _$CharacterPossessionEntry {
+  const factory CharacterPossessionEntry({
+    @Default("") String name,
+    @Default("") String quantity,
+    @Default("") String description,
+  }) = _CharacterPossessionEntry;
+
+  factory CharacterPossessionEntry.fromMap(Map<dynamic, dynamic> source) {
+    return CharacterPossessionEntry(
+      name: source["name"]?.toString() ?? "",
+      quantity: source["quantity"]?.toString() ?? "",
+      description: source["description"]?.toString() ?? "",
+    );
+  }
 }
 
 @freezed
@@ -225,6 +268,13 @@ class CharacterEntryData with _$CharacterEntryData {
     @Default("") String relationshipSummary,
     @Default(<CharacterRelationship>[])
     List<CharacterRelationship> relationships,
+    @Default(defaultCharacterType) String characterType,
+    @Default(<CharacterProfileTableEntry>[])
+    List<CharacterProfileTableEntry> organizations,
+    @Default(<CharacterPossessionEntry>[])
+    List<CharacterPossessionEntry> possessions,
+    @Default(<CharacterProfileTableEntry>[])
+    List<CharacterProfileTableEntry> statusEntries,
     @Default("") String notes,
     @Default(CharacterAdvancedProfile()) CharacterAdvancedProfile advanced,
     @Default(<String, CustomFieldValue>{})
@@ -343,6 +393,11 @@ class CharacterEntryData with _$CharacterEntryData {
           normalizedTextFields["family"] ??
           "",
       relationships: relationships,
+      characterType:
+          _readNullableString(source["characterType"]) ?? defaultCharacterType,
+      organizations: _readProfileTableEntries(source["organizations"]),
+      possessions: _readPossessionEntries(source["possessions"]),
+      statusEntries: _readProfileTableEntries(source["statusEntries"]),
       notes:
           normalizedTextFields["otherText"] ??
           normalizedTextFields["otherValues"] ??
@@ -402,6 +457,15 @@ class CharacterEntryData with _$CharacterEntryData {
       conflicts: conflicts.map((conflict) => conflict.copyWith()).toList(),
       relationships: relationships
           .map((relationship) => relationship.copyWith())
+          .toList(growable: false),
+      organizations: organizations
+          .map((entry) => entry.copyWith())
+          .toList(growable: false),
+      possessions: possessions
+          .map((entry) => entry.copyWith())
+          .toList(growable: false),
+      statusEntries: statusEntries
+          .map((entry) => entry.copyWith())
           .toList(growable: false),
       advanced: advanced.copyWith(
         commonAbilities: Map<String, double>.from(advanced.commonAbilities),
@@ -464,6 +528,32 @@ class CharacterEntryData with _$CharacterEntryData {
       "valuesAndBeliefs": valuesAndBeliefs,
       "fear": fear,
       "relationshipSummary": relationshipSummary,
+      "characterType": characterType,
+      "organizations": organizations
+          .map(
+            (entry) => <String, String>{
+              "name": entry.name,
+              "description": entry.description,
+            },
+          )
+          .toList(growable: false),
+      "possessions": possessions
+          .map(
+            (entry) => <String, String>{
+              "name": entry.name,
+              "quantity": entry.quantity,
+              "description": entry.description,
+            },
+          )
+          .toList(growable: false),
+      "statusEntries": statusEntries
+          .map(
+            (entry) => <String, String>{
+              "name": entry.name,
+              "description": entry.description,
+            },
+          )
+          .toList(growable: false),
       "notes": notes,
       "alignment": alignment,
       "hinderEvents": hinderEvents
@@ -683,6 +773,30 @@ List<CharacterHinderEvent> _readHinderEvents(dynamic value) {
   return value
       .whereType<Map>()
       .map((item) => CharacterHinderEvent.fromMap(item))
+      .toList(growable: false);
+}
+
+List<CharacterProfileTableEntry> _readProfileTableEntries(dynamic value) {
+  if (value is! List) {
+    return <CharacterProfileTableEntry>[];
+  }
+
+  return value
+      .whereType<Map>()
+      .map(CharacterProfileTableEntry.fromMap)
+      .where((entry) => entry.name.trim().isNotEmpty)
+      .toList(growable: false);
+}
+
+List<CharacterPossessionEntry> _readPossessionEntries(dynamic value) {
+  if (value is! List) {
+    return <CharacterPossessionEntry>[];
+  }
+
+  return value
+      .whereType<Map>()
+      .map(CharacterPossessionEntry.fromMap)
+      .where((entry) => entry.name.trim().isNotEmpty)
       .toList(growable: false);
 }
 

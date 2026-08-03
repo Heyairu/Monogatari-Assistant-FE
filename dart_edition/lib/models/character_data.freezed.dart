@@ -498,6 +498,367 @@ abstract class _CharacterRelationship implements CharacterRelationship {
 }
 
 /// @nodoc
+mixin _$CharacterProfileTableEntry {
+  String get name => throw _privateConstructorUsedError;
+  String get description => throw _privateConstructorUsedError;
+
+  /// Create a copy of CharacterProfileTableEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $CharacterProfileTableEntryCopyWith<CharacterProfileTableEntry>
+  get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $CharacterProfileTableEntryCopyWith<$Res> {
+  factory $CharacterProfileTableEntryCopyWith(
+    CharacterProfileTableEntry value,
+    $Res Function(CharacterProfileTableEntry) then,
+  ) =
+      _$CharacterProfileTableEntryCopyWithImpl<
+        $Res,
+        CharacterProfileTableEntry
+      >;
+  @useResult
+  $Res call({String name, String description});
+}
+
+/// @nodoc
+class _$CharacterProfileTableEntryCopyWithImpl<
+  $Res,
+  $Val extends CharacterProfileTableEntry
+>
+    implements $CharacterProfileTableEntryCopyWith<$Res> {
+  _$CharacterProfileTableEntryCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of CharacterProfileTableEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? name = null, Object? description = null}) {
+    return _then(
+      _value.copyWith(
+            name: null == name
+                ? _value.name
+                : name // ignore: cast_nullable_to_non_nullable
+                      as String,
+            description: null == description
+                ? _value.description
+                : description // ignore: cast_nullable_to_non_nullable
+                      as String,
+          )
+          as $Val,
+    );
+  }
+}
+
+/// @nodoc
+abstract class _$$CharacterProfileTableEntryImplCopyWith<$Res>
+    implements $CharacterProfileTableEntryCopyWith<$Res> {
+  factory _$$CharacterProfileTableEntryImplCopyWith(
+    _$CharacterProfileTableEntryImpl value,
+    $Res Function(_$CharacterProfileTableEntryImpl) then,
+  ) = __$$CharacterProfileTableEntryImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String name, String description});
+}
+
+/// @nodoc
+class __$$CharacterProfileTableEntryImplCopyWithImpl<$Res>
+    extends
+        _$CharacterProfileTableEntryCopyWithImpl<
+          $Res,
+          _$CharacterProfileTableEntryImpl
+        >
+    implements _$$CharacterProfileTableEntryImplCopyWith<$Res> {
+  __$$CharacterProfileTableEntryImplCopyWithImpl(
+    _$CharacterProfileTableEntryImpl _value,
+    $Res Function(_$CharacterProfileTableEntryImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of CharacterProfileTableEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? name = null, Object? description = null}) {
+    return _then(
+      _$CharacterProfileTableEntryImpl(
+        name: null == name
+            ? _value.name
+            : name // ignore: cast_nullable_to_non_nullable
+                  as String,
+        description: null == description
+            ? _value.description
+            : description // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+
+class _$CharacterProfileTableEntryImpl implements _CharacterProfileTableEntry {
+  const _$CharacterProfileTableEntryImpl({
+    this.name = "",
+    this.description = "",
+  });
+
+  @override
+  @JsonKey()
+  final String name;
+  @override
+  @JsonKey()
+  final String description;
+
+  @override
+  String toString() {
+    return 'CharacterProfileTableEntry(name: $name, description: $description)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CharacterProfileTableEntryImpl &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.description, description) ||
+                other.description == description));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, name, description);
+
+  /// Create a copy of CharacterProfileTableEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CharacterProfileTableEntryImplCopyWith<_$CharacterProfileTableEntryImpl>
+  get copyWith =>
+      __$$CharacterProfileTableEntryImplCopyWithImpl<
+        _$CharacterProfileTableEntryImpl
+      >(this, _$identity);
+}
+
+abstract class _CharacterProfileTableEntry
+    implements CharacterProfileTableEntry {
+  const factory _CharacterProfileTableEntry({
+    final String name,
+    final String description,
+  }) = _$CharacterProfileTableEntryImpl;
+
+  @override
+  String get name;
+  @override
+  String get description;
+
+  /// Create a copy of CharacterProfileTableEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$CharacterProfileTableEntryImplCopyWith<_$CharacterProfileTableEntryImpl>
+  get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+mixin _$CharacterPossessionEntry {
+  String get name => throw _privateConstructorUsedError;
+  String get quantity => throw _privateConstructorUsedError;
+  String get description => throw _privateConstructorUsedError;
+
+  /// Create a copy of CharacterPossessionEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $CharacterPossessionEntryCopyWith<CharacterPossessionEntry> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $CharacterPossessionEntryCopyWith<$Res> {
+  factory $CharacterPossessionEntryCopyWith(
+    CharacterPossessionEntry value,
+    $Res Function(CharacterPossessionEntry) then,
+  ) = _$CharacterPossessionEntryCopyWithImpl<$Res, CharacterPossessionEntry>;
+  @useResult
+  $Res call({String name, String quantity, String description});
+}
+
+/// @nodoc
+class _$CharacterPossessionEntryCopyWithImpl<
+  $Res,
+  $Val extends CharacterPossessionEntry
+>
+    implements $CharacterPossessionEntryCopyWith<$Res> {
+  _$CharacterPossessionEntryCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of CharacterPossessionEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? quantity = null,
+    Object? description = null,
+  }) {
+    return _then(
+      _value.copyWith(
+            name: null == name
+                ? _value.name
+                : name // ignore: cast_nullable_to_non_nullable
+                      as String,
+            quantity: null == quantity
+                ? _value.quantity
+                : quantity // ignore: cast_nullable_to_non_nullable
+                      as String,
+            description: null == description
+                ? _value.description
+                : description // ignore: cast_nullable_to_non_nullable
+                      as String,
+          )
+          as $Val,
+    );
+  }
+}
+
+/// @nodoc
+abstract class _$$CharacterPossessionEntryImplCopyWith<$Res>
+    implements $CharacterPossessionEntryCopyWith<$Res> {
+  factory _$$CharacterPossessionEntryImplCopyWith(
+    _$CharacterPossessionEntryImpl value,
+    $Res Function(_$CharacterPossessionEntryImpl) then,
+  ) = __$$CharacterPossessionEntryImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String name, String quantity, String description});
+}
+
+/// @nodoc
+class __$$CharacterPossessionEntryImplCopyWithImpl<$Res>
+    extends
+        _$CharacterPossessionEntryCopyWithImpl<
+          $Res,
+          _$CharacterPossessionEntryImpl
+        >
+    implements _$$CharacterPossessionEntryImplCopyWith<$Res> {
+  __$$CharacterPossessionEntryImplCopyWithImpl(
+    _$CharacterPossessionEntryImpl _value,
+    $Res Function(_$CharacterPossessionEntryImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of CharacterPossessionEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? quantity = null,
+    Object? description = null,
+  }) {
+    return _then(
+      _$CharacterPossessionEntryImpl(
+        name: null == name
+            ? _value.name
+            : name // ignore: cast_nullable_to_non_nullable
+                  as String,
+        quantity: null == quantity
+            ? _value.quantity
+            : quantity // ignore: cast_nullable_to_non_nullable
+                  as String,
+        description: null == description
+            ? _value.description
+            : description // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+
+class _$CharacterPossessionEntryImpl implements _CharacterPossessionEntry {
+  const _$CharacterPossessionEntryImpl({
+    this.name = "",
+    this.quantity = "",
+    this.description = "",
+  });
+
+  @override
+  @JsonKey()
+  final String name;
+  @override
+  @JsonKey()
+  final String quantity;
+  @override
+  @JsonKey()
+  final String description;
+
+  @override
+  String toString() {
+    return 'CharacterPossessionEntry(name: $name, quantity: $quantity, description: $description)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CharacterPossessionEntryImpl &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.quantity, quantity) ||
+                other.quantity == quantity) &&
+            (identical(other.description, description) ||
+                other.description == description));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, name, quantity, description);
+
+  /// Create a copy of CharacterPossessionEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CharacterPossessionEntryImplCopyWith<_$CharacterPossessionEntryImpl>
+  get copyWith =>
+      __$$CharacterPossessionEntryImplCopyWithImpl<
+        _$CharacterPossessionEntryImpl
+      >(this, _$identity);
+}
+
+abstract class _CharacterPossessionEntry implements CharacterPossessionEntry {
+  const factory _CharacterPossessionEntry({
+    final String name,
+    final String quantity,
+    final String description,
+  }) = _$CharacterPossessionEntryImpl;
+
+  @override
+  String get name;
+  @override
+  String get quantity;
+  @override
+  String get description;
+
+  /// Create a copy of CharacterPossessionEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$CharacterPossessionEntryImplCopyWith<_$CharacterPossessionEntryImpl>
+  get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
 mixin _$CharacterAdvancedProfile {
   Map<String, double> get commonAbilities => throw _privateConstructorUsedError;
   Map<String, double> get socialTraits => throw _privateConstructorUsedError;
@@ -1232,6 +1593,13 @@ mixin _$CharacterEntryData {
   String get relationshipSummary => throw _privateConstructorUsedError;
   List<CharacterRelationship> get relationships =>
       throw _privateConstructorUsedError;
+  String get characterType => throw _privateConstructorUsedError;
+  List<CharacterProfileTableEntry> get organizations =>
+      throw _privateConstructorUsedError;
+  List<CharacterPossessionEntry> get possessions =>
+      throw _privateConstructorUsedError;
+  List<CharacterProfileTableEntry> get statusEntries =>
+      throw _privateConstructorUsedError;
   String get notes => throw _privateConstructorUsedError;
   CharacterAdvancedProfile get advanced => throw _privateConstructorUsedError;
   Map<String, CustomFieldValue> get customFields =>
@@ -1294,6 +1662,10 @@ abstract class $CharacterEntryDataCopyWith<$Res> {
     String fear,
     String relationshipSummary,
     List<CharacterRelationship> relationships,
+    String characterType,
+    List<CharacterProfileTableEntry> organizations,
+    List<CharacterPossessionEntry> possessions,
+    List<CharacterProfileTableEntry> statusEntries,
     String notes,
     CharacterAdvancedProfile advanced,
     Map<String, CustomFieldValue> customFields,
@@ -1358,6 +1730,10 @@ class _$CharacterEntryDataCopyWithImpl<$Res, $Val extends CharacterEntryData>
     Object? fear = null,
     Object? relationshipSummary = null,
     Object? relationships = null,
+    Object? characterType = null,
+    Object? organizations = null,
+    Object? possessions = null,
+    Object? statusEntries = null,
     Object? notes = null,
     Object? advanced = null,
     Object? customFields = null,
@@ -1453,6 +1829,22 @@ class _$CharacterEntryDataCopyWithImpl<$Res, $Val extends CharacterEntryData>
                 ? _value.relationships
                 : relationships // ignore: cast_nullable_to_non_nullable
                       as List<CharacterRelationship>,
+            characterType: null == characterType
+                ? _value.characterType
+                : characterType // ignore: cast_nullable_to_non_nullable
+                      as String,
+            organizations: null == organizations
+                ? _value.organizations
+                : organizations // ignore: cast_nullable_to_non_nullable
+                      as List<CharacterProfileTableEntry>,
+            possessions: null == possessions
+                ? _value.possessions
+                : possessions // ignore: cast_nullable_to_non_nullable
+                      as List<CharacterPossessionEntry>,
+            statusEntries: null == statusEntries
+                ? _value.statusEntries
+                : statusEntries // ignore: cast_nullable_to_non_nullable
+                      as List<CharacterProfileTableEntry>,
             notes: null == notes
                 ? _value.notes
                 : notes // ignore: cast_nullable_to_non_nullable
@@ -1607,6 +1999,10 @@ abstract class _$$CharacterEntryDataImplCopyWith<$Res>
     String fear,
     String relationshipSummary,
     List<CharacterRelationship> relationships,
+    String characterType,
+    List<CharacterProfileTableEntry> organizations,
+    List<CharacterPossessionEntry> possessions,
+    List<CharacterProfileTableEntry> statusEntries,
     String notes,
     CharacterAdvancedProfile advanced,
     Map<String, CustomFieldValue> customFields,
@@ -1671,6 +2067,10 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
     Object? fear = null,
     Object? relationshipSummary = null,
     Object? relationships = null,
+    Object? characterType = null,
+    Object? organizations = null,
+    Object? possessions = null,
+    Object? statusEntries = null,
     Object? notes = null,
     Object? advanced = null,
     Object? customFields = null,
@@ -1766,6 +2166,22 @@ class __$$CharacterEntryDataImplCopyWithImpl<$Res>
             ? _value._relationships
             : relationships // ignore: cast_nullable_to_non_nullable
                   as List<CharacterRelationship>,
+        characterType: null == characterType
+            ? _value.characterType
+            : characterType // ignore: cast_nullable_to_non_nullable
+                  as String,
+        organizations: null == organizations
+            ? _value._organizations
+            : organizations // ignore: cast_nullable_to_non_nullable
+                  as List<CharacterProfileTableEntry>,
+        possessions: null == possessions
+            ? _value._possessions
+            : possessions // ignore: cast_nullable_to_non_nullable
+                  as List<CharacterPossessionEntry>,
+        statusEntries: null == statusEntries
+            ? _value._statusEntries
+            : statusEntries // ignore: cast_nullable_to_non_nullable
+                  as List<CharacterProfileTableEntry>,
         notes: null == notes
             ? _value.notes
             : notes // ignore: cast_nullable_to_non_nullable
@@ -1904,6 +2320,13 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
     this.relationshipSummary = "",
     final List<CharacterRelationship> relationships =
         const <CharacterRelationship>[],
+    this.characterType = defaultCharacterType,
+    final List<CharacterProfileTableEntry> organizations =
+        const <CharacterProfileTableEntry>[],
+    final List<CharacterPossessionEntry> possessions =
+        const <CharacterPossessionEntry>[],
+    final List<CharacterProfileTableEntry> statusEntries =
+        const <CharacterProfileTableEntry>[],
     this.notes = "",
     this.advanced = const CharacterAdvancedProfile(),
     final Map<String, CustomFieldValue> customFields =
@@ -1937,6 +2360,9 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
   }) : _aliases = aliases,
        _conflicts = conflicts,
        _relationships = relationships,
+       _organizations = organizations,
+       _possessions = possessions,
+       _statusEntries = statusEntries,
        _customFields = customFields,
        _legacyFields = legacyFields,
        _textFields = textFields,
@@ -2025,6 +2451,36 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
     if (_relationships is EqualUnmodifiableListView) return _relationships;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(_relationships);
+  }
+
+  @override
+  @JsonKey()
+  final String characterType;
+  final List<CharacterProfileTableEntry> _organizations;
+  @override
+  @JsonKey()
+  List<CharacterProfileTableEntry> get organizations {
+    if (_organizations is EqualUnmodifiableListView) return _organizations;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_organizations);
+  }
+
+  final List<CharacterPossessionEntry> _possessions;
+  @override
+  @JsonKey()
+  List<CharacterPossessionEntry> get possessions {
+    if (_possessions is EqualUnmodifiableListView) return _possessions;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_possessions);
+  }
+
+  final List<CharacterProfileTableEntry> _statusEntries;
+  @override
+  @JsonKey()
+  List<CharacterProfileTableEntry> get statusEntries {
+    if (_statusEntries is EqualUnmodifiableListView) return _statusEntries;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_statusEntries);
   }
 
   @override
@@ -2249,7 +2705,7 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
 
   @override
   String toString() {
-    return 'CharacterEntryData(characterId: $characterId, displayName: $displayName, aliases: $aliases, roleOrOccupation: $roleOrOccupation, age: $age, gender: $gender, appearanceSummary: $appearanceSummary, personalitySummary: $personalitySummary, speechStyle: $speechStyle, motivation: $motivation, goal: $goal, conflicts: $conflicts, valuesAndBeliefs: $valuesAndBeliefs, fear: $fear, relationshipSummary: $relationshipSummary, relationships: $relationships, notes: $notes, advanced: $advanced, customFields: $customFields, legacyFields: $legacyFields, textFields: $textFields, alignment: $alignment, hinderEvents: $hinderEvents, loveToDoList: $loveToDoList, hateToDoList: $hateToDoList, wantToDoList: $wantToDoList, fearToDoList: $fearToDoList, proficientToDoList: $proficientToDoList, unProficientToDoList: $unProficientToDoList, commonAbilityValues: $commonAbilityValues, howToShowLove: $howToShowLove, howToShowGoodwill: $howToShowGoodwill, handleHatePeople: $handleHatePeople, socialItemValues: $socialItemValues, relationship: $relationship, isFindNewLove: $isFindNewLove, isHarem: $isHarem, approachValues: $approachValues, traitsValues: $traitsValues, likeItemList: $likeItemList, admireItemList: $admireItemList, hateItemList: $hateItemList, fearItemList: $fearItemList, familiarItemList: $familiarItemList)';
+    return 'CharacterEntryData(characterId: $characterId, displayName: $displayName, aliases: $aliases, roleOrOccupation: $roleOrOccupation, age: $age, gender: $gender, appearanceSummary: $appearanceSummary, personalitySummary: $personalitySummary, speechStyle: $speechStyle, motivation: $motivation, goal: $goal, conflicts: $conflicts, valuesAndBeliefs: $valuesAndBeliefs, fear: $fear, relationshipSummary: $relationshipSummary, relationships: $relationships, characterType: $characterType, organizations: $organizations, possessions: $possessions, statusEntries: $statusEntries, notes: $notes, advanced: $advanced, customFields: $customFields, legacyFields: $legacyFields, textFields: $textFields, alignment: $alignment, hinderEvents: $hinderEvents, loveToDoList: $loveToDoList, hateToDoList: $hateToDoList, wantToDoList: $wantToDoList, fearToDoList: $fearToDoList, proficientToDoList: $proficientToDoList, unProficientToDoList: $unProficientToDoList, commonAbilityValues: $commonAbilityValues, howToShowLove: $howToShowLove, howToShowGoodwill: $howToShowGoodwill, handleHatePeople: $handleHatePeople, socialItemValues: $socialItemValues, relationship: $relationship, isFindNewLove: $isFindNewLove, isHarem: $isHarem, approachValues: $approachValues, traitsValues: $traitsValues, likeItemList: $likeItemList, admireItemList: $admireItemList, hateItemList: $hateItemList, fearItemList: $fearItemList, familiarItemList: $familiarItemList)';
   }
 
   @override
@@ -2287,6 +2743,20 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
             const DeepCollectionEquality().equals(
               other._relationships,
               _relationships,
+            ) &&
+            (identical(other.characterType, characterType) ||
+                other.characterType == characterType) &&
+            const DeepCollectionEquality().equals(
+              other._organizations,
+              _organizations,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other._possessions,
+              _possessions,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other._statusEntries,
+              _statusEntries,
             ) &&
             (identical(other.notes, notes) || other.notes == notes) &&
             (identical(other.advanced, advanced) ||
@@ -2407,6 +2877,10 @@ class _$CharacterEntryDataImpl extends _CharacterEntryData {
     fear,
     relationshipSummary,
     const DeepCollectionEquality().hash(_relationships),
+    characterType,
+    const DeepCollectionEquality().hash(_organizations),
+    const DeepCollectionEquality().hash(_possessions),
+    const DeepCollectionEquality().hash(_statusEntries),
     notes,
     advanced,
     const DeepCollectionEquality().hash(_customFields),
@@ -2467,6 +2941,10 @@ abstract class _CharacterEntryData extends CharacterEntryData {
     final String fear,
     final String relationshipSummary,
     final List<CharacterRelationship> relationships,
+    final String characterType,
+    final List<CharacterProfileTableEntry> organizations,
+    final List<CharacterPossessionEntry> possessions,
+    final List<CharacterProfileTableEntry> statusEntries,
     final String notes,
     final CharacterAdvancedProfile advanced,
     final Map<String, CustomFieldValue> customFields,
@@ -2530,6 +3008,14 @@ abstract class _CharacterEntryData extends CharacterEntryData {
   String get relationshipSummary;
   @override
   List<CharacterRelationship> get relationships;
+  @override
+  String get characterType;
+  @override
+  List<CharacterProfileTableEntry> get organizations;
+  @override
+  List<CharacterPossessionEntry> get possessions;
+  @override
+  List<CharacterProfileTableEntry> get statusEntries;
   @override
   String get notes;
   @override
