@@ -53,6 +53,7 @@ import "modules/copliot.dart" as copilot_module;
 import "modules/WelcomeView.dart" as WelcomeModule;
 import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
+import "modules/character_relationship_graph_view.dart";
 import "modules/settingview.dart";
 
 typedef _CoordinatorUiEventState = ({
@@ -353,6 +354,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
   int _projectSessionVersion = 0;
+  String? _requestedCharacterId;
+  int _characterSelectionRequestId = 0;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
   final WordCountService _wordCountService = WordCountService.instance;
@@ -426,6 +429,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     3, // Outline
     4, // World settings
     5, // Characters
+    7, // Character relationships
     8, // Plans
   };
 
@@ -2068,7 +2072,11 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildCharacterSettingsView() {
-    return CharacterView(projectSessionId: _projectSessionVersion);
+    return CharacterView(
+      projectSessionId: _projectSessionVersion,
+      initialCharacterId: _requestedCharacterId,
+      selectionRequestId: _characterSelectionRequestId,
+    );
   }
 
   Widget _buildTimelineView() {
@@ -2081,11 +2089,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildRelationView() {
-    return _buildPlaceholderPage(
-      icon: Icons.group,
-      title: "人物關係圖",
-      description: "關係圖功能開發中...",
-      color: Colors.amber,
+    return CharacterRelationshipGraphView(
+      projectSessionId: _projectSessionVersion,
+      onOpenCharacter: (characterId) {
+        _syncEditorToSelectedChapter();
+        _recordPageTransitionIfNeeded(5);
+        setState(() {
+          _requestedCharacterId = characterId;
+          _characterSelectionRequestId++;
+          slidePageIndexNow = 5;
+        });
+      },
     );
   }
 
@@ -2679,6 +2693,8 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _projectSessionVersion,
     );
     _projectSessionVersion++;
+    _requestedCharacterId = null;
+    _characterSelectionRequestId = 0;
     _lastFocusedEditableNode = null;
     _preserveEditableFocusForEditorAction = false;
 

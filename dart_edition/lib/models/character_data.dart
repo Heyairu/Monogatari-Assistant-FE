@@ -1,9 +1,30 @@
+import "dart:math" as math;
+
 import "package:freezed_annotation/freezed_annotation.dart";
 import "package:uuid/uuid.dart";
 
 part "character_data.freezed.dart";
 
 const _uuid = Uuid();
+const _nanoIdAlphabet =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz-";
+final _secureRandom = math.Random.secure();
+
+String generateCharacterNanoId() => String.fromCharCodes(
+      List<int>.generate(
+        8,
+        (_) => _nanoIdAlphabet.codeUnitAt(
+          _secureRandom.nextInt(_nanoIdAlphabet.length),
+        ),
+      ),
+    );
+
+String normalizeCharacterNanoId(String? value) {
+  final normalized = value?.trim() ?? "";
+  return RegExp(r"^[0-9A-Za-z_-]{8}$").hasMatch(normalized)
+      ? normalized
+      : generateCharacterNanoId();
+}
 
 enum CustomFieldType { text, number, boolean, list }
 
@@ -163,6 +184,7 @@ class CharacterDataKeys {
     ...socialKeys,
     ...otherKeys,
     ...profileKeys,
+    "nanoId",
   ];
 }
 
@@ -239,6 +261,7 @@ class CharacterEntryData with _$CharacterEntryData {
     return CharacterEntryData(
       characterId: _uuid.v4(),
       displayName: trimmed,
+      legacyFields: {"nanoId": generateCharacterNanoId()},
       textFields: trimmed.isEmpty
           ? const <String, String>{}
           : {"name": trimmed},
@@ -330,7 +353,10 @@ class CharacterEntryData with _$CharacterEntryData {
         approaches: _sliderMap(approachValues, approachIds),
         personalityTraits: _sliderMap(traitsValues, personalityTraitIds),
       ),
-      legacyFields: _legacyCompatibilityFields(normalizedTextFields),
+      legacyFields: {
+        ..._legacyCompatibilityFields(normalizedTextFields),
+        "nanoId": normalizeCharacterNanoId(source["nanoId"]?.toString()),
+      },
       textFields: normalizedTextFields,
       alignment: _readNullableString(source["alignment"]),
       hinderEvents: hinderEvents,
@@ -426,6 +452,7 @@ class CharacterEntryData with _$CharacterEntryData {
       ...textFields,
       "name": displayName,
       "displayName": displayName,
+      "nanoId": nanoId,
       "roleOrOccupation": roleOrOccupation,
       "age": age.isNotEmpty ? age : textFields["age"] ?? "",
       "gender": gender.isNotEmpty ? gender : textFields["gender"] ?? "",
@@ -470,6 +497,10 @@ class CharacterEntryData with _$CharacterEntryData {
       "familiarItemList": List<String>.from(familiarItemList),
     };
   }
+}
+
+extension CharacterEntryDataNanoId on CharacterEntryData {
+  String get nanoId => normalizeCharacterNanoId(legacyFields["nanoId"]);
 }
 
 const commonAbilityIds = <String>[

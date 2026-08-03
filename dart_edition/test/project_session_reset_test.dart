@@ -25,6 +25,10 @@ void main() {
       find.byKey(const ValueKey("project-0-page-4"), skipOffstage: false),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey("project-0-page-7"), skipOffstage: false),
+      findsOneWidget,
+    );
 
     final actionContext = tester.element(find.byTooltip("檔案"));
     final result = Actions.invoke(actionContext, const NewFileIntent());
@@ -39,7 +43,15 @@ void main() {
       findsNothing,
     );
     expect(
+      find.byKey(const ValueKey("project-0-page-7"), skipOffstage: false),
+      findsNothing,
+    );
+    expect(
       find.byKey(const ValueKey("project-1-page-4"), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("project-1-page-7"), skipOffstage: false),
       findsOneWidget,
     );
   });

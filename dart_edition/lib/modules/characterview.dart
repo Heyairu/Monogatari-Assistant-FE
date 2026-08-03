@@ -31,6 +31,7 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "character_relationship_operations.dart" as relationship_operations;
 
 export "../models/character_data.dart";
 
@@ -668,7 +669,11 @@ class CharacterCodec {
 
           builder.element(
             "Character",
-            attributes: {"Id": characterId, "Name": characterName},
+            attributes: {
+              "Id": characterId,
+              "Name": characterName,
+              "NanoID": normalizeCharacterNanoId(character.nanoId),
+            },
             nest: () {
               _saveProfile(builder, character);
               // Basic Info
@@ -994,6 +999,11 @@ class CharacterCodec {
     builder.element(
       "Profile",
       nest: () {
+        _writeTextElement(
+          builder,
+          "NanoID",
+          normalizeCharacterNanoId(character.nanoId),
+        );
         for (final key in _profileTextFields) {
           _writeTextElement(builder, key, values[key] ?? "");
         }
@@ -1230,6 +1240,7 @@ class CharacterCodec {
       legacyFields: {
         ...fallback.legacyFields,
         ..._loadStringMap(profile, "LegacyFields"),
+        "nanoId": normalizeCharacterNanoId(value("NanoID", fallback.nanoId)),
       },
     );
   }
@@ -1387,6 +1398,7 @@ class CharacterCodec {
         final characterId = charNode.getAttribute("Id");
 
         final data = <String, dynamic>{};
+        data["nanoId"] = charNode.getAttribute("NanoID") ?? "";
 
         // Basic Info
         final basicInfo = charNode.findAllElements("BasicInfo").firstOrNull;
@@ -1598,8 +1610,15 @@ class CharacterCodec {
 
 class CharacterView extends ConsumerStatefulWidget {
   final int projectSessionId;
+  final String? initialCharacterId;
+  final int selectionRequestId;
 
-  const CharacterView({super.key, this.projectSessionId = 0});
+  const CharacterView({
+    super.key,
+    this.projectSessionId = 0,
+    this.initialCharacterId,
+    this.selectionRequestId = 0,
+  });
 
   @override
   ConsumerState<CharacterView> createState() => _CharacterViewState();
@@ -1635,11 +1654,40 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         : entry.displayName;
   }
 
+  String _nanoIdFor(String characterId) =>
+      normalizeCharacterNanoId(characterData[characterId]?.nanoId);
+
+  Set<String> get _duplicateCharacterIds {
+    final counts = <String, int>{};
+    for (final characterId in characters) {
+      final name = _displayNameFor(characterId).trim().toLowerCase();
+      if (name.isNotEmpty) counts[name] = (counts[name] ?? 0) + 1;
+    }
+    return characters
+        .where(
+          (characterId) =>
+              (counts[_displayNameFor(characterId).trim().toLowerCase()] ?? 0) >
+              1,
+        )
+        .toSet();
+  }
+
+  String _characterLabel(String characterId) {
+    final name = _displayNameFor(characterId).trim();
+    return _duplicateCharacterIds.contains(characterId)
+        ? "$name (${_nanoIdFor(characterId)})"
+        : name;
+  }
+
+  String _characterNameFromLabel(String value) {
+    return value.trim();
+  }
+
   List<String> get _relationshipCharacterOptions {
     final names = <String>{};
     for (final characterId in characters) {
       if (characterId == selectedCharacter) continue;
-      final name = _displayNameFor(characterId).trim();
+      final name = _characterLabel(characterId);
       if (name.isNotEmpty) names.add(name);
     }
     return names.toList(growable: false);
@@ -1839,15 +1887,37 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     }
 
     if (selectedCharacter == null || !next.containsKey(selectedCharacter)) {
+      final requestedId = widget.initialCharacterId;
+      final nextSelected = requestedId != null && next.containsKey(requestedId)
+          ? requestedId
+          : ids.first;
       setState(() {
-        selectedCharacter = ids.first;
-        selectedCharacterIndex = 0;
+        selectedCharacter = nextSelected;
+        selectedCharacterIndex = ids.indexOf(nextSelected);
         _loadCharacterData(selectedCharacter!);
       });
       return;
     }
 
     final nextIndex = ids.indexOf(selectedCharacter!);
+    final nextEntry = next[selectedCharacter!];
+    if (nextEntry != null &&
+        !_sameRelationships(characterRelationships, nextEntry.relationships)) {
+      setState(() {
+        characterRelationships = _mergeDuplicateCharacterRelationships(
+          nextEntry.relationships,
+        );
+        selectedCharacterRelationshipIndex = null;
+        _relationshipPersonController.clear();
+        _relationshipDescriptionController.clear();
+        _loadedCharacterEntrySnapshot =
+            (_loadedCharacterEntrySnapshot ?? nextEntry).copyWith(
+              relationships: nextEntry.relationships
+                  .map((relationship) => relationship.copyWith())
+                  .toList(growable: false),
+            );
+      });
+    }
     if (selectedCharacterIndex != nextIndex || forceLoadSelected) {
       setState(() {
         selectedCharacterIndex = nextIndex;
@@ -1856,6 +1926,17 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         }
       });
     }
+  }
+
+  bool _sameRelationships(
+    List<CharacterRelationship> first,
+    List<CharacterRelationship> second,
+  ) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
   }
 
   void _hydrateInitialCharacterDataIfNeeded() {
@@ -1888,6 +1969,21 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() {});
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant CharacterView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionRequestId == widget.selectionRequestId) return;
+    final requestedId = widget.initialCharacterId;
+    if (requestedId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final index = characters.indexOf(requestedId);
+      if (index >= 0 && selectedCharacter != requestedId) {
+        _selectCharacter(index);
       }
     });
   }
@@ -1996,7 +2092,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               emptyIcon: Icons.person_add_alt_outlined,
               itemBuilder: (context, index) {
                 final characterId = characters[index];
-                final name = _displayNameFor(characterId);
                 final isSelected = selectedCharacterIndex == index;
 
                 return DraggableCardNode<String>(
@@ -2009,7 +2104,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                   isSelected: isSelected,
 
                   title: Text(
-                    name,
+                    _characterLabel(characterId),
                     style: isSelected
                         ? TextStyle(
                             fontWeight: FontWeight.bold,
@@ -2241,6 +2336,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             options: _relationshipCharacterOptions,
             labelText: "人物",
             hintText: "選擇角色或自行輸入",
+            onSelected: (value) {
+              controller.text = _characterNameFromLabel(value);
+            },
           ),
           onSubmit: (_, _) => _addCharacterRelationship(),
           onDelete: _deleteCharacterRelationship,
@@ -2256,6 +2354,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Widget _buildAdvancedSettingsTab() {
     return Column(
       children: [
+        ExpansionTile(
+          title: const Text("識別設定"),
+          subtitle: const Text("供角色重名時辨識用的 8 位 NanoID"),
+          children: [_buildTextField("NanoID：", _controllers["nanoId"]!)],
+        ),
         ExpansionTile(
           title: const Text("詳細基本資料與外觀"),
           subtitle: Text("居住地、五官與服裝"),
@@ -3378,6 +3481,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     ];
     return entry
         .copyWith(
+          legacyFields: {
+            ...entry.legacyFields,
+            "nanoId": normalizeCharacterNanoId(_controllers["nanoId"]?.text),
+          },
           displayName: displayName,
           aliases: aliases,
           roleOrOccupation: _controllers["roleOrOccupation"]?.text ?? "",
@@ -3844,48 +3951,18 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   String _appendRelationshipDescription(String existing, String incoming) {
-    final current = existing.trim();
-    final addition = incoming.trim();
-    if (current.isEmpty) return addition;
-    if (addition.isEmpty) return current;
-    if (current.split("、").map((value) => value.trim()).contains(addition)) {
-      return current;
-    }
-    return "$current、$addition";
+    return relationship_operations.appendRelationshipDescription(
+      existing,
+      incoming,
+    );
   }
 
   List<CharacterRelationship> _mergeDuplicateCharacterRelationships(
     Iterable<CharacterRelationship> relationships,
   ) {
-    final merged = <CharacterRelationship>[];
-    final indexes = <String, int>{};
-    for (final relationship in relationships) {
-      final person = relationship.person.trim();
-      if (person.isEmpty) {
-        merged.add(relationship.copyWith());
-        continue;
-      }
-      final key = person.toLowerCase();
-      final existingIndex = indexes[key];
-      if (existingIndex == null) {
-        indexes[key] = merged.length;
-        merged.add(
-          relationship.copyWith(
-            person: person,
-            relationship: relationship.relationship.trim(),
-          ),
-        );
-        continue;
-      }
-      final existing = merged[existingIndex];
-      merged[existingIndex] = existing.copyWith(
-        relationship: _appendRelationshipDescription(
-          existing.relationship,
-          relationship.relationship,
-        ),
-      );
-    }
-    return merged;
+    return relationship_operations.mergeDuplicateCharacterRelationships(
+      relationships,
+    );
   }
 
   void _updateCharacterRelationshipCell(

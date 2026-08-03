@@ -272,6 +272,19 @@ class AppTheme {
     }
   }
 
+  static IconButtonThemeData _buildIconButtonTheme(ColorScheme colorScheme) {
+    return IconButtonThemeData(
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          final color = colorScheme.onSurface;
+          return states.contains(WidgetState.disabled)
+              ? color.withValues(alpha: 0.38)
+              : color;
+        }),
+      ),
+    );
+  }
+
   /// 獲取淺色主題
   static ThemeData getLightTheme(double baseFontSize, Color seedColor) {
     ColorScheme colorScheme;
@@ -363,6 +376,7 @@ class AppTheme {
       fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
       iconTheme: IconThemeData(size: baseFontSize + 10),
+      iconButtonTheme: _buildIconButtonTheme(colorScheme),
       cardTheme: const CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
