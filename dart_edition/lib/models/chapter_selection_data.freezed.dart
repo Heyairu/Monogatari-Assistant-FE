@@ -314,12 +314,16 @@ abstract class _ChapterData extends ChapterData {
 mixin _$SegmentData {
   String get segmentName => throw _privateConstructorUsedError;
   List<ChapterData> get chapters => throw _privateConstructorUsedError;
+  List<SegmentData> get childSegments => throw _privateConstructorUsedError;
+  List<String> get childNodeOrder => throw _privateConstructorUsedError;
   String get segmentUUID => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
     required TResult Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )
     raw,
@@ -329,6 +333,8 @@ mixin _$SegmentData {
     TResult? Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )?
     raw,
@@ -338,6 +344,8 @@ mixin _$SegmentData {
     TResult Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )?
     raw,
@@ -374,6 +382,8 @@ abstract class $SegmentDataCopyWith<$Res> {
   $Res call({
     String segmentName,
     List<ChapterData> chapters,
+    List<SegmentData> childSegments,
+    List<String> childNodeOrder,
     String segmentUUID,
   });
 }
@@ -395,6 +405,8 @@ class _$SegmentDataCopyWithImpl<$Res, $Val extends SegmentData>
   $Res call({
     Object? segmentName = null,
     Object? chapters = null,
+    Object? childSegments = null,
+    Object? childNodeOrder = null,
     Object? segmentUUID = null,
   }) {
     return _then(
@@ -407,6 +419,14 @@ class _$SegmentDataCopyWithImpl<$Res, $Val extends SegmentData>
                 ? _value.chapters
                 : chapters // ignore: cast_nullable_to_non_nullable
                       as List<ChapterData>,
+            childSegments: null == childSegments
+                ? _value.childSegments
+                : childSegments // ignore: cast_nullable_to_non_nullable
+                      as List<SegmentData>,
+            childNodeOrder: null == childNodeOrder
+                ? _value.childNodeOrder
+                : childNodeOrder // ignore: cast_nullable_to_non_nullable
+                      as List<String>,
             segmentUUID: null == segmentUUID
                 ? _value.segmentUUID
                 : segmentUUID // ignore: cast_nullable_to_non_nullable
@@ -429,6 +449,8 @@ abstract class _$$SegmentDataImplCopyWith<$Res>
   $Res call({
     String segmentName,
     List<ChapterData> chapters,
+    List<SegmentData> childSegments,
+    List<String> childNodeOrder,
     String segmentUUID,
   });
 }
@@ -449,6 +471,8 @@ class __$$SegmentDataImplCopyWithImpl<$Res>
   $Res call({
     Object? segmentName = null,
     Object? chapters = null,
+    Object? childSegments = null,
+    Object? childNodeOrder = null,
     Object? segmentUUID = null,
   }) {
     return _then(
@@ -461,6 +485,14 @@ class __$$SegmentDataImplCopyWithImpl<$Res>
             ? _value._chapters
             : chapters // ignore: cast_nullable_to_non_nullable
                   as List<ChapterData>,
+        childSegments: null == childSegments
+            ? _value._childSegments
+            : childSegments // ignore: cast_nullable_to_non_nullable
+                  as List<SegmentData>,
+        childNodeOrder: null == childNodeOrder
+            ? _value._childNodeOrder
+            : childNodeOrder // ignore: cast_nullable_to_non_nullable
+                  as List<String>,
         segmentUUID: null == segmentUUID
             ? _value.segmentUUID
             : segmentUUID // ignore: cast_nullable_to_non_nullable
@@ -476,8 +508,12 @@ class _$SegmentDataImpl extends _SegmentData {
   const _$SegmentDataImpl({
     this.segmentName = "",
     final List<ChapterData> chapters = const <ChapterData>[],
+    final List<SegmentData> childSegments = const <SegmentData>[],
+    final List<String> childNodeOrder = const <String>[],
     required this.segmentUUID,
   }) : _chapters = chapters,
+       _childSegments = childSegments,
+       _childNodeOrder = childNodeOrder,
        super._();
 
   @override
@@ -492,12 +528,30 @@ class _$SegmentDataImpl extends _SegmentData {
     return EqualUnmodifiableListView(_chapters);
   }
 
+  final List<SegmentData> _childSegments;
+  @override
+  @JsonKey()
+  List<SegmentData> get childSegments {
+    if (_childSegments is EqualUnmodifiableListView) return _childSegments;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_childSegments);
+  }
+
+  final List<String> _childNodeOrder;
+  @override
+  @JsonKey()
+  List<String> get childNodeOrder {
+    if (_childNodeOrder is EqualUnmodifiableListView) return _childNodeOrder;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_childNodeOrder);
+  }
+
   @override
   final String segmentUUID;
 
   @override
   String toString() {
-    return 'SegmentData.raw(segmentName: $segmentName, chapters: $chapters, segmentUUID: $segmentUUID)';
+    return 'SegmentData.raw(segmentName: $segmentName, chapters: $chapters, childSegments: $childSegments, childNodeOrder: $childNodeOrder, segmentUUID: $segmentUUID)';
   }
 
   @override
@@ -508,6 +562,14 @@ class _$SegmentDataImpl extends _SegmentData {
             (identical(other.segmentName, segmentName) ||
                 other.segmentName == segmentName) &&
             const DeepCollectionEquality().equals(other._chapters, _chapters) &&
+            const DeepCollectionEquality().equals(
+              other._childSegments,
+              _childSegments,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other._childNodeOrder,
+              _childNodeOrder,
+            ) &&
             (identical(other.segmentUUID, segmentUUID) ||
                 other.segmentUUID == segmentUUID));
   }
@@ -517,6 +579,8 @@ class _$SegmentDataImpl extends _SegmentData {
     runtimeType,
     segmentName,
     const DeepCollectionEquality().hash(_chapters),
+    const DeepCollectionEquality().hash(_childSegments),
+    const DeepCollectionEquality().hash(_childNodeOrder),
     segmentUUID,
   );
 
@@ -534,11 +598,19 @@ class _$SegmentDataImpl extends _SegmentData {
     required TResult Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )
     raw,
   }) {
-    return raw(segmentName, chapters, segmentUUID);
+    return raw(
+      segmentName,
+      chapters,
+      childSegments,
+      childNodeOrder,
+      segmentUUID,
+    );
   }
 
   @override
@@ -547,11 +619,19 @@ class _$SegmentDataImpl extends _SegmentData {
     TResult? Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )?
     raw,
   }) {
-    return raw?.call(segmentName, chapters, segmentUUID);
+    return raw?.call(
+      segmentName,
+      chapters,
+      childSegments,
+      childNodeOrder,
+      segmentUUID,
+    );
   }
 
   @override
@@ -560,13 +640,21 @@ class _$SegmentDataImpl extends _SegmentData {
     TResult Function(
       String segmentName,
       List<ChapterData> chapters,
+      List<SegmentData> childSegments,
+      List<String> childNodeOrder,
       String segmentUUID,
     )?
     raw,
     required TResult orElse(),
   }) {
     if (raw != null) {
-      return raw(segmentName, chapters, segmentUUID);
+      return raw(
+        segmentName,
+        chapters,
+        childSegments,
+        childNodeOrder,
+        segmentUUID,
+      );
     }
     return orElse();
   }
@@ -604,6 +692,8 @@ abstract class _SegmentData extends SegmentData {
   const factory _SegmentData({
     final String segmentName,
     final List<ChapterData> chapters,
+    final List<SegmentData> childSegments,
+    final List<String> childNodeOrder,
     required final String segmentUUID,
   }) = _$SegmentDataImpl;
   const _SegmentData._() : super._();
@@ -612,6 +702,10 @@ abstract class _SegmentData extends SegmentData {
   String get segmentName;
   @override
   List<ChapterData> get chapters;
+  @override
+  List<SegmentData> get childSegments;
+  @override
+  List<String> get childNodeOrder;
   @override
   String get segmentUUID;
 

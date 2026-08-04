@@ -163,4 +163,49 @@ void main() {
     );
     expect(container.read(editorContentProvider), editedContent);
   });
+
+  test('syncEditorToSelectedChapter updates a recursively nested chapter', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    const folderId = 'nested-folder';
+    const chapterId = 'nested-chapter';
+    const editedContent = 'nested edited content';
+    container.read(segmentsDataProvider.notifier).setSegmentsData([
+      chapter_module.SegmentData(
+        segmentUUID: 'root-folder',
+        childSegments: [
+          chapter_module.SegmentData(
+            segmentUUID: folderId,
+            chapters: [
+              chapter_module.ChapterData(
+                chapterUUID: chapterId,
+                chapterContent: 'original',
+              ),
+            ],
+          ),
+        ],
+      ),
+    ]);
+    container
+        .read(editorSelectionProvider.notifier)
+        .setSelectionAndCursor(
+          selectedSegID: folderId,
+          selectedChapID: chapterId,
+          cursorOffset: 0,
+        );
+    final controller = TextEditingController(text: editedContent);
+    addTearDown(controller.dispose);
+
+    container
+        .read(editorCoordinatorProvider.notifier)
+        .syncEditorToSelectedChapter(textController: controller);
+
+    final location = chapter_module.ChapterTree.findChapter(
+      container.read(segmentsDataProvider),
+      folderId: folderId,
+      chapterId: chapterId,
+    );
+    expect(location?.chapter.chapterContent, editedContent);
+  });
 }

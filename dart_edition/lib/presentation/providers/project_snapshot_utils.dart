@@ -42,15 +42,24 @@ base_info_module.BaseInfoData snapshotBaseInfoData(
 List<chapter_module.SegmentData> snapshotSegmentsData(
   List<chapter_module.SegmentData> source,
 ) {
-  final List<chapter_module.SegmentData> frozen = [];
-  for (final segment in source) {
+  chapter_module.SegmentData freezeSegment(chapter_module.SegmentData segment) {
     final frozenChapters = _freezeListCopy(segment.chapters);
-    final nextSegment = identical(frozenChapters, segment.chapters)
+    final frozenChildren = _freezeListView(
+      segment.childSegments.map(freezeSegment).toList(growable: false),
+    );
+    final frozenOrder = _freezeListCopy(segment.resolvedChildNodeOrder);
+    return identical(frozenChapters, segment.chapters) &&
+            identical(frozenChildren, segment.childSegments) &&
+            identical(frozenOrder, segment.childNodeOrder)
         ? segment
-        : segment.copyWith(chapters: frozenChapters);
-    frozen.add(nextSegment);
+        : segment.copyWith(
+            chapters: frozenChapters,
+            childSegments: frozenChildren,
+            childNodeOrder: frozenOrder,
+          );
   }
-  return _freezeListView(frozen);
+
+  return _freezeListView(source.map(freezeSegment).toList(growable: false));
 }
 
 List<outline_module.StorylineData> snapshotOutlineData(

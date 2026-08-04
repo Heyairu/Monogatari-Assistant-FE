@@ -157,6 +157,22 @@ final baseInfoDataProvider =
     );
 
 class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
+  List<String> _withoutNode(List<String> order, String nodeID) =>
+      order.where((id) => id != nodeID).toList(growable: false);
+
+  List<String> _insertNodeRelative({
+    required List<String> order,
+    required String nodeID,
+    required String targetID,
+    required String position,
+  }) {
+    final next = _withoutNode(order, nodeID).toList();
+    final targetIndex = next.indexOf(targetID);
+    if (targetIndex < 0) return [...next, nodeID];
+    next.insert(position == "before" ? targetIndex : targetIndex + 1, nodeID);
+    return next;
+  }
+
   List<chapter_module.SegmentData> _createSnapshot(
     List<chapter_module.SegmentData> source,
   ) {
@@ -177,29 +193,109 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
   }
 
   Set<String> _collectChapterIds(List<chapter_module.SegmentData> segments) {
-    final ids = <String>{};
+    return chapter_module.ChapterTree.chaptersDepthFirst(
+      segments,
+    ).map((location) => location.chapter.chapterUUID).toSet();
+  }
 
-    for (final segment in segments) {
-      for (final chapter in segment.chapters) {
-        ids.add(chapter.chapterUUID);
+  ({List<chapter_module.SegmentData> nodes, bool changed})
+  _updateFolderRecursive(
+    String folderID,
+    List<chapter_module.SegmentData> nodes,
+    chapter_module.SegmentData Function(chapter_module.SegmentData folder)
+    update,
+  ) {
+    for (var index = 0; index < nodes.length; index++) {
+      final folder = nodes[index];
+      if (folder.segmentUUID == folderID) {
+        final updated = update(folder);
+        if (updated == folder) return (nodes: nodes, changed: false);
+        final next = [...nodes];
+        next[index] = updated;
+        return (nodes: next, changed: true);
+      }
+
+      final childResult = _updateFolderRecursive(
+        folderID,
+        folder.childSegments,
+        update,
+      );
+      if (childResult.changed) {
+        final next = [...nodes];
+        next[index] = folder.copyWith(childSegments: childResult.nodes);
+        return (nodes: next, changed: true);
       }
     }
-
-    return ids;
+    return (nodes: nodes, changed: false);
   }
 
-  int _segmentIndexById(
-    String segmentID,
-    List<chapter_module.SegmentData> segments,
+  ({List<chapter_module.SegmentData> nodes, bool removed})
+  _removeFolderRecursive(
+    String folderID,
+    List<chapter_module.SegmentData> nodes,
   ) {
-    return segments.indexWhere((segment) => segment.segmentUUID == segmentID);
+    for (var index = 0; index < nodes.length; index++) {
+      final folder = nodes[index];
+      if (folder.segmentUUID == folderID) {
+        return (nodes: [...nodes]..removeAt(index), removed: true);
+      }
+      final childResult = _removeFolderRecursive(
+        folderID,
+        folder.childSegments,
+      );
+      if (childResult.removed) {
+        final next = [...nodes];
+        next[index] = folder.copyWith(
+          childSegments: childResult.nodes,
+          childNodeOrder: _withoutNode(folder.resolvedChildNodeOrder, folderID),
+        );
+        return (nodes: next, removed: true);
+      }
+    }
+    return (nodes: nodes, removed: false);
   }
 
-  int _chapterIndexById(
-    String chapterID,
-    List<chapter_module.ChapterData> chapters,
-  ) {
-    return chapters.indexWhere((chapter) => chapter.chapterUUID == chapterID);
+  ({List<chapter_module.SegmentData> nodes, bool inserted})
+  _insertFolderByPosition({
+    required List<chapter_module.SegmentData> nodes,
+    required String targetFolderID,
+    required String position,
+    required chapter_module.SegmentData sourceFolder,
+  }) {
+    for (var index = 0; index < nodes.length; index++) {
+      final folder = nodes[index];
+      if (folder.segmentUUID == targetFolderID) {
+        if (position == "child") {
+          final next = [...nodes];
+          next[index] = folder.copyWith(
+            childSegments: [...folder.childSegments, sourceFolder],
+            childNodeOrder: [
+              ...folder.resolvedChildNodeOrder,
+              sourceFolder.segmentUUID,
+            ],
+          );
+          return (nodes: next, inserted: true);
+        }
+        if (position == "before" || position == "after") {
+          final next = [...nodes]
+            ..insert(position == "before" ? index : index + 1, sourceFolder);
+          return (nodes: next, inserted: true);
+        }
+      }
+
+      final childResult = _insertFolderByPosition(
+        nodes: folder.childSegments,
+        targetFolderID: targetFolderID,
+        position: position,
+        sourceFolder: sourceFolder,
+      );
+      if (childResult.inserted) {
+        final next = [...nodes];
+        next[index] = folder.copyWith(childSegments: childResult.nodes);
+        return (nodes: next, inserted: true);
+      }
+    }
+    return (nodes: nodes, inserted: false);
   }
 
   @override
@@ -224,6 +320,35 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     updateSegmentsData((current) => [...current, segment]);
   }
 
+  chapter_module.SegmentData? addFolder({
+    required String name,
+    String? parentFolderID,
+  }) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return null;
+    final folder = chapter_module.SegmentData(
+      segmentName: trimmedName,
+      chapters: [
+        chapter_module.ChapterData(chapterName: "章節 1", chapterContent: ""),
+      ],
+    );
+    if (parentFolderID == null) {
+      addSegment(folder);
+      return folder;
+    }
+    final result = _updateFolderRecursive(
+      parentFolderID,
+      state,
+      (parent) => parent.copyWith(
+        childSegments: [...parent.childSegments, folder],
+        childNodeOrder: [...parent.resolvedChildNodeOrder, folder.segmentUUID],
+      ),
+    );
+    if (!result.changed) return null;
+    setSegmentsData(result.nodes);
+    return folder;
+  }
+
   void insertSegmentAt(int index, chapter_module.SegmentData segment) {
     updateSegmentsData((current) {
       final next = [...current];
@@ -233,25 +358,26 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     });
   }
 
-  void removeSegmentById(String segmentID) {
-    updateSegmentsData(
-      (current) =>
-          current.where((segment) => segment.segmentUUID != segmentID).toList(),
-    );
+  bool removeSegmentById(String segmentID) {
+    final folder = chapter_module.ChapterTree.findFolder(state, segmentID);
+    if (folder == null) return false;
+    final remaining =
+        chapter_module.ChapterTree.chapterCount(state) -
+        chapter_module.ChapterTree.chapterCount([folder]);
+    if (remaining < 1) return false;
+    final result = _removeFolderRecursive(segmentID, state);
+    if (!result.removed) return false;
+    setSegmentsData(result.nodes);
+    return true;
   }
 
   void renameSegment({required String segmentID, required String name}) {
-    updateSegmentsData((current) {
-      final index = _segmentIndexById(segmentID, current);
-      if (index < 0) {
-        return current;
-      }
-
-      final next = [...current];
-      final target = next[index];
-      next[index] = target.copyWith(segmentName: name);
-      return next;
-    });
+    final result = _updateFolderRecursive(
+      segmentID,
+      state,
+      (folder) => folder.copyWith(segmentName: name),
+    );
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void moveSegment({required int fromIndex, required int toIndex}) {
@@ -276,19 +402,15 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     required String segmentID,
     required chapter_module.ChapterData chapter,
   }) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final next = [...current];
-      final segment = next[segmentIndex];
-      next[segmentIndex] = segment.copyWith(
-        chapters: [...segment.chapters, chapter],
-      );
-      return next;
-    });
+    final result = _updateFolderRecursive(
+      segmentID,
+      state,
+      (folder) => folder.copyWith(
+        chapters: [...folder.chapters, chapter],
+        childNodeOrder: [...folder.resolvedChildNodeOrder, chapter.chapterUUID],
+      ),
+    );
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void insertChapter({
@@ -296,20 +418,29 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     required int chapterIndex,
     required chapter_module.ChapterData chapter,
   }) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final next = [...current];
-      final segment = next[segmentIndex];
-      final chapters = [...segment.chapters];
+    final result = _updateFolderRecursive(segmentID, state, (folder) {
+      final chapters = [...folder.chapters];
       final insertIndex = chapterIndex.clamp(0, chapters.length);
       chapters.insert(insertIndex, chapter);
-      next[segmentIndex] = segment.copyWith(chapters: chapters);
-      return next;
+      final chapterOrder = folder.chapters
+          .map((item) => item.chapterUUID)
+          .toList();
+      final relativeID = insertIndex < chapterOrder.length
+          ? chapterOrder[insertIndex]
+          : null;
+      return folder.copyWith(
+        chapters: chapters,
+        childNodeOrder: relativeID == null
+            ? [...folder.resolvedChildNodeOrder, chapter.chapterUUID]
+            : _insertNodeRelative(
+                order: folder.resolvedChildNodeOrder,
+                nodeID: chapter.chapterUUID,
+                targetID: relativeID,
+                position: "before",
+              ),
+      );
     });
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void renameChapter({
@@ -317,25 +448,17 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     required String chapterID,
     required String name,
   }) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final segment = current[segmentIndex];
-      final chapterIndex = _chapterIndexById(chapterID, segment.chapters);
-      if (chapterIndex < 0) {
-        return current;
-      }
-
-      final next = [...current];
-      final chapters = [...segment.chapters];
+    final result = _updateFolderRecursive(segmentID, state, (folder) {
+      final chapterIndex = folder.chapters.indexWhere(
+        (chapter) => chapter.chapterUUID == chapterID,
+      );
+      if (chapterIndex < 0) return folder;
+      final chapters = [...folder.chapters];
       final target = chapters[chapterIndex];
       chapters[chapterIndex] = target.copyWith(chapterName: name);
-      next[segmentIndex] = segment.copyWith(chapters: chapters);
-      return next;
+      return folder.copyWith(chapters: chapters);
     });
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void updateChapterContent({
@@ -343,47 +466,42 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     required String chapterID,
     required String content,
   }) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final segment = current[segmentIndex];
-      final chapterIndex = _chapterIndexById(chapterID, segment.chapters);
-      if (chapterIndex < 0) {
-        return current;
-      }
-
-      final next = [...current];
-      final chapters = [...segment.chapters];
+    final result = _updateFolderRecursive(segmentID, state, (folder) {
+      final chapterIndex = folder.chapters.indexWhere(
+        (chapter) => chapter.chapterUUID == chapterID,
+      );
+      if (chapterIndex < 0) return folder;
+      final chapters = [...folder.chapters];
       final target = chapters[chapterIndex];
       chapters[chapterIndex] = target.copyWith(chapterContent: content);
-      next[segmentIndex] = segment.copyWith(chapters: chapters);
-      return next;
+      return folder.copyWith(chapters: chapters);
     });
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void removeChapter({required String segmentID, required String chapterID}) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final segment = current[segmentIndex];
-      final chapters = segment.chapters
-          .where((chapter) => chapter.chapterUUID != chapterID)
-          .toList();
-
-      if (chapters.length == segment.chapters.length) {
-        return current;
-      }
-
-      final next = [...current];
-      next[segmentIndex] = segment.copyWith(chapters: chapters);
-      return next;
-    });
+    final folder = chapter_module.ChapterTree.findFolder(state, segmentID);
+    if (folder == null || chapter_module.ChapterTree.chapterCount(state) <= 1) {
+      return;
+    }
+    final chapters = folder.chapters
+        .where((chapter) => chapter.chapterUUID != chapterID)
+        .toList();
+    if (chapters.length == folder.chapters.length) return;
+    if (chapters.isEmpty && folder.childSegments.isEmpty) {
+      final result = _removeFolderRecursive(segmentID, state);
+      if (result.removed) setSegmentsData(result.nodes);
+      return;
+    }
+    final result = _updateFolderRecursive(
+      segmentID,
+      state,
+      (current) => current.copyWith(
+        chapters: chapters,
+        childNodeOrder: _withoutNode(current.resolvedChildNodeOrder, chapterID),
+      ),
+    );
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void moveChapterWithinSegment({
@@ -391,80 +509,282 @@ class SegmentsDataNotifier extends Notifier<List<chapter_module.SegmentData>> {
     required int fromIndex,
     required int toIndex,
   }) {
-    updateSegmentsData((current) {
-      final segmentIndex = _segmentIndexById(segmentID, current);
-      if (segmentIndex < 0) {
-        return current;
-      }
-
-      final segment = current[segmentIndex];
-      if (fromIndex < 0 || fromIndex >= segment.chapters.length) {
-        return current;
-      }
-
-      final normalizedTarget = toIndex.clamp(0, segment.chapters.length - 1);
-      if (fromIndex == normalizedTarget) {
-        return current;
-      }
-
-      final chapters = [...segment.chapters];
+    final result = _updateFolderRecursive(segmentID, state, (folder) {
+      if (fromIndex < 0 || fromIndex >= folder.chapters.length) return folder;
+      final normalizedTarget = toIndex.clamp(0, folder.chapters.length - 1);
+      if (fromIndex == normalizedTarget) return folder;
+      final chapters = [...folder.chapters];
       final moving = chapters.removeAt(fromIndex);
       chapters.insert(normalizedTarget, moving);
-
-      final next = [...current];
-      next[segmentIndex] = segment.copyWith(chapters: chapters);
-      return next;
+      final otherChapterIDs = chapters
+          .where((chapter) => chapter.chapterUUID != moving.chapterUUID)
+          .map((chapter) => chapter.chapterUUID)
+          .toList();
+      if (otherChapterIDs.isEmpty) return folder.copyWith(chapters: chapters);
+      final targetID = normalizedTarget < otherChapterIDs.length
+          ? otherChapterIDs[normalizedTarget]
+          : otherChapterIDs.last;
+      return folder.copyWith(
+        chapters: chapters,
+        childNodeOrder: _insertNodeRelative(
+          order: folder.resolvedChildNodeOrder,
+          nodeID: moving.chapterUUID,
+          targetID: targetID,
+          position: normalizedTarget < otherChapterIDs.length
+              ? "before"
+              : "after",
+        ),
+      );
     });
+    if (result.changed) setSegmentsData(result.nodes);
   }
 
   void moveChapterToSegment({
     required String chapterID,
     required String targetSegmentID,
   }) {
-    updateSegmentsData((current) {
-      int sourceSegmentIndex = -1;
-      int sourceChapterIndex = -1;
+    final source = chapter_module.ChapterTree.findChapter(
+      state,
+      chapterId: chapterID,
+    );
+    if (source == null || source.folder.segmentUUID == targetSegmentID) return;
+    if (chapter_module.ChapterTree.findFolder(state, targetSegmentID) == null) {
+      return;
+    }
+    var next = state;
+    final sourceChapters = [...source.folder.chapters]
+      ..removeAt(source.chapterIndex);
+    if (sourceChapters.isEmpty && source.folder.childSegments.isEmpty) {
+      next = _removeFolderRecursive(source.folder.segmentUUID, next).nodes;
+    } else {
+      next = _updateFolderRecursive(
+        source.folder.segmentUUID,
+        next,
+        (folder) => folder.copyWith(
+          chapters: sourceChapters,
+          childNodeOrder: _withoutNode(
+            folder.resolvedChildNodeOrder,
+            chapterID,
+          ),
+        ),
+      ).nodes;
+    }
+    final targetResult = _updateFolderRecursive(
+      targetSegmentID,
+      next,
+      (folder) => folder.copyWith(
+        chapters: [...folder.chapters, source.chapter],
+        childNodeOrder: [...folder.resolvedChildNodeOrder, chapterID],
+      ),
+    );
+    if (targetResult.changed) setSegmentsData(targetResult.nodes);
+  }
 
-      for (
-        int segmentIndex = 0;
-        segmentIndex < current.length;
-        segmentIndex++
-      ) {
-        final chapterIndex = _chapterIndexById(
-          chapterID,
-          current[segmentIndex].chapters,
-        );
-        if (chapterIndex >= 0) {
-          sourceSegmentIndex = segmentIndex;
-          sourceChapterIndex = chapterIndex;
-          break;
-        }
-      }
-
-      final targetSegmentIndex = _segmentIndexById(targetSegmentID, current);
-      if (sourceSegmentIndex < 0 ||
-          sourceChapterIndex < 0 ||
-          targetSegmentIndex < 0 ||
-          sourceSegmentIndex == targetSegmentIndex) {
-        return current;
-      }
-
-      final next = [...current];
-      final sourceSegment = next[sourceSegmentIndex];
-      final targetSegment = next[targetSegmentIndex];
-
-      final sourceChapters = [...sourceSegment.chapters];
-      final movingChapter = sourceChapters.removeAt(sourceChapterIndex);
-      final targetChapters = [...targetSegment.chapters, movingChapter];
-
-      next[sourceSegmentIndex] = sourceSegment.copyWith(
+  List<chapter_module.SegmentData> _detachChapterForMove(
+    chapter_module.ChapterLocation source,
+    List<chapter_module.SegmentData> nodes,
+  ) {
+    final sourceChapters = [...source.folder.chapters]
+      ..removeWhere(
+        (chapter) => chapter.chapterUUID == source.chapter.chapterUUID,
+      );
+    if (sourceChapters.isEmpty && source.folder.childSegments.isEmpty) {
+      return _removeFolderRecursive(source.folder.segmentUUID, nodes).nodes;
+    }
+    return _updateFolderRecursive(
+      source.folder.segmentUUID,
+      nodes,
+      (folder) => folder.copyWith(
         chapters: sourceChapters,
+        childNodeOrder: _withoutNode(
+          folder.resolvedChildNodeOrder,
+          source.chapter.chapterUUID,
+        ),
+      ),
+    ).nodes;
+  }
+
+  bool moveChapterRelativeToChapter({
+    required String chapterID,
+    required String targetChapterID,
+    required String position,
+  }) {
+    if (chapterID == targetChapterID ||
+        (position != "before" && position != "after")) {
+      return false;
+    }
+    final source = chapter_module.ChapterTree.findChapter(
+      state,
+      chapterId: chapterID,
+    );
+    final target = chapter_module.ChapterTree.findChapter(
+      state,
+      chapterId: targetChapterID,
+    );
+    if (source == null || target == null) return false;
+
+    final detached = _detachChapterForMove(source, state);
+    final currentTarget = chapter_module.ChapterTree.findChapter(
+      detached,
+      chapterId: targetChapterID,
+    );
+    if (currentTarget == null) return false;
+    final result = _updateFolderRecursive(
+      currentTarget.folder.segmentUUID,
+      detached,
+      (folder) => folder.copyWith(
+        chapters:
+            folder.chapters.any((chapter) => chapter.chapterUUID == chapterID)
+            ? folder.chapters
+            : [...folder.chapters, source.chapter],
+        childNodeOrder: _insertNodeRelative(
+          order: folder.resolvedChildNodeOrder,
+          nodeID: chapterID,
+          targetID: targetChapterID,
+          position: position,
+        ),
+      ),
+    );
+    if (!result.changed) return false;
+    setSegmentsData(result.nodes);
+    return true;
+  }
+
+  bool moveFolderRelativeToChapter({
+    required String sourceFolderID,
+    required String targetChapterID,
+    required String position,
+  }) {
+    if (position != "before" && position != "after") return false;
+    final source = chapter_module.ChapterTree.findFolder(state, sourceFolderID);
+    final target = chapter_module.ChapterTree.findChapter(
+      state,
+      chapterId: targetChapterID,
+    );
+    if (source == null ||
+        target == null ||
+        chapter_module.ChapterTree.containsFolder(
+          source,
+          target.folder.segmentUUID,
+        )) {
+      return false;
+    }
+    final removed = _removeFolderRecursive(sourceFolderID, state);
+    if (!removed.removed) return false;
+    final currentTarget = chapter_module.ChapterTree.findChapter(
+      removed.nodes,
+      chapterId: targetChapterID,
+    );
+    if (currentTarget == null) return false;
+    final result = _updateFolderRecursive(
+      currentTarget.folder.segmentUUID,
+      removed.nodes,
+      (folder) => folder.copyWith(
+        childSegments: [...folder.childSegments, source],
+        childNodeOrder: _insertNodeRelative(
+          order: folder.resolvedChildNodeOrder,
+          nodeID: sourceFolderID,
+          targetID: targetChapterID,
+          position: position,
+        ),
+      ),
+    );
+    if (!result.changed) return false;
+    setSegmentsData(result.nodes);
+    return true;
+  }
+
+  bool moveChapterRelativeToFolder({
+    required String chapterID,
+    required String targetFolderID,
+    required String position,
+  }) {
+    if (position != "before" && position != "after") return false;
+    final source = chapter_module.ChapterTree.findChapter(
+      state,
+      chapterId: chapterID,
+    );
+    final targetParent = chapter_module.ChapterTree.findParentFolder(
+      state,
+      targetFolderID,
+    );
+    if (source == null || targetParent == null) return false;
+
+    final detached = _detachChapterForMove(source, state);
+    final currentParent = chapter_module.ChapterTree.findParentFolder(
+      detached,
+      targetFolderID,
+    );
+    if (currentParent == null) return false;
+    final result = _updateFolderRecursive(
+      currentParent.segmentUUID,
+      detached,
+      (folder) => folder.copyWith(
+        chapters: [...folder.chapters, source.chapter],
+        childNodeOrder: _insertNodeRelative(
+          order: folder.resolvedChildNodeOrder,
+          nodeID: chapterID,
+          targetID: targetFolderID,
+          position: position,
+        ),
+      ),
+    );
+    if (!result.changed) return false;
+    setSegmentsData(result.nodes);
+    return true;
+  }
+
+  bool moveFolder({
+    required String sourceFolderID,
+    required String targetFolderID,
+    required String position,
+  }) {
+    if (sourceFolderID == targetFolderID) return false;
+    final source = chapter_module.ChapterTree.findFolder(state, sourceFolderID);
+    final targetParent = chapter_module.ChapterTree.findParentFolder(
+      state,
+      targetFolderID,
+    );
+    if (source == null ||
+        chapter_module.ChapterTree.containsFolder(source, targetFolderID)) {
+      return false;
+    }
+    final removed = _removeFolderRecursive(sourceFolderID, state);
+    if (!removed.removed) return false;
+    final inserted = _insertFolderByPosition(
+      nodes: removed.nodes,
+      targetFolderID: targetFolderID,
+      position: position,
+      sourceFolder: source,
+    );
+    if (!inserted.inserted) return false;
+    var next = inserted.nodes;
+    if (position != "child" && targetParent != null) {
+      final ordered = _updateFolderRecursive(
+        targetParent.segmentUUID,
+        next,
+        (folder) => folder.copyWith(
+          childNodeOrder: _insertNodeRelative(
+            order: folder.resolvedChildNodeOrder,
+            nodeID: sourceFolderID,
+            targetID: targetFolderID,
+            position: position,
+          ),
+        ),
       );
-      next[targetSegmentIndex] = targetSegment.copyWith(
-        chapters: targetChapters,
-      );
-      return next;
-    });
+      next = ordered.nodes;
+    }
+    setSegmentsData(next);
+    return true;
+  }
+
+  bool moveFolderToRoot(String folderID) {
+    final source = chapter_module.ChapterTree.findFolder(state, folderID);
+    if (source == null) return false;
+    final removed = _removeFolderRecursive(folderID, state);
+    if (!removed.removed) return false;
+    setSegmentsData([...removed.nodes, source]);
+    return true;
   }
 }
 
@@ -2037,18 +2357,11 @@ final selectedChapterStoredContentProvider = Provider<String?>((ref) {
   }
 
   final segments = ref.watch(segmentsDataProvider);
-  for (final segment in segments) {
-    if (segment.segmentUUID != segmentID) {
-      continue;
-    }
-    for (final chapter in segment.chapters) {
-      if (chapter.chapterUUID == chapterID) {
-        return chapter.chapterContent;
-      }
-    }
-    return null;
-  }
-  return null;
+  return chapter_module.ChapterTree.findChapter(
+    segments,
+    folderId: segmentID,
+    chapterId: chapterID,
+  )?.chapter.chapterContent;
 });
 
 class TotalWordsNotifier extends Notifier<int> {

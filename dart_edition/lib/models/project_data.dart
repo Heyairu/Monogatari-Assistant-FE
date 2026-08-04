@@ -37,7 +37,7 @@ class ProjectData {
       baseInfoData: BaseInfoData(),
       segmentsData: [
         SegmentData(
-          segmentName: "Seg 1",
+          segmentName: "Folder 1",
           chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
         ),
       ],

@@ -383,11 +383,13 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     int words = 0;
     bool hasSel = false;
 
-    if (data.segmentsData.isNotEmpty &&
-        data.segmentsData[0].chapters.isNotEmpty) {
-      segID = data.segmentsData[0].segmentUUID;
-      chapID = data.segmentsData[0].chapters[0].chapterUUID;
-      content = data.segmentsData[0].chapters[0].chapterContent;
+    final firstChapter = chapter_module.ChapterTree.firstChapter(
+      data.segmentsData,
+    );
+    if (firstChapter != null) {
+      segID = firstChapter.folder.segmentUUID;
+      chapID = firstChapter.chapter.chapterUUID;
+      content = firstChapter.chapter.chapterContent;
       hasSel = true;
     }
 

@@ -334,15 +334,23 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     try {
       final snapshotData = snapshotProjectData(currentData);
       final buffer = StringBuffer();
-      for (final segment in snapshotData.segmentsData) {
-        buffer.writeln("# ${segment.segmentName}");
+      String heading(int depth) => List.filled(depth, "#").join();
+      void writeFolder(chapter_module.SegmentData folder, int depth) {
+        buffer.writeln("${heading(depth)} ${folder.segmentName}");
         buffer.writeln();
-        for (final chapter in segment.chapters) {
-          buffer.writeln("## ${chapter.chapterName}");
+        for (final chapter in folder.chapters) {
+          buffer.writeln("${heading(depth + 1)} ${chapter.chapterName}");
           buffer.writeln();
           buffer.writeln(chapter.chapterContent);
           buffer.writeln();
         }
+        for (final child in folder.childSegments) {
+          writeFolder(child, depth + 1);
+        }
+      }
+
+      for (final folder in snapshotData.segmentsData) {
+        writeFolder(folder, 1);
       }
 
       await ref

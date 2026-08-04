@@ -2,6 +2,7 @@ import "dart:math" as math;
 
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:monogatari_assistant/bin/ui_library.dart";
 
 import "../models/character_data.dart";
 import "../presentation/providers/project_state_providers.dart";
@@ -74,7 +75,6 @@ class _CharacterRelationshipGraphViewState
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Size _viewportSize = Size.zero;
-  bool _toolbarExpanded = true;
   bool _initialGlobalPreviewScheduled = false;
 
   @override
@@ -177,230 +177,163 @@ class _CharacterRelationshipGraphViewState
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surfaceContainerLow,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-            child: Row(
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Wrap(
+              spacing: 6,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Icon(Icons.build_outlined, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "關係圖工具列",
-                    style: Theme.of(context).textTheme.titleSmall,
+                Padding(
+                  padding: EdgeInsets.all(12),
+                  child: LargeTitle(icon: Icons.people_alt_rounded, text: "關係設定"),
+                ),
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: RawAutocomplete<String>(
+                    textEditingController: _searchController,
+                    focusNode: _searchFocusNode,
+                    optionsBuilder: (textEditingValue) =>
+                        _buildSearchOptions(characters, textEditingValue.text),
+                    onSelected: (_) =>
+                        _focusFirstSearchResult(characters, graph),
+                    fieldViewBuilder:
+                        (
+                          context,
+                          textEditingController,
+                          focusNode,
+                          onFieldSubmitted,
+                        ) => TextField(
+                          key: const ValueKey("relationship-search-field"),
+                          controller: textEditingController,
+                          focusNode: focusNode,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            prefixIcon: const Icon(
+                              Icons.person_search_outlined,
+                            ),
+                            hintText: "搜尋或選擇人物",
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_searchController.text.isNotEmpty)
+                                  IconButton(
+                                    tooltip: "清除搜尋",
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {});
+                                    },
+                                    icon: const Icon(Icons.clear),
+                                  ),
+                                IconButton(
+                                  key: const ValueKey(
+                                    "relationship-search-button",
+                                  ),
+                                  tooltip: "搜尋並聚焦",
+                                  onPressed: () => _focusFirstSearchResult(
+                                    characters,
+                                    graph,
+                                  ),
+                                  icon: const Icon(Icons.center_focus_strong),
+                                ),
+                              ],
+                            ),
+                            border: const OutlineInputBorder(),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (_) {
+                            onFieldSubmitted();
+                            _focusFirstSearchResult(characters, graph);
+                          },
+                        ),
+                    optionsViewBuilder: (context, onSelected, options) => Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(8),
+                        clipBehavior: Clip.antiAlias,
+                        child: SizedBox(
+                          width: constraints.maxWidth,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 240),
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              itemBuilder: (context, index) {
+                                final option = options.elementAt(index);
+                                return ListTile(
+                                  key: ValueKey(
+                                    "relationship-search-option-$option",
+                                  ),
+                                  dense: true,
+                                  leading: const Icon(Icons.person_outline),
+                                  title: Text(option),
+                                  onTap: () => onSelected(option),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 IconButton(
-                  key: const ValueKey("relationship-toolbar-toggle"),
-                  tooltip: _toolbarExpanded ? "收合工具列" : "完整展開工具列",
-                  onPressed: () {
-                    setState(() => _toolbarExpanded = !_toolbarExpanded);
-                  },
-                  icon: Icon(
-                    _toolbarExpanded ? Icons.expand_less : Icons.expand_more,
-                  ),
+                  key: const ValueKey("neighbors-only-toggle-button"),
+                  tooltip: "只顯示一階鄰居",
+                  isSelected: _controller.neighborsOnly,
+                  style: _controller.neighborsOnly
+                      ? IconButton.styleFrom(foregroundColor: Colors.green)
+                      : null,
+                  onPressed: _controller.selectedNodeId == null
+                      ? null
+                      : () => _controller.setNeighborsOnly(
+                          !_controller.neighborsOnly,
+                        ),
+                  icon: const Icon(Icons.hub_outlined),
+                ),
+                IconButton(
+                  key: const ValueKey("global-preview-button"),
+                  tooltip: "全局預覽",
+                  onPressed: () => _showGlobalPreview(graph, _viewportSize),
+                  icon: const Icon(Icons.fit_screen_outlined),
+                ),
+                IconButton(
+                  tooltip: "新增關係",
+                  onPressed: () => _addRelationship(characters),
+                  icon: const Icon(Icons.add_link),
+                ),
+                IconButton(
+                  tooltip: "自動重新排列",
+                  onPressed: _controller.rearrange,
+                  icon: const Icon(Icons.auto_fix_high_outlined),
+                ),
+                IconButton(
+                  tooltip: "重設縮放",
+                  onPressed: _controller.resetZoom,
+                  icon: const Icon(Icons.refresh),
+                ),
+                IconButton(
+                  tooltip: "縮小",
+                  onPressed: () => _controller.zoomBy(0.8, _viewportSize),
+                  icon: const Icon(Icons.zoom_out),
+                ),
+                IconButton(
+                  tooltip: "放大",
+                  onPressed: () => _controller.zoomBy(1.25, _viewportSize),
+                  icon: const Icon(Icons.zoom_in),
                 ),
               ],
-            ),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeInOut,
-            alignment: Alignment.topCenter,
-            child: !_toolbarExpanded
-                ? const SizedBox.shrink()
-                : Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: scheme.outlineVariant),
-                      ),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Wrap(
-                          spacing: 6,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: constraints.maxWidth,
-                              child: RawAutocomplete<String>(
-                                textEditingController: _searchController,
-                                focusNode: _searchFocusNode,
-                                optionsBuilder: (textEditingValue) =>
-                                    _buildSearchOptions(
-                                      characters,
-                                      textEditingValue.text,
-                                    ),
-                                onSelected: (_) =>
-                                    _focusFirstSearchResult(characters, graph),
-                                fieldViewBuilder:
-                                    (
-                                      context,
-                                      textEditingController,
-                                      focusNode,
-                                      onFieldSubmitted,
-                                    ) => TextField(
-                                      key: const ValueKey(
-                                        "relationship-search-field",
-                                      ),
-                                      controller: textEditingController,
-                                      focusNode: focusNode,
-                                      decoration: InputDecoration(
-                                        isDense: true,
-                                        prefixIcon: const Icon(
-                                          Icons.person_search_outlined,
-                                        ),
-                                        hintText: "搜尋或選擇人物",
-                                        suffixIcon: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (_searchController
-                                                .text
-                                                .isNotEmpty)
-                                              IconButton(
-                                                tooltip: "清除搜尋",
-                                                onPressed: () {
-                                                  _searchController.clear();
-                                                  setState(() {});
-                                                },
-                                                icon: const Icon(Icons.clear),
-                                              ),
-                                            IconButton(
-                                              key: const ValueKey(
-                                                "relationship-search-button",
-                                              ),
-                                              tooltip: "搜尋並聚焦",
-                                              onPressed: () =>
-                                                  _focusFirstSearchResult(
-                                                    characters,
-                                                    graph,
-                                                  ),
-                                              icon: const Icon(
-                                                Icons.center_focus_strong,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        border: const OutlineInputBorder(),
-                                      ),
-                                      onChanged: (_) => setState(() {}),
-                                      onSubmitted: (_) {
-                                        onFieldSubmitted();
-                                        _focusFirstSearchResult(
-                                          characters,
-                                          graph,
-                                        );
-                                      },
-                                    ),
-                                optionsViewBuilder:
-                                    (context, onSelected, options) => Align(
-                                      alignment: Alignment.topLeft,
-                                      child: Material(
-                                        elevation: 8,
-                                        borderRadius: BorderRadius.circular(8),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: SizedBox(
-                                          width: constraints.maxWidth,
-                                          child: ConstrainedBox(
-                                            constraints: const BoxConstraints(
-                                              maxHeight: 240,
-                                            ),
-                                            child: ListView.builder(
-                                              padding: EdgeInsets.zero,
-                                              shrinkWrap: true,
-                                              itemCount: options.length,
-                                              itemBuilder: (context, index) {
-                                                final option = options
-                                                    .elementAt(index);
-                                                return ListTile(
-                                                  key: ValueKey(
-                                                    "relationship-search-option-$option",
-                                                  ),
-                                                  dense: true,
-                                                  leading: const Icon(
-                                                    Icons.person_outline,
-                                                  ),
-                                                  title: Text(option),
-                                                  onTap: () =>
-                                                      onSelected(option),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                              ),
-                            ),
-                            IconButton(
-                              key: const ValueKey(
-                                "neighbors-only-toggle-button",
-                              ),
-                              tooltip: "只顯示一階鄰居",
-                              isSelected: _controller.neighborsOnly,
-                              style: _controller.neighborsOnly
-                                  ? IconButton.styleFrom(
-                                      backgroundColor: Theme.of(
-                                        context,
-                                      ).colorScheme.primaryContainer,
-                                      foregroundColor: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer,
-                                    )
-                                  : null,
-                              onPressed: _controller.selectedNodeId == null
-                                  ? null
-                                  : () => _controller.setNeighborsOnly(
-                                      !_controller.neighborsOnly,
-                                    ),
-                              icon: const Icon(Icons.hub_outlined),
-                            ),
-                            IconButton(
-                              key: const ValueKey("global-preview-button"),
-                              tooltip: "全局預覽",
-                              onPressed: () =>
-                                  _showGlobalPreview(graph, _viewportSize),
-                              icon: const Icon(Icons.fit_screen_outlined),
-                            ),
-                            IconButton(
-                              tooltip: "新增關係",
-                              onPressed: () => _addRelationship(characters),
-                              icon: const Icon(Icons.add_link),
-                            ),
-                            IconButton(
-                              tooltip: "自動重新排列",
-                              onPressed: _controller.rearrange,
-                              icon: const Icon(Icons.auto_fix_high_outlined),
-                            ),
-                            IconButton(
-                              tooltip: "重設縮放",
-                              onPressed: _controller.resetZoom,
-                              icon: const Icon(Icons.refresh),
-                            ),
-                            IconButton(
-                              tooltip: "縮小",
-                              onPressed: () =>
-                                  _controller.zoomBy(0.8, _viewportSize),
-                              icon: const Icon(Icons.zoom_out),
-                            ),
-                            IconButton(
-                              tooltip: "放大",
-                              onPressed: () =>
-                                  _controller.zoomBy(1.25, _viewportSize),
-                              icon: const Icon(Icons.zoom_in),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }

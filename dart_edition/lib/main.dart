@@ -218,15 +218,16 @@ final _editorStatusLocationProvider = Provider<_EditorStatusLocation>((ref) {
   final segments = ref.watch(segmentsDataProvider);
 
   String chapterLabel = "";
-  for (final segment in segments) {
-    if (segment.segmentUUID != selection.selectedSegID) continue;
-    for (final chapter in segment.chapters) {
-      if (chapter.chapterUUID == selection.selectedChapID) {
-        chapterLabel = "${segment.segmentName} / ${chapter.chapterName}";
-        break;
-      }
-    }
-    break;
+  final location = selection.selectedChapID == null
+      ? null
+      : ChapterModule.ChapterTree.findChapter(
+          segments,
+          folderId: selection.selectedSegID,
+          chapterId: selection.selectedChapID!,
+        );
+  if (location != null) {
+    chapterLabel =
+        "${location.folder.segmentName} / ${location.chapter.chapterName}";
   }
 
   return (chapterLabel: chapterLabel, cursorOffset: selection.cursorOffset);
@@ -573,12 +574,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       String? selectedChapID = selectionState.selectedChapID;
       String initialContent = ref.read(editorContentProvider);
 
+      final firstChapter = ChapterModule.ChapterTree.firstChapter(segments);
       if ((selectedSegID == null || selectedChapID == null) &&
-          segments.isNotEmpty &&
-          segments[0].chapters.isNotEmpty) {
-        selectedSegID = segments[0].segmentUUID;
-        selectedChapID = segments[0].chapters[0].chapterUUID;
-        initialContent = segments[0].chapters[0].chapterContent;
+          firstChapter != null) {
+        selectedSegID = firstChapter.folder.segmentUUID;
+        selectedChapID = firstChapter.chapter.chapterUUID;
+        initialContent = firstChapter.chapter.chapterContent;
       }
 
       final int cursorOffset = _clampOffset(
@@ -1241,24 +1242,16 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         entry.selectedChapID ?? fallback.selectedChapID;
     String content = fallback.contentText;
     bool hasSelection = fallback.hasSelection;
-    bool foundTargetChapter = false;
 
     if (targetChapID != null) {
-      for (final segment in entry.data.segmentsData) {
-        if (targetSegID != null && segment.segmentUUID != targetSegID) {
-          continue;
-        }
-        for (final chapter in segment.chapters) {
-          if (chapter.chapterUUID == targetChapID) {
-            content = chapter.chapterContent;
-            hasSelection = true;
-            foundTargetChapter = true;
-            break;
-          }
-        }
-        if (foundTargetChapter) {
-          break;
-        }
+      final location = ChapterModule.ChapterTree.findChapter(
+        entry.data.segmentsData,
+        folderId: targetSegID,
+        chapterId: targetChapID,
+      );
+      if (location != null) {
+        content = location.chapter.chapterContent;
+        hasSelection = true;
       }
     }
 
@@ -1331,12 +1324,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   void _updateAllWordCounts() {
     _wordCountService.synchronizeChapters(
-      segmentsData.expand(
-        (segment) => segment.chapters.map(
-          (chapter) => WordCountChapterInput(
-            chapterId: chapter.chapterUUID,
-            content: chapter.chapterContent,
-          ),
+      ChapterModule.ChapterTree.chaptersDepthFirst(segmentsData).map(
+        (location) => WordCountChapterInput(
+          chapterId: location.chapter.chapterUUID,
+          content: location.chapter.chapterContent,
         ),
       ),
       _settingsState.wordCountMode,

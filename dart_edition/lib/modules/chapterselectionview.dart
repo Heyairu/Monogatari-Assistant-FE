@@ -48,20 +48,17 @@ class DragData {
 
 enum DragType { segment, chapter }
 
+enum _CreateType { chapter, childFolder, rootFolder }
+
 // MARK: - XML Codec
 
 class ChapterSelectionCodec {
+  static const String _schemaVersionAttribute = "ChapterTreeVersion";
+
   static List<SegmentData> _createSnapshot(List<SegmentData> source) {
-    return List<SegmentData>.unmodifiable(
-      source
-          .map((segment) {
-            final chapters = List<ChapterData>.unmodifiable(segment.chapters);
-            if (identical(chapters, segment.chapters)) {
-              return segment;
-            }
-            return segment.copyWith(chapters: chapters);
-          })
-          .toList(growable: false),
+    return ChapterTreeSchema.upgrade(
+      sourceVersion: ChapterTreeSchema.currentVersion,
+      segments: source,
     );
   }
 
@@ -77,11 +74,46 @@ class ChapterSelectionCodec {
     return XmlTextCodec.readElementText(element);
   }
 
-  /// 序列化成與 Qt SaveFile() 兼容的 <Type> 片段
+  /// 序列化成與 Qt SaveFile() 兼容的 `<Type>` 片段
   static String? saveXML(List<SegmentData> segments) {
     final snapshot = _createSnapshot(segments);
-    if (snapshot.isEmpty || !snapshot.any((seg) => seg.chapters.isNotEmpty)) {
+    if (snapshot.isEmpty || ChapterTree.chapterCount(snapshot) == 0) {
       return null;
+    }
+
+    void writeFolder(xml.XmlBuilder builder, SegmentData folder) {
+      builder.element(
+        "Segment",
+        attributes: {"Name": folder.segmentName, "UUID": folder.segmentUUID},
+        nest: () {
+          final childrenByID = {
+            for (final child in folder.childSegments) child.segmentUUID: child,
+          };
+          final chaptersByID = {
+            for (final chapter in folder.chapters) chapter.chapterUUID: chapter,
+          };
+          for (final id in folder.resolvedChildNodeOrder) {
+            final child = childrenByID[id];
+            if (child != null) {
+              writeFolder(builder, child);
+              continue;
+            }
+            final chapter = chaptersByID[id];
+            if (chapter != null) {
+              builder.element(
+                "Chapter",
+                attributes: {
+                  "Name": chapter.chapterName,
+                  "UUID": chapter.chapterUUID,
+                },
+                nest: () {
+                  _writeTextElement(builder, "Content", chapter.chapterContent);
+                },
+              );
+            }
+          }
+        },
+      );
     }
 
     // 使用 xml package 構建 XML，自動處理 escaping
@@ -89,29 +121,14 @@ class ChapterSelectionCodec {
     builder.element(
       "Type",
       nest: () {
-        builder.element(
-          "Name",
-          nest: () {
-            builder.text("ChapterSelection");
-          },
+        builder.attribute(
+          _schemaVersionAttribute,
+          ChapterTreeSchema.currentVersion.toString(),
         );
+        builder.element("Name", nest: () => builder.text("ChapterSelection"));
 
-        for (final seg in snapshot) {
-          builder.element(
-            "Segment",
-            attributes: {"Name": seg.segmentName, "UUID": seg.segmentUUID},
-            nest: () {
-              for (final ch in seg.chapters) {
-                builder.element(
-                  "Chapter",
-                  attributes: {"Name": ch.chapterName, "UUID": ch.chapterUUID},
-                  nest: () {
-                    _writeTextElement(builder, "Content", ch.chapterContent);
-                  },
-                );
-              }
-            },
-          );
+        for (final folder in snapshot) {
+          writeFolder(builder, folder);
         }
       },
     );
@@ -119,7 +136,7 @@ class ChapterSelectionCodec {
     return builder.buildDocument().toXmlString(pretty: true);
   }
 
-  /// 自 <Type> 區塊解析（需 <Name>ChapterSelection</Name>）
+  /// 自 `<Type>` 區塊解析（需 `<Name>ChapterSelection</Name>`）
   static List<SegmentData>? loadXML(String xmlContent) {
     try {
       final document = xml.XmlDocument.parse(xmlContent);
@@ -140,16 +157,29 @@ class ChapterSelectionCodec {
       }
 
       final segments = <SegmentData>[];
-      final segmentElements = typeElement.findAllElements("Segment");
-
-      for (final segElement in segmentElements) {
+      final sourceSchemaVersion =
+          int.tryParse(
+            typeElement.getAttribute(_schemaVersionAttribute) ?? "",
+          ) ??
+          0;
+      SegmentData readFolder(xml.XmlElement segElement) {
         final segmentName = segElement.getAttribute("Name") ?? "";
         final segmentUUID = segElement.getAttribute("UUID") ?? "";
 
         final chapters = <ChapterData>[];
-        final chapterElements = segElement.findAllElements("Chapter");
+        final childSegments = <SegmentData>[];
+        final childNodeOrder = <String>[];
 
-        for (final chElement in chapterElements) {
+        for (final childElement
+            in segElement.children.whereType<xml.XmlElement>()) {
+          if (childElement.name.local == "Segment") {
+            final childFolder = readFolder(childElement);
+            childSegments.add(childFolder);
+            childNodeOrder.add(childFolder.segmentUUID);
+            continue;
+          }
+          if (childElement.name.local != "Chapter") continue;
+          final chElement = childElement;
           final chapterName = chElement.getAttribute("Name") ?? "";
           final chapterUUID = chElement.getAttribute("UUID") ?? "";
 
@@ -158,25 +188,34 @@ class ChapterSelectionCodec {
               .firstOrNull;
           final chapterContent = _readElementText(contentElement);
 
-          chapters.add(
-            ChapterData(
-              chapterName: chapterName,
-              chapterContent: chapterContent,
-              chapterUUID: chapterUUID,
-            ),
+          final chapter = ChapterData(
+            chapterName: chapterName,
+            chapterContent: chapterContent,
+            chapterUUID: chapterUUID,
           );
+          chapters.add(chapter);
+          childNodeOrder.add(chapter.chapterUUID);
         }
 
-        segments.add(
-          SegmentData(
-            segmentName: segmentName,
-            chapters: chapters,
-            segmentUUID: segmentUUID,
-          ),
+        return SegmentData(
+          segmentName: segmentName,
+          chapters: chapters,
+          childSegments: childSegments,
+          childNodeOrder: sourceSchemaVersion >= 3
+              ? childNodeOrder
+              : const <String>[],
+          segmentUUID: segmentUUID,
         );
       }
 
-      return segments.isNotEmpty ? _createSnapshot(segments) : null;
+      segments.addAll(typeElement.findElements("Segment").map(readFolder));
+
+      return segments.isNotEmpty
+          ? ChapterTreeSchema.upgrade(
+              sourceVersion: sourceSchemaVersion,
+              segments: segments,
+            )
+          : null;
     } catch (e) {
       debugPrint("ChapterSelection XML Element Parse Error: $e");
       return null;
@@ -197,18 +236,25 @@ class ChapterSelectionView extends ConsumerStatefulWidget {
 class _SelectionSnapshot {
   final String? segmentID;
   final String? chapterID;
-  final int? segmentIndex;
+  final SegmentData? folder;
 
   const _SelectionSnapshot({
     required this.segmentID,
     required this.chapterID,
-    required this.segmentIndex,
+    required this.folder,
   });
 }
 
-int? _indexWhereOrNull<T>(List<T> items, bool Function(T item) test) {
-  final index = items.indexWhere(test);
-  return index == -1 ? null : index;
+class _ChapterTreeRow {
+  final SegmentData folder;
+  final int depth;
+  final int? chapterIndex;
+
+  const _ChapterTreeRow.folder(this.folder, this.depth) : chapterIndex = null;
+
+  const _ChapterTreeRow.chapter(this.folder, this.depth, int this.chapterIndex);
+
+  bool get isFolder => chapterIndex == null;
 }
 
 class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
@@ -224,16 +270,22 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // 滾動控制器
   final ScrollController _pageScrollController = ScrollController();
-  final ScrollController _segmentListScrollController = ScrollController();
-  final ScrollController _chapterListScrollController = ScrollController();
+  final ScrollController _treeScrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
 
   // 列表容器的 GlobalKey，用於獲取邊界
-  final GlobalKey _segmentListKey = GlobalKey();
-  final GlobalKey _chapterListKey = GlobalKey();
+  final GlobalKey _treeListKey = GlobalKey();
+  final Set<String> _expandedSegmentIDs = <String>{};
+  final Set<String> _knownSegmentIDs = <String>{};
+  String? _selectedFolderID;
+  String _searchQuery = "";
+  _CreateType _createType = _CreateType.chapter;
 
   // 自動滾動相關
   Timer? _autoScrollTimer;
   ScrollController? _currentScrollController; // 新增：追蹤當前正在滾動的控制器
+  double? _pendingTreeScrollOffset;
+  double? _pendingPageScrollOffset;
   bool _isDragging = false; // 新增：追蹤拖動狀態
   DragData? _currentDragData; // 新增：追蹤當前拖動的數據
   TextEditingController? _renameController; // 新增：重新命名控制器
@@ -248,7 +300,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   // MARK: - 計算屬性
 
   int get _totalChaptersCount {
-    return _segments.fold(0, (sum, seg) => sum + seg.chapters.length);
+    return ChapterTree.chapterCount(_segments);
   }
 
   String get _contentText => ref.read(editorContentProvider);
@@ -262,18 +314,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       return _SelectionSnapshot(
         segmentID: segmentID,
         chapterID: chapterID,
-        segmentIndex: null,
+        folder: null,
       );
     }
 
-    final int? idx = _indexWhereOrNull(
-      segments,
-      (seg) => seg.segmentUUID == segmentID,
-    );
     return _SelectionSnapshot(
       segmentID: segmentID,
       chapterID: chapterID,
-      segmentIndex: idx,
+      folder: ChapterTree.findFolder(segments, segmentID),
     );
   }
 
@@ -298,8 +346,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _autoScrollTimer?.cancel();
     _renameController?.dispose();
     _pageScrollController.dispose();
-    _segmentListScrollController.dispose();
-    _chapterListScrollController.dispose();
+    _treeScrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -307,55 +355,21 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   /// 處理拖動時的自動滾動（頁面級別）
   void _handleDragUpdate(DragUpdateDetails details) {
-    // 如果正在拖動，優先檢查列表滾動
     if (_isDragging) {
-      // 檢查是否在任一列表的邊緣 20px 內
       bool handledByList = false;
-
-      // 檢查區段列表
-      final segmentBox =
-          _segmentListKey.currentContext?.findRenderObject() as RenderBox?;
-      if (segmentBox != null) {
-        final segmentPosition = segmentBox.localToGlobal(Offset.zero);
-        final segmentSize = segmentBox.size;
-        final relativeY = details.globalPosition.dy - segmentPosition.dy;
-
-        // 在區段列表範圍內
-        if (relativeY >= 0 && relativeY <= segmentSize.height) {
+      final treeBox =
+          _treeListKey.currentContext?.findRenderObject() as RenderBox?;
+      if (treeBox != null) {
+        final treePosition = treeBox.localToGlobal(Offset.zero);
+        final relativeY = details.globalPosition.dy - treePosition.dy;
+        if (relativeY >= 0 && relativeY <= treeBox.size.height) {
           if (relativeY < _listScrollEdgeThreshold) {
-            // 接近頂部
-            _startAutoScroll(_segmentListScrollController, scrollUp: true);
+            _startAutoScroll(_treeScrollController, scrollUp: true);
             handledByList = true;
           } else if (relativeY >
-              segmentSize.height - _listScrollEdgeThreshold) {
-            // 接近底部
-            _startAutoScroll(_segmentListScrollController, scrollUp: false);
+              treeBox.size.height - _listScrollEdgeThreshold) {
+            _startAutoScroll(_treeScrollController, scrollUp: false);
             handledByList = true;
-          }
-        }
-      }
-
-      // 如果區段列表沒有處理，檢查章節列表
-      if (!handledByList) {
-        final chapterBox =
-            _chapterListKey.currentContext?.findRenderObject() as RenderBox?;
-        if (chapterBox != null) {
-          final chapterPosition = chapterBox.localToGlobal(Offset.zero);
-          final chapterSize = chapterBox.size;
-          final relativeY = details.globalPosition.dy - chapterPosition.dy;
-
-          // 在章節列表範圍內
-          if (relativeY >= 0 && relativeY <= chapterSize.height) {
-            if (relativeY < _listScrollEdgeThreshold) {
-              // 接近頂部
-              _startAutoScroll(_chapterListScrollController, scrollUp: true);
-              handledByList = true;
-            } else if (relativeY >
-                chapterSize.height - _listScrollEdgeThreshold) {
-              // 接近底部
-              _startAutoScroll(_chapterListScrollController, scrollUp: false);
-              handledByList = true;
-            }
           }
         }
       }
@@ -366,8 +380,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       }
 
       // 如果不在列表邊緣，停止列表滾動
-      if (_currentScrollController == _segmentListScrollController ||
-          _currentScrollController == _chapterListScrollController) {
+      if (_currentScrollController == _treeScrollController) {
         _stopAutoScroll();
       }
     }
@@ -384,9 +397,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     } else if (localPosition.dy > screenHeight - _scrollEdgeThreshold) {
       _startAutoScroll(_pageScrollController, scrollUp: false);
     } else {
-      // 只在不是列表控制器時才停止
-      if (_currentScrollController != _segmentListScrollController &&
-          _currentScrollController != _chapterListScrollController) {
+      if (_currentScrollController != _treeScrollController) {
         _stopAutoScroll();
       }
     }
@@ -422,6 +433,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             maxScroll,
           );
           controller.jumpTo(newOffset);
+          _rememberDragScrollOffset(controller, newOffset);
         } else {
           timer.cancel();
           _currentScrollController = null;
@@ -434,6 +446,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             maxScroll,
           );
           controller.jumpTo(newOffset);
+          _rememberDragScrollOffset(controller, newOffset);
         } else {
           timer.cancel();
           _currentScrollController = null;
@@ -449,14 +462,60 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _currentScrollController = null;
   }
 
+  void _beginDrag(DragData data) {
+    _pendingTreeScrollOffset = _treeScrollController.hasClients
+        ? _treeScrollController.offset
+        : null;
+    _pendingPageScrollOffset = _pageScrollController.hasClients
+        ? _pageScrollController.offset
+        : null;
+    setState(() {
+      _isDragging = true;
+      _currentDragData = data;
+    });
+  }
+
+  void _finishDrag() {
+    if (_isDragging || _currentDragData != null) {
+      setState(() {
+        _isDragging = false;
+        _currentDragData = null;
+      });
+    }
+    _stopAutoScroll();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _restoreScrollOffset(_treeScrollController, _pendingTreeScrollOffset);
+      _restoreScrollOffset(_pageScrollController, _pendingPageScrollOffset);
+      _pendingTreeScrollOffset = null;
+      _pendingPageScrollOffset = null;
+    });
+  }
+
+  void _rememberDragScrollOffset(ScrollController controller, double offset) {
+    if (controller == _treeScrollController) {
+      _pendingTreeScrollOffset = offset;
+    } else if (controller == _pageScrollController) {
+      _pendingPageScrollOffset = offset;
+    }
+  }
+
+  void _restoreScrollOffset(
+    ScrollController controller,
+    double? requestedOffset,
+  ) {
+    if (requestedOffset == null || !controller.hasClients) return;
+    final position = controller.position;
+    final target = requestedOffset
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if ((controller.offset - target).abs() > 0.5) controller.jumpTo(target);
+  }
+
   // MARK: - Helper 方法
 
-  void _appendChapterToSegment(int segmentIndex, ChapterData chapter) {
-    if (segmentIndex < 0 || segmentIndex >= _segments.length) {
-      return;
-    }
-
-    final segmentID = _segments[segmentIndex].segmentUUID;
+  void _appendChapterToSegment(String segmentID, ChapterData chapter) {
     _segmentsNotifier.addChapter(segmentID: segmentID, chapter: chapter);
   }
 
@@ -464,46 +523,113 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     _segmentsNotifier.addSegment(segment);
   }
 
-  SegmentData _removeSegmentAt(int segmentIndex) {
-    final removed = _segments[segmentIndex];
-    _segmentsNotifier.removeSegmentById(removed.segmentUUID);
-    return removed;
-  }
-
-  ChapterData _removeChapterFromSegment(int segmentIndex, int chapterIndex) {
-    final segment = _segments[segmentIndex];
-    final removed = segment.chapters[chapterIndex];
+  void _removeChapterFromSegment(SegmentData segment, String chapterID) {
     _segmentsNotifier.removeChapter(
       segmentID: segment.segmentUUID,
-      chapterID: removed.chapterUUID,
+      chapterID: chapterID,
     );
-    return removed;
   }
 
   void _initializeIfEmpty() {
     if (_segments.isEmpty) {
       _appendSegment(
         SegmentData(
-          segmentName: "Seg 1",
+          segmentName: "Folder 1",
           chapters: [ChapterData(chapterName: "Chapter 1", chapterContent: "")],
         ),
       );
     } else if (_totalChaptersCount == 0) {
+      final firstFolder = ChapterTree.foldersDepthFirst(_segments).first;
       _appendChapterToSegment(
-        0,
-        ChapterData(chapterName: "Chapter 1", chapterContent: ""),
+        firstFolder.segmentUUID,
+        ChapterData(chapterName: "Untitled", chapterContent: ""),
       );
     }
+  }
+
+  List<_ChapterTreeRow> _buildVisibleTreeRows(List<SegmentData> segments) {
+    final rows = <_ChapterTreeRow>[];
+    final query = _searchQuery.trim().toLowerCase();
+
+    bool subtreeMatches(SegmentData folder) {
+      if (query.isEmpty || folder.segmentName.toLowerCase().contains(query)) {
+        return true;
+      }
+      if (folder.chapters.any(
+        (chapter) => chapter.chapterName.toLowerCase().contains(query),
+      )) {
+        return true;
+      }
+      return folder.childSegments.any(subtreeMatches);
+    }
+
+    void flatten(
+      SegmentData folder,
+      int depth, {
+      bool ancestorMatched = false,
+    }) {
+      final folderMatches =
+          query.isNotEmpty && folder.segmentName.toLowerCase().contains(query);
+      if (query.isNotEmpty && !ancestorMatched && !subtreeMatches(folder)) {
+        return;
+      }
+
+      rows.add(_ChapterTreeRow.folder(folder, depth));
+      final showChildren =
+          query.isNotEmpty || _expandedSegmentIDs.contains(folder.segmentUUID);
+      if (!showChildren) return;
+
+      final includeSubtree = ancestorMatched || folderMatches;
+      final chapterIndexes = {
+        for (var index = 0; index < folder.chapters.length; index++)
+          folder.chapters[index].chapterUUID: index,
+      };
+      final childrenByID = {
+        for (final child in folder.childSegments) child.segmentUUID: child,
+      };
+      for (final id in folder.resolvedChildNodeOrder) {
+        final chapterIndex = chapterIndexes[id];
+        if (chapterIndex != null) {
+          final chapter = folder.chapters[chapterIndex];
+          if (query.isEmpty ||
+              includeSubtree ||
+              chapter.chapterName.toLowerCase().contains(query)) {
+            rows.add(_ChapterTreeRow.chapter(folder, depth + 1, chapterIndex));
+          }
+          continue;
+        }
+        final child = childrenByID[id];
+        if (child != null) {
+          flatten(child, depth + 1, ancestorMatched: includeSubtree);
+        }
+      }
+    }
+
+    for (final root in segments) {
+      flatten(root, 0);
+    }
+    return rows;
+  }
+
+  void _synchronizeTreeExpansion(List<SegmentData> segments) {
+    final currentIDs = ChapterTree.foldersDepthFirst(
+      segments,
+    ).map((segment) => segment.segmentUUID).toSet();
+    _expandedSegmentIDs.removeWhere((id) => !currentIDs.contains(id));
+    _expandedSegmentIDs.addAll(currentIDs.difference(_knownSegmentIDs));
+    _knownSegmentIDs
+      ..clear()
+      ..addAll(currentIDs);
   }
 
   // MARK: - Helper：保存/選取
 
   void _commitCurrentEditorToSelectedChapter(_SelectionSnapshot selection) {
-    final si = selection.segmentIndex;
+    final folder = selection.folder;
     final cid = selection.chapterID;
-    if (si != null && cid != null) {
+    if (folder != null && cid != null) {
       _segmentsNotifier.updateChapterContent(
-        segmentID: _segments[si].segmentUUID,
+        segmentID: folder.segmentUUID,
         chapterID: cid,
         content: _contentText,
       );
@@ -524,48 +650,51 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     String segID, {
     required String? previousChapterID,
   }) {
-    _setSelection(segmentID: segID, chapterID: previousChapterID);
-
-    final si = _indexWhereOrNull(_segments, (seg) => seg.segmentUUID == segID);
-    if (si != null) {
-      if (_segments[si].chapters.isNotEmpty) {
-        final firstChapter = _segments[si].chapters.first;
-        _setSelection(segmentID: segID, chapterID: firstChapter.chapterUUID);
-        _setEditorContent(firstChapter.chapterContent);
-      } else {
-        _setSelection(segmentID: segID, chapterID: null);
-        _setEditorContent("");
-      }
+    final folder = ChapterTree.findFolder(_segments, segID);
+    if (folder == null) return;
+    final firstChapter = ChapterTree.firstChapter([folder]);
+    if (firstChapter == null) {
+      _setSelection(segmentID: segID, chapterID: null);
+      _setEditorContent("");
+      return;
     }
+    _setSelection(
+      segmentID: firstChapter.folder.segmentUUID,
+      chapterID: firstChapter.chapter.chapterUUID,
+    );
+    _setEditorContent(firstChapter.chapter.chapterContent);
   }
 
-  void _applyChapterSelection(int segIdx, String chapterID) {
-    _setSelection(
-      segmentID: _segments[segIdx].segmentUUID,
-      chapterID: chapterID,
+  void _applyChapterSelection(String folderID, String chapterID) {
+    final location = ChapterTree.findChapter(
+      _segments,
+      folderId: folderID,
+      chapterId: chapterID,
     );
-
-    final chapterIdx = _indexWhereOrNull(
-      _segments[segIdx].chapters,
-      (ch) => ch.chapterUUID == chapterID,
-    );
-    if (chapterIdx != null) {
-      _setEditorContent(_segments[segIdx].chapters[chapterIdx].chapterContent);
-    }
+    if (location == null) return;
+    _setSelection(segmentID: folderID, chapterID: chapterID);
+    _setEditorContent(location.chapter.chapterContent);
   }
 
   void _selectSegment(String segID, _SelectionSnapshot selection) {
     _commitCurrentEditorToSelectedChapter(selection);
+    setState(() {
+      _selectedFolderID = segID;
+      _expandedSegmentIDs.add(segID);
+    });
     _applySegmentSelection(segID, previousChapterID: selection.chapterID);
   }
 
   void _selectChapter(
-    int segIdx,
+    String folderID,
     String chapterID,
     _SelectionSnapshot selection,
   ) {
     _commitCurrentEditorToSelectedChapter(selection);
-    _applyChapterSelection(segIdx, chapterID);
+    setState(() {
+      _selectedFolderID = folderID;
+    });
+    _applyChapterSelection(folderID, chapterID);
   }
 
   void _notifySegmentsChanged() {
@@ -574,21 +703,27 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // MARK: - 新增方法
 
-  void _addSegment(String name, _SelectionSnapshot selection) {
+  void _addSegment(
+    String name,
+    _SelectionSnapshot selection, {
+    String? parentFolderID,
+  }) {
     _commitCurrentEditorToSelectedChapter(selection);
 
     name = name.trim();
-    final finalName = name.isEmpty ? "Seg ${_segments.length + 1}" : name;
-    final firstChapter = ChapterData(
-      chapterName: "Chapter 1",
-      chapterContent: "",
+    final folderCount = ChapterTree.foldersDepthFirst(_segments).length;
+    final finalName = name.isEmpty ? "資料夾 ${folderCount + 1}" : name;
+    final newSegment = _segmentsNotifier.addFolder(
+      name: finalName,
+      parentFolderID: parentFolderID,
     );
-    final newSegment = SegmentData(
-      segmentName: finalName,
-      chapters: [firstChapter],
-    );
+    if (newSegment == null) return;
 
-    _appendSegment(newSegment);
+    setState(() {
+      _expandedSegmentIDs.add(newSegment.segmentUUID);
+      if (parentFolderID != null) _expandedSegmentIDs.add(parentFolderID);
+      _selectedFolderID = newSegment.segmentUUID;
+    });
     _notifySegmentsChanged();
 
     _applySegmentSelection(
@@ -597,151 +732,100 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     );
   }
 
-  void _addChapter(int segIdx, String name, _SelectionSnapshot selection) {
+  void _addChapter(String folderID, String name, _SelectionSnapshot selection) {
     _commitCurrentEditorToSelectedChapter(selection);
 
+    final folder = ChapterTree.findFolder(_segments, folderID);
+    if (folder == null) return;
     name = name.trim();
     final finalName = name.isEmpty
-        ? "Chapter ${_segments[segIdx].chapters.length + 1}"
+        ? "Chapter ${folder.chapters.length + 1}"
         : name;
     final newChapter = ChapterData(chapterName: finalName, chapterContent: "");
 
-    _appendChapterToSegment(segIdx, newChapter);
+    _appendChapterToSegment(folderID, newChapter);
+    setState(() {
+      _expandedSegmentIDs.add(folderID);
+      _selectedFolderID = folderID;
+    });
     _notifySegmentsChanged();
 
-    _applyChapterSelection(segIdx, newChapter.chapterUUID);
+    _applyChapterSelection(folderID, newChapter.chapterUUID);
   }
 
   // MARK: - 刪除方法
 
-  void _deleteSegment(String segmentID, _SelectionSnapshot selection) {
-    final segIdx = _indexWhereOrNull(
-      _segments,
-      (seg) => seg.segmentUUID == segmentID,
+  void _selectFirstAvailableChapter() {
+    final location = ChapterTree.firstChapter(_segments);
+    if (location == null) {
+      _setSelection(segmentID: null, chapterID: null);
+      _setEditorContent("");
+      return;
+    }
+    _setSelection(
+      segmentID: location.folder.segmentUUID,
+      chapterID: location.chapter.chapterUUID,
     );
-    if (segIdx == null || _segments.length <= 1) return;
+    _setEditorContent(location.chapter.chapterContent);
+    setState(() {
+      _selectedFolderID = location.folder.segmentUUID;
+      _expandedSegmentIDs.add(location.folder.segmentUUID);
+    });
+  }
 
+  void _deleteSegment(String segmentID, _SelectionSnapshot selection) {
+    final folder = ChapterTree.findFolder(_segments, segmentID);
+    if (folder == null) return;
     final remainingChapters =
-        _totalChaptersCount - _segments[segIdx].chapters.length;
+        _totalChaptersCount - ChapterTree.chapterCount([folder]);
     if (remainingChapters <= 0) return;
 
-    // 如果要刪除的是當前選中的區段，先保存編輯器內容
-    if (selection.segmentID == segmentID) {
+    final deletesSelection =
+        selection.folder != null &&
+        ChapterTree.containsFolder(folder, selection.folder!.segmentUUID);
+    if (deletesSelection) {
       _commitCurrentEditorToSelectedChapter(selection);
     }
 
-    _removeSegmentAt(segIdx);
+    if (!_segmentsNotifier.removeSegmentById(segmentID)) return;
+    setState(() {
+      _expandedSegmentIDs.remove(segmentID);
+      if (_selectedFolderID != null &&
+          ChapterTree.containsFolder(folder, _selectedFolderID!)) {
+        _selectedFolderID = null;
+      }
+    });
     _notifySegmentsChanged();
 
-    // 選擇第一個可用的區段
-    if (_segments.isNotEmpty) {
-      final firstSeg = _segments.first;
-      _setSelection(
-        segmentID: firstSeg.segmentUUID,
-        chapterID: selection.chapterID,
-      );
-      final firstChapter = firstSeg.chapters.isNotEmpty
-          ? firstSeg.chapters.first
-          : null;
-      if (firstChapter != null) {
-        _setSelection(
-          segmentID: firstSeg.segmentUUID,
-          chapterID: firstChapter.chapterUUID,
-        );
-        _setEditorContent(firstChapter.chapterContent);
-      } else {
-        _setSelection(segmentID: firstSeg.segmentUUID, chapterID: null);
-        _setEditorContent("");
-      }
-    } else {
-      _setSelection(segmentID: null, chapterID: null);
-      _setEditorContent("");
-    }
+    if (deletesSelection) _selectFirstAvailableChapter();
   }
 
   void _deleteChapter(
-    int segIdx,
+    SegmentData folder,
     String chapterID,
     _SelectionSnapshot selection,
   ) {
-    if (segIdx < 0 || segIdx >= _segments.length) return;
+    if (_totalChaptersCount <= 1 ||
+        !folder.chapters.any((chapter) => chapter.chapterUUID == chapterID)) {
+      return;
+    }
 
-    final chapterIdx = _indexWhereOrNull(
-      _segments[segIdx].chapters,
-      (ch) => ch.chapterUUID == chapterID,
-    );
-    if (chapterIdx == null || _totalChaptersCount <= 1) return;
-
-    // 如果要刪除的是當前選中的章節，先保存編輯器內容
+    final wasSelected = selection.chapterID == chapterID;
     if (selection.chapterID == chapterID) {
       _commitCurrentEditorToSelectedChapter(selection);
     }
 
-    _removeChapterFromSegment(segIdx, chapterIdx);
-
-    // 選擇下一個可用章節
-    if (_segments[segIdx].chapters.isNotEmpty) {
-      final nextIdx = chapterIdx < _segments[segIdx].chapters.length
-          ? chapterIdx
-          : _segments[segIdx].chapters.length - 1;
-      final nextChapter = _segments[segIdx].chapters[nextIdx];
-      _setSelection(
-        segmentID: _segments[segIdx].segmentUUID,
-        chapterID: nextChapter.chapterUUID,
-      );
-      _setEditorContent(nextChapter.chapterContent);
-    } else {
-      _setSelection(segmentID: _segments[segIdx].segmentUUID, chapterID: null);
-      _setEditorContent("");
-
-      // 如果區段為空且有多個區段，刪除該區段
-      if (_segments.length > 1) {
-        final removedSegID = _segments[segIdx].segmentUUID;
-        _removeSegmentAt(segIdx);
-
-        if (_segments.isNotEmpty) {
-          final firstSeg = _segments.first;
-          _setSelection(
-            segmentID: firstSeg.segmentUUID,
-            chapterID: selection.chapterID,
-          );
-          final firstChapter = firstSeg.chapters.isNotEmpty
-              ? firstSeg.chapters.first
-              : null;
-          if (firstChapter != null) {
-            _setSelection(
-              segmentID: firstSeg.segmentUUID,
-              chapterID: firstChapter.chapterUUID,
-            );
-            _setEditorContent(firstChapter.chapterContent);
-          } else {
-            _setSelection(segmentID: firstSeg.segmentUUID, chapterID: null);
-            _setEditorContent("");
-          }
-        } else {
-          _setSelection(segmentID: null, chapterID: null);
-          _setEditorContent("");
-        }
-
-        // 如果刪除的區段是當前選中的區段，重新選擇
-        if (selection.segmentID == removedSegID && _segments.isNotEmpty) {
-          final firstSeg = _segments.first;
-          _setSelection(
-            segmentID: firstSeg.segmentUUID,
-            chapterID: selection.chapterID,
-          );
-          final firstChapter = firstSeg.chapters.isNotEmpty
-              ? firstSeg.chapters.first
-              : null;
-          if (firstChapter != null) {
-            _setSelection(
-              segmentID: firstSeg.segmentUUID,
-              chapterID: firstChapter.chapterUUID,
-            );
-            _setEditorContent(firstChapter.chapterContent);
-          }
-        }
-      }
+    final sourceSegmentID = folder.segmentUUID;
+    _removeChapterFromSegment(folder, chapterID);
+    final sourceFolderStillExists =
+        ChapterTree.findFolder(_segments, sourceSegmentID) != null;
+    if (!sourceFolderStillExists) {
+      setState(() {
+        _expandedSegmentIDs.remove(sourceSegmentID);
+      });
+    }
+    if (wasSelected) {
+      _selectFirstAvailableChapter();
     }
 
     _notifySegmentsChanged();
@@ -749,71 +833,115 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   // MARK: - 移動/拖放方法
 
-  void _moveSegmentByDrag(
-    int fromIndex,
-    int toIndex,
+  void _moveFolderByDrag(
+    String sourceFolderID,
+    String targetFolderID,
+    DropPosition position,
     _SelectionSnapshot selection,
   ) {
-    if (fromIndex == toIndex) return;
-
     _commitCurrentEditorToSelectedChapter(selection);
-
-    _segmentsNotifier.moveSegment(fromIndex: fromIndex, toIndex: toIndex);
+    final moved = _segmentsNotifier.moveFolder(
+      sourceFolderID: sourceFolderID,
+      targetFolderID: targetFolderID,
+      position: switch (position) {
+        DropPosition.before => "before",
+        DropPosition.child => "child",
+        DropPosition.after => "after",
+      },
+    );
+    if (moved && position == DropPosition.child) {
+      setState(() => _expandedSegmentIDs.add(targetFolderID));
+    }
     _notifySegmentsChanged();
   }
 
-  void _moveChapterByDrag(
-    int segIdx,
-    int fromIndex,
-    int toIndex,
+  String _dropPositionName(DropPosition position) => switch (position) {
+    DropPosition.before => "before",
+    DropPosition.child => "child",
+    DropPosition.after => "after",
+  };
+
+  void _moveFolderRelativeToChapter(
+    String folderID,
+    String chapterID,
+    DropPosition position,
     _SelectionSnapshot selection,
   ) {
-    if (segIdx < 0 || segIdx >= _segments.length) return;
-    if (fromIndex == toIndex) return;
-
+    if (position == DropPosition.child) return;
     _commitCurrentEditorToSelectedChapter(selection);
-
-    _segmentsNotifier.moveChapterWithinSegment(
-      segmentID: _segments[segIdx].segmentUUID,
-      fromIndex: fromIndex,
-      toIndex: toIndex,
+    _segmentsNotifier.moveFolderRelativeToChapter(
+      sourceFolderID: folderID,
+      targetChapterID: chapterID,
+      position: _dropPositionName(position),
     );
     _notifySegmentsChanged();
+  }
+
+  void _moveChapterRelativeToChapter(
+    String chapterID,
+    String targetChapterID,
+    DropPosition position,
+    _SelectionSnapshot selection,
+  ) {
+    if (position == DropPosition.child) return;
+    _commitCurrentEditorToSelectedChapter(selection);
+    final moved = _segmentsNotifier.moveChapterRelativeToChapter(
+      chapterID: chapterID,
+      targetChapterID: targetChapterID,
+      position: _dropPositionName(position),
+    );
+    if (moved) _syncSelectionAfterChapterMove(chapterID);
+    _notifySegmentsChanged();
+  }
+
+  void _moveChapterRelativeToFolder(
+    String chapterID,
+    String targetFolderID,
+    DropPosition position,
+    _SelectionSnapshot selection,
+  ) {
+    if (position == DropPosition.child) return;
+    _commitCurrentEditorToSelectedChapter(selection);
+    final moved = _segmentsNotifier.moveChapterRelativeToFolder(
+      chapterID: chapterID,
+      targetFolderID: targetFolderID,
+      position: _dropPositionName(position),
+    );
+    if (moved) _syncSelectionAfterChapterMove(chapterID);
+    _notifySegmentsChanged();
+  }
+
+  void _syncSelectionAfterChapterMove(String chapterID) {
+    final location = ChapterTree.findChapter(_segments, chapterId: chapterID);
+    if (location == null) return;
+    setState(() {
+      _expandedSegmentIDs.add(location.folder.segmentUUID);
+      _selectedFolderID = location.folder.segmentUUID;
+    });
+    _setSelection(
+      segmentID: location.folder.segmentUUID,
+      chapterID: location.chapter.chapterUUID,
+    );
+    _setEditorContent(location.chapter.chapterContent);
   }
 
   void _moveChapterToSegment(
     String chapterUUID,
     String toSegmentUUID,
-    _SelectionSnapshot selection,
-  ) {
+    _SelectionSnapshot selection, {
+    int? targetChapterIndex,
+  }) {
     _commitCurrentEditorToSelectedChapter(selection);
 
-    // 找到來源章節
-    int? sourceSegIdx;
-    int? sourceChapIdx;
-    for (int si = 0; si < _segments.length; si++) {
-      final ci = _indexWhereOrNull(
-        _segments[si].chapters,
-        (ch) => ch.chapterUUID == chapterUUID,
-      );
-      if (ci != null) {
-        sourceSegIdx = si;
-        sourceChapIdx = ci;
-        break;
-      }
+    final source = ChapterTree.findChapter(_segments, chapterId: chapterUUID);
+    final target = ChapterTree.findFolder(_segments, toSegmentUUID);
+    if (source == null ||
+        target == null ||
+        source.folder.segmentUUID == toSegmentUUID) {
+      return;
     }
-
-    if (sourceSegIdx == null || sourceChapIdx == null) return;
-
-    // 找到目標區段
-    final targetSegIdx = _indexWhereOrNull(
-      _segments,
-      (seg) => seg.segmentUUID == toSegmentUUID,
-    );
-    if (targetSegIdx == null || targetSegIdx == sourceSegIdx) return;
-
-    final sourceSegID = _segments[sourceSegIdx].segmentUUID;
-    final movingChapter = _segments[sourceSegIdx].chapters[sourceChapIdx];
+    final sourceSegID = source.folder.segmentUUID;
+    final movingChapter = source.chapter;
 
     // 執行移動
     _segmentsNotifier.moveChapterToSegment(
@@ -821,10 +949,34 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       targetSegmentID: toSegmentUUID,
     );
 
-    final sourceSegAfterMoveIdx = _indexWhereOrNull(
-      _segments,
-      (seg) => seg.segmentUUID == sourceSegID,
-    );
+    if (targetChapterIndex != null) {
+      final movedTarget = ChapterTree.findFolder(_segments, toSegmentUUID);
+      if (movedTarget != null) {
+        final targetChapters = movedTarget.chapters;
+        final movedChapterIndex = targetChapters.indexWhere(
+          (chapter) => chapter.chapterUUID == chapterUUID,
+        );
+        final normalizedTarget = targetChapterIndex.clamp(
+          0,
+          targetChapters.length - 1,
+        );
+        if (movedChapterIndex >= 0 && movedChapterIndex != normalizedTarget) {
+          _segmentsNotifier.moveChapterWithinSegment(
+            segmentID: toSegmentUUID,
+            fromIndex: movedChapterIndex,
+            toIndex: normalizedTarget,
+          );
+        }
+      }
+    }
+
+    setState(() {
+      _expandedSegmentIDs.add(toSegmentUUID);
+      if (ChapterTree.findFolder(_segments, sourceSegID) == null) {
+        _expandedSegmentIDs.remove(sourceSegID);
+      }
+      _selectedFolderID = toSegmentUUID;
+    });
 
     // 更新選擇
     _setSelection(
@@ -832,26 +984,6 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       chapterID: movingChapter.chapterUUID,
     );
     _setEditorContent(movingChapter.chapterContent);
-
-    // 如果來源區段變空，刪除它（如果有多個區段）
-    if (sourceSegAfterMoveIdx != null &&
-        _segments[sourceSegAfterMoveIdx].chapters.isEmpty &&
-        _segments.length > 1) {
-      _segmentsNotifier.removeSegmentById(sourceSegID);
-
-      // 如果刪除的區段是當前選中的區段，重新選擇
-      if (selection.segmentID == sourceSegID) {
-        final firstSeg = _segments.firstWhere(
-          (seg) => seg.segmentUUID == toSegmentUUID,
-          orElse: () => _segments.isNotEmpty ? _segments.first : SegmentData(),
-        );
-        _setSelection(
-          segmentID: firstSeg.segmentUUID,
-          chapterID: movingChapter.chapterUUID,
-        );
-        _setEditorContent(movingChapter.chapterContent);
-      }
-    }
 
     _notifySegmentsChanged();
   }
@@ -949,20 +1081,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               ),
               const SizedBox(height: 32),
 
-              ResponsiveSplitView(
-                breakpoint: 900,
-                spacing: 24,
-                primary: _buildSegmentsList(
-                  segments,
-                  wordCountMode,
-                  selectionSnapshot,
-                ),
-                secondary: _buildChaptersList(
-                  segments,
-                  wordCountMode,
-                  selectionSnapshot,
-                ),
-              ),
+              _buildChapterTree(segments, wordCountMode, selectionSnapshot),
             ],
           ),
         ),
@@ -977,47 +1096,28 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     final beforeChaptersCount = _totalChaptersCount;
 
     _initializeIfEmpty();
+    _expandedSegmentIDs.addAll(
+      ChapterTree.foldersDepthFirst(
+        _segments,
+      ).map((folder) => folder.segmentUUID),
+    );
 
-    var selection = _readSelectionSnapshot(_segments);
-
-    if ((selection.segmentID == null || selection.segmentIndex == null) &&
-        _segments.isNotEmpty) {
+    final selection = _readSelectionSnapshot(_segments);
+    final selectedLocation = selection.chapterID == null
+        ? null
+        : ChapterTree.findChapter(
+            _segments,
+            folderId: selection.segmentID,
+            chapterId: selection.chapterID!,
+          );
+    final location = selectedLocation ?? ChapterTree.firstChapter(_segments);
+    if (location != null) {
       _setSelection(
-        segmentID: _segments.first.segmentUUID,
-        chapterID: selection.chapterID,
+        segmentID: location.folder.segmentUUID,
+        chapterID: location.chapter.chapterUUID,
       );
-      selection = _SelectionSnapshot(
-        segmentID: _segments.first.segmentUUID,
-        chapterID: selection.chapterID,
-        segmentIndex: 0,
-      );
-    }
-
-    if (selection.chapterID == null) {
-      final si = selection.segmentIndex;
-      if (si != null && _segments[si].chapters.isNotEmpty) {
-        _setSelection(
-          segmentID: _segments[si].segmentUUID,
-          chapterID: _segments[si].chapters.first.chapterUUID,
-        );
-        selection = _SelectionSnapshot(
-          segmentID: _segments[si].segmentUUID,
-          chapterID: _segments[si].chapters.first.chapterUUID,
-          segmentIndex: si,
-        );
-      }
-    }
-
-    final resolvedSelection = _readSelectionSnapshot(_segments);
-    final si = resolvedSelection.segmentIndex;
-    final cid = resolvedSelection.chapterID;
-    if (si != null && cid != null) {
-      final ci = _segments[si].chapters.indexWhere(
-        (ch) => ch.chapterUUID == cid,
-      );
-      if (ci >= 0) {
-        _setEditorContent(_segments[si].chapters[ci].chapterContent);
-      }
+      _setEditorContent(location.chapter.chapterContent);
+      _selectedFolderID = location.folder.segmentUUID;
     }
 
     final hasInitializedDefaultData =
@@ -1028,212 +1128,196 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     }
   }
 
-  Widget _buildSegmentsList(
-    List<SegmentData> segments,
-    WordCountMode wordCountMode,
-    _SelectionSnapshot selection,
-  ) {
-    return AppSectionCard(
-      padding: EdgeInsets.zero,
-      useSectionLayout: false,
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const MediumTitle(icon: Icons.folder_outlined, text: "區段選擇"),
-            const SizedBox(height: 16),
-
-            // 區段列表 - 使用 DragTarget 包裝以支援排序
-            DragTarget<DragData>(
-              onWillAcceptWithDetails: (details) {
-                // 只接受區段類型的拖動
-                return details.data.type == DragType.segment;
-              },
-              onAcceptWithDetails: (details) {
-                setState(() {
-                  _isDragging = false;
-                });
-                _stopAutoScroll(); // 停止自動滾動
-                // 拖放到空白區域時，移動到列表最後
-                final dragData = details.data;
-                if (dragData.type == DragType.segment) {
-                  final fromIndex = dragData.currentIndex;
-                  final toIndex = segments.length - 1; // 移動到最後
-                  if (fromIndex >= 0 &&
-                      fromIndex < segments.length &&
-                      fromIndex != toIndex) {
-                    _moveSegmentByDrag(fromIndex, toIndex, selection);
-                  }
-                }
-              },
-              builder: (context, candidateData, rejectedData) {
-                final isHighlighted = candidateData.isNotEmpty;
-
-                return Container(
-                  key: _segmentListKey,
-                  height: 250,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isHighlighted
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.outline.withOpacity(0.2),
-                      width: isHighlighted ? 2 : 1,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                    color: isHighlighted
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer.withOpacity(0.1)
-                        : null,
-                  ),
-                  child: ListView.builder(
-                    controller: _segmentListScrollController,
-                    itemCount: segments.length,
-                    itemBuilder: (context, index) => _buildSegmentItem(
-                      segments[index],
-                      index,
-                      wordCountMode,
-                      selection,
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // 新增區段
-            AddItemInput(
-              title: "區段",
-              onAdd: (name) => _addSegment(name, selection),
-            ),
-          ],
-        ),
+  Widget _buildCreateTypeButton({
+    required _CreateType type,
+    required IconData icon,
+    required String tooltip,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final isSelected = _createType == type;
+    return IconButton(
+      key: ValueKey("chapter-create-type-${type.name}"),
+      tooltip: tooltip,
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      visualDensity: VisualDensity.compact,
+      onPressed: () => setState(() => _createType = type),
+      style: IconButton.styleFrom(
+        foregroundColor: isSelected ? Colors.blue : scheme.onSurfaceVariant,
       ),
+      icon: Icon(icon),
     );
   }
 
-  Widget _buildChaptersList(
+  Widget _buildChapterTree(
     List<SegmentData> segments,
     WordCountMode wordCountMode,
     _SelectionSnapshot selection,
   ) {
-    final selectedSegIdx = selection.segmentIndex;
+    _synchronizeTreeExpansion(segments);
+    if (_selectedFolderID == null ||
+        ChapterTree.findFolder(segments, _selectedFolderID!) == null) {
+      _selectedFolderID = selection.folder?.segmentUUID;
+    }
+    final rows = _buildVisibleTreeRows(segments);
+    final selectedFolder = _selectedFolderID == null
+        ? selection.folder
+        : ChapterTree.findFolder(segments, _selectedFolderID!);
+    final canAddToSelectedFolder = selectedFolder != null;
 
-    return AppSectionCard(
-      padding: EdgeInsets.zero,
-      useSectionLayout: false,
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: MediumTitle(
-                    icon: Icons.article_outlined,
-                    text: "章節選擇",
-                  ),
-                ),
-                Tooltip(
-                  message: "拖動章節排序 | 長按拖動至其他區段",
-                  child: Icon(
-                    Icons.info_outline,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+            Expanded(
+              child: Text(
+                "資料夾與章節位於同一清單；移除資料夾會一併移除其中章節。",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
-            const SizedBox(height: 16),
-
-            // 章節列表 - 使用 DragTarget 包裝以支援拖放排序
-            DragTarget<DragData>(
-              onWillAcceptWithDetails: (details) {
-                // 只接受章節類型的拖動
-                return details.data.type == DragType.chapter;
-              },
-              onAcceptWithDetails: (details) {
-                setState(() {
-                  _isDragging = false;
-                });
-                _stopAutoScroll(); // 停止自動滾動
-                // 拖放到空白區域時，移動到列表最後
-                final dragData = details.data;
-                if (selectedSegIdx != null &&
-                    dragData.type == DragType.chapter) {
-                  _moveChapterToSegment(
-                    dragData.id,
-                    segments[selectedSegIdx].segmentUUID,
-                    selection,
-                  );
-                }
-              },
-              builder: (context, candidateData, rejectedData) {
-                final isHighlighted = candidateData.isNotEmpty;
-
-                return Container(
-                  key: _chapterListKey,
-                  height: 250,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isHighlighted
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.outline.withOpacity(0.2),
-                      width: isHighlighted ? 2 : 1,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                    color: isHighlighted
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer.withOpacity(0.1)
-                        : null,
-                  ),
-                  child: selectedSegIdx != null && selectedSegIdx >= 0
-                      ? ListView.builder(
-                          controller: _chapterListScrollController,
-                          itemCount: segments[selectedSegIdx].chapters.length,
-                          itemBuilder: (context, index) => _buildChapterItem(
-                            segments[selectedSegIdx].chapters[index],
-                            selectedSegIdx,
-                            index,
-                            wordCountMode,
-                            selection,
-                          ),
-                        )
-                      : const AppEmptyState(
-                          title: "請先選擇一個區段",
-                          description: "選擇區段後即可管理章節",
-                          icon: Icons.touch_app_outlined,
-                          compact: true,
-                        ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // 新增章節
-            AddItemInput(
-              title: selectedSegIdx != null ? "章節名稱" : "請先選擇區段",
-              enabled: selectedSegIdx != null,
-              onAdd: (val) {
-                if (selectedSegIdx != null) {
-                  _addChapter(selectedSegIdx, val, selection);
-                }
-              },
+            const Tooltip(
+              message: "長按拖曳排序；章節可拖入其他資料夾。根目錄固定隱藏。",
+              child: Icon(Icons.info_outline, size: 16),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        AppTextField(
+          controller: _searchController,
+          hintText: "搜尋資料夾或章節名稱",
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: "清除搜尋",
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = "");
+                  },
+                  icon: const Icon(Icons.clear),
+                ),
+          onChanged: (value) => setState(() => _searchQuery = value),
+        ),
+        const SizedBox(height: 12),
+        DragTarget<DragData>(
+          onWillAcceptWithDetails: (details) {
+            return details.data.type == DragType.segment;
+          },
+          onAcceptWithDetails: (details) {
+            _finishDrag();
+            final dragData = details.data;
+            if (dragData.type == DragType.segment) {
+              _commitCurrentEditorToSelectedChapter(selection);
+              _segmentsNotifier.moveFolderToRoot(dragData.id);
+              _notifySegmentsChanged();
+            }
+          },
+          builder: (context, candidateData, rejectedData) {
+            return Container(
+              key: _treeListKey,
+              decoration: candidateData.isNotEmpty
+                  ? BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              child: CollectionPanel.builder(
+                title: "章節樹",
+                showSectionCard: false,
+                minHeight: 320,
+                maxHeight: 560,
+                controller: _treeScrollController,
+                showScrollbar: true,
+                listPadding: const EdgeInsets.all(8),
+                itemCount: rows.length,
+                emptyTitle: "尚無章節",
+                emptyDescription: "請新增第一個資料夾",
+                emptyIcon: Icons.create_new_folder_outlined,
+                itemBuilder: (context, index) {
+                  final row = rows[index];
+                  if (row.isFolder) {
+                    return _buildSegmentItem(
+                      row.folder,
+                      row.depth,
+                      wordCountMode,
+                      selection,
+                    );
+                  }
+                  final chapterIndex = row.chapterIndex!;
+                  return _buildChapterItem(
+                    row.folder.chapters[chapterIndex],
+                    row.folder,
+                    row.depth,
+                    chapterIndex,
+                    wordCountMode,
+                    selection,
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: AddItemInput(
+                title: switch (_createType) {
+                  _CreateType.chapter =>
+                    canAddToSelectedFolder ? "章節名稱" : "請先選擇資料夾",
+                  _CreateType.childFolder =>
+                    canAddToSelectedFolder ? "子資料夾" : "請先選擇父資料夾",
+                  _CreateType.rootFolder => "根資料夾",
+                },
+                enabled:
+                    _createType == _CreateType.rootFolder ||
+                    canAddToSelectedFolder,
+                onAdd: (name) {
+                  switch (_createType) {
+                    case _CreateType.chapter:
+                      _addChapter(selectedFolder!.segmentUUID, name, selection);
+                    case _CreateType.childFolder:
+                      _addSegment(
+                        name,
+                        selection,
+                        parentFolderID: selectedFolder!.segmentUUID,
+                      );
+                    case _CreateType.rootFolder:
+                      _addSegment(name, selection);
+                  }
+                },
+              ),
+            ),
+            SizedBox(
+              width: 128,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildCreateTypeButton(
+                    type: _CreateType.chapter,
+                    icon: Icons.article_outlined,
+                    tooltip: "新增章節",
+                  ),
+                  _buildCreateTypeButton(
+                    type: _CreateType.childFolder,
+                    icon: Icons.folder_copy_outlined,
+                    tooltip: "新增子資料夾",
+                  ),
+                  _buildCreateTypeButton(
+                    type: _CreateType.rootFolder,
+                    icon: Icons.folder_outlined,
+                    tooltip: "新增根資料夾",
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -1253,7 +1337,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       final value = _renameController!.text.trim();
       _segmentsNotifier.renameSegment(
         segmentID: _editingSegmentID!,
-        name: value.isEmpty ? "(未命名 Seg)" : value,
+        name: value.isEmpty ? "（未命名資料夾）" : value,
       );
       _notifySegmentsChanged();
     }
@@ -1269,17 +1353,19 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
     });
   }
 
-  void _submitEditingChapter(int segIdx) {
+  void _submitEditingChapter(String folderID) {
     if (_editingChapterID != null && _renameController != null) {
-      final chapterIdx = _segments[segIdx].chapters.indexWhere(
-        (c) => c.chapterUUID == _editingChapterID,
+      final location = ChapterTree.findChapter(
+        _segments,
+        folderId: folderID,
+        chapterId: _editingChapterID!,
       );
-      if (chapterIdx >= 0) {
+      if (location != null) {
         final value = _renameController!.text.trim();
         _segmentsNotifier.renameChapter(
-          segmentID: _segments[segIdx].segmentUUID,
+          segmentID: folderID,
           chapterID: _editingChapterID!,
-          name: value.isEmpty ? "(未命名 Chapter)" : value,
+          name: value.isEmpty ? "（Untitled）" : value,
         );
         _notifySegmentsChanged();
       }
@@ -1300,26 +1386,41 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   Widget _buildSegmentItem(
     SegmentData segment,
-    int index,
+    int depth,
     WordCountMode wordCountMode,
     _SelectionSnapshot selection,
   ) {
-    final isSelected = selection.segmentID == segment.segmentUUID;
+    final isSelected = _selectedFolderID == segment.segmentUUID;
     final isEditing = _editingSegmentID == segment.segmentUUID;
+    final isExpanded = _expandedSegmentIDs.contains(segment.segmentUUID);
+    final subtreeChapters = ChapterTree.chaptersDepthFirst([segment]).toList();
+    final segmentWordCount = subtreeChapters.fold<int>(
+      0,
+      (sum, location) => sum + location.chapter.getWordCount(wordCountMode),
+    );
+    final canDelete = _totalChaptersCount - subtreeChapters.length >= 1;
 
     return DraggableCardNode<DragData>(
       key: ValueKey(segment.segmentUUID),
       dragData: DragData(
         id: segment.segmentUUID,
         type: DragType.segment,
-        currentIndex: index,
+        currentIndex: 0,
       ),
       nodeId: segment.segmentUUID,
       nodeType: NodeType.folder,
 
       isDragging: _isDragging,
       isThisDragging: _currentDragData?.id == segment.segmentUUID,
+      isDragForbidden:
+          _currentDragData?.type == DragType.segment &&
+          _currentDragData?.id != null &&
+          ChapterTree.containsFolder(
+            ChapterTree.findFolder(_segments, _currentDragData!.id) ?? segment,
+            segment.segmentUUID,
+          ),
       isSelected: isSelected,
+      indent: depth * 24.0,
 
       title: InlineEditableText(
         value: segment.segmentName,
@@ -1328,7 +1429,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         onEdit: () => _startEditingSegment(segment),
         onSubmitted: (_) => _submitEditingSegment(),
         onCanceled: _cancelEditing,
-        emptyText: "(未命名 Seg)",
+        emptyText: "（未命名資料夾）",
         style: isSelected
             ? TextStyle(
                 fontWeight: FontWeight.w600,
@@ -1338,69 +1439,115 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
       ),
       subtitle: Text(
-        "${segment.chapters.fold(0, (sum, ch) => sum + ch.getWordCount(wordCountMode))} 字",
+        "${subtreeChapters.length} 章 • ${segment.childSegments.length} 個子資料夾 • $segmentWordCount 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      leading: Icon(
-        Icons.folder_outlined,
-        color: isSelected ? Theme.of(context).colorScheme.primary : null,
+      leading: SizedBox(
+        width: 48,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: isExpanded ? "收合資料夾" : "展開資料夾",
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedSegmentIDs.remove(segment.segmentUUID);
+                    } else {
+                      _expandedSegmentIDs.add(segment.segmentUUID);
+                    }
+                  });
+                },
+                child: SizedBox(
+                  width: 24,
+                  height: 32,
+                  child: Icon(
+                    isExpanded ? Icons.expand_more : Icons.chevron_right,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+            Icon(
+              isExpanded ? Icons.folder_open_outlined : Icons.folder_outlined,
+              color: Theme.of(context).colorScheme.primary,
+              size: 22,
+            ),
+          ],
+        ),
       ),
       trailing: ItemActionBar.editDelete(
         onEdit: () => _startEditingSegment(segment),
-        onDelete: _segments.length > 1
+        onDelete: canDelete
             ? () => _deleteSegment(segment.segmentUUID, selection)
             : null,
-        deleteTooltip: "刪除此 Seg",
+        deleteTooltip: canDelete ? "刪除此資料夾與其中章節" : "至少須保留一章",
       ),
-      onClicked: () => _selectSegment(segment.segmentUUID, selection),
+      onClicked: () {
+        setState(() {
+          _expandedSegmentIDs.add(segment.segmentUUID);
+        });
+        _selectSegment(segment.segmentUUID, selection);
+      },
 
       onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-          _currentDragData = DragData(
+        _beginDrag(
+          DragData(
             id: segment.segmentUUID,
             type: DragType.segment,
-            currentIndex: index,
-          );
-        });
+            currentIndex: 0,
+          ),
+        );
       },
-      onDragEnd: () {
-        setState(() {
-          _isDragging = false;
-          _currentDragData = null;
-        });
-        _stopAutoScroll();
-      },
+      onDragEnd: _finishDrag,
 
       getDropZoneSize: (pos) {
         if (_currentDragData == null) return 0.0;
 
         if (_currentDragData!.type == DragType.segment) {
-          // 同層級拖動 (Before/After 50%)
-          return pos == DropPosition.child ? 0.0 : 0.5;
+          return switch (pos) {
+            DropPosition.before => 0.3,
+            DropPosition.child => 0.4,
+            DropPosition.after => 0.3,
+          };
         } else if (_currentDragData!.type == DragType.chapter) {
-          // 子層級拖動到母層級 (改變子層級所在項目)
-          return pos == DropPosition.child ? 1.0 : 0.0;
+          final isRootFolder =
+              ChapterTree.findParentFolder(_segments, segment.segmentUUID) ==
+              null;
+          if (isRootFolder) {
+            return pos == DropPosition.child ? 1.0 : 0.0;
+          }
+          return switch (pos) {
+            DropPosition.before => 0.3,
+            DropPosition.child => 0.4,
+            DropPosition.after => 0.3,
+          };
         }
         return 0.0;
       },
 
       onAccept: (data, pos) {
+        _finishDrag();
         if (data.type == DragType.segment) {
-          int toIndex = index;
-          if (pos == DropPosition.after) toIndex++;
-
-          final fromIndex = data.currentIndex;
-          if (fromIndex < toIndex) toIndex--;
-
-          _moveSegmentByDrag(fromIndex, toIndex, selection);
-        } else if (data.type == DragType.chapter && pos == DropPosition.child) {
-          _moveChapterToSegment(data.id, segment.segmentUUID, selection);
-          AppFeedback.success(
-            context,
-            "章節已移動到「${segment.segmentName}」",
-            duration: const Duration(seconds: 2),
-          );
+          _moveFolderByDrag(data.id, segment.segmentUUID, pos, selection);
+        } else if (data.type == DragType.chapter) {
+          if (pos == DropPosition.child) {
+            _moveChapterToSegment(data.id, segment.segmentUUID, selection);
+            AppFeedback.success(
+              context,
+              "章節已移動到「${segment.segmentName}」",
+              duration: const Duration(seconds: 2),
+            );
+          } else {
+            _moveChapterRelativeToFolder(
+              data.id,
+              segment.segmentUUID,
+              pos,
+              selection,
+            );
+          }
         }
       },
     );
@@ -1408,7 +1555,8 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
 
   Widget _buildChapterItem(
     ChapterData chapter,
-    int segIdx,
+    SegmentData folder,
+    int depth,
     int chapterIdx,
     WordCountMode wordCountMode,
     _SelectionSnapshot selection,
@@ -1435,9 +1583,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         controller: _renameController,
         isEditing: isEditing,
         onEdit: () => _startEditingChapter(chapter),
-        onSubmitted: (_) => _submitEditingChapter(segIdx),
+        onSubmitted: (_) => _submitEditingChapter(folder.segmentUUID),
         onCanceled: _cancelEditing,
-        emptyText: "(未命名 Chapter)",
+        emptyText: "（Untitled）",
         style: isSelected
             ? TextStyle(
                 fontWeight: FontWeight.w600,
@@ -1450,39 +1598,41 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         "${chapter.getWordCount(wordCountMode)} 字",
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      leading: Icon(
-        Icons.article_outlined,
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.primary,
-        size: 24,
+      leading: SizedBox(
+        width: 48,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 24),
+            Icon(
+              Icons.article_outlined,
+              color: Theme.of(context).colorScheme.primary,
+              size: 24,
+            ),
+          ],
+        ),
       ),
       trailing: ItemActionBar.editDelete(
         onEdit: () => _startEditingChapter(chapter),
         onDelete: _totalChaptersCount > 1
-            ? () => _deleteChapter(segIdx, chapter.chapterUUID, selection)
+            ? () => _deleteChapter(folder, chapter.chapterUUID, selection)
             : null,
-        deleteTooltip: "刪除此章節",
+        deleteTooltip: _totalChaptersCount > 1 ? "刪除此章節" : "至少須保留一章",
       ),
-      onClicked: () => _selectChapter(segIdx, chapter.chapterUUID, selection),
+      onClicked: () =>
+          _selectChapter(folder.segmentUUID, chapter.chapterUUID, selection),
+      indent: depth * 24.0,
 
       onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-          _currentDragData = DragData(
+        _beginDrag(
+          DragData(
             id: chapter.chapterUUID,
             type: DragType.chapter,
             currentIndex: chapterIdx,
-          );
-        });
+          ),
+        );
       },
-      onDragEnd: () {
-        setState(() {
-          _isDragging = false;
-          _currentDragData = null;
-        });
-        _stopAutoScroll();
-      },
+      onDragEnd: _finishDrag,
 
       getDropZoneSize: (pos) {
         if (_currentDragData == null) return 0.0;
@@ -1491,19 +1641,28 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
           // 同層級拖動 (Before/After 50%)
           return pos == DropPosition.child ? 0.0 : 0.5;
         }
-        // 爺孫層級不可拖動 (DragType.segment cannot be dropped here)
+        if (_currentDragData!.type == DragType.segment) {
+          return pos == DropPosition.child ? 0.0 : 0.5;
+        }
         return 0.0;
       },
 
       onAccept: (data, pos) {
+        _finishDrag();
         if (data.type == DragType.chapter) {
-          int toIndex = chapterIdx;
-          if (pos == DropPosition.after) toIndex++;
-
-          final fromIndex = data.currentIndex;
-          if (fromIndex < toIndex) toIndex--;
-
-          _moveChapterByDrag(segIdx, fromIndex, toIndex, selection);
+          _moveChapterRelativeToChapter(
+            data.id,
+            chapter.chapterUUID,
+            pos,
+            selection,
+          );
+        } else if (data.type == DragType.segment) {
+          _moveFolderRelativeToChapter(
+            data.id,
+            chapter.chapterUUID,
+            pos,
+            selection,
+          );
         }
       },
     );

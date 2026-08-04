@@ -391,24 +391,18 @@ class ProjectManager {
     return hasUnsavedChanges;
   }
 
-  static ({int segIndex, int chapIndex})? _findSelectedChapter({
+  static ChapterModule.ChapterLocation? _findSelectedChapter({
     required List<ChapterModule.SegmentData> segmentsData,
     required String? selectedSegID,
     required String? selectedChapID,
   }) {
     if (selectedSegID == null || selectedChapID == null) return null;
 
-    final segIndex = segmentsData.indexWhere(
-      (seg) => seg.segmentUUID == selectedSegID,
+    return ChapterModule.ChapterTree.findChapter(
+      segmentsData,
+      folderId: selectedSegID,
+      chapterId: selectedChapID,
     );
-    if (segIndex < 0) return null;
-
-    final chapIndex = segmentsData[segIndex].chapters.indexWhere(
-      (chap) => chap.chapterUUID == selectedChapID,
-    );
-    if (chapIndex < 0) return null;
-
-    return (segIndex: segIndex, chapIndex: chapIndex);
   }
 
   static bool hasEditorContentChangedForSelectedChapter({
@@ -424,9 +418,7 @@ class ProjectManager {
     );
     if (selectedChapter == null) return false;
 
-    final currentChapter = segmentsData[selectedChapter.segIndex]
-        .chapters[selectedChapter.chapIndex];
-    return currentChapter.chapterContent != textController.text;
+    return selectedChapter.chapter.chapterContent != textController.text;
   }
 
   /// 同步編輯器內容到選中的章節
@@ -445,20 +437,33 @@ class ProjectManager {
     );
     if (selectedChapter == null) return false;
 
-    final segment = segmentsData[selectedChapter.segIndex];
     final currentEditorContent = textController.text;
-    final currentChapter = segment.chapters[selectedChapter.chapIndex];
+    final currentChapter = selectedChapter.chapter;
     if (currentChapter.chapterContent == currentEditorContent) {
       return false;
     }
 
-    final chapters = [...segment.chapters];
-    chapters[selectedChapter.chapIndex] = currentChapter.copyWith(
-      chapterContent: currentEditorContent,
-    );
-    segmentsData[selectedChapter.segIndex] = segment.copyWith(
-      chapters: chapters,
-    );
+    bool updateFolder(List<ChapterModule.SegmentData> folders) {
+      for (var index = 0; index < folders.length; index++) {
+        final folder = folders[index];
+        if (folder.segmentUUID == selectedChapter.folder.segmentUUID) {
+          final chapters = [...folder.chapters];
+          chapters[selectedChapter.chapterIndex] = currentChapter.copyWith(
+            chapterContent: currentEditorContent,
+          );
+          folders[index] = folder.copyWith(chapters: chapters);
+          return true;
+        }
+        final children = [...folder.childSegments];
+        if (updateFolder(children)) {
+          folders[index] = folder.copyWith(childSegments: children);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    updateFolder(segmentsData);
     updateContentCallback(currentEditorContent);
     return true;
   }
@@ -882,15 +887,23 @@ class ProjectManager {
       setLoading(true);
 
       final buffer = StringBuffer();
-      for (final segment in currentData.segmentsData) {
-        buffer.writeln("# ${segment.segmentName}");
+      String heading(int depth) => List.filled(depth, "#").join();
+      void writeFolder(ChapterModule.SegmentData folder, int depth) {
+        buffer.writeln("${heading(depth)} ${folder.segmentName}");
         buffer.writeln();
-        for (final chapter in segment.chapters) {
-          buffer.writeln("## ${chapter.chapterName}");
+        for (final chapter in folder.chapters) {
+          buffer.writeln("${heading(depth + 1)} ${chapter.chapterName}");
           buffer.writeln();
           buffer.writeln(chapter.chapterContent);
           buffer.writeln();
         }
+        for (final child in folder.childSegments) {
+          writeFolder(child, depth + 1);
+        }
+      }
+
+      for (final folder in currentData.segmentsData) {
+        writeFolder(folder, 1);
       }
 
       await FileService.exportText(
@@ -1139,16 +1152,9 @@ class _ProjectParser {
     List<ChapterModule.SegmentData> snapshotSegments(
       List<ChapterModule.SegmentData> source,
     ) {
-      return List<ChapterModule.SegmentData>.unmodifiable(
-        source
-            .map(
-              (segment) => segment.copyWith(
-                chapters: segment.chapters
-                    .map((chapter) => chapter.copyWith())
-                    .toList(growable: false),
-              ),
-            )
-            .toList(growable: false),
+      return ChapterModule.ChapterTreeSchema.upgrade(
+        sourceVersion: ChapterModule.ChapterTreeSchema.currentVersion,
+        segments: source,
       );
     }
 
@@ -1194,9 +1200,9 @@ class _ProjectParser {
     );
 
     // 如果有載入章節數據，使用第一個章節的內容
-    final targetSegments = parsedSegments;
-    if (targetSegments.isNotEmpty && targetSegments[0].chapters.isNotEmpty) {
-      contentText = targetSegments[0].chapters[0].chapterContent;
+    final firstChapter = ChapterModule.ChapterTree.firstChapter(parsedSegments);
+    if (firstChapter != null) {
+      contentText = firstChapter.chapter.chapterContent;
       // 簡單的字數統計
       totalWords = contentText
           .split(RegExp(r"\s+"))
@@ -1352,13 +1358,21 @@ class _ProjectMerger {
     final buffer = StringBuffer();
     buffer.writeln("# 章節內容 (Chapters)");
     buffer.writeln();
-    for (final segment in segments) {
-      buffer.writeln("## ${segment.segmentName}");
-      for (final chapter in segment.chapters) {
-        buffer.writeln("### ${chapter.chapterName}");
+    String heading(int depth) => List.filled(depth, "#").join();
+    void writeFolder(ChapterModule.SegmentData folder, int depth) {
+      buffer.writeln("${heading(depth)} ${folder.segmentName}");
+      for (final chapter in folder.chapters) {
+        buffer.writeln("${heading(depth + 1)} ${chapter.chapterName}");
         buffer.writeln(chapter.chapterContent);
         buffer.writeln();
       }
+      for (final child in folder.childSegments) {
+        writeFolder(child, depth + 1);
+      }
+    }
+
+    for (final folder in segments) {
+      writeFolder(folder, 2);
     }
     return buffer.toString();
   }
