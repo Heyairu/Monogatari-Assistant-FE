@@ -27,10 +27,49 @@ class CharacterRelationshipGraphView extends ConsumerStatefulWidget {
       _CharacterRelationshipGraphViewState();
 }
 
+enum _CharacterLayoutLane {
+  other,
+  secondarySupporting,
+  importantSupporting,
+  protagonist,
+  mainVillain,
+  secondaryVillain,
+}
+
+class _EdgeLabelPlacement {
+  final Offset center;
+  final Size size;
+
+  const _EdgeLabelPlacement({required this.center, required this.size});
+}
+
+class _EdgeVisualLayout {
+  final _EdgeGeometry geometry;
+  final _EdgeLabelPlacement label;
+
+  const _EdgeVisualLayout({required this.geometry, required this.label});
+}
+
+class _RadialLayoutMetrics {
+  final Size canvasSize;
+  final double resolvedHeight;
+  final Offset protagonistCenter;
+  final Offset villainCenter;
+  final Map<_CharacterLayoutLane, double> radii;
+
+  const _RadialLayoutMetrics({
+    required this.canvasSize,
+    required this.resolvedHeight,
+    required this.protagonistCenter,
+    required this.villainCenter,
+    required this.radii,
+  });
+}
+
 class _CharacterRelationshipGraphViewState
     extends ConsumerState<CharacterRelationshipGraphView> {
   static const _mapper = CharacterRelationshipGraphMapper();
-  static const Size _nodeSize = Size(156, 72);
+  static const Size _nodeSize = Size.square(104);
   late final CharacterRelationshipGraphController _controller;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -305,9 +344,20 @@ class _CharacterRelationshipGraphViewState
                               tooltip: "只顯示一階鄰居",
                               isSelected: _controller.neighborsOnly,
                               style: _controller.neighborsOnly
-                                  ? IconButton.styleFrom(foregroundColor: Colors.green) : null,
+                                  ? IconButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
+                                    )
+                                  : null,
                               onPressed: _controller.selectedNodeId == null
-                                  ? null : () => _controller.setNeighborsOnly(!_controller.neighborsOnly),
+                                  ? null
+                                  : () => _controller.setNeighborsOnly(
+                                      !_controller.neighborsOnly,
+                                    ),
                               icon: const Icon(Icons.hub_outlined),
                             ),
                             IconButton(
@@ -360,7 +410,10 @@ class _CharacterRelationshipGraphViewState
     Size viewportSize,
   ) {
     _controller.resetToGlobalPreview();
-    _controller.fitCanvas(viewportSize, _canvasSize(graph.nodes.length));
+    _controller.fitCanvas(
+      viewportSize,
+      _canvasSize(graph, graph.nodes.map((node) => node.id).toSet()),
+    );
   }
 
   void _scheduleInitialGlobalPreview(
@@ -459,14 +512,19 @@ class _CharacterRelationshipGraphViewState
     _scheduleInitialGlobalPreview(graph, viewportSize);
     final visibleIds = _controller.visibleNodeIds(graph);
     final positions = _layoutNodes(graph, visibleIds);
-    final canvasSize = _canvasSize(visibleIds.length);
-    final visibleEdges = graph.edges
-        .where(
-          (edge) =>
-              visibleIds.contains(edge.sourceCharacterId) &&
-              visibleIds.contains(edge.targetNodeId),
-        )
-        .toList(growable: false);
+    final canvasSize = _canvasSize(graph, visibleIds);
+    final visibleEdges = _edgesByConnectionDensity(
+      graph.edges.where(
+        (edge) =>
+            visibleIds.contains(edge.sourceCharacterId) &&
+            visibleIds.contains(edge.targetNodeId),
+      ),
+    );
+    final edgeVisualLayouts = _edgeVisualLayouts(
+      visibleEdges,
+      positions,
+      canvasSize,
+    );
     final connectedIds = _connectedNodeIds(graph, _controller.selectedNodeId);
 
     return Stack(
@@ -489,10 +547,13 @@ class _CharacterRelationshipGraphViewState
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
+                          key: const ValueKey("relationship-edge-layer"),
                           painter: _RelationshipEdgesPainter(
                             edges: visibleEdges,
-                            positions: positions,
-                            nodeSize: _nodeSize,
+                            geometries: {
+                              for (final entry in edgeVisualLayouts.entries)
+                                entry.key: entry.value.geometry,
+                            },
                             selectedEdgeId: _controller.selectedEdgeId,
                             selectedNodeId: _controller.selectedNodeId,
                             colorScheme: Theme.of(context).colorScheme,
@@ -501,7 +562,7 @@ class _CharacterRelationshipGraphViewState
                       ),
                     ),
                     for (final edge in visibleEdges)
-                      _buildEdgeLabel(edge, visibleEdges, positions),
+                      _buildEdgeLabel(edge, edgeVisualLayouts[edge.id]!.label),
                     for (final node in graph.nodes)
                       if (visibleIds.contains(node.id))
                         _buildNode(node, positions[node.id]!, connectedIds),
@@ -549,6 +610,7 @@ class _CharacterRelationshipGraphViewState
     final emphasized = selected || connectedIds.contains(node.id);
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
+      key: ValueKey("relationship-node-${node.id}"),
       left: position.dx,
       top: position.dy,
       width: _nodeSize.width,
@@ -564,7 +626,7 @@ class _CharacterRelationshipGraphViewState
               : scheme.surfaceContainerHighest,
           elevation: selected ? 8 : 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             side: BorderSide(
               color: node.isUnresolved
                   ? scheme.error
@@ -578,22 +640,28 @@ class _CharacterRelationshipGraphViewState
           child: InkWell(
             onTap: () => _controller.selectNode(node.id),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     node.isUnresolved
                         ? Icons.person_off_outlined
                         : Icons.person_outline,
+                    size: 30,
                     color: node.isUnresolved ? scheme.error : scheme.primary,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  const SizedBox(height: 8),
+                  Flexible(
                     child: Text(
                       node.label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        height: 1.12,
+                      ),
                     ),
                   ),
                 ],
@@ -607,18 +675,17 @@ class _CharacterRelationshipGraphViewState
 
   Widget _buildEdgeLabel(
     CharacterRelationshipGraphEdge edge,
-    List<CharacterRelationshipGraphEdge> edges,
-    Map<String, Offset> positions,
+    _EdgeLabelPlacement placement,
   ) {
-    final geometry = _edgeGeometry(edge, edges, positions);
     final label = edge.description.isEmpty ? "未填描述" : edge.description;
     final selected = edge.id == _controller.selectedEdgeId;
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
       key: ValueKey("relationship-edge-label-${edge.id}"),
-      left: geometry.label.dx - 52,
-      top: geometry.label.dy - 14,
-      width: 104,
+      left: placement.center.dx - placement.size.width / 2,
+      top: placement.center.dy - placement.size.height / 2,
+      width: placement.size.width,
+      height: placement.size.height,
       child: Tooltip(
         message: label,
         child: Material(
@@ -640,7 +707,7 @@ class _CharacterRelationshipGraphViewState
                   Flexible(
                     child: Text(
                       label,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.labelSmall,
@@ -674,14 +741,19 @@ class _CharacterRelationshipGraphViewState
       child: Align(
         alignment: Alignment.bottomRight,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 380),
+          constraints: BoxConstraints(
+            maxWidth: 380,
+            maxHeight: math.max(180, MediaQuery.sizeOf(context).height - 24),
+          ),
           child: Card(
             elevation: 10,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: edge != null
-                  ? _buildEdgeDetails(characters, graph, edge)
-                  : _buildNodeDetails(characters, graph, node!),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: edge != null
+                    ? _buildEdgeDetails(characters, graph, edge)
+                    : _buildNodeDetails(characters, graph, node!),
+              ),
             ),
           ),
         ),
@@ -706,6 +778,9 @@ class _CharacterRelationshipGraphViewState
       );
     }
     final character = node.character!;
+    final organizations = character.organizations
+        .where((organization) => organization.name.trim().isNotEmpty)
+        .toList(growable: false);
     final adjacent = graph.edges
         .where(
           (edge) =>
@@ -727,10 +802,13 @@ class _CharacterRelationshipGraphViewState
             IconButton(
               tooltip: "開啟人物編輯",
               onPressed: widget.onOpenCharacter == null
-                  ? null : () => widget.onOpenCharacter!(node.id),
+                  ? null
+                  : () => widget.onOpenCharacter!(node.id),
               icon: const Icon(Icons.edit_rounded),
               style: IconButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                foregroundColor: Theme.of(
+                  context,
+                ).colorScheme.onPrimaryContainer,
               ),
             ),
             IconButton(
@@ -751,6 +829,60 @@ class _CharacterRelationshipGraphViewState
             character.personalitySummary,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        if (organizations.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                Icons.apartment_rounded,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                "所屬組織",
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final entry in organizations.asMap().entries)
+                Tooltip(
+                  message: entry.value.description.trim(),
+                  child: Chip(
+                    key: ValueKey(
+                      "relationship-node-organization-chip-${node.id}-${entry.key}",
+                    ),
+                    avatar: Icon(
+                      Icons.apartment_outlined,
+                      size: 17,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 230),
+                      child: Text(
+                        entry.value.name.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerLow,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
         const SizedBox(height: 6),
@@ -1104,12 +1236,422 @@ class _CharacterRelationshipGraphViewState
     return result;
   }
 
-  Size _canvasSize(int nodeCount) {
-    final columns = math.max(1, math.sqrt(math.max(1, nodeCount)).ceil());
-    final rows = math.max(1, (nodeCount / columns).ceil());
+  Size _edgeLabelSizeFor(CharacterRelationshipGraphEdge edge) {
+    final label = edge.description.isEmpty ? "未填描述" : edge.description;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
+      maxLines: 2,
+      ellipsis: "…",
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: 190);
+    final warningWidth = edge.isResolved ? 0.0 : 18.0;
     return Size(
-      math.max(900, columns * 230 + 180).toDouble(),
-      math.max(650, rows * 160 + 180).toDouble(),
+      (painter.width + 16 + warningWidth).clamp(56.0, 224.0),
+      (painter.height + 10).clamp(30.0, 56.0),
+    );
+  }
+
+  List<CharacterRelationshipGraphEdge> _edgesByConnectionDensity(
+    Iterable<CharacterRelationshipGraphEdge> source,
+  ) {
+    final edges = source.toList(growable: false);
+    final degrees = <String, int>{};
+    for (final edge in edges) {
+      degrees[edge.sourceCharacterId] =
+          (degrees[edge.sourceCharacterId] ?? 0) + 1;
+      degrees[edge.targetNodeId] = (degrees[edge.targetNodeId] ?? 0) + 1;
+    }
+    return [...edges]..sort((left, right) {
+      final leftMaximum = math.max(
+        degrees[left.sourceCharacterId] ?? 0,
+        degrees[left.targetNodeId] ?? 0,
+      );
+      final rightMaximum = math.max(
+        degrees[right.sourceCharacterId] ?? 0,
+        degrees[right.targetNodeId] ?? 0,
+      );
+      final maximumOrder = rightMaximum.compareTo(leftMaximum);
+      if (maximumOrder != 0) return maximumOrder;
+      final leftTotal =
+          (degrees[left.sourceCharacterId] ?? 0) +
+          (degrees[left.targetNodeId] ?? 0);
+      final rightTotal =
+          (degrees[right.sourceCharacterId] ?? 0) +
+          (degrees[right.targetNodeId] ?? 0);
+      final totalOrder = rightTotal.compareTo(leftTotal);
+      if (totalOrder != 0) return totalOrder;
+      return left.id.compareTo(right.id);
+    });
+  }
+
+  Map<String, _EdgeVisualLayout> _edgeVisualLayouts(
+    List<CharacterRelationshipGraphEdge> edges,
+    Map<String, Offset> positions,
+    Size canvasSize,
+  ) {
+    final nodeRects = {
+      for (final entry in positions.entries)
+        entry.key: Rect.fromLTWH(
+          entry.value.dx,
+          entry.value.dy,
+          _nodeSize.width,
+          _nodeSize.height,
+        ),
+    };
+    final labelNodeObstacles = nodeRects.values
+        .map((rect) => rect.inflate(34))
+        .toList(growable: false);
+    final occupiedLabels = <Rect>[];
+    final result = <String, _EdgeVisualLayout>{};
+
+    double overlapArea(Rect candidate, Iterable<Rect> obstacles) {
+      var area = 0.0;
+      for (final obstacle in obstacles) {
+        final intersection = candidate.intersect(obstacle);
+        if (intersection.width > 0 && intersection.height > 0) {
+          area += intersection.width * intersection.height;
+        }
+      }
+      return area;
+    }
+
+    for (final edge in edges) {
+      final baseGeometry = _edgeGeometry(
+        edge,
+        edges,
+        positions,
+        nodeSize: _nodeSize,
+      );
+      final routeObstacles = nodeRects.entries
+          .where(
+            (entry) =>
+                entry.key != edge.sourceCharacterId &&
+                entry.key != edge.targetNodeId,
+          )
+          .map((entry) => entry.value.inflate(16))
+          .toList(growable: false);
+      final routeDelta = baseGeometry.end - baseGeometry.start;
+      final routeDistance = math.max(1.0, routeDelta.distance);
+      final routeNormal = Offset(
+        -routeDelta.dy / routeDistance,
+        routeDelta.dx / routeDistance,
+      );
+      final nodeCenterOffset = Offset(
+        _nodeSize.width / 2,
+        _nodeSize.height / 2,
+      );
+      final sourceCenter =
+          (positions[edge.sourceCharacterId] ?? Offset.zero) + nodeCenterOffset;
+      final targetCenter =
+          (positions[edge.targetNodeId] ?? Offset.zero) + nodeCenterOffset;
+      final maximumDetour = math.max(
+        288.0,
+        math.max(canvasSize.width, canvasSize.height) * 0.65,
+      );
+      final controlOffsets = <double>[0];
+      for (var offset = 72.0; offset <= maximumDetour; offset += 72) {
+        controlOffsets.addAll([offset, -offset]);
+      }
+      _EdgeGeometry? geometry;
+      var routeScore = double.infinity;
+      for (final controlOffset in controlOffsets) {
+        final control = baseGeometry.control + routeNormal * controlOffset;
+        final candidateStart =
+            sourceCenter +
+            _nodeBoundaryOffset(control - sourceCenter, _nodeSize);
+        final candidateEnd =
+            targetCenter +
+            _nodeBoundaryOffset(control - targetCenter, _nodeSize);
+        final estimatedLength =
+            (candidateStart - control).distance +
+            (candidateEnd - control).distance;
+        final sampleCount = math.max(28, (estimatedLength / 12).ceil());
+        var nodeCollisionSamples = 0;
+        var labelCollisionSamples = 0;
+        var boundarySamples = 0;
+        for (var sample = 1; sample < sampleCount; sample++) {
+          final point = _quadraticPoint(
+            candidateStart,
+            control,
+            candidateEnd,
+            sample / sampleCount,
+          );
+          if (routeObstacles.any((obstacle) => obstacle.contains(point))) {
+            nodeCollisionSamples++;
+          }
+          if (occupiedLabels.any((label) => label.contains(point))) {
+            labelCollisionSamples++;
+          }
+          if (point.dx < 8 ||
+              point.dy < 8 ||
+              point.dx > canvasSize.width - 8 ||
+              point.dy > canvasSize.height - 8) {
+            boundarySamples++;
+          }
+        }
+        final score =
+            boundarySamples * 1000000000 +
+            nodeCollisionSamples * 100000000 +
+            labelCollisionSamples * 1000000 +
+            controlOffset.abs() * 0.02;
+        if (score >= routeScore) continue;
+        routeScore = score;
+        geometry = _EdgeGeometry(
+          start: candidateStart,
+          control: control,
+          end: candidateEnd,
+          label: _quadraticPoint(candidateStart, control, candidateEnd, 0.5),
+        );
+      }
+      geometry ??= baseGeometry;
+
+      final labelSize = _edgeLabelSizeFor(edge);
+      final reverseExists = edges.any(
+        (candidate) =>
+            candidate.sourceCharacterId == edge.targetNodeId &&
+            candidate.targetNodeId == edge.sourceCharacterId,
+      );
+      final preferredT = reverseExists ? 0.34 : 0.5;
+      final candidateTs =
+          <double>[
+            preferredT,
+            for (var step = 4; step <= 21; step++) step / 25,
+          ]..sort(
+            (left, right) =>
+                (left - preferredT).abs().compareTo((right - preferredT).abs()),
+          );
+      Offset? selectedCenter;
+      var selectedScore = double.infinity;
+
+      for (final t in candidateTs) {
+        final center = _quadraticPoint(
+          geometry.start,
+          geometry.control,
+          geometry.end,
+          t,
+        );
+        final candidate = Rect.fromCenter(
+          center: center,
+          width: labelSize.width,
+          height: labelSize.height,
+        );
+        var boundaryPenalty = 0.0;
+        if (candidate.left < 8) boundaryPenalty += (8 - candidate.left) * 100;
+        if (candidate.top < 8) boundaryPenalty += (8 - candidate.top) * 100;
+        if (candidate.right > canvasSize.width - 8) {
+          boundaryPenalty += (candidate.right - canvasSize.width + 8) * 100;
+        }
+        if (candidate.bottom > canvasSize.height - 8) {
+          boundaryPenalty += (candidate.bottom - canvasSize.height + 8) * 100;
+        }
+        final score =
+            overlapArea(candidate, labelNodeObstacles) * 4 +
+            overlapArea(candidate, occupiedLabels) * 8 +
+            boundaryPenalty +
+            (t - preferredT).abs() * 4;
+        if (score < selectedScore) {
+          selectedScore = score;
+          selectedCenter = center;
+        }
+      }
+
+      final center = selectedCenter ?? geometry.label;
+      final label = _EdgeLabelPlacement(center: center, size: labelSize);
+      result[edge.id] = _EdgeVisualLayout(geometry: geometry, label: label);
+      occupiedLabels.add(
+        Rect.fromCenter(
+          center: center,
+          width: labelSize.width,
+          height: labelSize.height,
+        ).inflate(5),
+      );
+    }
+    return result;
+  }
+
+  _CharacterLayoutLane _layoutLane(CharacterRelationshipGraphNode node) {
+    return switch (node.character?.characterType.trim()) {
+      "主角" => _CharacterLayoutLane.protagonist,
+      "重要配角" => _CharacterLayoutLane.importantSupporting,
+      "主要反派" => _CharacterLayoutLane.mainVillain,
+      "次要反派" => _CharacterLayoutLane.secondaryVillain,
+      "其他" => _CharacterLayoutLane.other,
+      _ => _CharacterLayoutLane.secondarySupporting,
+    };
+  }
+
+  String _organizationSortKey(CharacterRelationshipGraphNode node) {
+    final organizations = node.character?.organizations ?? const [];
+    for (final organization in organizations) {
+      final name = organization.name.trim();
+      if (name.isNotEmpty) return name.toLowerCase();
+    }
+    return "~${node.label.toLowerCase()}";
+  }
+
+  String _layoutOrganizationKey(CharacterRelationshipGraphNode node) {
+    final organizations = node.character?.organizations ?? const [];
+    for (final organization in organizations) {
+      final name = organization.name.trim().toLowerCase();
+      if (name.isNotEmpty) return "organization:$name";
+    }
+    return "unaffiliated";
+  }
+
+  Map<_CharacterLayoutLane, List<CharacterRelationshipGraphNode>> _nodesByLane(
+    Iterable<CharacterRelationshipGraphNode> nodes,
+  ) {
+    final lanes = <_CharacterLayoutLane, List<CharacterRelationshipGraphNode>>{
+      for (final lane in _CharacterLayoutLane.values)
+        lane: <CharacterRelationshipGraphNode>[],
+    };
+    for (final node in nodes) {
+      if (!node.isUnresolved) lanes[_layoutLane(node)]!.add(node);
+    }
+    for (final laneNodes in lanes.values) {
+      laneNodes.sort((left, right) {
+        final organizationOrder = _organizationSortKey(
+          left,
+        ).compareTo(_organizationSortKey(right));
+        if (organizationOrder != 0) return organizationOrder;
+        return left.label.toLowerCase().compareTo(right.label.toLowerCase());
+      });
+      if (laneNodes.isNotEmpty) {
+        final shift = _controller.layoutRevision % laneNodes.length;
+        laneNodes.addAll(laneNodes.take(shift));
+        laneNodes.removeRange(0, shift);
+      }
+    }
+    return lanes;
+  }
+
+  Size _canvasSize(
+    CharacterRelationshipGraphData graph,
+    Set<String> visibleIds,
+  ) {
+    final visibleNodes = graph.nodes
+        .where((node) => visibleIds.contains(node.id))
+        .toList(growable: false);
+    return _radialLayoutMetrics(visibleNodes).canvasSize;
+  }
+
+  double _ringRadius(
+    int nodeCount, {
+    required double minimum,
+    bool allowSingleAtCenter = false,
+  }) {
+    if (nodeCount == 0) return 0;
+    if (allowSingleAtCenter && nodeCount == 1) return 0;
+    final minimumArc = _nodeSize.width + 36;
+    return math.max(minimum, nodeCount * minimumArc / (2 * math.pi));
+  }
+
+  _RadialLayoutMetrics _radialLayoutMetrics(
+    List<CharacterRelationshipGraphNode> visibleNodes,
+  ) {
+    final lanes = _nodesByLane(visibleNodes);
+    final protagonistRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.protagonist]!.length,
+      minimum: 82,
+      allowSingleAtCenter: true,
+    );
+    final importantRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.importantSupporting]!.length,
+      minimum: math.max(220, protagonistRadius + 180),
+    );
+    final secondaryRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.secondarySupporting]!.length,
+      minimum: math.max(400, importantRadius + 180),
+    );
+    final otherRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.other]!.length,
+      minimum: math.max(570, secondaryRadius + 170),
+    );
+    final mainVillainRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.mainVillain]!.length,
+      minimum: 82,
+      allowSingleAtCenter: true,
+    );
+    final secondaryVillainRadius = _ringRadius(
+      lanes[_CharacterLayoutLane.secondaryVillain]!.length,
+      minimum: math.max(250, mainVillainRadius + 180),
+    );
+    final radii = <_CharacterLayoutLane, double>{
+      _CharacterLayoutLane.protagonist: protagonistRadius,
+      _CharacterLayoutLane.importantSupporting: importantRadius,
+      _CharacterLayoutLane.secondarySupporting: secondaryRadius,
+      _CharacterLayoutLane.other: otherRadius,
+      _CharacterLayoutLane.mainVillain: mainVillainRadius,
+      _CharacterLayoutLane.secondaryVillain: secondaryVillainRadius,
+    };
+
+    double maximumRadius(Iterable<_CharacterLayoutLane> clusterLanes) {
+      var result = 0.0;
+      for (final lane in clusterLanes) {
+        if (lanes[lane]!.isNotEmpty) result = math.max(result, radii[lane]!);
+      }
+      return result;
+    }
+
+    final protagonistExtent = math.max(
+      310.0,
+      maximumRadius(const [
+            _CharacterLayoutLane.protagonist,
+            _CharacterLayoutLane.importantSupporting,
+            _CharacterLayoutLane.secondarySupporting,
+            _CharacterLayoutLane.other,
+          ]) +
+          _nodeSize.width / 2 +
+          64,
+    );
+    final villainExtent = math.max(
+      310.0,
+      maximumRadius(const [
+            _CharacterLayoutLane.mainVillain,
+            _CharacterLayoutLane.secondaryVillain,
+          ]) +
+          _nodeSize.width / 2 +
+          64,
+    );
+    const clusterGap = 180.0;
+    final rawWidth = protagonistExtent * 2 + clusterGap + villainExtent * 2;
+    final canvasWidth = math.max(1800.0, rawWidth);
+    final horizontalInset = (canvasWidth - rawWidth) / 2;
+    final resolvedHeight = math.max(
+      820.0,
+      math.max(protagonistExtent, villainExtent) * 2,
+    );
+    final protagonistCenter = Offset(
+      horizontalInset + protagonistExtent,
+      resolvedHeight / 2,
+    );
+    final villainCenter = Offset(
+      horizontalInset + protagonistExtent * 2 + clusterGap + villainExtent,
+      resolvedHeight / 2,
+    );
+
+    final unresolvedCount = visibleNodes
+        .where((node) => node.isUnresolved)
+        .length;
+    final unresolvedColumns = math.max(
+      1,
+      ((canvasWidth - 48) / (_nodeSize.width + 28)).floor(),
+    );
+    final unresolvedRows = (unresolvedCount / unresolvedColumns).ceil();
+    final unresolvedHeight = unresolvedRows == 0
+        ? 0.0
+        : unresolvedRows * (_nodeSize.height + 24) + 28;
+
+    return _RadialLayoutMetrics(
+      canvasSize: Size(canvasWidth, resolvedHeight + unresolvedHeight),
+      resolvedHeight: resolvedHeight,
+      protagonistCenter: protagonistCenter,
+      villainCenter: villainCenter,
+      radii: radii,
     );
   }
 
@@ -1121,75 +1663,195 @@ class _CharacterRelationshipGraphViewState
         .where((node) => visibleIds.contains(node.id))
         .toList(growable: false);
     if (visibleNodes.isEmpty) return const {};
-    final canvasSize = _canvasSize(visibleNodes.length);
-    final resolved = visibleNodes.where((node) => !node.isUnresolved).toList();
+    final lanes = _nodesByLane(visibleNodes);
+    final metrics = _radialLayoutMetrics(visibleNodes);
+    final canvasSize = metrics.canvasSize;
     final unresolved = visibleNodes.where((node) => node.isUnresolved).toList();
-    if (resolved.isNotEmpty) {
-      final shift = _controller.layoutRevision % resolved.length;
-      resolved.addAll(resolved.take(shift));
-      resolved.removeRange(0, shift);
-    }
     final positions = <String, Offset>{};
+    final connectionCounts = <String, int>{};
+    for (final edge in graph.edges) {
+      if (!visibleIds.contains(edge.sourceCharacterId) ||
+          !visibleIds.contains(edge.targetNodeId)) {
+        continue;
+      }
+      connectionCounts[edge.sourceCharacterId] =
+          (connectionCounts[edge.sourceCharacterId] ?? 0) + 1;
+      connectionCounts[edge.targetNodeId] =
+          (connectionCounts[edge.targetNodeId] ?? 0) + 1;
+    }
     final unresolvedColumns = math.max(
       1,
       ((canvasSize.width - 48) / (_nodeSize.width + 28)).floor(),
     );
-    final unresolvedRows = unresolved.isEmpty
-        ? 0
-        : (unresolved.length / unresolvedColumns).ceil();
-    final unresolvedAreaHeight = unresolvedRows * (_nodeSize.height + 24);
-    final resolvedAreaHeight = math.max(
-      320.0,
-      canvasSize.height - unresolvedAreaHeight,
-    );
-    if (resolved.length == 1) {
-      positions[resolved.single.id] = Offset(
-        canvasSize.width / 2 - _nodeSize.width / 2,
-        resolvedAreaHeight / 2 - _nodeSize.height / 2,
-      );
-    } else if (resolved.length <= 12) {
-      final radiusX = math.max(220.0, canvasSize.width / 2 - 190);
-      final radiusY = math.max(110.0, resolvedAreaHeight / 2 - 90);
-      for (var index = 0; index < resolved.length; index++) {
-        final angle = -math.pi / 2 + (2 * math.pi * index / resolved.length);
-        positions[resolved[index].id] = Offset(
-          canvasSize.width / 2 +
-              math.cos(angle) * radiusX -
-              _nodeSize.width / 2,
-          resolvedAreaHeight / 2 +
-              math.sin(angle) * radiusY -
-              _nodeSize.height / 2,
-        );
+
+    Map<String, double> organizationAnglesFor(
+      List<_CharacterLayoutLane> clusterLanes,
+      double startAngle,
+    ) {
+      final groupedNodes = <String, List<CharacterRelationshipGraphNode>>{};
+      for (final lane in clusterLanes) {
+        if ((metrics.radii[lane] ?? 0) <= 0) continue;
+        for (final node in lanes[lane]!) {
+          groupedNodes
+              .putIfAbsent(
+                _layoutOrganizationKey(node),
+                () => <CharacterRelationshipGraphNode>[],
+              )
+              .add(node);
+        }
       }
-    } else {
-      final columns = math.max(
+      if (groupedNodes.isEmpty) return const {};
+      if (groupedNodes.length == 1 &&
+          groupedNodes.containsKey("unaffiliated")) {
+        return const {};
+      }
+
+      final groupWeights = <String, int>{};
+      for (final entry in groupedNodes.entries) {
+        var maximumInLane = 1;
+        for (final lane in clusterLanes) {
+          maximumInLane = math.max(
+            maximumInLane,
+            entry.value.where((node) => _layoutLane(node) == lane).length,
+          );
+        }
+        groupWeights[entry.key] = maximumInLane;
+      }
+      final orderedKeys = groupedNodes.keys.toList()
+        ..sort((left, right) {
+          final leftUnaffiliated = left == "unaffiliated";
+          final rightUnaffiliated = right == "unaffiliated";
+          if (leftUnaffiliated != rightUnaffiliated) {
+            return leftUnaffiliated ? 1 : -1;
+          }
+          final countOrder = groupedNodes[left]!.length.compareTo(
+            groupedNodes[right]!.length,
+          );
+          if (countOrder != 0) return countOrder;
+          return left.compareTo(right);
+        });
+      final totalWeight = orderedKeys.fold<int>(
+        0,
+        (sum, key) => sum + groupWeights[key]!,
+      );
+      final sectorGap = orderedKeys.length <= 1
+          ? 0.0
+          : math.min(0.24, math.pi / (orderedKeys.length * 4));
+      final availableSpan = math.max(
+        math.pi,
+        2 * math.pi - sectorGap * orderedKeys.length,
+      );
+      final result = <String, double>{};
+      var cursor = startAngle;
+      for (final key in orderedKeys) {
+        final sectorSpan = availableSpan * groupWeights[key]! / totalWeight;
+        final sectorCenter = cursor + sectorSpan / 2;
+        for (final lane in clusterLanes) {
+          final laneMembers = groupedNodes[key]!
+              .where((node) => _layoutLane(node) == lane)
+              .toList(growable: false);
+          if (laneMembers.isEmpty) continue;
+          final radius = metrics.radii[lane]!;
+          final minimumGap = radius <= 0
+              ? 0.0
+              : 2 *
+                    math.asin(
+                      math.min(0.95, (_nodeSize.width + 18) / (2 * radius)),
+                    );
+          final spread = laneMembers.length <= 1
+              ? 0.0
+              : math.min(
+                  sectorSpan * 0.68,
+                  minimumGap * (laneMembers.length - 1),
+                );
+          for (var index = 0; index < laneMembers.length; index++) {
+            final angle = laneMembers.length == 1
+                ? sectorCenter
+                : sectorCenter -
+                      spread / 2 +
+                      spread * index / (laneMembers.length - 1);
+            result[laneMembers[index].id] = angle;
+          }
+        }
+        cursor += sectorSpan + sectorGap;
+      }
+      return result;
+    }
+
+    final organizationAngles = <String, double>{
+      ...organizationAnglesFor(const [
+        _CharacterLayoutLane.protagonist,
+        _CharacterLayoutLane.importantSupporting,
+        _CharacterLayoutLane.secondarySupporting,
+        _CharacterLayoutLane.other,
+      ], -math.pi),
+      ...organizationAnglesFor(const [
+        _CharacterLayoutLane.mainVillain,
+        _CharacterLayoutLane.secondaryVillain,
+      ], -math.pi),
+    };
+
+    void placeRing(
+      _CharacterLayoutLane lane,
+      Offset center, {
+      double startAngle = -math.pi / 2,
+    }) {
+      final nodes = lanes[lane]!;
+      if (nodes.isEmpty) return;
+      final radius = metrics.radii[lane]!;
+      final angleStep = 2 * math.pi / nodes.length;
+      final maximumConnections = nodes.fold<int>(
         1,
-        ((canvasSize.width - 100) / (_nodeSize.width + 56)).floor(),
+        (maximum, node) => math.max(maximum, connectionCounts[node.id] ?? 0),
       );
-      final rows = (resolved.length / columns).ceil();
-      final gridWidth =
-          math.min(columns, resolved.length) * (_nodeSize.width + 56);
-      final gridHeight = rows * (_nodeSize.height + 42);
-      final origin = Offset(
-        math.max(24, (canvasSize.width - gridWidth) / 2),
-        math.max(24, (resolvedAreaHeight - gridHeight) / 2),
-      );
-      for (var index = 0; index < resolved.length; index++) {
-        positions[resolved[index].id] = Offset(
-          origin.dx + (index % columns) * (_nodeSize.width + 56),
-          origin.dy + (index ~/ columns) * (_nodeSize.height + 42),
-        );
+      for (var index = 0; index < nodes.length; index++) {
+        final angle =
+            organizationAngles[nodes[index].id] ??
+            startAngle + index * angleStep;
+        final connectionRatio =
+            (connectionCounts[nodes[index].id] ?? 0) / maximumConnections;
+        final relativeOffset = radius == 0
+            ? Offset.zero
+            : Offset.fromDirection(
+                    angle + math.pi / 2,
+                    8 + connectionRatio * 22,
+                  ) +
+                  Offset.fromDirection(angle, connectionRatio * 12);
+        final nodeCenter =
+            center + Offset.fromDirection(angle, radius) + relativeOffset;
+        positions[nodes[index].id] =
+            nodeCenter - Offset(_nodeSize.width / 2, _nodeSize.height / 2);
       }
     }
+
+    placeRing(_CharacterLayoutLane.protagonist, metrics.protagonistCenter);
+    placeRing(
+      _CharacterLayoutLane.importantSupporting,
+      metrics.protagonistCenter,
+    );
+    placeRing(
+      _CharacterLayoutLane.secondarySupporting,
+      metrics.protagonistCenter,
+      startAngle: -math.pi / 2 + math.pi / 8,
+    );
+    placeRing(
+      _CharacterLayoutLane.other,
+      metrics.protagonistCenter,
+      startAngle: math.pi / 2,
+    );
+    placeRing(_CharacterLayoutLane.mainVillain, metrics.villainCenter);
+    placeRing(
+      _CharacterLayoutLane.secondaryVillain,
+      metrics.villainCenter,
+      startAngle: -math.pi / 2 + math.pi / 6,
+    );
+
     for (var index = 0; index < unresolved.length; index++) {
       final column = index % unresolvedColumns;
       final row = index ~/ unresolvedColumns;
       positions[unresolved[index].id] = Offset(
         24 + column * (_nodeSize.width + 28),
-        canvasSize.height -
-            unresolvedAreaHeight +
-            row * (_nodeSize.height + 24) +
-            12,
+        metrics.resolvedHeight + row * (_nodeSize.height + 24) + 12,
       );
     }
     return positions;
@@ -1210,50 +1872,63 @@ class _EdgeGeometry {
   });
 }
 
+Offset _nodeBoundaryOffset(Offset direction, Size nodeSize) {
+  final distance = math.max(0.0001, direction.distance);
+  final normalized = direction / distance;
+  final horizontalScale = normalized.dx.abs() < 0.0001
+      ? double.infinity
+      : nodeSize.width / 2 / normalized.dx.abs();
+  final verticalScale = normalized.dy.abs() < 0.0001
+      ? double.infinity
+      : nodeSize.height / 2 / normalized.dy.abs();
+  return normalized * math.min(horizontalScale, verticalScale);
+}
+
 _EdgeGeometry _edgeGeometry(
   CharacterRelationshipGraphEdge edge,
   List<CharacterRelationshipGraphEdge> edges,
-  Map<String, Offset> positions,
-) {
+  Map<String, Offset> positions, {
+  required Size nodeSize,
+}) {
   final sourceTopLeft = positions[edge.sourceCharacterId] ?? Offset.zero;
   final targetTopLeft = positions[edge.targetNodeId] ?? Offset.zero;
-  final source = sourceTopLeft + const Offset(78, 36);
-  final target = targetTopLeft + const Offset(78, 36);
+  final nodeCenterOffset = Offset(nodeSize.width / 2, nodeSize.height / 2);
+  final source = sourceTopLeft + nodeCenterOffset;
+  final target = targetTopLeft + nodeCenterOffset;
   final reverseExists = edges.any(
     (candidate) =>
         candidate.sourceCharacterId == edge.targetNodeId &&
         candidate.targetNodeId == edge.sourceCharacterId,
   );
 
-  var shiftedSource = source;
-  var shiftedTarget = target;
+  final centerDelta = target - source;
+  final centerDistance = math.max(1.0, centerDelta.distance);
+  final centerDirection = centerDelta / centerDistance;
+
+  var start = source + _nodeBoundaryOffset(centerDirection, nodeSize);
+  var end = target - _nodeBoundaryOffset(centerDirection, nodeSize);
   var bendNormal = Offset.zero;
   if (reverseExists) {
     final sourceIsCanonical =
         edge.sourceCharacterId.compareTo(edge.targetNodeId) <= 0;
     final canonicalStart = sourceIsCanonical ? source : target;
     final canonicalEnd = sourceIsCanonical ? target : source;
-    final canonicalDelta = canonicalEnd - canonicalStart;
-    final canonicalDistance = math.max(1.0, canonicalDelta.distance);
-    final canonicalDirection = canonicalDelta / canonicalDistance;
+    final canonicalDirection =
+        (canonicalEnd - canonicalStart) /
+        math.max(1.0, (canonicalEnd - canonicalStart).distance);
     bendNormal = Offset(-canonicalDirection.dy, canonicalDirection.dx);
 
     // Keep both curves bending toward the same side while assigning each
     // direction its own parallel lane.
-    const laneOffset = 14.0;
+    const laneOffset = 32.0;
     final laneSign = sourceIsCanonical ? 1.0 : -1.0;
     final laneShift = bendNormal * (laneOffset * laneSign);
-    shiftedSource += laneShift;
-    shiftedTarget += laneShift;
+    start += laneShift;
+    end += laneShift;
   }
 
-  final delta = shiftedTarget - shiftedSource;
-  final distance = math.max(1.0, delta.distance);
-  final direction = delta / distance;
-  final start = shiftedSource + Offset(direction.dx * 80, direction.dy * 42);
-  final end = shiftedTarget - Offset(direction.dx * 80, direction.dy * 42);
   final midpoint = (start + end) / 2;
-  final control = midpoint + bendNormal * (reverseExists ? 42.0 : 0.0);
+  final control = midpoint + bendNormal * (reverseExists ? 50.0 : 0.0);
 
   // Opposite directions use the same t value from their own source, placing
   // the two labels toward opposite ends instead of stacking at the midpoint.
@@ -1280,16 +1955,14 @@ Offset _quadraticPoint(Offset start, Offset control, Offset end, double t) {
 
 class _RelationshipEdgesPainter extends CustomPainter {
   final List<CharacterRelationshipGraphEdge> edges;
-  final Map<String, Offset> positions;
-  final Size nodeSize;
+  final Map<String, _EdgeGeometry> geometries;
   final String? selectedEdgeId;
   final String? selectedNodeId;
   final ColorScheme colorScheme;
 
   const _RelationshipEdgesPainter({
     required this.edges,
-    required this.positions,
-    required this.nodeSize,
+    required this.geometries,
     required this.selectedEdgeId,
     required this.selectedNodeId,
     required this.colorScheme,
@@ -1298,7 +1971,8 @@ class _RelationshipEdgesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final edge in edges) {
-      final geometry = _edgeGeometry(edge, edges, positions);
+      final geometry = geometries[edge.id];
+      if (geometry == null) continue;
       final selected = edge.id == selectedEdgeId;
       final connected =
           selectedNodeId == null ||
@@ -1312,7 +1986,9 @@ class _RelationshipEdgesPainter extends CustomPainter {
       final paint = Paint()
         ..color = color.withValues(alpha: connected ? 1 : 0.22)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 3.5 : 2;
+        ..strokeWidth = selected ? 3.5 : 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
       final path = Path()
         ..moveTo(geometry.start.dx, geometry.start.dy)
         ..quadraticBezierTo(
@@ -1321,6 +1997,17 @@ class _RelationshipEdgesPainter extends CustomPainter {
           geometry.end.dx,
           geometry.end.dy,
         );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = colorScheme.surface.withValues(
+            alpha: connected ? 0.82 : 0.25,
+          )
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = selected ? 8 : 6
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
       canvas.drawPath(path, paint);
 
       _drawArrowHead(
@@ -1363,10 +2050,39 @@ class _RelationshipEdgesPainter extends CustomPainter {
     canvas.drawPath(arrow, paint);
   }
 
+  double _distanceToSegment(Offset point, Offset start, Offset end) {
+    final segment = end - start;
+    final lengthSquared = segment.dx * segment.dx + segment.dy * segment.dy;
+    if (lengthSquared < 0.0001) return (point - start).distance;
+    final projection =
+        ((point - start).dx * segment.dx + (point - start).dy * segment.dy) /
+        lengthSquared;
+    final t = projection.clamp(0.0, 1.0);
+    return (point - (start + segment * t)).distance;
+  }
+
+  @override
+  bool hitTest(Offset position) {
+    for (final geometry in geometries.values) {
+      var previous = geometry.start;
+      for (var sample = 1; sample <= 120; sample++) {
+        final point = _quadraticPoint(
+          geometry.start,
+          geometry.control,
+          geometry.end,
+          sample / 120,
+        );
+        if (_distanceToSegment(position, previous, point) <= 4) return true;
+        previous = point;
+      }
+    }
+    return false;
+  }
+
   @override
   bool shouldRepaint(covariant _RelationshipEdgesPainter oldDelegate) {
     return oldDelegate.edges != edges ||
-        oldDelegate.positions != positions ||
+        oldDelegate.geometries != geometries ||
         oldDelegate.selectedEdgeId != selectedEdgeId ||
         oldDelegate.selectedNodeId != selectedNodeId ||
         oldDelegate.colorScheme != colorScheme;
