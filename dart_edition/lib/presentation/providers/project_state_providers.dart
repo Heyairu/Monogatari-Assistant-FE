@@ -15,6 +15,7 @@ import "../../models/outline_data.dart" as outline_module;
 import "../../models/plan_data.dart" as plan_module;
 import "../../models/project_data.dart";
 import "../../models/project_file.dart";
+import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart";
 import "project_snapshot_utils.dart";
 
@@ -805,8 +806,21 @@ class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
     return _createSnapshot(ProjectData.empty().outlineData);
   }
 
-  void setOutlineData(List<outline_module.StorylineData> value) {
+  void setOutlineData(
+    List<outline_module.StorylineData> value, {
+    bool synchronizeTimeline = true,
+  }) {
     state = _createSnapshot(value);
+    if (!synchronizeTimeline) return;
+    final timeline = ref.read(timelineDocumentProvider);
+    if (!timeline.grid.autoSortOutline) return;
+    final aligned = TimelineOutlineOrder.alignTimelineToOutline(
+      timeline,
+      state,
+    );
+    ref
+        .read(timelineDocumentProvider.notifier)
+        .setDocument(aligned, synchronizeOutline: false);
   }
 
   void updateOutlineData(
@@ -822,6 +836,67 @@ class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
 final outlineDataProvider =
     NotifierProvider<OutlineDataNotifier, List<outline_module.StorylineData>>(
       OutlineDataNotifier.new,
+    );
+
+class TimelineDocumentNotifier extends Notifier<TimelineDocumentData> {
+  @override
+  TimelineDocumentData build() {
+    return snapshotTimelineDocument(TimelineDocumentData.initial());
+  }
+
+  void setDocument(
+    TimelineDocumentData value, {
+    bool synchronizeOutline = true,
+  }) {
+    final snapshot = snapshotTimelineDocument(value);
+    if (snapshot == state) return;
+    state = snapshot;
+    if (!synchronizeOutline || !snapshot.grid.autoSortOutline) return;
+    final outline = ref.read(outlineDataProvider);
+    final sorted = TimelineOutlineOrder.sortOutlineByTimeline(
+      outline,
+      snapshot,
+    );
+    if (identical(sorted, outline)) return;
+    ref
+        .read(outlineDataProvider.notifier)
+        .setOutlineData(sorted, synchronizeTimeline: false);
+  }
+
+  void updateDocument(
+    TimelineDocumentData Function(TimelineDocumentData current) update,
+  ) {
+    setDocument(update(state));
+  }
+}
+
+final timelineDocumentProvider =
+    NotifierProvider<TimelineDocumentNotifier, TimelineDocumentData>(
+      TimelineDocumentNotifier.new,
+    );
+
+class OutlineChapterLinksNotifier
+    extends Notifier<List<OutlineChapterLinkData>> {
+  @override
+  List<OutlineChapterLinkData> build() => const <OutlineChapterLinkData>[];
+
+  void setLinks(List<OutlineChapterLinkData> value) {
+    final snapshot = snapshotOutlineChapterLinks(value);
+    if (snapshot == state) return;
+    state = snapshot;
+  }
+
+  void updateLinks(
+    List<OutlineChapterLinkData> Function(List<OutlineChapterLinkData> current)
+    update,
+  ) {
+    setLinks(update(state));
+  }
+}
+
+final outlineChapterLinksProvider =
+    NotifierProvider<OutlineChapterLinksNotifier, List<OutlineChapterLinkData>>(
+      OutlineChapterLinksNotifier.new,
     );
 
 class WorldSettingsDataNotifier extends Notifier<List<LocationData>> {
@@ -2405,6 +2480,8 @@ final projectDataProvider = Provider<ProjectData>((ref) {
     worldSettingsData: ref.watch(worldSettingsDataProvider),
     characterData: ref.watch(characterDataProvider),
     characterStates: ref.watch(characterStatesProvider),
+    timelineDocument: ref.watch(timelineDocumentProvider),
+    outlineChapterLinks: ref.watch(outlineChapterLinksProvider),
     totalWords: ref.watch(totalWordsProvider),
     contentText: ref.watch(editorContentProvider),
   );

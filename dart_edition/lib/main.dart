@@ -36,6 +36,7 @@ import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_history_provider.dart";
 import "presentation/providers/project_state_providers.dart";
+import "presentation/providers/timeline_providers.dart";
 import "presentation/providers/word_count_providers.dart";
 import "utils/text_change_debouncer.dart";
 import "utils/text_position_index.dart";
@@ -55,6 +56,7 @@ import "modules/worldsettingsview.dart";
 import "modules/characterview.dart";
 import "modules/character_relationship_graph_view.dart";
 import "modules/settingview.dart";
+import "modules/timelineview.dart";
 
 typedef _CoordinatorUiEventState = ({
   int messageEventId,
@@ -430,6 +432,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     3, // Outline
     4, // World settings
     5, // Characters
+    6, // Timeline
     7, // Character relationships
     8, // Plans
   };
@@ -2071,11 +2074,26 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildTimelineView() {
-    return _buildPlaceholderPage(
-      icon: Icons.view_timeline_outlined,
-      title: "時間軸",
-      description: "時間軸功能開發中...",
-      color: Colors.teal,
+    return TimelineView(
+      onOpenChapter: (chapterUUID) {
+        _flushPendingEditorContent();
+        _syncEditorToSelectedChapter();
+        final opened = ref
+            .read(editorCoordinatorProvider.notifier)
+            .navigateToChapter(chapterUUID);
+        if (!opened) {
+          AppFeedback.warning(context, "找不到關聯章節，請重新建立連結。");
+        }
+      },
+      onOpenOutlineScene: (sceneUUID) {
+        _flushPendingEditorContent();
+        _syncEditorToSelectedChapter();
+        ref
+            .read(outlineSelectionRequestProvider.notifier)
+            .requestScene(sceneUUID);
+        _recordPageTransitionIfNeeded(3);
+        setState(() => slidePageIndexNow = 3);
+      },
     );
   }
 
@@ -2136,48 +2154,6 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   Widget _buildAboutView() {
     return const AboutModule.AboutView();
-  }
-
-  // 通用的佔位頁面
-  Widget _buildPlaceholderPage({
-    required IconData icon,
-    required String title,
-    required String description,
-    required MaterialColor color,
-  }) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Icon(icon, size: 64, color: color),
-            ),
-            const SizedBox(height: 24),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            Text(
-              description,
-              style: Theme.of(context).textTheme.labelLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: () {
-                _showMessage("$title 功能即將推出！");
-              },
-              icon: const Icon(Icons.construction),
-              label: const Text("即將推出"),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   // 檔案操作處理

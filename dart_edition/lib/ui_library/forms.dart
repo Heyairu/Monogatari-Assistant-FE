@@ -405,6 +405,92 @@ class LabeledSlider extends StatelessWidget {
   }
 }
 
+enum IconedSliderLayout { stacked, inline }
+
+/// A slider with a title, formatted value, and optional endpoint labels.
+class IconedSlider extends StatelessWidget {
+  final double value;
+  final double min;
+  final double max;
+  final int? divisions;
+  final ValueChanged<double>? onChanged;
+  final ValueChanged<double>? onChangeStart;
+  final ValueChanged<double>? onChangeEnd;
+  final String Function(double value)? valueLabelBuilder;
+  final bool showValue;
+  final IconData? icon;
+  final IconedSliderLayout layout;
+  final double inlineTitleWidth;
+  final EdgeInsetsGeometry padding;
+
+  const IconedSlider({
+    super.key,
+    required this.icon,
+    required this.value,
+    required this.onChanged,
+    this.min = 0,
+    this.max = 100,
+    this.divisions,
+    this.onChangeStart,
+    this.onChangeEnd,
+    this.valueLabelBuilder,
+    this.showValue = true,
+    this.layout = IconedSliderLayout.stacked,
+    this.inlineTitleWidth = 72,
+    this.padding = const EdgeInsets.symmetric(vertical: 4),
+  }) : assert(max > min),
+       assert(value >= min && value <= max),
+       assert(divisions == null || divisions > 0),
+       assert(inlineTitleWidth > 0);
+
+  String _formatValue(double sliderValue) {
+    if (valueLabelBuilder != null) {
+      return valueLabelBuilder!(sliderValue);
+    }
+    return sliderValue == sliderValue.roundToDouble()
+        ? sliderValue.toStringAsFixed(0)
+        : sliderValue.toStringAsFixed(1);
+  }
+
+  Widget _buildControl(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Icon(icon, color: colorScheme.primary),
+        if (showValue) ...[
+          const SizedBox(width: 8),
+          Text(
+            _formatValue(value),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+        Expanded(
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            label: _formatValue(value),
+            onChanged: onChanged,
+            onChangeStart: onChangeStart,
+            onChangeEnd: onChangeEnd,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(padding: padding, child: _buildControl(context));
+  }
+}
+
 /// Display/edit switch for inline renaming.
 ///
 /// When [controller] is omitted, the widget owns a temporary controller while

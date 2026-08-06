@@ -6,6 +6,7 @@ import "../../models/character_data.dart" as character_model;
 import "../../models/outline_data.dart" as outline_module;
 import "../../models/plan_data.dart" as plan_module;
 import "../../models/project_data.dart";
+import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart" as world_settings_module;
 
 List<T> _freezeListCopy<T>(List<T> source) {
@@ -186,6 +187,19 @@ Map<String, character_model.CharacterEntryData> snapshotCharacterData(
   return _freezeMapView(copied);
 }
 
+TimelineDocumentData snapshotTimelineDocument(TimelineDocumentData source) {
+  return source.copyWith(
+    tracks: _freezeListCopy(source.tracks),
+    placements: _freezeListCopy(source.placements),
+  );
+}
+
+List<OutlineChapterLinkData> snapshotOutlineChapterLinks(
+  List<OutlineChapterLinkData> source,
+) {
+  return _freezeListCopy(source);
+}
+
 ProjectData snapshotProjectData(
   ProjectData source, {
   base_info_module.BaseInfoData? baseInfoOverride,
@@ -204,6 +218,10 @@ ProjectData snapshotProjectData(
           possessions: List<String>.unmodifiable(state.possessions),
         ),
       ),
+    ),
+    timelineDocument: snapshotTimelineDocument(source.timelineDocument),
+    outlineChapterLinks: snapshotOutlineChapterLinks(
+      source.outlineChapterLinks,
     ),
     totalWords: source.totalWords,
     contentText: source.contentText,

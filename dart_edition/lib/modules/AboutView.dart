@@ -52,11 +52,14 @@ class AboutView extends StatelessWidget {
 
             const SizedBox(height: 8),
 
+            // Codename
+            Text("Codename Hana", style: Theme.of(context).textTheme.titleSmall),
+
             // 版本狀態
-            Text("Beta 7", style: Theme.of(context).textTheme.titleSmall),
+            Text("Beta 8", style: Theme.of(context).textTheme.titleSmall),
 
             // Version
-            Text("Ver 0.8.93", style: Theme.of(context).textTheme.labelLarge),
+            Text("Ver 0.9.19", style: Theme.of(context).textTheme.labelLarge),
 
             const SizedBox(height: 32),
 

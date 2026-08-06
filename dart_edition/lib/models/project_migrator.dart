@@ -1,7 +1,9 @@
 import "package:uuid/uuid.dart";
 
 import "character_data.dart";
+import "chapter_selection_data.dart";
 import "project_data.dart";
+import "timeline_data.dart";
 
 class ProjectMigrationResult {
   final ProjectData data;
@@ -18,12 +20,25 @@ class ProjectMigrationResult {
 /// Owns all project-format upgrades. Module codecs only decode their XML shape;
 /// they never guess which historical project version they received.
 class ProjectMigrator {
-  static const currentVersion = "1.08";
+  static const currentVersion = "1.10";
+  static const _legacyMigrationCutoff = "1.08";
+  static const _timelineProjectionCutoff = "1.10";
   static const _uuid = Uuid();
 
+  /// Whether the source still needs the destructive legacy normalization.
+  ///
+  /// Timeline projection upgrades are handled separately so a 1.08/1.09 file
+  /// never re-runs the destructive 1.06/1.07 character migration.
   static bool requiresMigration(String? sourceVersion) {
     final version = sourceVersion?.trim();
-    return version == null || _compareVersion(version, currentVersion) < 0;
+    if (version == null || version.isEmpty) return true;
+    // A short-lived development build wrote 0.10. Treat it as structured data
+    // rather than sending it through the legacy character migration.
+    if (_compareVersion(version, "0.10") >= 0 &&
+        _compareVersion(version, "1.0") < 0) {
+      return false;
+    }
+    return _compareVersion(version, _legacyMigrationCutoff) < 0;
   }
 
   static ProjectMigrationResult migrate({
@@ -31,13 +46,120 @@ class ProjectMigrator {
     required ProjectData parsedData,
   }) {
     if (requiresMigration(sourceVersion)) {
-      return _migrateLegacyTo108(parsedData);
+      final legacy = _migrateLegacyTo108(parsedData);
+      final timelineUpgrade = _upgradeTimelineProjection(
+        sourceVersion: sourceVersion,
+        source: legacy.data,
+      );
+      return ProjectMigrationResult(
+        data: timelineUpgrade.data,
+        warnings: legacy.warnings,
+        wasMigrated: true,
+      );
     }
 
+    final timelineUpgrade = _upgradeTimelineProjection(
+      sourceVersion: sourceVersion,
+      source: parsedData,
+    );
     return ProjectMigrationResult(
-      data: parsedData,
-      warnings: _validateReferences(parsedData),
-      wasMigrated: false,
+      data: timelineUpgrade.data,
+      warnings: _validateReferences(timelineUpgrade.data),
+      wasMigrated: timelineUpgrade.changed,
+    );
+  }
+
+  static ({ProjectData data, bool changed}) _upgradeTimelineProjection({
+    required String? sourceVersion,
+    required ProjectData source,
+  }) {
+    final version = sourceVersion?.trim();
+    if (version != null &&
+        version.isNotEmpty &&
+        _compareVersion(version, _timelineProjectionCutoff) >= 0) {
+      return (data: source, changed: false);
+    }
+
+    var document = source.timelineDocument;
+    var placements = [...document.placements];
+    final placementIndex = <String, int>{
+      for (var index = 0; index < placements.length; index++)
+        placements[index].placementUUID: index,
+    };
+
+    // Version 1.09 placements only linked small boxes. Recover the enclosing
+    // middle/large outline UUIDs from the authoritative scene hierarchy before
+    // filling any missing boxes.
+    for (final storyline in source.outlineData) {
+      for (final event in storyline.scenes) {
+        for (final scene in event.scenes) {
+          final smallIndex = placements.indexWhere(
+            (placement) => placement.sceneUUID == scene.sceneUUID,
+          );
+          if (smallIndex < 0) continue;
+          final small = placements[smallIndex].copyWith(
+            storylineUUID: storyline.chapterUUID,
+            eventUUID: event.storyEventUUID,
+          );
+          placements[smallIndex] = small;
+
+          final middleUUID = small.parentPlacementUUID;
+          final middleIndex = middleUUID == null
+              ? null
+              : placementIndex[middleUUID];
+          if (middleIndex == null) continue;
+          final middle = placements[middleIndex].copyWith(
+            storylineUUID: storyline.chapterUUID,
+            eventUUID: event.storyEventUUID,
+          );
+          placements[middleIndex] = middle;
+
+          final largeUUID = middle.parentPlacementUUID;
+          final largeIndex = largeUUID == null
+              ? null
+              : placementIndex[largeUUID];
+          if (largeIndex == null) continue;
+          placements[largeIndex] = placements[largeIndex].copyWith(
+            storylineUUID: storyline.chapterUUID,
+          );
+        }
+      }
+    }
+    document = document.copyWith(placements: placements);
+
+    // Do not seed the parser's synthetic empty default outline in files that
+    // contain no outline content. Genuine old outlines with events are rebuilt
+    // as a complete large → middle → small projection.
+    final meaningfulOutline = source.outlineData
+        .where((storyline) => storyline.scenes.isNotEmpty)
+        .toList(growable: false);
+    if (meaningfulOutline.isNotEmpty) {
+      document = TimelineOutlineMapper.seedFromOutline(
+        document,
+        meaningfulOutline,
+      );
+    }
+
+    if (document == source.timelineDocument) {
+      return (data: source, changed: false);
+    }
+    return (
+      data: ProjectData(
+        baseInfoData: source.baseInfoData,
+        segmentsData: source.segmentsData,
+        outlineData: source.outlineData,
+        foreshadowData: source.foreshadowData,
+        updatePlanData: source.updatePlanData,
+        worldSettingsData: source.worldSettingsData,
+        characterData: source.characterData,
+        characterStates: source.characterStates,
+        timelineDocument: document,
+        outlineChapterLinks: source.outlineChapterLinks,
+        totalWords: source.totalWords,
+        contentText: source.contentText,
+        isDirty: source.isDirty,
+      ),
+      changed: true,
     );
   }
 
@@ -164,6 +286,8 @@ class ProjectMigrator {
       worldSettingsData: source.worldSettingsData,
       characterData: characters,
       characterStates: source.characterStates,
+      timelineDocument: source.timelineDocument,
+      outlineChapterLinks: source.outlineChapterLinks,
       totalWords: source.totalWords,
       contentText: source.contentText,
       isDirty: source.isDirty,
@@ -179,6 +303,21 @@ class ProjectMigrator {
   static List<ProjectMigrationWarning> _validateReferences(ProjectData data) {
     final warnings = <ProjectMigrationWarning>[];
     final characterIds = data.characterData.keys.toSet();
+    final sceneIds = <String>{};
+    for (final storyline in data.outlineData) {
+      for (final event in storyline.scenes) {
+        sceneIds.addAll(event.scenes.map((scene) => scene.sceneUUID));
+      }
+    }
+    final chapterIds = ChapterTree.chaptersDepthFirst(
+      data.segmentsData,
+    ).map((location) => location.chapter.chapterUUID).toSet();
+    final trackIds = data.timelineDocument.tracks
+        .map((track) => track.trackUUID)
+        .toSet();
+    final placementIds = data.timelineDocument.placements
+        .map((placement) => placement.placementUUID)
+        .toSet();
 
     void validatePeople(List<String> values, String owner) {
       for (final value in values) {
@@ -210,6 +349,68 @@ class ProjectMigrator {
             code: "dangling-character-state",
             message: "角色狀態引用了不存在的角色 ID，原值已保留。",
             originalText: state.characterId,
+          ),
+        );
+      }
+    }
+    final seenLinks = <String>{};
+    for (final OutlineChapterLinkData link in data.outlineChapterLinks) {
+      final pair = "${link.sceneUUID}\u0000${link.chapterUUID}";
+      if (!seenLinks.add(pair)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "duplicate-timeline-link",
+            message: "時間軸中存在重複的場景與章節關聯。",
+            originalText: pair,
+          ),
+        );
+      }
+      if (!sceneIds.contains(link.sceneUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-timeline-scene-link",
+            message: "時間軸關聯引用了不存在的場景，原值已保留。",
+            originalText: link.sceneUUID,
+          ),
+        );
+      }
+      if (!chapterIds.contains(link.chapterUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-timeline-chapter-link",
+            message: "時間軸關聯引用了不存在的章節，原值已保留。",
+            originalText: link.chapterUUID,
+          ),
+        );
+      }
+    }
+    for (final placement in data.timelineDocument.placements) {
+      if (!trackIds.contains(placement.trackUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-timeline-track-reference",
+            message: "時間軸節點引用了不存在的軌道，原值已保留。",
+            originalText: placement.trackUUID,
+          ),
+        );
+      }
+      if (placement.sceneUUID != null &&
+          !sceneIds.contains(placement.sceneUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-timeline-placement-scene",
+            message: "時間軸節點引用了不存在的場景，原值已保留。",
+            originalText: placement.sceneUUID,
+          ),
+        );
+      }
+      if (placement.parentPlacementUUID != null &&
+          !placementIds.contains(placement.parentPlacementUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-timeline-parent-reference",
+            message: "時間軸節點引用了不存在的父節點，原值已保留。",
+            originalText: placement.parentPlacementUUID,
           ),
         );
       }

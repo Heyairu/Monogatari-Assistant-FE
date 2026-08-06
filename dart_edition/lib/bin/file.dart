@@ -33,6 +33,8 @@ import "../models/project_data.dart";
 import "../models/project_file.dart";
 import "../models/project_migrator.dart";
 import "../models/codecs/character_state_codec.dart";
+import "../models/codecs/timeline_codec.dart";
+import "../models/timeline_data.dart";
 
 export "../models/project_data.dart";
 export "../models/project_file.dart";
@@ -1069,6 +1071,7 @@ class _ProjectParser {
     List<LocationData>? loadedWorldSettings;
     Map<String, CharacterEntryData>? loadedCharacterData;
     List<CharacterState>? loadedCharacterStates;
+    TimelineProjectData? loadedTimeline;
 
     // 計算 contentText 和 totalWords
     String contentText = "";
@@ -1138,6 +1141,10 @@ class _ProjectParser {
                 element,
               );
               break;
+
+            case "Timeline":
+              loadedTimeline ??= TimelineCodec.loadElement(element);
+              break;
           }
         } catch (e) {
           debugPrint("解析 $typeName 區塊時發生錯誤: $e");
@@ -1198,6 +1205,11 @@ class _ProjectParser {
     final parsedOutline = snapshotOutline(
       loadedOutline ?? defaultData.outlineData,
     );
+    // Keep decoding version-agnostic. ProjectMigrator owns the decision to
+    // project an old outline into timeline boxes; current-version projects may
+    // intentionally contain no timeline data.
+    final parsedTimelineDocument =
+        loadedTimeline?.document ?? defaultData.timelineDocument;
 
     // 如果有載入章節數據，使用第一個章節的內容
     final firstChapter = ChapterModule.ChapterTree.firstChapter(parsedSegments);
@@ -1219,6 +1231,9 @@ class _ProjectParser {
       worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
       characterData: loadedCharacterData ?? defaultData.characterData,
       characterStates: loadedCharacterStates ?? defaultData.characterStates,
+      timelineDocument: parsedTimelineDocument,
+      outlineChapterLinks:
+          loadedTimeline?.chapterLinks ?? defaultData.outlineChapterLinks,
       totalWords: totalWords,
       contentText: contentText,
     );
@@ -1277,6 +1292,14 @@ class _ProjectMerger {
     final outlineXml = OutlineModule.OutlineCodec.saveXML(data.outlineData);
     if (outlineXml != null) {
       buffer.writeln(outlineXml);
+    }
+
+    final timelineXml = TimelineCodec.saveXML(
+      data.timelineDocument,
+      data.outlineChapterLinks,
+    );
+    if (timelineXml != null) {
+      buffer.writeln(timelineXml);
     }
 
     // PlanSettings

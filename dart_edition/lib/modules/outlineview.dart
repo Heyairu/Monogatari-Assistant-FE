@@ -21,6 +21,7 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/outline_data.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/providers/timeline_providers.dart";
 
 export "../models/outline_data.dart";
 
@@ -1582,6 +1583,26 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     );
     _ensureOutlineIndexCurrent(outlineStorylines);
     _bootstrapSelectionFromProviderIfNeeded();
+    ref.listen<OutlineSelectionRequest>(outlineSelectionRequestProvider, (
+      previous,
+      next,
+    ) {
+      if (previous?.requestId == next.requestId || next.sceneUUID == null) {
+        return;
+      }
+      _flushOutlineDraft();
+      _ensureOutlineIndexCurrent(ref.read(outlineDataProvider));
+      final target = _sceneIndexById[next.sceneUUID];
+      if (target == null || !mounted) return;
+      setState(() {
+        final storyline = storylines[target.storylineIndex];
+        final event = storyline.scenes[target.eventIndex];
+        selectedStorylineID = storyline.chapterUUID;
+        selectedEventID = event.storyEventUUID;
+        selectedSceneID = event.scenes[target.sceneIndex].sceneUUID;
+        _syncAllControllers();
+      });
+    });
 
     // Register the provider listener during build once (allowed by Riverpod).
     if (!_registeredOutlineProviderListener) {

@@ -11,6 +11,7 @@ import "../../bin/findreplace.dart" as findreplace_module;
 import "global_state_providers.dart";
 import "project_io_providers.dart";
 import "project_state_providers.dart";
+import "timeline_providers.dart";
 
 /// A lightweight aggregated signal provider that changes when any persisted
 /// project provider publishes a new snapshot. Consumers can listen to this
@@ -24,6 +25,8 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final characterStates = ref.watch(characterStatesProvider);
   final foreshadow = ref.watch(foreshadowDataProvider);
   final updatePlan = ref.watch(updatePlanDataProvider);
+  final timeline = ref.watch(timelineDocumentProvider);
+  final timelineLinks = ref.watch(outlineChapterLinksProvider);
 
   return Object.hash(
     Object.hash(
@@ -42,6 +45,8 @@ final projectDataAggregateProvider = Provider<int>((ref) {
     identityHashCode(characterStates),
     identityHashCode(foreshadow),
     identityHashCode(updatePlan),
+    identityHashCode(timeline),
+    identityHashCode(timelineLinks),
   );
 });
 
@@ -416,6 +421,8 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       worldSettingsData: ref.read(worldSettingsDataProvider),
       characterData: ref.read(characterDataProvider),
       characterStates: ref.read(characterStatesProvider),
+      timelineDocument: ref.read(timelineDocumentProvider),
+      outlineChapterLinks: ref.read(outlineChapterLinksProvider),
       totalWords: ref.read(totalWordsProvider),
       contentText: ref.read(editorContentProvider),
     );
@@ -455,6 +462,13 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     ref
         .read(characterStatesProvider.notifier)
         .setCharacterStates(snapshot.characterStates);
+    ref
+        .read(timelineDocumentProvider.notifier)
+        .setDocument(snapshot.timelineDocument);
+    ref
+        .read(outlineChapterLinksProvider.notifier)
+        .setLinks(snapshot.outlineChapterLinks);
+    ref.read(timelineViewProvider.notifier).reset();
 
     // Evict normalization cache used by the editor find/replace highlighter
     // to avoid unbounded memory growth across project switches.
@@ -527,6 +541,43 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     } finally {
       endSync();
     }
+  }
+
+  /// Switches the editor using only provider-backed state. Callers that own a
+  /// TextEditingController should flush it before invoking this transaction.
+  bool navigateToChapter(String chapterUUID) {
+    final segments = ref.read(segmentsDataProvider);
+    final target = chapter_module.ChapterTree.findChapter(
+      segments,
+      chapterId: chapterUUID,
+    );
+    if (target == null) return false;
+
+    final currentSelection = ref.read(editorSelectionProvider);
+    final currentChapterUUID = currentSelection.selectedChapID;
+    final currentFolderUUID = currentSelection.selectedSegID;
+    if (currentChapterUUID != null && currentFolderUUID != null) {
+      final content = ref.read(editorContentProvider);
+      ref
+          .read(segmentsDataProvider.notifier)
+          .updateChapterContent(
+            segmentID: currentFolderUUID,
+            chapterID: currentChapterUUID,
+            content: content,
+          );
+    }
+
+    ref
+        .read(editorSelectionProvider.notifier)
+        .setSelectionAndCursor(
+          selectedSegID: target.folder.segmentUUID,
+          selectedChapID: target.chapter.chapterUUID,
+          cursorOffset: 0,
+        );
+    ref
+        .read(editorContentProvider.notifier)
+        .setContent(target.chapter.chapterContent);
+    return true;
   }
 }
 

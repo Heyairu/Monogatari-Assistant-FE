@@ -6,6 +6,7 @@ import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/characterview.dart";
 import "../../modules/outlineview.dart" as outline_module;
 import "../../modules/worldsettingsview.dart";
+import "../../models/codecs/timeline_codec.dart";
 import "core_providers.dart";
 import "project_snapshot_utils.dart";
 
@@ -423,6 +424,11 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
             snapshotData.outlineData,
           );
           if (xml != null) buffer.writeln(xml);
+          final timelineXml = TimelineCodec.saveXML(
+            snapshotData.timelineDocument,
+            snapshotData.outlineChapterLinks,
+          );
+          if (timelineXml != null) buffer.writeln(timelineXml);
         }
 
         if (selectedModules.contains("WorldSettings")) {
@@ -490,6 +496,20 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           if (xml != null) {
             buffer.writeln("```xml");
             buffer.writeln(xml);
+            buffer.writeln("```");
+          }
+          buffer.writeln();
+          buffer.writeln("---");
+          buffer.writeln();
+          final timelineXml = TimelineCodec.saveXML(
+            snapshotData.timelineDocument,
+            snapshotData.outlineChapterLinks,
+          );
+          buffer.writeln("## Timeline");
+          buffer.writeln();
+          if (timelineXml != null) {
+            buffer.writeln("```xml");
+            buffer.writeln(timelineXml);
             buffer.writeln("```");
           }
           buffer.writeln();

@@ -3,6 +3,7 @@ import "chapter_selection_data.dart";
 import "character_data.dart";
 import "outline_data.dart";
 import "plan_data.dart";
+import "timeline_data.dart";
 import "world_settings_data.dart";
 
 class ProjectData {
@@ -14,6 +15,8 @@ class ProjectData {
   List<LocationData> worldSettingsData;
   Map<String, CharacterEntryData> characterData;
   List<CharacterState> characterStates;
+  TimelineDocumentData timelineDocument;
+  List<OutlineChapterLinkData> outlineChapterLinks;
   int totalWords;
   String contentText;
   bool isDirty;
@@ -27,10 +30,14 @@ class ProjectData {
     required this.worldSettingsData,
     required this.characterData,
     this.characterStates = const <CharacterState>[],
+    TimelineDocumentData? timelineDocument,
+    List<OutlineChapterLinkData>? outlineChapterLinks,
     this.totalWords = 0,
     this.contentText = "",
     this.isDirty = false,
-  });
+  }) : timelineDocument = timelineDocument ?? TimelineDocumentData.initial(),
+       outlineChapterLinks =
+           outlineChapterLinks ?? const <OutlineChapterLinkData>[];
 
   factory ProjectData.empty() {
     return ProjectData(
@@ -54,6 +61,8 @@ class ProjectData {
       worldSettingsData: [LocationData(localName: "主要場景")],
       characterData: {},
       characterStates: const <CharacterState>[],
+      timelineDocument: TimelineDocumentData.initial(),
+      outlineChapterLinks: const <OutlineChapterLinkData>[],
     );
   }
 }
