@@ -174,6 +174,7 @@ class AppComboBoxField extends StatefulWidget {
   final String? hintText;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSelected;
+  final bool Function(String option, String query)? optionMatchesQuery;
   final double optionsMaxHeight;
 
   const AppComboBoxField({
@@ -184,6 +185,7 @@ class AppComboBoxField extends StatefulWidget {
     this.hintText,
     this.onChanged,
     this.onSelected,
+    this.optionMatchesQuery,
     this.optionsMaxHeight = 240,
   }) : assert(optionsMaxHeight > 0);
 
@@ -207,7 +209,11 @@ class _AppComboBoxFieldState extends State<AppComboBoxField> {
         .toSet();
     final query = value.text.trim().toLowerCase();
     if (query.isEmpty) return options;
-    return options.where((option) => option.toLowerCase().contains(query));
+    return options.where(
+      (option) =>
+          widget.optionMatchesQuery?.call(option, query) ??
+          option.toLowerCase().contains(query),
+    );
   }
 
   @override
@@ -416,6 +422,7 @@ class IconedSlider extends StatelessWidget {
   final ValueChanged<double>? onChanged;
   final ValueChanged<double>? onChangeStart;
   final ValueChanged<double>? onChangeEnd;
+  final String? tooltip;
   final String Function(double value)? valueLabelBuilder;
   final bool showValue;
   final IconData? icon;
@@ -433,6 +440,7 @@ class IconedSlider extends StatelessWidget {
     this.divisions,
     this.onChangeStart,
     this.onChangeEnd,
+    this.tooltip,
     this.valueLabelBuilder,
     this.showValue = true,
     this.layout = IconedSliderLayout.stacked,
@@ -458,7 +466,13 @@ class IconedSlider extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        Icon(icon, color: colorScheme.primary),
+        if (tooltip == null)
+          Icon(icon, color: colorScheme.primary)
+        else
+          Tooltip(
+            message: tooltip!,
+            child: Icon(icon, color: colorScheme.primary),
+          ),
         if (showValue) ...[
           const SizedBox(width: 8),
           Text(

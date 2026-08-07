@@ -290,7 +290,7 @@ class _CharacterRelationshipGraphViewState
                   tooltip: "只顯示一階鄰居",
                   isSelected: _controller.neighborsOnly,
                   style: _controller.neighborsOnly
-                      ? IconButton.styleFrom(foregroundColor: Colors.green)
+                      ? IconButton.styleFrom(foregroundColor: Colors.teal[400])
                       : null,
                   onPressed: _controller.selectedNodeId == null
                       ? null

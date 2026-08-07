@@ -490,6 +490,21 @@ void main() {
       expect(changedValue, 75);
     });
 
+    testWidgets("IconedSlider exposes its icon tooltip", (tester) async {
+      await tester.pumpWidget(
+        _testApp(
+          IconedSlider(
+            icon: Icons.zoom_in,
+            tooltip: "Adjust zoom",
+            value: 50,
+            onChanged: (_) {},
+          ),
+        ),
+      );
+
+      expect(find.byTooltip("Adjust zoom"), findsOneWidget);
+    });
+
     testWidgets("InlineEditableText switches to editing and submits", (
       tester,
     ) async {

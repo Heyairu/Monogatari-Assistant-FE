@@ -19,19 +19,33 @@ void main() {
           .read(outlineDataProvider.notifier)
           .setOutlineData(const <StorylineData>[]);
       final actions = container.read(timelineActionsProvider);
+      actions.updateGrid(
+        const TimelineGridConfig(
+          ticksPerSmallBox: 3,
+          ticksPerMiddleBox: 4,
+          middleBoxesPerLargeBox: 6,
+        ),
+      );
       final large = actions.addPlacement(
         level: TimelineElementLevel.large,
         label: "第一幕",
+        startTick: 30,
       );
+      final outlineAfterLarge = container.read(outlineDataProvider);
+      expect(outlineAfterLarge, hasLength(1));
+      expect(outlineAfterLarge.single.storylineName, "第一幕");
+      expect(large.storylineUUID, outlineAfterLarge.single.chapterUUID);
       final middle = actions.addPlacement(
         level: TimelineElementLevel.middle,
         parentPlacementUUID: large.placementUUID,
         label: "衝突開始",
+        startTick: 31,
       );
       final small = actions.addPlacement(
         level: TimelineElementLevel.small,
         parentPlacementUUID: middle.placementUUID,
         label: "主角抵達",
+        startTick: 32,
       );
 
       final outline = container.read(outlineDataProvider);
@@ -60,6 +74,87 @@ void main() {
       expect(
         linkedSmall.sceneUUID,
         outline.single.scenes.single.scenes.single.sceneUUID,
+      );
+      expect(linkedLarge.durationTicks, 72);
+      expect(linkedMiddle.durationTicks, 12);
+      expect(linkedSmall.durationTicks, 3);
+      expect(linkedLarge.startTick, 30);
+      expect(linkedMiddle.startTick, 31);
+      expect(linkedSmall.startTick, 32);
+    });
+
+    test("outline large-box deletion removes only its timeline subtree", () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final actions = container.read(timelineActionsProvider);
+      final removedLarge = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "待刪大箱",
+      );
+      final removedMiddle = actions.addPlacement(
+        level: TimelineElementLevel.middle,
+        parentPlacementUUID: removedLarge.placementUUID,
+        label: "待刪中箱",
+      );
+      final removedSmall = actions.addPlacement(
+        level: TimelineElementLevel.small,
+        parentPlacementUUID: removedMiddle.placementUUID,
+        label: "待刪小箱",
+      );
+      final keptLarge = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "保留大箱",
+      );
+
+      container
+          .read(outlineDataProvider.notifier)
+          .updateOutlineData(
+            (outline) => outline
+                .where(
+                  (storyline) =>
+                      storyline.chapterUUID != removedLarge.storylineUUID,
+                )
+                .toList(growable: false),
+          );
+      actions.removeStorylinePlacements(removedLarge.storylineUUID!);
+
+      final placements = container.read(timelineDocumentProvider).placements;
+      expect(
+        placements.map((placement) => placement.placementUUID),
+        isNot(contains(removedLarge.placementUUID)),
+      );
+      expect(
+        placements.map((placement) => placement.placementUUID),
+        isNot(contains(removedMiddle.placementUUID)),
+      );
+      expect(
+        placements.map((placement) => placement.placementUUID),
+        isNot(contains(removedSmall.placementUUID)),
+      );
+      expect(
+        placements.map((placement) => placement.placementUUID),
+        contains(keptLarge.placementUUID),
+      );
+    });
+
+    test("timeline deletion does not delete its outline large box", () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final actions = container.read(timelineActionsProvider);
+      final large = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "只刪時間軸",
+      );
+      final storylineUUID = large.storylineUUID!;
+
+      actions.removePlacement(large.placementUUID);
+
+      expect(container.read(timelineDocumentProvider).placements, isEmpty);
+      expect(
+        container
+            .read(outlineDataProvider)
+            .map((storyline) => storyline.chapterUUID),
+        contains(storylineUUID),
       );
     });
 
@@ -162,6 +257,71 @@ void main() {
       );
       document = container.read(timelineDocumentProvider);
       expect(find(small.placementUUID).startTick - smallBefore.startTick, 7);
+    });
+
+    test("new large, middle and small boxes are split when overlapping", () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final actions = container.read(timelineActionsProvider);
+      final lowerTrack = actions.addTrack("下方空軌道");
+
+      final firstLarge = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "第一幕",
+        startTick: 0,
+      );
+      final secondLarge = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "第二幕",
+        startTick: 1,
+      );
+      final firstMiddle = actions.addPlacement(
+        level: TimelineElementLevel.middle,
+        parentPlacementUUID: firstLarge.placementUUID,
+        label: "第一段",
+        startTick: 0,
+      );
+      final secondMiddle = actions.addPlacement(
+        level: TimelineElementLevel.middle,
+        parentPlacementUUID: firstLarge.placementUUID,
+        label: "第二段",
+        startTick: 1,
+      );
+      final firstSmall = actions.addPlacement(
+        level: TimelineElementLevel.small,
+        parentPlacementUUID: firstMiddle.placementUUID,
+        label: "場景 A",
+        startTick: 0,
+      );
+      final secondSmall = actions.addPlacement(
+        level: TimelineElementLevel.small,
+        parentPlacementUUID: firstMiddle.placementUUID,
+        label: "場景 B",
+        startTick: 0,
+      );
+
+      final document = container.read(timelineDocumentProvider);
+      expect(document.tracks, hasLength(2));
+      expect(secondLarge.trackUUID, lowerTrack.trackUUID);
+      expect(secondMiddle.trackUUID, lowerTrack.trackUUID);
+
+      for (final pair in [
+        (firstLarge.placementUUID, secondLarge.placementUUID),
+        (firstMiddle.placementUUID, secondMiddle.placementUUID),
+        (firstSmall.placementUUID, secondSmall.placementUUID),
+      ]) {
+        final first = document.placements.singleWhere(
+          (placement) => placement.placementUUID == pair.$1,
+        );
+        final second = document.placements.singleWhere(
+          (placement) => placement.placementUUID == pair.$2,
+        );
+        final overlapsOnSameTrack =
+            first.trackUUID == second.trackUUID &&
+            first.startTick < second.endTick &&
+            second.startTick < first.endTick;
+        expect(overlapsOnSameTrack, isFalse);
+      }
     });
 
     test("overlapping later elements are moved to a generated track", () {
@@ -370,6 +530,90 @@ void main() {
     });
 
     test(
+      "container chapter selection is applied to every descendant scene",
+      () {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        const document = TimelineDocumentData(
+          tracks: [TimelineTrackData(trackUUID: "track", name: "時間軸 1")],
+          placements: [
+            TimelinePlacementData(
+              placementUUID: "large",
+              level: TimelineElementLevel.large,
+              trackUUID: "track",
+            ),
+            TimelinePlacementData(
+              placementUUID: "middle",
+              parentPlacementUUID: "large",
+              level: TimelineElementLevel.middle,
+              trackUUID: "track",
+            ),
+            TimelinePlacementData(
+              placementUUID: "small-a",
+              sceneUUID: "scene-a",
+              parentPlacementUUID: "middle",
+              trackUUID: "track",
+            ),
+            TimelinePlacementData(
+              placementUUID: "small-b",
+              sceneUUID: "scene-b",
+              parentPlacementUUID: "middle",
+              trackUUID: "track",
+            ),
+          ],
+        );
+        container.read(timelineDocumentProvider.notifier).setDocument(document);
+        final actions = container.read(timelineActionsProvider);
+        actions.addChapterLink("scene-a", "chapter-old");
+        actions.addChapterLink("scene-outside", "chapter-outside");
+
+        expect(timelineSceneUUIDsForPlacement(document, "large"), {
+          "scene-a",
+          "scene-b",
+        });
+        actions.setChapterLinksForPlacement("middle", {
+          "chapter-a",
+          "chapter-b",
+        });
+
+        var links = container.read(outlineChapterLinksProvider);
+        for (final sceneUUID in ["scene-a", "scene-b"]) {
+          expect(
+            links
+                .where((link) => link.sceneUUID == sceneUUID)
+                .map((link) => link.chapterUUID),
+            {"chapter-a", "chapter-b"},
+          );
+        }
+        expect(
+          links.any(
+            (link) =>
+                link.sceneUUID == "scene-outside" &&
+                link.chapterUUID == "chapter-outside",
+          ),
+          isTrue,
+        );
+
+        actions.setChapterLinksForPlacement("large", {"chapter-b"});
+        links = container.read(outlineChapterLinksProvider);
+        expect(
+          links
+              .where((link) => {"scene-a", "scene-b"}.contains(link.sceneUUID))
+              .map((link) => link.chapterUUID),
+          everyElement("chapter-b"),
+        );
+
+        actions.removeChapterLinkFromPlacement("middle", "chapter-b");
+        links = container.read(outlineChapterLinksProvider);
+        expect(
+          links.any((link) => {"scene-a", "scene-b"}.contains(link.sceneUUID)),
+          isFalse,
+        );
+        expect(links.single.sceneUUID, "scene-outside");
+      },
+    );
+
+    test(
       "chapter navigation flushes current provider content before switch",
       () {
         final container = ProviderContainer();
@@ -482,10 +726,11 @@ void main() {
         characterData: const {},
         timelineDocument: const TimelineDocumentData(
           grid: TimelineGridConfig(
-            tickDuration: TickDurationData(
+            ticksPerLittleBox: TickDurationData(
               value: 15,
               unit: TickDurationUnit.minute,
             ),
+            ticksPerSmallBox: 3,
             ticksPerMiddleBox: 4,
             middleBoxesPerLargeBox: 6,
             autoSortOutline: true,
@@ -506,11 +751,12 @@ void main() {
       final xml = FileService.generateProjectXMLWithoutLatestSaveUpdate(data);
       final parsed = FileService.parseProjectXMLWithMetadata(xml).data;
 
-      expect(parsed.timelineDocument.grid.tickDuration.value, 15);
+      expect(parsed.timelineDocument.grid.ticksPerLittleBox.value, 15);
       expect(
-        parsed.timelineDocument.grid.tickDuration.unit,
+        parsed.timelineDocument.grid.ticksPerLittleBox.unit,
         TickDurationUnit.minute,
       );
+      expect(parsed.timelineDocument.grid.ticksPerSmallBox, 3);
       expect(parsed.timelineDocument.tracks.single.name, "主角線");
       expect(parsed.timelineDocument.grid.autoSortOutline, isTrue);
       expect(parsed.timelineDocument.placements, hasLength(3));
@@ -556,6 +802,7 @@ void main() {
     );
 
     expect(parsed.wasMigrated, isTrue);
+    expect(parsed.data.timelineDocument.grid.ticksPerSmallBox, 1);
     expect(large.storylineUUID, "storyline-old");
     expect(middle.storylineUUID, "storyline-old");
     expect(middle.eventUUID, "event-old");
@@ -572,6 +819,7 @@ void main() {
       parsed.data,
     );
     expect(saved, contains("<ver>1.10</ver>"));
+    expect(saved, contains('TicksPerSmallBox="1"'));
     final reopened = FileService.parseProjectXMLWithMetadata(saved);
     expect(reopened.wasMigrated, isFalse);
     expect(reopened.data.timelineDocument.placements, hasLength(3));
@@ -666,7 +914,7 @@ void main() {
   testWidgets("timeline page renders shared controls and unplanned scenes", (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(900, 1100));
+    await tester.binding.setSurfaceSize(const Size(1400, 1100));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -703,7 +951,17 @@ void main() {
     expect(find.text("相遇"), findsNothing);
     expect(find.text("第一幕"), findsOneWidget);
     expect(find.text("時間軸 1"), findsOneWidget);
-    expect(find.text("畫面 Tick 寬度"), findsOneWidget);
+    expect(find.byTooltip("畫面 Tick 寬度"), findsOneWidget);
+    expect(find.text("Tick 對應單位數"), findsOneWidget);
+    expect(find.text("每小箱 Tick 數"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey("timeline-current-tick-stepper")),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-omit-empty-ranges")),
+      findsOneWidget,
+    );
     expect(find.text("故事刻度設定"), findsOneWidget);
     expect(
       find.byKey(const ValueKey("timeline-auto-sort-outline")),
@@ -743,10 +1001,12 @@ void main() {
     expect(resized.durationTicks, greaterThan(large.durationTicks));
     expect(resized.startTick, lessThan(large.startTick));
 
-    await tester.drag(
-      find.byKey(ValueKey("timeline-move-vertical-${large.placementUUID}")),
-      const Offset(0, 152),
+    final verticalMoveHandle = find.byKey(
+      ValueKey("timeline-move-vertical-${large.placementUUID}"),
     );
+    await tester.ensureVisible(verticalMoveHandle);
+    await tester.pumpAndSettle();
+    await tester.drag(verticalMoveHandle, const Offset(0, 152));
     await tester.pumpAndSettle();
     final movedDown = container
         .read(timelineDocumentProvider)
@@ -771,11 +1031,307 @@ void main() {
     final synced = container.read(timelineDocumentProvider).placements;
     expect(
       synced.where((placement) => placement.storylineUUID != null),
-      hasLength(3),
+      hasLength(4),
     );
     expect(
       synced.where((placement) => placement.sceneUUID != null),
       hasLength(1),
     );
+  });
+
+  testWidgets("large and middle boxes show descendant chapter selections", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(segmentsDataProvider.notifier).setSegmentsData([
+      SegmentData(
+        segmentUUID: "folder",
+        segmentName: "正文",
+        chapters: [ChapterData(chapterUUID: "chapter-a", chapterName: "已選章節")],
+      ),
+    ]);
+    const document = TimelineDocumentData(
+      tracks: [TimelineTrackData(trackUUID: "track", name: "時間軸 1")],
+      placements: [
+        TimelinePlacementData(
+          placementUUID: "large",
+          level: TimelineElementLevel.large,
+          trackUUID: "track",
+          label: "大箱",
+        ),
+        TimelinePlacementData(
+          placementUUID: "middle",
+          parentPlacementUUID: "large",
+          level: TimelineElementLevel.middle,
+          trackUUID: "track",
+          label: "中箱",
+        ),
+        TimelinePlacementData(
+          placementUUID: "small",
+          sceneUUID: "scene-a",
+          parentPlacementUUID: "middle",
+          trackUUID: "track",
+          label: "小箱",
+        ),
+      ],
+    );
+    container.read(timelineDocumentProvider.notifier).setDocument(document);
+    container.read(outlineChapterLinksProvider.notifier).setLinks(const [
+      OutlineChapterLinkData(
+        linkUUID: "link-a",
+        sceneUUID: "scene-a",
+        chapterUUID: "chapter-a",
+      ),
+    ]);
+    container.read(timelineViewProvider.notifier).select("large");
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: TimelineView()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text("已選章節 (1/1)"), findsOneWidget);
+    expect(find.byTooltip("連結章節並套用到所有子節點"), findsOneWidget);
+
+    container.read(timelineViewProvider.notifier).select("middle");
+    await tester.pump();
+    expect(find.text("已選章節 (1/1)"), findsOneWidget);
+    expect(find.byTooltip("連結章節並套用到所有子節點"), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("Tick stepper input, scrubber accumulation and empty omission", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    const document = TimelineDocumentData(
+      tracks: [TimelineTrackData(trackUUID: "track", name: "時間軸 1")],
+      placements: [
+        TimelinePlacementData(
+          placementUUID: "early",
+          level: TimelineElementLevel.large,
+          trackUUID: "track",
+          startTick: 0,
+          durationTicks: 2,
+          label: "早期事件",
+        ),
+        TimelinePlacementData(
+          placementUUID: "late",
+          level: TimelineElementLevel.large,
+          trackUUID: "track",
+          startTick: 100,
+          durationTicks: 2,
+          label: "後期事件",
+        ),
+      ],
+    );
+    container.read(timelineDocumentProvider.notifier).setDocument(document);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: TimelineView()),
+      ),
+    );
+    await tester.pump();
+
+    final scrollbarFinder = find.byKey(
+      const ValueKey("timeline-horizontal-scrollbar"),
+    );
+    var scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    final expandedExtent = scrollbar.controller!.position.maxScrollExtent;
+    expect(expandedExtent, greaterThan(1000));
+
+    final currentTickStepper = find.byKey(
+      const ValueKey("timeline-current-tick-stepper"),
+    );
+    final currentTickField = find.descendant(
+      of: currentTickStepper,
+      matching: find.byType(TextField),
+    );
+    final increaseTickButton = find.descendant(
+      of: currentTickStepper,
+      matching: find.byTooltip("增加"),
+    );
+    expect(tester.widget<TextField>(currentTickField).readOnly, isFalse);
+    await tester.tap(increaseTickButton);
+    await tester.pump();
+    expect(container.read(timelineViewProvider).currentTick, 1);
+
+    container.read(timelineViewProvider.notifier).setPixelsPerTick(100);
+    await tester.pump();
+    await tester.enterText(currentTickField, "100");
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    expect(scrollbar.controller!.offset, greaterThan(0));
+    expect(container.read(timelineViewProvider).currentTick, 100);
+    final scrollOffsetBeforeScrub = scrollbar.controller!.offset;
+
+    final scrubber = find.byKey(const ValueKey("timeline-scrubber"));
+    final scrubbedTicks = <int>[];
+    final scrubberSubscription = container.listen<TimelineViewState>(
+      timelineViewProvider,
+      (previous, next) {
+        if (previous?.currentTick != next.currentTick) {
+          scrubbedTicks.add(next.currentTick);
+        }
+      },
+    );
+    addTearDown(scrubberSubscription.close);
+    final scrubberGesture = await tester.startGesture(
+      tester.getCenter(scrubber),
+    );
+    await scrubberGesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await scrubberGesture.moveBy(const Offset(-50, 0));
+    await tester.pump();
+    expect(container.read(timelineViewProvider).currentTick, 100);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(container.read(timelineViewProvider).currentTick, 100);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(container.read(timelineViewProvider).currentTick, 99);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(container.read(timelineViewProvider).currentTick, 99);
+    await tester.pump(const Duration(milliseconds: 100));
+    final heldScrubberTick = container.read(timelineViewProvider).currentTick;
+    expect(heldScrubberTick, 98);
+    scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    expect(scrollbar.controller!.offset, lessThan(scrollOffsetBeforeScrub));
+    expect(
+      scrubbedTicks.toSet().where((tick) => tick < 100).length,
+      greaterThanOrEqualTo(2),
+    );
+    await scrubberGesture.up();
+    await tester.pump();
+    final scrubbedTick = container.read(timelineViewProvider).currentTick;
+    expect(scrubbedTick, heldScrubberTick);
+    expect(
+      tester.widget<TextField>(currentTickField).controller!.text,
+      scrubbedTick.toString(),
+    );
+
+    await tester.tap(find.byKey(const ValueKey("timeline-omit-empty-ranges")));
+    await tester.pumpAndSettle();
+    scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    expect(
+      scrollbar.controller!.position.maxScrollExtent,
+      lessThan(expandedExtent / 2),
+    );
+    expect(container.read(timelineViewProvider).omitEmptyRanges, isTrue);
+    expect(container.read(timelineDocumentProvider), document);
+
+    scrollbar.controller!.jumpTo(0);
+    await tester.pump();
+    final earlyMove = find.byKey(const ValueKey("timeline-move-early"));
+    final lateMove = find.byKey(const ValueKey("timeline-move-late"));
+    final compressedDistance =
+        tester.getCenter(lateMove).dx - tester.getCenter(earlyMove).dx;
+    await tester.drag(earlyMove, Offset(compressedDistance, 0));
+    await tester.pumpAndSettle();
+    final movedEarly = container
+        .read(timelineDocumentProvider)
+        .placements
+        .singleWhere((placement) => placement.placementUUID == "early");
+    expect(movedEarly.startTick, 100);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("timeline toolbar lays out on a narrow window", (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: TimelineView())),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey("timeline-current-tick-stepper")),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-jump-tick-button")),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-navigation-row")),
+      findsOneWidget,
+    );
+    final zoomControls = find.byKey(const ValueKey("timeline-zoom-controls"));
+    final navigationRow = find.byKey(const ValueKey("timeline-navigation-row"));
+    expect(zoomControls, findsOneWidget);
+    expect(
+      tester.getBottomLeft(zoomControls).dy,
+      lessThanOrEqualTo(tester.getTopLeft(navigationRow).dy),
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-tick-unit-value")),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-small-box-ticks")),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey("timeline-scrubber")), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey("timeline-omit-empty-ranges")),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("new nodes use the scrubber tick and ruler clicks move it", (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(timelineViewProvider.notifier).setCurrentTick(10);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: TimelineView()),
+      ),
+    );
+    await tester.pump();
+
+    final addLarge = find.byKey(const ValueKey("timeline-add-large"));
+    await tester.ensureVisible(addLarge);
+    await tester.tap(addLarge);
+    await tester.pumpAndSettle();
+    final labelField = find.descendant(
+      of: find.byKey(const ValueKey("timeline-add-node-label")),
+      matching: find.byType(TextFormField),
+    );
+    await tester.enterText(labelField, "Scrubber 起點大箱");
+    await tester.tap(find.byKey(const ValueKey("timeline-confirm-add-node")));
+    await tester.pumpAndSettle();
+
+    final placement = container
+        .read(timelineDocumentProvider)
+        .placements
+        .single;
+    expect(placement.level, TimelineElementLevel.large);
+    expect(placement.startTick, 10);
+
+    final ruler = find.byKey(const ValueKey("timeline-ruler"));
+    final scrubber = find.byKey(const ValueKey("timeline-scrubber"));
+    final target = Offset(
+      tester.getCenter(scrubber).dx + 2 * 72,
+      tester.getCenter(ruler).dy,
+    );
+    await tester.tapAt(target);
+    await tester.pump();
+
+    expect(container.read(timelineViewProvider).currentTick, 12);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -1,3 +1,4 @@
+import "dart:async";
 import "dart:math" as math;
 
 import "package:flutter/material.dart";
@@ -53,6 +54,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
   final Map<String, Offset> _dragOffsets = <String, Offset>{};
   final Map<String, _TimelineResizePreview> _resizePreviews =
       <String, _TimelineResizePreview>{};
+  _TimelineTickAxis? _activeAxis;
 
   @override
   void dispose() {
@@ -97,6 +99,17 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       links: links,
       currentChapterUUID: currentChapterUUID,
     );
+    final scopePlacements = document.placements
+        .where(
+          (placement) => placement.parentPlacementUUID == scope?.placementUUID,
+        )
+        .toList(growable: false);
+    final timelineAxis = _TimelineTickAxis.fromPlacements(
+      scopePlacements,
+      omitEmptyRanges: viewState.omitEmptyRanges,
+      anchorTick: viewState.currentTick,
+    );
+    _activeAxis = timelineAxis;
     final pendingOutlineBoxes = _pendingOutlineBoxes(
       document: document,
       outline: outline,
@@ -149,7 +162,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               },
             ),
             const SizedBox(height: 16),
-            _buildToolbar(viewState, currentChapterUUID, scope),
+            _buildToolbar(viewState, currentChapterUUID, scope, document.grid),
             const SizedBox(height: 16),
             AppSectionCard(
               padding: EdgeInsets.zero,
@@ -161,6 +174,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                 scenes: scenes,
                 selectedPlacementUUID: selected?.placementUUID,
                 pixelsPerTick: viewState.pixelsPerTick,
+                axis: timelineAxis,
+                currentTick: viewState.currentTick,
                 horizontalScrollController: _timelineHorizontalScrollController,
                 dragOffsets: _dragOffsets,
                 resizePreviews: _resizePreviews,
@@ -181,22 +196,13 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                   });
                 },
                 onResize: _resizePlacementByPixels,
+                onScrub: _updateCurrentTickFromScrubber,
                 onAddTrack: _addTrack,
                 onTrackAction: _handleTrackAction,
               ),
             ),
             const SizedBox(height: 16),
-            IconedSlider(
-              icon: Icons.zoom_in,
-              value: viewState.pixelsPerTick,
-              min: 36,
-              max: 144,
-              divisions: 54,
-              valueLabelBuilder: (value) => "${value.round()} px",
-              onChanged: ref
-                  .read(timelineViewProvider.notifier)
-                  .setPixelsPerTick,
-            ),
+            _buildViewportControls(viewState),
             const SizedBox(height: 16),
             _TimelineInspector(
               placement: selected,
@@ -207,7 +213,11 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               onUpdate: _updatePlacement,
               onDelete: _deletePlacement,
               onAddChapterLink: _showChapterLinkDialog,
-              onRemoveChapterLink: _actions.removeChapterLink,
+              onRemoveChapterLink: (placement, chapterUUID) =>
+                  _actions.removeChapterLinkFromPlacement(
+                    placement.placementUUID,
+                    chapterUUID,
+                  ),
               onOpenChapter: widget.onOpenChapter,
               onOpenOutlineScene: widget.onOpenOutlineScene,
             ),
@@ -236,11 +246,13 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
           final scene = placement.sceneUUID == null
               ? null
               : scenes[placement.sceneUUID];
-          final sceneLinks = placement.sceneUUID == null
-              ? const <OutlineChapterLinkData>[]
-              : links
-                    .where((link) => link.sceneUUID == placement.sceneUUID)
-                    .toList(growable: false);
+          final sceneUUIDs = timelineSceneUUIDsForPlacement(
+            document,
+            placement.placementUUID,
+          );
+          final sceneLinks = links
+              .where((link) => sceneUUIDs.contains(link.sceneUUID))
+              .toList(growable: false);
           if (state.onlyCurrentChapter &&
               (currentChapterUUID == null ||
                   !sceneLinks.any(
@@ -248,8 +260,11 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                   ))) {
             return false;
           }
-          if (state.onlyUnlinked &&
-              (placement.sceneUUID == null || sceneLinks.isNotEmpty)) {
+          final hasUnlinkedScene = sceneUUIDs.any(
+            (sceneUUID) =>
+                !sceneLinks.any((link) => link.sceneUUID == sceneUUID),
+          );
+          if (state.onlyUnlinked && (sceneUUIDs.isEmpty || !hasUnlinkedScene)) {
             return false;
           }
           if (query.isNotEmpty) {
@@ -416,6 +431,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
     TimelineViewState state,
     String? currentChapterUUID,
     TimelinePlacementData? scope,
+    TimelineGridConfig grid,
   ) {
     final nextLevel = switch (scope?.level) {
       null => TimelineElementLevel.large,
@@ -429,48 +445,181 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       TimelineElementLevel.small => "新增小箱",
       null => "小箱是最末層節點",
     };
+    final icon = switch (nextLevel) {
+      TimelineElementLevel.large => Icons.add_home_work_rounded,
+      TimelineElementLevel.middle => Icons.post_add_rounded,
+      TimelineElementLevel.small => Icons.playlist_add_rounded,
+      null => Icons.block,
+    };
     return AppSectionCard(
       padding: const EdgeInsets.all(16),
       useSectionLayout: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
+          Row(
             children: [
-              FilterChip(
-                label: const Text("只看目前章節"),
-                selected: state.onlyCurrentChapter,
-                onSelected: currentChapterUUID == null
-                    ? null
-                    : ref
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.menu_open_rounded),
+                      tooltip: "只看目前章節",
+                      style: state.onlyCurrentChapter
+                          ? IconButton.styleFrom(
+                              foregroundColor: Colors.teal[400],
+                            )
+                          : null,
+                      isSelected: state.onlyCurrentChapter,
+                      onPressed: currentChapterUUID == null
+                          ? null
+                          : () => ref
+                                .read(timelineViewProvider.notifier)
+                                .setOnlyCurrentChapter(
+                                  !state.onlyCurrentChapter,
+                                ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.link_off_rounded),
+                      tooltip: "未連結章節",
+                      style: state.onlyUnlinked
+                          ? IconButton.styleFrom(
+                              foregroundColor: Colors.teal[400],
+                            )
+                          : null,
+                      isSelected: state.onlyUnlinked,
+                      onPressed: () => ref
                           .read(timelineViewProvider.notifier)
-                          .setOnlyCurrentChapter,
+                          .setOnlyUnlinked(!state.onlyUnlinked),
+                    ),
+                    IconButton(
+                      key: const ValueKey("timeline-auto-sort-outline"),
+                      icon: Icon(Icons.view_timeline_outlined),
+                      tooltip: "自動排序大綱\n依起始 Tick、時間軌順序排列大綱；大綱順序變更時同步調整時間軸。",
+                      style: grid.autoSortOutline
+                          ? IconButton.styleFrom(
+                              foregroundColor: Colors.teal[400],
+                            )
+                          : null,
+                      isSelected: grid.autoSortOutline,
+                      onPressed: () => _actions.updateGrid(
+                        grid.copyWith(autoSortOutline: !grid.autoSortOutline),
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey("timeline-omit-empty-ranges"),
+                      icon: const Icon(Icons.compress_rounded),
+                      tooltip: state.omitEmptyRanges
+                          ? "顯示時間軸空白區段"
+                          : "省略時間軸空白區段",
+                      style: state.omitEmptyRanges
+                          ? IconButton.styleFrom(
+                              foregroundColor: Colors.teal[400],
+                            )
+                          : null,
+                      isSelected: state.omitEmptyRanges,
+                      onPressed: () => ref
+                          .read(timelineViewProvider.notifier)
+                          .setOmitEmptyRanges(!state.omitEmptyRanges),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.location_on_rounded),
+                      tooltip: "返回目前時間軸",
+                      hoverColor: Theme.of(context).colorScheme.primaryContainer,
+                      onPressed: () => _setCurrentTick(state.currentTick),
+                    ),
+                  ],
+                ),
               ),
-              FilterChip(
-                label: const Text("未連結章節"),
-                selected: state.onlyUnlinked,
-                onSelected: ref
-                    .read(timelineViewProvider.notifier)
-                    .setOnlyUnlinked,
+              const SizedBox(width: 8),
+              IconButton(
+                key: ValueKey("timeline-add-${nextLevel?.name ?? 'none'}"),
+                icon: Icon(icon),
+                tooltip: label,
+                style: nextLevel == null
+                    ? IconButton.styleFrom(foregroundColor: Colors.red)
+                    : IconButton.styleFrom(foregroundColor: Colors.green),
+                onPressed: nextLevel == null
+                    ? null
+                    : () => _showAddNodeDialog(
+                        level: nextLevel,
+                        parentUUID: scope?.placementUUID,
+                      ),
               ),
             ],
-          ),
-          SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: nextLevel == null
-                ? null
-                : () => _showAddNodeDialog(
-                    level: nextLevel,
-                    parentUUID: scope?.placementUUID,
-                  ),
-            icon: const Icon(Icons.add),
-            label: Text(label),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildViewportControls(TimelineViewState state) {
+    final zoomSlider = IconedSlider(
+      icon: Icons.zoom_in,
+      value: state.pixelsPerTick,
+      tooltip: "畫面 Tick 寬度",
+      min: 36,
+      max: 144,
+      divisions: 54,
+      valueLabelBuilder: (value) => "${value.round()} px",
+      onChanged: ref.read(timelineViewProvider.notifier).setPixelsPerTick,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KeyedSubtree(
+          key: const ValueKey("timeline-zoom-controls"),
+          child: zoomSlider,
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            key: const ValueKey("timeline-navigation-row"),
+            width: 260,
+            child: _NumberStepper(
+              key: const ValueKey("timeline-current-tick-stepper"),
+              label: "目前 Tick",
+              value: state.currentTick,
+              minimum: -0x3fffffff,
+              allowNegative: true,
+              onChanged: _setCurrentTick,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _setCurrentTick(int tick, {bool animate = true}) {
+    ref.read(timelineViewProvider.notifier).setCurrentTick(tick);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_timelineHorizontalScrollController.hasClients) return;
+      final axis = _activeAxis;
+      if (axis == null) return;
+      final position = _timelineHorizontalScrollController.position;
+      final pixelsPerTick = ref.read(timelineViewProvider).pixelsPerTick;
+      final tickOffset = axis.displayPositionForTick(tick) * pixelsPerTick;
+      final target = (tickOffset - position.viewportDimension / 2)
+          .clamp(0.0, position.maxScrollExtent)
+          .toDouble();
+      if (animate) {
+        _timelineHorizontalScrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _timelineHorizontalScrollController.jumpTo(target);
+      }
+    });
+  }
+
+  void _updateCurrentTickFromScrubber(int tick) {
+    _setCurrentTick(tick, animate: false);
   }
 
   Widget _buildPendingOutlineBoxes(List<_PendingOutlineBox> boxes) {
@@ -528,18 +677,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SwitchListTile(
-            key: const ValueKey("timeline-auto-sort-outline"),
-            contentPadding: EdgeInsets.zero,
-            title: const Text("自動排序大綱"),
-            subtitle: const Text("依起始 Tick、時間軌順序排列大綱；大綱順序變更時同步調整時間軸。"),
-            value: grid.autoSortOutline,
-            onChanged: (enabled) =>
-                _actions.updateGrid(grid.copyWith(autoSortOutline: enabled)),
-          ),
-          const Divider(height: 24),
           AppDropdownField<TickDurationUnit>(
-            value: grid.tickDuration.unit,
+            value: grid.ticksPerLittleBox.unit,
             labelText: "Tick 單位",
             options: [
               for (final unit in TickDurationUnit.values)
@@ -549,20 +688,32 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               if (unit == null) return;
               _actions.updateGrid(
                 grid.copyWith(
-                  tickDuration: grid.tickDuration.copyWith(unit: unit),
+                  ticksPerLittleBox: grid.ticksPerLittleBox.copyWith(
+                    unit: unit,
+                  ),
                 ),
               );
             },
           ),
           const SizedBox(height: 12),
           _NumberStepper(
-            label: "每 Tick 故事時長",
-            value: grid.tickDuration.value,
+            key: const ValueKey("timeline-tick-unit-value"),
+            label: "Tick 對應單位數",
+            value: grid.ticksPerLittleBox.value,
             onChanged: (value) => _actions.updateGrid(
               grid.copyWith(
-                tickDuration: grid.tickDuration.copyWith(value: value),
+                ticksPerLittleBox: grid.ticksPerLittleBox.copyWith(
+                  value: value,
+                ),
               ),
             ),
+          ),
+          _NumberStepper(
+            key: const ValueKey("timeline-small-box-ticks"),
+            label: "每小箱 Tick 數",
+            value: grid.ticksPerSmallBox,
+            onChanged: (value) =>
+                _actions.updateGrid(grid.copyWith(ticksPerSmallBox: value)),
           ),
           _NumberStepper(
             label: "每中箱的小箱數",
@@ -579,9 +730,10 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
           ),
           const SizedBox(height: 8),
           Text(
-            "1 小箱 = ${grid.tickDuration.value} ${_unitLabel(grid.tickDuration.unit)}；"
-            "1 中箱 = ${grid.tickDuration.value * grid.ticksPerMiddleBox}；"
-            "1 大箱 = ${grid.tickDuration.value * grid.ticksPerMiddleBox * grid.middleBoxesPerLargeBox}。",
+            "1 Tick = ${grid.ticksPerLittleBox.value} ${_unitLabel(grid.ticksPerLittleBox.unit)}；"
+            "1 小箱 = ${grid.ticksPerSmallBox} Tick；"
+            "1 中箱 = ${grid.ticksPerSmallBox * grid.ticksPerMiddleBox} Tick；"
+            "1 大箱 = ${grid.ticksPerSmallBox * grid.ticksPerMiddleBox * grid.middleBoxesPerLargeBox} Tick。",
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -605,7 +757,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
           (reference) => !placedSceneUUIDs.contains(reference.scene.sceneUUID),
         )
         .toList(growable: false);
-    final labelController = TextEditingController();
+    var label = "";
     String? selectedSceneUUID;
     final result = await showDialog<bool>(
       context: context,
@@ -618,12 +770,13 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AppTextField(
-                  controller: labelController,
+                  key: const ValueKey("timeline-add-node-label"),
                   labelText: "節點名稱",
                   hintText: level == TimelineElementLevel.small
                       ? "未選場景時必填"
                       : "例如：第一幕",
                   autofocus: true,
+                  onChanged: (value) => label = value,
                 ),
                 if (level == TimelineElementLevel.middle) ...[
                   const SizedBox(height: 12),
@@ -663,6 +816,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               child: const Text("取消"),
             ),
             FilledButton(
+              key: const ValueKey("timeline-confirm-add-node"),
               onPressed: () => Navigator.of(dialogContext).pop(true),
               child: const Text("新增"),
             ),
@@ -670,8 +824,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
         ),
       ),
     );
-    final label = labelController.text.trim();
-    labelController.dispose();
+    label = label.trim();
     if (result != true) return;
     if (level == TimelineElementLevel.small &&
         selectedSceneUUID == null &&
@@ -684,6 +837,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       parentPlacementUUID: parentUUID,
       sceneUUID: selectedSceneUUID,
       label: label,
+      startTick: ref.read(timelineViewProvider).currentTick,
     );
     ref.read(timelineViewProvider.notifier).select(placement.placementUUID);
   }
@@ -895,51 +1049,91 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
   }
 
   Future<void> _showChapterLinkDialog(TimelinePlacementData placement) async {
-    final sceneUUID = placement.sceneUUID;
-    if (sceneUUID == null) {
-      AppFeedback.warning(context, "此節點未連結大綱場景，無法建立章節關聯。");
+    final document = ref.read(timelineDocumentProvider);
+    final sceneUUIDs = timelineSceneUUIDsForPlacement(
+      document,
+      placement.placementUUID,
+    );
+    if (sceneUUIDs.isEmpty) {
+      AppFeedback.warning(context, "此節點沒有已連結大綱場景的子節點，無法建立章節關聯。");
       return;
     }
     final chapters = ref.read(timelineChapterIndexProvider).values.toList();
-    final existing = ref
+    final relevantLinks = ref
         .read(outlineChapterLinksProvider)
-        .where((link) => link.sceneUUID == sceneUUID)
-        .map((link) => link.chapterUUID)
-        .toSet();
+        .where((link) => sceneUUIDs.contains(link.sceneUUID))
+        .toList(growable: false);
+    final existing = relevantLinks.map((link) => link.chapterUUID).toSet();
+    final coveredScenesByChapter = <String, Set<String>>{};
+    for (final link in relevantLinks) {
+      coveredScenesByChapter
+          .putIfAbsent(link.chapterUUID, () => <String>{})
+          .add(link.sceneUUID);
+    }
     final selected = <String>{...existing};
+    final appliesToDescendants = placement.level != TimelineElementLevel.small;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text("選擇關聯章節"),
+          title: Text(appliesToDescendants ? "連結章節並套用到所有子節點" : "選擇關聯章節"),
           content: SizedBox(
             width: 460,
             height: math
-                .min(420, math.max(160, chapters.length * 56))
-                .toDouble(),
-            child: chapters.isEmpty
-                ? const AppEmptyState(title: "目前沒有章節", compact: true)
-                : ListView(
-                    children: [
-                      for (final location in chapters)
-                        CheckboxListTile(
-                          value: selected.contains(
-                            location.chapter.chapterUUID,
-                          ),
-                          title: Text(location.chapter.chapterName),
-                          subtitle: Text(location.folder.segmentName),
-                          onChanged: (checked) {
-                            setDialogState(() {
-                              checked == true
-                                  ? selected.add(location.chapter.chapterUUID)
-                                  : selected.remove(
-                                      location.chapter.chapterUUID,
-                                    );
-                            });
-                          },
-                        ),
-                    ],
+                .min(
+                  480,
+                  math.max(
+                    160,
+                    chapters.length * 64 + (appliesToDescendants ? 72 : 0),
                   ),
+                )
+                .toDouble(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (appliesToDescendants) ...[
+                  AppNoticeBanner(
+                    message: "套用後，${sceneUUIDs.length} 個子場景會使用完全相同的章節選擇。",
+                    tone: AppFeedbackTone.info,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Expanded(
+                  child: chapters.isEmpty
+                      ? const AppEmptyState(title: "目前沒有章節", compact: true)
+                      : ListView(
+                          children: [
+                            for (final location in chapters)
+                              CheckboxListTile(
+                                value: selected.contains(
+                                  location.chapter.chapterUUID,
+                                ),
+                                title: Text(location.chapter.chapterName),
+                                subtitle: Text(
+                                  appliesToDescendants &&
+                                          coveredScenesByChapter.containsKey(
+                                            location.chapter.chapterUUID,
+                                          )
+                                      ? "${location.folder.segmentName} · 目前 ${coveredScenesByChapter[location.chapter.chapterUUID]!.length}/${sceneUUIDs.length} 個子場景"
+                                      : location.folder.segmentName,
+                                ),
+                                onChanged: (checked) {
+                                  setDialogState(() {
+                                    checked == true
+                                        ? selected.add(
+                                            location.chapter.chapterUUID,
+                                          )
+                                        : selected.remove(
+                                            location.chapter.chapterUUID,
+                                          );
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -955,15 +1149,273 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       ),
     );
     if (confirmed != true) return;
-    final links = ref.read(outlineChapterLinksProvider);
-    for (final link in links.where((link) => link.sceneUUID == sceneUUID)) {
-      if (!selected.contains(link.chapterUUID)) {
-        _actions.removeChapterLink(link.linkUUID);
+    _actions.setChapterLinksForPlacement(placement.placementUUID, selected);
+    if (mounted && appliesToDescendants) {
+      AppFeedback.info(context, "已將章節選擇套用到 ${sceneUUIDs.length} 個子場景。");
+    }
+  }
+}
+
+class _OmittedTickGap {
+  final int startTick;
+  final int endTick;
+
+  const _OmittedTickGap(this.startTick, this.endTick);
+
+  int get length => endTick - startTick;
+}
+
+/// Maps real Tick values onto the display axis without mutating timeline data.
+/// Long gaps between every visible track are rendered as one display Tick.
+class _TimelineTickAxis {
+  static const double omittedGapDisplayTicks = 1;
+  static const int minimumGapToOmit = 3;
+  static const double minimumDisplayTicks = 16;
+
+  final int minTick;
+  final int maxTick;
+  final List<_OmittedTickGap> omittedGaps;
+
+  const _TimelineTickAxis._({
+    required this.minTick,
+    required this.maxTick,
+    required this.omittedGaps,
+  });
+
+  factory _TimelineTickAxis.fromPlacements(
+    List<TimelinePlacementData> placements, {
+    required bool omitEmptyRanges,
+    int? anchorTick,
+  }) {
+    if (placements.isEmpty && anchorTick == null) {
+      return const _TimelineTickAxis._(
+        minTick: 0,
+        maxTick: 16,
+        omittedGaps: <_OmittedTickGap>[],
+      );
+    }
+
+    final intervals = <(int, int)>[
+      for (final placement in placements)
+        (placement.startTick, placement.endTick),
+      if (anchorTick != null) (anchorTick, anchorTick + 1),
+    ]..sort((left, right) => left.$1.compareTo(right.$1));
+    var minTick = intervals.first.$1 - 2;
+    var maxTick = intervals.map((interval) => interval.$2).reduce(math.max) + 3;
+    final gaps = <_OmittedTickGap>[];
+    if (omitEmptyRanges) {
+      var occupiedEnd = intervals.first.$2;
+      for (final interval in intervals.skip(1)) {
+        if (interval.$1 - occupiedEnd >= minimumGapToOmit) {
+          gaps.add(_OmittedTickGap(occupiedEnd, interval.$1));
+        }
+        occupiedEnd = math.max(occupiedEnd, interval.$2);
       }
     }
-    for (final chapterUUID in selected) {
-      _actions.addChapterLink(sceneUUID, chapterUUID);
+
+    var axis = _TimelineTickAxis._(
+      minTick: minTick,
+      maxTick: maxTick,
+      omittedGaps: List.unmodifiable(gaps),
+    );
+    final missingDisplayTicks = minimumDisplayTicks - axis.displayTickSpan;
+    if (missingDisplayTicks > 0) {
+      maxTick += missingDisplayTicks.ceil();
+      axis = _TimelineTickAxis._(
+        minTick: minTick,
+        maxTick: maxTick,
+        omittedGaps: List.unmodifiable(gaps),
+      );
     }
+    return axis;
+  }
+
+  double get displayTickSpan => displayPositionForTick(maxTick);
+
+  double displayPositionForTick(num tickValue) {
+    final tick = tickValue.toDouble();
+    var position = tick - minTick;
+    for (final gap in omittedGaps) {
+      if (tick >= gap.endTick) {
+        position -= gap.length - omittedGapDisplayTicks;
+        continue;
+      }
+      if (tick > gap.startTick) {
+        final progress = (tick - gap.startTick) / gap.length;
+        position -= (tick - gap.startTick) - progress * omittedGapDisplayTicks;
+      }
+      break;
+    }
+    return position;
+  }
+
+  double tickForDisplayPosition(double displayPosition) {
+    if (displayPosition < 0) return minTick + displayPosition;
+    var remaining = displayPosition;
+    var actualTick = minTick.toDouble();
+    for (final gap in omittedGaps) {
+      final normalLength = gap.startTick - actualTick;
+      if (remaining <= normalLength) return actualTick + remaining;
+      remaining -= normalLength;
+      actualTick = gap.startTick.toDouble();
+      if (remaining <= omittedGapDisplayTicks) {
+        return remaining < omittedGapDisplayTicks / 2
+            ? actualTick
+            : gap.endTick.toDouble();
+      }
+      remaining -= omittedGapDisplayTicks;
+      actualTick = gap.endTick.toDouble();
+    }
+    return actualTick + remaining;
+  }
+
+  Iterable<int> get visibleTicks sync* {
+    var cursor = minTick;
+    for (final gap in omittedGaps) {
+      for (var tick = cursor; tick <= gap.startTick; tick++) {
+        yield tick;
+      }
+      cursor = gap.endTick;
+    }
+    for (var tick = cursor; tick <= maxTick; tick++) {
+      yield tick;
+    }
+  }
+}
+
+class _TimelineScrubberHandle extends StatefulWidget {
+  final _TimelineTickAxis axis;
+  final int currentTick;
+  final double pixelsPerTick;
+  final double height;
+  final ValueChanged<int> onChanged;
+
+  const _TimelineScrubberHandle({
+    required this.axis,
+    required this.currentTick,
+    required this.pixelsPerTick,
+    required this.height,
+    required this.onChanged,
+  });
+
+  @override
+  State<_TimelineScrubberHandle> createState() =>
+      _TimelineScrubberHandleState();
+}
+
+class _TimelineScrubberHandleState extends State<_TimelineScrubberHandle> {
+  static const _stepInterval = Duration(milliseconds: 100);
+
+  Timer? _stepTimer;
+  double? _dragOriginDisplayX;
+  double? _cursorDisplayX;
+  double _tickRemainder = 0;
+  int? _steppingTick;
+
+  double get _displayX =>
+      widget.axis.displayPositionForTick(_steppingTick ?? widget.currentTick) *
+      widget.pixelsPerTick;
+
+  void _startDrag() {
+    _dragOriginDisplayX =
+        widget.axis.displayPositionForTick(widget.currentTick) *
+        widget.pixelsPerTick;
+    _cursorDisplayX = _dragOriginDisplayX;
+    _steppingTick = widget.currentTick;
+    _tickRemainder = 0;
+    _stepTimer?.cancel();
+    _stepTimer = Timer.periodic(_stepInterval, (_) => _stepWhileDragging());
+  }
+
+  void _updateDrag(double deltaX) {
+    _cursorDisplayX = (_cursorDisplayX ?? _displayX) + deltaX;
+  }
+
+  void _stepWhileDragging() {
+    final dragOriginDisplayX = _dragOriginDisplayX;
+    final cursorDisplayX = _cursorDisplayX;
+    final currentTick = _steppingTick;
+    if (!mounted ||
+        dragOriginDisplayX == null ||
+        cursorDisplayX == null ||
+        currentTick == null) {
+      return;
+    }
+    _tickRemainder +=
+        (cursorDisplayX - dragOriginDisplayX) / widget.pixelsPerTick;
+    final wholeTicks = _tickRemainder.truncate();
+    if (wholeTicks == 0) return;
+    _tickRemainder -= wholeTicks;
+    final nextTick = currentTick + wholeTicks;
+    setState(() => _steppingTick = nextTick);
+    widget.onChanged(nextTick);
+  }
+
+  void _endDrag() {
+    _stepTimer?.cancel();
+    _stepTimer = null;
+    setState(() {
+      _dragOriginDisplayX = null;
+      _cursorDisplayX = null;
+      _tickRemainder = 0;
+      _steppingTick = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _stepTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _displayX - 12,
+      top: 0,
+      width: 24,
+      height: widget.height,
+      child: Semantics(
+        label: "時間 Scrubber，目前 ${widget.currentTick} Tick",
+        slider: true,
+        value: "${widget.currentTick} Tick",
+        child: GestureDetector(
+          key: const ValueKey("timeline-scrubber"),
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (_) => _startDrag(),
+          onHorizontalDragUpdate: (details) => _updateDrag(details.delta.dx),
+          onHorizontalDragEnd: (_) => _endDrag(),
+          onHorizontalDragCancel: _endDrag,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeLeftRight,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Tooltip(
+                message: "拖動目前時間：${widget.currentTick} Tick",
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.tertiary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.surface,
+                      width: 2,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.drag_indicator,
+                    size: 12,
+                    color: Theme.of(context).colorScheme.onTertiary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -977,6 +1429,8 @@ class _TimelineBoard extends StatelessWidget {
   final Map<String, TimelineSceneReference> scenes;
   final String? selectedPlacementUUID;
   final double pixelsPerTick;
+  final _TimelineTickAxis axis;
+  final int currentTick;
   final ScrollController horizontalScrollController;
   final Map<String, Offset> dragOffsets;
   final Map<String, _TimelineResizePreview> resizePreviews;
@@ -996,6 +1450,7 @@ class _TimelineBoard extends StatelessWidget {
     double delta,
   )
   onResize;
+  final ValueChanged<int> onScrub;
   final VoidCallback onAddTrack;
   final void Function(TimelineTrackData track, String action) onTrackAction;
 
@@ -1005,6 +1460,8 @@ class _TimelineBoard extends StatelessWidget {
     required this.scenes,
     required this.selectedPlacementUUID,
     required this.pixelsPerTick,
+    required this.axis,
+    required this.currentTick,
     required this.horizontalScrollController,
     required this.dragOffsets,
     required this.resizePreviews,
@@ -1014,6 +1471,7 @@ class _TimelineBoard extends StatelessWidget {
     required this.onMove,
     required this.onResizePreview,
     required this.onResize,
+    required this.onScrub,
     required this.onAddTrack,
     required this.onTrackAction,
   });
@@ -1022,8 +1480,10 @@ class _TimelineBoard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tracks = [...document.tracks]
       ..sort((a, b) => a.order.compareTo(b.order));
-    final range = _tickRange(placements);
-    final width = math.max(520.0, (range.$2 - range.$1) * pixelsPerTick);
+    final width = math.max(520.0, axis.displayTickSpan * pixelsPerTick);
+    final plotHeight =
+        rulerHeight +
+        tracks.where((track) => !track.isCollapsed).length * rowHeight;
     return Column(
       children: [
         Row(
@@ -1102,20 +1562,46 @@ class _TimelineBoard extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 14),
                     child: SizedBox(
                       width: width,
-                      child: Column(
+                      height: plotHeight,
+                      child: Stack(
                         children: [
-                          CustomPaint(
-                            size: Size(width, rulerHeight),
-                            painter: _TimelineRulerPainter(
-                              minTick: range.$1,
-                              pixelsPerTick: pixelsPerTick,
-                              grid: document.grid,
-                              colorScheme: Theme.of(context).colorScheme,
-                            ),
+                          Column(
+                            children: [
+                              GestureDetector(
+                                key: const ValueKey("timeline-ruler"),
+                                behavior: HitTestBehavior.opaque,
+                                onTapDown: (details) {
+                                  final tick = axis
+                                      .tickForDisplayPosition(
+                                        details.localPosition.dx /
+                                            pixelsPerTick,
+                                      )
+                                      .round();
+                                  onScrub(tick);
+                                },
+                                child: CustomPaint(
+                                  size: Size(width, rulerHeight),
+                                  painter: _TimelineRulerPainter(
+                                    axis: axis,
+                                    currentTick: currentTick,
+                                    pixelsPerTick: pixelsPerTick,
+                                    grid: document.grid,
+                                    colorScheme: Theme.of(context).colorScheme,
+                                  ),
+                                ),
+                              ),
+                              for (final track in tracks)
+                                if (!track.isCollapsed)
+                                  _buildPlotRow(context, track, width),
+                            ],
                           ),
-                          for (final track in tracks)
-                            if (!track.isCollapsed)
-                              _buildPlotRow(context, track, width, range.$1),
+                          _TimelineScrubberHandle(
+                            axis: axis,
+                            currentTick: currentTick,
+                            pixelsPerTick: pixelsPerTick,
+                            height: rulerHeight,
+                            onChanged: onScrub,
+                          ),
                         ],
                       ),
                     ),
@@ -1198,7 +1684,6 @@ class _TimelineBoard extends StatelessWidget {
     BuildContext context,
     TimelineTrackData track,
     double width,
-    int minTick,
   ) {
     final lane = placements
         .where((placement) => placement.trackUUID == track.trackUUID)
@@ -1212,14 +1697,16 @@ class _TimelineBoard extends StatelessWidget {
           CustomPaint(
             size: Size(width, rowHeight),
             painter: _TimelineGridPainter(
-              minTick: minTick,
+              axis: axis,
+              currentTick: currentTick,
               pixelsPerTick: pixelsPerTick,
               colorScheme: Theme.of(context).colorScheme,
-              ticksPerMiddle: document.grid.ticksPerMiddleBox,
+              ticksPerMiddle:
+                  document.grid.ticksPerSmallBox *
+                  document.grid.ticksPerMiddleBox,
             ),
           ),
-          for (final placement in lane)
-            _placementCard(context, placement, minTick),
+          for (final placement in lane) _placementCard(context, placement),
           Positioned(
             left: 0,
             top: 0,
@@ -1232,11 +1719,7 @@ class _TimelineBoard extends StatelessWidget {
     );
   }
 
-  Widget _placementCard(
-    BuildContext context,
-    TimelinePlacementData placement,
-    int minTick,
-  ) {
+  Widget _placementCard(BuildContext context, TimelinePlacementData placement) {
     final selected = placement.placementUUID == selectedPlacementUUID;
     final scheme = Theme.of(context).colorScheme;
     final rawDragOffset = dragOffsets[placement.placementUUID] ?? Offset.zero;
@@ -1276,9 +1759,12 @@ class _TimelineBoard extends StatelessWidget {
     final endResizeDelta = resizePreview?.edge == _TimelineResizeEdge.end
         ? resizeDelta
         : 0.0;
+    final placementDisplayTicks =
+        axis.displayPositionForTick(placement.endTick) -
+        axis.displayPositionForTick(placement.startTick);
     final width = math.max(
       44.0,
-      placement.durationTicks * pixelsPerTick -
+      placementDisplayTicks * pixelsPerTick -
           4 -
           startResizeDelta +
           endResizeDelta,
@@ -1287,6 +1773,13 @@ class _TimelineBoard extends StatelessWidget {
     var verticalHandleAccumulated = dragOffset.dy;
     var startAccumulated = startResizeDelta;
     var endAccumulated = endResizeDelta;
+
+    double actualPixelDelta(int tick, double displayPixelDelta) {
+      final displayPosition =
+          axis.displayPositionForTick(tick) + displayPixelDelta / pixelsPerTick;
+      final targetTick = axis.tickForDisplayPosition(displayPosition).round();
+      return (targetTick - tick) * pixelsPerTick;
+    }
 
     Widget resizeHandle(_TimelineResizeEdge edge) {
       final isStart = edge == _TimelineResizeEdge.start;
@@ -1321,11 +1814,17 @@ class _TimelineBoard extends StatelessWidget {
                 onResizePreview(placement.placementUUID, edge, endAccumulated);
               }
             },
-            onHorizontalDragEnd: (_) => onResize(
-              placement,
-              edge,
-              isStart ? startAccumulated : endAccumulated,
-            ),
+            onHorizontalDragEnd: (_) {
+              final boundaryTick = isStart
+                  ? placement.startTick
+                  : placement.endTick;
+              final displayDelta = isStart ? startAccumulated : endAccumulated;
+              onResize(
+                placement,
+                edge,
+                actualPixelDelta(boundaryTick, displayDelta),
+              );
+            },
             onHorizontalDragCancel: () => onResize(placement, edge, 0),
             child: MouseRegion(
               cursor: SystemMouseCursors.resizeLeftRight,
@@ -1350,7 +1849,7 @@ class _TimelineBoard extends StatelessWidget {
 
     return Positioned(
       left:
-          (placement.startTick - minTick) * pixelsPerTick +
+          axis.displayPositionForTick(placement.startTick) * pixelsPerTick +
           2 +
           dragOffset.dx +
           startResizeDelta,
@@ -1400,8 +1899,13 @@ class _TimelineBoard extends StatelessWidget {
                     moveAccumulated += Offset(details.delta.dx, 0);
                     onDragPreview(placement.placementUUID, moveAccumulated);
                   },
-                  onHorizontalDragEnd: (_) =>
-                      onMove(placement, moveAccumulated),
+                  onHorizontalDragEnd: (_) => onMove(
+                    placement,
+                    Offset(
+                      actualPixelDelta(placement.startTick, moveAccumulated.dx),
+                      moveAccumulated.dy,
+                    ),
+                  ),
                   onHorizontalDragCancel: () => onMove(placement, Offset.zero),
                   onVerticalDragStart: (_) {
                     moveAccumulated = Offset.zero;
@@ -1456,7 +1960,9 @@ class _TimelineBoard extends StatelessWidget {
                                     _placementLabel(placement, scenes),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.labelMedium,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelMedium,
                                   ),
                                 ),
                               ),
@@ -1474,13 +1980,6 @@ class _TimelineBoard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  (int, int) _tickRange(List<TimelinePlacementData> items) {
-    if (items.isEmpty) return (0, 16);
-    final min = items.map((item) => item.startTick).reduce(math.min) - 2;
-    final max = items.map((item) => item.endTick).reduce(math.max) + 3;
-    return (min, math.max(max, min + 16));
   }
 }
 
@@ -1500,7 +1999,8 @@ class _TimelineInspector extends StatefulWidget {
   onUpdate;
   final ValueChanged<TimelinePlacementData> onDelete;
   final ValueChanged<TimelinePlacementData> onAddChapterLink;
-  final ValueChanged<String> onRemoveChapterLink;
+  final void Function(TimelinePlacementData placement, String chapterUUID)
+  onRemoveChapterLink;
   final TimelineOpenChapter? onOpenChapter;
   final TimelineOpenOutlineScene? onOpenOutlineScene;
 
@@ -1566,11 +2066,26 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
     final scene = placement.sceneUUID == null
         ? null
         : widget.scenes[placement.sceneUUID];
+    final sceneUUIDs = timelineSceneUUIDsForPlacement(
+      widget.document,
+      placement.placementUUID,
+    );
     final links =
         widget.links
-            .where((link) => link.sceneUUID == placement.sceneUUID)
+            .where((link) => sceneUUIDs.contains(link.sceneUUID))
             .toList()
           ..sort((a, b) => a.sequence.compareTo(b.sequence));
+    final chapterUUIDs = <String>[];
+    final linkedScenesByChapter = <String, Set<String>>{};
+    for (final link in links) {
+      if (!chapterUUIDs.contains(link.chapterUUID)) {
+        chapterUUIDs.add(link.chapterUUID);
+      }
+      linkedScenesByChapter
+          .putIfAbsent(link.chapterUUID, () => <String>{})
+          .add(link.sceneUUID);
+    }
+    final isContainer = placement.level != TimelineElementLevel.small;
     final tracks = [...widget.document.tracks]
       ..sort((a, b) => a.order.compareTo(b.order));
     return AppSectionCard(
@@ -1581,6 +2096,7 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
           tooltip: "刪除節點",
           onPressed: () => widget.onDelete(placement),
           icon: const Icon(Icons.delete_outline),
+          style: IconButton.styleFrom(foregroundColor: Colors.red),
         ),
       ],
       child: Column(
@@ -1644,26 +2160,34 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
               durationTicks: value - placement.startTick,
             ),
           ),
-          if (scene != null) ...[
+          if (sceneUUIDs.isNotEmpty) ...[
             const Divider(height: 28),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.account_tree_outlined),
-              title: Text(
-                scene.scene.sceneName.isEmpty ? "未命名場景" : scene.scene.sceneName,
+            if (scene != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.account_tree_outlined),
+                title: Text(
+                  scene.scene.sceneName.isEmpty
+                      ? "未命名場景"
+                      : scene.scene.sceneName,
+                ),
+                subtitle: Text(
+                  "${scene.storyline.storylineName} · ${scene.event.storyEvent}",
+                ),
+                trailing: widget.onOpenOutlineScene == null
+                    ? null
+                    : IconButton(
+                        tooltip: "在大綱中開啟",
+                        onPressed: () =>
+                            widget.onOpenOutlineScene!(scene.scene.sceneUUID),
+                        icon: const Icon(Icons.open_in_new),
+                      ),
+              )
+            else
+              AppNoticeBanner(
+                message: "以下章節彙整自 ${sceneUUIDs.length} 個子場景。",
+                tone: AppFeedbackTone.info,
               ),
-              subtitle: Text(
-                "${scene.storyline.storylineName} · ${scene.event.storyEvent}",
-              ),
-              trailing: widget.onOpenOutlineScene == null
-                  ? null
-                  : IconButton(
-                      tooltip: "在大綱中開啟",
-                      onPressed: () =>
-                          widget.onOpenOutlineScene!(scene.scene.sceneUUID),
-                      icon: const Icon(Icons.open_in_new),
-                    ),
-            ),
             Row(
               children: [
                 Expanded(
@@ -1673,16 +2197,16 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
                   ),
                 ),
                 IconButton(
-                  tooltip: "選擇章節",
+                  tooltip: isContainer ? "連結章節並套用到所有子節點" : "選擇章節",
                   onPressed: () => widget.onAddChapterLink(placement),
-                  icon: const Icon(Icons.add_link),
+                  icon: Icon(isContainer ? Icons.account_tree : Icons.add_link),
                 ),
               ],
             ),
             if (links.isEmpty)
-              const AppEmptyState(
-                title: "此場景尚未連結章節",
-                description: "不會自動切換到第一章。",
+              AppEmptyState(
+                title: isContainer ? "子場景尚未連結章節" : "此場景尚未連結章節",
+                description: isContainer ? "可選擇章節並一次套用到所有子節點。" : "不會自動切換到第一章。",
                 icon: Icons.link_off,
                 compact: true,
               )
@@ -1691,30 +2215,28 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final link in links)
+                  for (final chapterUUID in chapterUUIDs)
                     InputChip(
                       avatar: const Icon(Icons.menu_book, size: 16),
                       label: Text(
-                        widget
-                                .chapters[link.chapterUUID]
-                                ?.chapter
-                                .chapterName ??
-                            "缺失章節",
+                        "${widget.chapters[chapterUUID]?.chapter.chapterName ?? "缺失章節"}${isContainer ? " (${linkedScenesByChapter[chapterUUID]?.length ?? 0}/${sceneUUIDs.length})" : ""}",
                       ),
                       onPressed:
                           widget.onOpenChapter == null ||
-                              !widget.chapters.containsKey(link.chapterUUID)
+                              !widget.chapters.containsKey(chapterUUID)
                           ? null
-                          : () => widget.onOpenChapter!(link.chapterUUID),
+                          : () => widget.onOpenChapter!(chapterUUID),
                       onDeleted: () =>
-                          widget.onRemoveChapterLink(link.linkUUID),
+                          widget.onRemoveChapterLink(placement, chapterUUID),
                     ),
                 ],
               ),
           ] else ...[
             const Divider(height: 28),
-            const AppNoticeBanner(
-              message: "容器節點不直接連結章節；請選取小箱並先連結大綱場景。",
+            AppNoticeBanner(
+              message: isContainer
+                  ? "此容器目前沒有可連結章節的子場景；請先新增小箱。"
+                  : "此小箱尚未連結大綱場景，無法建立章節關聯。",
               tone: AppFeedbackTone.info,
             ),
           ],
@@ -1724,7 +2246,7 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
   }
 }
 
-class _NumberStepper extends StatelessWidget {
+class _NumberStepper extends StatefulWidget {
   final String label;
   final int value;
   final int minimum;
@@ -1732,6 +2254,7 @@ class _NumberStepper extends StatelessWidget {
   final ValueChanged<int> onChanged;
 
   const _NumberStepper({
+    super.key,
     required this.label,
     required this.value,
     required this.onChanged,
@@ -1740,34 +2263,106 @@ class _NumberStepper extends StatelessWidget {
   });
 
   @override
+  State<_NumberStepper> createState() => _NumberStepperState();
+}
+
+class _NumberStepperState extends State<_NumberStepper> {
+  late final TextEditingController _valueController;
+  late final FocusNode _valueFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _valueController = TextEditingController(text: "${widget.value}");
+    _valueFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NumberStepper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && !_valueFocusNode.hasFocus) {
+      _valueController.text = "${widget.value}";
+    }
+  }
+
+  @override
+  void dispose() {
+    _valueController.dispose();
+    _valueFocusNode.dispose();
+    super.dispose();
+  }
+
+  int get _minimum => widget.allowNegative
+      ? widget.minimum
+      : math.max(1, widget.minimum).toInt();
+
+  void _commitValue() {
+    final parsedValue = int.tryParse(_valueController.text.trim());
+    if (parsedValue == null) {
+      _valueController.text = "${widget.value}";
+      return;
+    }
+
+    final nextValue = math.max(_minimum, parsedValue).toInt();
+    _valueController.text = "$nextValue";
+    if (nextValue != widget.value) {
+      widget.onChanged(nextValue);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final min = allowNegative ? minimum : math.max(1, minimum);
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        IconButton(
-          tooltip: "減少",
-          onPressed: value > min ? () => onChanged(value - 1) : null,
-          icon: const Icon(Icons.remove_circle_outline),
-        ),
-        SizedBox(
-          width: 64,
-          child: Text(
-            "$value",
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-        ),
-        IconButton(
-          tooltip: "增加",
-          onPressed: () => onChanged(value + 1),
-          icon: const Icon(Icons.add_circle_outline),
+        Flexible(child: Text(widget.label)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: "減少",
+              onPressed: widget.value > _minimum
+                  ? () => widget.onChanged(widget.value - 1)
+                  : null,
+              icon: const Icon(Icons.remove_circle),
+              style: IconButton.styleFrom(foregroundColor: Colors.red),
+            ),
+            SizedBox(
+              width: 64,
+              child: TextField(
+                controller: _valueController,
+                focusNode: _valueFocusNode,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.numberWithOptions(
+                  signed: widget.allowNegative,
+                ),
+                style: Theme.of(context).textTheme.titleSmall,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  border: InputBorder.none,
+                ),
+                onTap: () => _valueController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: _valueController.text.length,
+                ),
+                onSubmitted: (_) {
+                  _commitValue();
+                  _valueFocusNode.unfocus();
+                },
+                onTapOutside: (_) {
+                  _commitValue();
+                  _valueFocusNode.unfocus();
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: "增加",
+              onPressed: () => widget.onChanged(widget.value + 1),
+              icon: const Icon(Icons.add_circle),
+              style: IconButton.styleFrom(foregroundColor: Colors.green),
+            ),
+          ],
         ),
       ],
     );
@@ -1775,13 +2370,15 @@ class _NumberStepper extends StatelessWidget {
 }
 
 class _TimelineRulerPainter extends CustomPainter {
-  final int minTick;
+  final _TimelineTickAxis axis;
+  final int currentTick;
   final double pixelsPerTick;
   final TimelineGridConfig grid;
   final ColorScheme colorScheme;
 
   const _TimelineRulerPainter({
-    required this.minTick,
+    required this.axis,
+    required this.currentTick,
     required this.pixelsPerTick,
     required this.grid,
     required this.colorScheme,
@@ -1797,12 +2394,33 @@ class _TimelineRulerPainter extends CustomPainter {
     final majorPaint = Paint()
       ..color = colorScheme.primary.withValues(alpha: 0.55)
       ..strokeWidth = 1.5;
-    final startIndex = 0;
-    final tickCount = (size.width / pixelsPerTick).ceil() + 1;
-    for (var index = startIndex; index < tickCount; index++) {
-      final tick = minTick + index;
-      final x = index * pixelsPerTick;
-      final major = tick % grid.ticksPerMiddleBox == 0;
+    for (final gap in axis.omittedGaps) {
+      final startX = axis.displayPositionForTick(gap.startTick) * pixelsPerTick;
+      final endX = axis.displayPositionForTick(gap.endTick) * pixelsPerTick;
+      canvas.drawRect(
+        Rect.fromLTRB(startX, 0, endX, size.height),
+        Paint()..color = colorScheme.surfaceContainerHighest,
+      );
+      final centerX = (startX + endX) / 2;
+      final breakPaint = Paint()
+        ..color = colorScheme.primary
+        ..strokeWidth = 2;
+      canvas.drawLine(
+        Offset(centerX - 7, size.height * 0.34),
+        Offset(centerX - 1, size.height * 0.66),
+        breakPaint,
+      );
+      canvas.drawLine(
+        Offset(centerX + 1, size.height * 0.34),
+        Offset(centerX + 7, size.height * 0.66),
+        breakPaint,
+      );
+    }
+    for (final tick in axis.visibleTicks) {
+      final x = axis.displayPositionForTick(tick) * pixelsPerTick;
+      if (x < 0 || x > size.width) continue;
+      final major =
+          tick % (grid.ticksPerSmallBox * grid.ticksPerMiddleBox) == 0;
       canvas.drawLine(
         Offset(x, major ? 0 : size.height * 0.45),
         Offset(x, size.height),
@@ -1823,11 +2441,29 @@ class _TimelineRulerPainter extends CustomPainter {
         painter.paint(canvas, Offset(x + 4, 7));
       }
     }
+    final playheadX = axis.displayPositionForTick(currentTick) * pixelsPerTick;
+    final playheadPaint = Paint()
+      ..color = colorScheme.tertiary
+      ..strokeWidth = 2;
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      playheadPaint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(playheadX - 6, 0)
+        ..lineTo(playheadX + 6, 0)
+        ..lineTo(playheadX, 8)
+        ..close(),
+      playheadPaint,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _TimelineRulerPainter oldDelegate) {
-    return oldDelegate.minTick != minTick ||
+    return oldDelegate.axis != axis ||
+        oldDelegate.currentTick != currentTick ||
         oldDelegate.pixelsPerTick != pixelsPerTick ||
         oldDelegate.grid != grid ||
         oldDelegate.colorScheme != colorScheme;
@@ -1835,13 +2471,15 @@ class _TimelineRulerPainter extends CustomPainter {
 }
 
 class _TimelineGridPainter extends CustomPainter {
-  final int minTick;
+  final _TimelineTickAxis axis;
+  final int currentTick;
   final double pixelsPerTick;
   final ColorScheme colorScheme;
   final int ticksPerMiddle;
 
   const _TimelineGridPainter({
-    required this.minTick,
+    required this.axis,
+    required this.currentTick,
     required this.pixelsPerTick,
     required this.colorScheme,
     required this.ticksPerMiddle,
@@ -1853,12 +2491,22 @@ class _TimelineGridPainter extends CustomPainter {
       Offset.zero & size,
       Paint()..color = colorScheme.surfaceContainerLowest,
     );
-    final count = (size.width / pixelsPerTick).ceil() + 1;
-    for (var index = 0; index < count; index++) {
-      final major = (minTick + index) % ticksPerMiddle == 0;
+    for (final gap in axis.omittedGaps) {
+      final startX = axis.displayPositionForTick(gap.startTick) * pixelsPerTick;
+      final endX = axis.displayPositionForTick(gap.endTick) * pixelsPerTick;
+      canvas.drawRect(
+        Rect.fromLTRB(startX, 0, endX, size.height),
+        Paint()
+          ..color = colorScheme.surfaceContainerHigh.withValues(alpha: 0.72),
+      );
+    }
+    for (final tick in axis.visibleTicks) {
+      final x = axis.displayPositionForTick(tick) * pixelsPerTick;
+      if (x < 0 || x > size.width) continue;
+      final major = tick % ticksPerMiddle == 0;
       canvas.drawLine(
-        Offset(index * pixelsPerTick, 0),
-        Offset(index * pixelsPerTick, size.height),
+        Offset(x, 0),
+        Offset(x, size.height),
         Paint()
           ..color = major
               ? colorScheme.primary.withValues(alpha: 0.16)
@@ -1866,6 +2514,14 @@ class _TimelineGridPainter extends CustomPainter {
           ..strokeWidth = major ? 1.4 : 1,
       );
     }
+    final playheadX = axis.displayPositionForTick(currentTick) * pixelsPerTick;
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      Paint()
+        ..color = colorScheme.tertiary.withValues(alpha: 0.78)
+        ..strokeWidth = 2,
+    );
     canvas.drawLine(
       Offset(0, size.height - 1),
       Offset(size.width, size.height - 1),
@@ -1875,7 +2531,8 @@ class _TimelineGridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TimelineGridPainter oldDelegate) {
-    return oldDelegate.minTick != minTick ||
+    return oldDelegate.axis != axis ||
+        oldDelegate.currentTick != currentTick ||
         oldDelegate.pixelsPerTick != pixelsPerTick ||
         oldDelegate.colorScheme != colorScheme ||
         oldDelegate.ticksPerMiddle != ticksPerMiddle;
@@ -1908,5 +2565,10 @@ String _unitLabel(TickDurationUnit unit) => switch (unit) {
   TickDurationUnit.hour => "小時",
   TickDurationUnit.day => "天",
   TickDurationUnit.week => "週",
+  TickDurationUnit.month => "月",
+  TickDurationUnit.season => "季節",
+  TickDurationUnit.year => "年",
+  TickDurationUnit.decade => "十年",
+  TickDurationUnit.century => "世紀",
   TickDurationUnit.custom => "自訂單位",
 };

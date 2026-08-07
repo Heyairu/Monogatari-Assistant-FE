@@ -22,9 +22,10 @@ abstract final class TimelineCodec {
             builder.element(
               "Grid",
               attributes: {
-                "TickValue": grid.tickDuration.value.toString(),
-                "TickUnit": grid.tickDuration.unit.name,
-                "CustomLabel": grid.tickDuration.customLabel,
+                "TickValue": grid.ticksPerLittleBox.value.toString(),
+                "TickUnit": grid.ticksPerLittleBox.unit.name,
+                "CustomLabel": grid.ticksPerLittleBox.customLabel,
+                "TicksPerSmallBox": grid.ticksPerSmallBox.toString(),
                 "TicksPerMiddleBox": grid.ticksPerMiddleBox.toString(),
                 "MiddleBoxesPerLargeBox": grid.middleBoxesPerLargeBox
                     .toString(),
@@ -119,13 +120,17 @@ abstract final class TimelineCodec {
       TickDurationUnit.day,
     );
     final grid = TimelineGridConfig(
-      tickDuration: TickDurationData(
+      ticksPerLittleBox: TickDurationData(
         value: _positiveInt(
           gridElement?.getAttribute("TickValue"),
-          defaultGrid.tickDuration.value,
+          defaultGrid.ticksPerLittleBox.value,
         ),
         unit: tickUnit,
         customLabel: gridElement?.getAttribute("CustomLabel") ?? "",
+      ),
+      ticksPerSmallBox: _positiveInt(
+        gridElement?.getAttribute("TicksPerSmallBox"),
+        defaultGrid.ticksPerSmallBox,
       ),
       ticksPerMiddleBox: _positiveInt(
         gridElement?.getAttribute("TicksPerMiddleBox"),

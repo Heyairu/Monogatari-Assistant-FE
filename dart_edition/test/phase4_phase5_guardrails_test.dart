@@ -686,6 +686,16 @@ void main() {
         "調查局",
       );
 
+      await tester.enterText(organizationFields.first, r"\世界\調查局");
+      await tester.pumpAndSettle();
+      expect(targetOption, findsOneWidget);
+      await tester.tap(targetOption);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(organizationFields.first).controller!.text,
+        "調查局",
+      );
+
       await tester.enterText(organizationFields.at(1), "探員");
       await tester.pump();
       final addButton = find.descendant(

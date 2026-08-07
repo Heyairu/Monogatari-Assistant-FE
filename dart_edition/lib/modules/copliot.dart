@@ -1043,19 +1043,13 @@ class _CopilotViewState extends State<CopilotView> {
           ),
         ),
         const SizedBox(width: 8),
-        SizedBox(
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _isLoadingModels ? null : _fetchModels,
-            icon: _isLoadingModels
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+        IconButton(
+          icon: _isLoadingModels
+                ? CircularProgressIndicator()
                 : const Icon(Icons.refresh),
-            label: const Text("抓取"),
-          ),
+          tooltip: "抓取",
+          onPressed: _isLoadingModels ? null : _fetchModels,
+          style: IconButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer),
         ),
       ],
     );
@@ -1261,29 +1255,25 @@ class _CopilotViewState extends State<CopilotView> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              "Shift+Enter 換行、Enter 發送",
-              style: Theme.of(context).textTheme.displaySmall,
-            ),
-            const SizedBox(height: 16),
             Row(
               children: [
                 _buildModeSelector(),
                 const Spacer(),
-                FilledButton.icon(
+                IconButton(
+                  icon: _isSending
+                      ? CircularProgressIndicator()
+                      : const Icon(Icons.send),
+                  tooltip: _isSending ? "發送中" : "發送",
                   onPressed: _isSending || _selectedMode != CopilotMode.chat
                       ? null
                       : _sendMessage,
-                  icon: _isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send),
-                  label: Text(_isSending ? "發送中" : "發送"),
-                ),
+                )
               ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Shift+Enter 換行、Enter 發送",
+              style: Theme.of(context).textTheme.displaySmall,
             ),
           ],
         ),

@@ -57,26 +57,32 @@ class TimelineViewState {
   final String? scopePlacementUUID;
   final String? selectedPlacementUUID;
   final double pixelsPerTick;
+  final int currentTick;
   final String query;
   final bool onlyCurrentChapter;
   final bool onlyUnlinked;
+  final bool omitEmptyRanges;
 
   const TimelineViewState({
     this.scopePlacementUUID,
     this.selectedPlacementUUID,
     this.pixelsPerTick = 72,
+    this.currentTick = 0,
     this.query = "",
     this.onlyCurrentChapter = false,
     this.onlyUnlinked = false,
+    this.omitEmptyRanges = false,
   });
 
   TimelineViewState copyWith({
     Object? scopePlacementUUID = _unset,
     Object? selectedPlacementUUID = _unset,
     double? pixelsPerTick,
+    int? currentTick,
     String? query,
     bool? onlyCurrentChapter,
     bool? onlyUnlinked,
+    bool? omitEmptyRanges,
   }) {
     return TimelineViewState(
       scopePlacementUUID: identical(scopePlacementUUID, _unset)
@@ -86,9 +92,11 @@ class TimelineViewState {
           ? this.selectedPlacementUUID
           : selectedPlacementUUID as String?,
       pixelsPerTick: pixelsPerTick ?? this.pixelsPerTick,
+      currentTick: currentTick ?? this.currentTick,
       query: query ?? this.query,
       onlyCurrentChapter: onlyCurrentChapter ?? this.onlyCurrentChapter,
       onlyUnlinked: onlyUnlinked ?? this.onlyUnlinked,
+      omitEmptyRanges: omitEmptyRanges ?? this.omitEmptyRanges,
     );
   }
 }
@@ -112,6 +120,11 @@ class TimelineViewNotifier extends Notifier<TimelineViewState> {
     state = state.copyWith(pixelsPerTick: value.clamp(36, 144));
   }
 
+  void setCurrentTick(int value) {
+    if (state.currentTick == value) return;
+    state = state.copyWith(currentTick: value);
+  }
+
   void setQuery(String value) => state = state.copyWith(query: value);
 
   void setOnlyCurrentChapter(bool value) {
@@ -120,6 +133,10 @@ class TimelineViewNotifier extends Notifier<TimelineViewState> {
 
   void setOnlyUnlinked(bool value) {
     state = state.copyWith(onlyUnlinked: value);
+  }
+
+  void setOmitEmptyRanges(bool value) {
+    state = state.copyWith(omitEmptyRanges: value);
   }
 
   void reset() => state = const TimelineViewState();
@@ -177,9 +194,12 @@ class TimelineActions {
 
   void updateGrid(TimelineGridConfig grid) {
     final normalized = grid.copyWith(
-      tickDuration: grid.tickDuration.copyWith(
-        value: grid.tickDuration.value < 1 ? 1 : grid.tickDuration.value,
+      ticksPerLittleBox: grid.ticksPerLittleBox.copyWith(
+        value: grid.ticksPerLittleBox.value < 1
+            ? 1
+            : grid.ticksPerLittleBox.value,
       ),
+      ticksPerSmallBox: grid.ticksPerSmallBox < 1 ? 1 : grid.ticksPerSmallBox,
       ticksPerMiddleBox: grid.ticksPerMiddleBox < 1
           ? 1
           : grid.ticksPerMiddleBox,
@@ -287,6 +307,7 @@ class TimelineActions {
     String? parentPlacementUUID,
     String? sceneUUID,
     String? label,
+    int? startTick,
   }) {
     final document = _document;
     var placements = [...document.placements];
@@ -375,7 +396,12 @@ class TimelineActions {
     String? storylineUUID;
     String? eventUUID;
     var resolvedSceneUUID = sceneUUID;
-    if (level == TimelineElementLevel.middle &&
+    if (level == TimelineElementLevel.large) {
+      final storyline = StorylineData(storylineName: label?.trim() ?? "");
+      outline.add(storyline);
+      outlineChanged = true;
+      storylineUUID = storyline.chapterUUID;
+    } else if (level == TimelineElementLevel.middle &&
         parent?.level == TimelineElementLevel.large) {
       storylineUUID = ensureStoryline(parent!);
       final storylineIndex = outline.indexWhere(
@@ -421,14 +447,21 @@ class TimelineActions {
     final siblings = placements
         .where((item) => item.parentPlacementUUID == parentPlacementUUID)
         .toList(growable: false);
-    final startTick = siblings.isEmpty
-        ? (parent?.startTick ?? 0)
-        : siblings.map((item) => item.endTick).reduce((a, b) => a > b ? a : b);
+    final resolvedStartTick =
+        startTick ??
+        (siblings.isEmpty
+            ? (parent?.startTick ?? 0)
+            : siblings
+                  .map((item) => item.endTick)
+                  .reduce((a, b) => a > b ? a : b));
     final duration = switch (level) {
       TimelineElementLevel.large =>
-        document.grid.ticksPerMiddleBox * document.grid.middleBoxesPerLargeBox,
-      TimelineElementLevel.middle => document.grid.ticksPerMiddleBox,
-      TimelineElementLevel.small => 1,
+        document.grid.ticksPerSmallBox *
+            document.grid.ticksPerMiddleBox *
+            document.grid.middleBoxesPerLargeBox,
+      TimelineElementLevel.middle =>
+        document.grid.ticksPerSmallBox * document.grid.ticksPerMiddleBox,
+      TimelineElementLevel.small => document.grid.ticksPerSmallBox,
     };
     final placement = TimelinePlacementData.create(
       storylineUUID: storylineUUID,
@@ -437,20 +470,24 @@ class TimelineActions {
       parentPlacementUUID: parentPlacementUUID,
       level: level,
       trackUUID: parent?.trackUUID ?? document.tracks.first.trackUUID,
-      startTick: startTick,
+      startTick: resolvedStartTick,
       durationTicks: duration,
       order: siblings.length,
       label: label?.trim() ?? "",
     );
     placements.add(placement);
     placements = _extendAncestors(placements, placement.placementUUID);
+    final split = _splitOverlaps(
+      document.copyWith(placements: placements),
+      preferredPlacementUUID: placement.placementUUID,
+    );
     if (outlineChanged) {
       ref
           .read(outlineDataProvider.notifier)
           .setOutlineData(outline, synchronizeTimeline: false);
     }
-    _notifier.setDocument(document.copyWith(placements: placements));
-    return placement;
+    _notifier.setDocument(split.document);
+    return _findPlacement(split.document.placements, placement.placementUUID)!;
   }
 
   TimelineMutationResult syncStorylineHierarchy(String storylineUUID) {
@@ -476,8 +513,21 @@ class TimelineActions {
   }
 
   void removePlacement(String placementUUID) {
+    _removePlacements(<String>{placementUUID});
+  }
+
+  void removeStorylinePlacements(String storylineUUID) {
+    final placementUUIDs = <String>{
+      for (final placement in _document.placements)
+        if (placement.storylineUUID == storylineUUID) placement.placementUUID,
+    };
+    _removePlacements(placementUUIDs);
+  }
+
+  void _removePlacements(Set<String> placementUUIDs) {
+    if (placementUUIDs.isEmpty) return;
     final document = _document;
-    final removed = <String>{placementUUID};
+    final removed = <String>{...placementUUIDs};
     var changed = true;
     while (changed) {
       changed = false;
@@ -617,6 +667,71 @@ class TimelineActions {
         .updateLinks(
           (links) => links
               .where((link) => link.linkUUID != linkUUID)
+              .toList(growable: false),
+        );
+  }
+
+  /// Replaces the chapter selection for the scene represented by a small box,
+  /// or for every descendant scene represented by a middle/large box.
+  void setChapterLinksForPlacement(
+    String placementUUID,
+    Set<String> chapterUUIDs,
+  ) {
+    final sceneUUIDs = timelineSceneUUIDsForPlacement(_document, placementUUID);
+    if (sceneUUIDs.isEmpty) return;
+
+    ref.read(outlineChapterLinksProvider.notifier).updateLinks((links) {
+      final next = links
+          .where(
+            (link) =>
+                !sceneUUIDs.contains(link.sceneUUID) ||
+                chapterUUIDs.contains(link.chapterUUID),
+          )
+          .toList();
+      final existingPairs = {
+        for (final link in next) "${link.sceneUUID}\u0000${link.chapterUUID}",
+      };
+      for (final sceneUUID in sceneUUIDs) {
+        var sequence =
+            next
+                .where((link) => link.sceneUUID == sceneUUID)
+                .fold<int>(
+                  -1,
+                  (maximum, link) =>
+                      link.sequence > maximum ? link.sequence : maximum,
+                ) +
+            1;
+        for (final chapterUUID in chapterUUIDs) {
+          final pair = "$sceneUUID\u0000$chapterUUID";
+          if (!existingPairs.add(pair)) continue;
+          next.add(
+            OutlineChapterLinkData.create(
+              sceneUUID: sceneUUID,
+              chapterUUID: chapterUUID,
+              sequence: sequence++,
+            ),
+          );
+        }
+      }
+      return next;
+    });
+  }
+
+  void removeChapterLinkFromPlacement(
+    String placementUUID,
+    String chapterUUID,
+  ) {
+    final sceneUUIDs = timelineSceneUUIDsForPlacement(_document, placementUUID);
+    if (sceneUUIDs.isEmpty) return;
+    ref
+        .read(outlineChapterLinksProvider.notifier)
+        .updateLinks(
+          (links) => links
+              .where(
+                (link) =>
+                    !sceneUUIDs.contains(link.sceneUUID) ||
+                    link.chapterUUID != chapterUUID,
+              )
               .toList(growable: false),
         );
   }

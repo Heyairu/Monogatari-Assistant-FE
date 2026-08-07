@@ -7,7 +7,19 @@ part "timeline_data.freezed.dart";
 
 String _timelineUuid() => const Uuid().v4();
 
-enum TickDurationUnit { second, minute, hour, day, week, custom }
+enum TickDurationUnit {
+  second,
+  minute,
+  hour,
+  day,
+  week,
+  month,
+  season,
+  year,
+  decade,
+  century,
+  custom,
+}
 
 enum TimelineElementLevel { large, middle, small }
 
@@ -25,7 +37,8 @@ class TickDurationData with _$TickDurationData {
 @freezed
 class TimelineGridConfig with _$TimelineGridConfig {
   const factory TimelineGridConfig({
-    @Default(TickDurationData()) TickDurationData tickDuration,
+    @Default(TickDurationData()) TickDurationData ticksPerLittleBox,
+    @Default(1) int ticksPerSmallBox,
     @Default(4) int ticksPerMiddleBox,
     @Default(6) int middleBoxesPerLargeBox,
     @Default(false) bool autoSortOutline,
@@ -161,6 +174,47 @@ class TimelineProjectData with _$TimelineProjectData {
   }) = _TimelineProjectData;
 }
 
+/// Returns the outline scene UUIDs represented by [placementUUID].
+///
+/// Small boxes contribute their own scene, while middle and large boxes
+/// contribute every linked scene in their descendant boxes.
+Set<String> timelineSceneUUIDsForPlacement(
+  TimelineDocumentData document,
+  String placementUUID,
+) {
+  final placementsById = <String, TimelinePlacementData>{
+    for (final placement in document.placements)
+      placement.placementUUID: placement,
+  };
+  if (!placementsById.containsKey(placementUUID)) return const <String>{};
+
+  final childrenByParent = <String, List<TimelinePlacementData>>{};
+  for (final placement in document.placements) {
+    final parentUUID = placement.parentPlacementUUID;
+    if (parentUUID != null) {
+      childrenByParent.putIfAbsent(parentUUID, () => []).add(placement);
+    }
+  }
+
+  final sceneUUIDs = <String>{};
+  final pending = <String>[placementUUID];
+  final visited = <String>{};
+  while (pending.isNotEmpty) {
+    final currentUUID = pending.removeLast();
+    if (!visited.add(currentUUID)) continue;
+    final placement = placementsById[currentUUID];
+    if (placement == null) continue;
+    final sceneUUID = placement.sceneUUID;
+    if (sceneUUID != null && sceneUUID.isNotEmpty) sceneUUIDs.add(sceneUUID);
+    pending.addAll(
+      (childrenByParent[currentUUID] ?? const <TimelinePlacementData>[]).map(
+        (child) => child.placementUUID,
+      ),
+    );
+  }
+  return sceneUUIDs;
+}
+
 /// Builds and repairs the projection from Outline boxes to Timeline boxes.
 /// Outline content remains authoritative; only placement and track data live
 /// in the timeline document.
@@ -210,7 +264,9 @@ abstract final class TimelineOutlineMapper {
         trackUUID: track.trackUUID,
         startTick: rootEnd,
         durationTicks:
-            source.grid.ticksPerMiddleBox * source.grid.middleBoxesPerLargeBox,
+            source.grid.ticksPerSmallBox *
+            source.grid.ticksPerMiddleBox *
+            source.grid.middleBoxesPerLargeBox,
         order: placements
             .where((placement) => placement.parentPlacementUUID == null)
             .length,
@@ -245,7 +301,8 @@ abstract final class TimelineOutlineMapper {
           level: TimelineElementLevel.middle,
           trackUUID: large.trackUUID,
           startTick: childEnd,
-          durationTicks: source.grid.ticksPerMiddleBox,
+          durationTicks:
+              source.grid.ticksPerSmallBox * source.grid.ticksPerMiddleBox,
           order: placements
               .where(
                 (placement) =>
@@ -294,7 +351,7 @@ abstract final class TimelineOutlineMapper {
             level: TimelineElementLevel.small,
             trackUUID: middle.trackUUID,
             startTick: childEnd,
-            durationTicks: 1,
+            durationTicks: source.grid.ticksPerSmallBox,
             order: placements
                 .where(
                   (placement) =>

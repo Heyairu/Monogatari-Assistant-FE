@@ -506,8 +506,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
               min: 16,
               max: 4096,
               divisions: 255,
-              layout: LabeledSliderLayout.inline,
-              inlineTitleWidth: 96,
+              layout: LabeledSliderLayout.stacked,
               valueLabelBuilder: (value) => "${value.round()} MB",
               onChanged: (value) async {
                 await ref

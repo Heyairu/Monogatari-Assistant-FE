@@ -114,8 +114,13 @@ class _CharacterDraftRegistration {
 class _WorldDirectoryOption {
   final String label;
   final String targetName;
+  final String fullPath;
 
-  const _WorldDirectoryOption({required this.label, required this.targetName});
+  const _WorldDirectoryOption({
+    required this.label,
+    required this.targetName,
+    required this.fullPath,
+  });
 }
 
 // MARK: - 滑桿結構(解決硬編碼問題)
@@ -1840,6 +1845,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           _WorldDirectoryOption(
             label: _worldDirectoryPathLabel(path),
             targetName: targetName,
+            fullPath: "\\${path.join("\\")}",
           ),
         );
       }
@@ -1865,6 +1871,38 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       if (option.label == normalizedLabel) return option.targetName;
     }
     return normalizedLabel;
+  }
+
+  bool _matchesWorldDirectoryOption(String label, String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return true;
+
+    final option = _worldDirectoryOptions.where(
+      (option) => option.label == label.trim(),
+    );
+    if (option.isEmpty) return label.toLowerCase().contains(normalizedQuery);
+
+    final querySegments = normalizedQuery
+        .split(RegExp(r"[\\/]+"))
+        .where((segment) => segment.isNotEmpty && segment != "...")
+        .toList(growable: false);
+    if (querySegments.isEmpty) return true;
+
+    final pathSegments = option.first.fullPath
+        .toLowerCase()
+        .split("\\")
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    var nextPathIndex = 0;
+    for (final querySegment in querySegments) {
+      final matchedIndex = pathSegments.indexWhere(
+        (segment) => segment.contains(querySegment),
+        nextPathIndex,
+      );
+      if (matchedIndex == -1) return false;
+      nextPathIndex = matchedIndex + 1;
+    }
+    return true;
   }
 
   // New character input controller
@@ -2610,6 +2648,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 options: _worldDirectoryOptionLabels,
                 labelText: "組織",
                 hintText: "選擇地點或組織，或自行輸入",
+                optionMatchesQuery: _matchesWorldDirectoryOption,
                 onSelected: (value) {
                   controller.text = _worldDirectoryTargetName(value);
                   controller.selection = TextSelection.collapsed(

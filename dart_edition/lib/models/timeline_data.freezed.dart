@@ -200,7 +200,8 @@ abstract class _TickDurationData implements TickDurationData {
 
 /// @nodoc
 mixin _$TimelineGridConfig {
-  TickDurationData get tickDuration => throw _privateConstructorUsedError;
+  TickDurationData get ticksPerLittleBox => throw _privateConstructorUsedError;
+  int get ticksPerSmallBox => throw _privateConstructorUsedError;
   int get ticksPerMiddleBox => throw _privateConstructorUsedError;
   int get middleBoxesPerLargeBox => throw _privateConstructorUsedError;
   bool get autoSortOutline => throw _privateConstructorUsedError;
@@ -222,7 +223,8 @@ abstract class $TimelineGridConfigCopyWith<$Res> {
   ) = _$TimelineGridConfigCopyWithImpl<$Res, TimelineGridConfig>;
   @useResult
   $Res call({
-    TickDurationData tickDuration,
+    TickDurationData ticksPerLittleBox,
+    int ticksPerSmallBox,
     int ticksPerMiddleBox,
     int middleBoxesPerLargeBox,
     bool autoSortOutline,
@@ -230,7 +232,7 @@ abstract class $TimelineGridConfigCopyWith<$Res> {
     String? originIso8601,
   });
 
-  $TickDurationDataCopyWith<$Res> get tickDuration;
+  $TickDurationDataCopyWith<$Res> get ticksPerLittleBox;
 }
 
 /// @nodoc
@@ -248,7 +250,8 @@ class _$TimelineGridConfigCopyWithImpl<$Res, $Val extends TimelineGridConfig>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? tickDuration = null,
+    Object? ticksPerLittleBox = null,
+    Object? ticksPerSmallBox = null,
     Object? ticksPerMiddleBox = null,
     Object? middleBoxesPerLargeBox = null,
     Object? autoSortOutline = null,
@@ -257,10 +260,14 @@ class _$TimelineGridConfigCopyWithImpl<$Res, $Val extends TimelineGridConfig>
   }) {
     return _then(
       _value.copyWith(
-            tickDuration: null == tickDuration
-                ? _value.tickDuration
-                : tickDuration // ignore: cast_nullable_to_non_nullable
+            ticksPerLittleBox: null == ticksPerLittleBox
+                ? _value.ticksPerLittleBox
+                : ticksPerLittleBox // ignore: cast_nullable_to_non_nullable
                       as TickDurationData,
+            ticksPerSmallBox: null == ticksPerSmallBox
+                ? _value.ticksPerSmallBox
+                : ticksPerSmallBox // ignore: cast_nullable_to_non_nullable
+                      as int,
             ticksPerMiddleBox: null == ticksPerMiddleBox
                 ? _value.ticksPerMiddleBox
                 : ticksPerMiddleBox // ignore: cast_nullable_to_non_nullable
@@ -290,9 +297,9 @@ class _$TimelineGridConfigCopyWithImpl<$Res, $Val extends TimelineGridConfig>
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
-  $TickDurationDataCopyWith<$Res> get tickDuration {
-    return $TickDurationDataCopyWith<$Res>(_value.tickDuration, (value) {
-      return _then(_value.copyWith(tickDuration: value) as $Val);
+  $TickDurationDataCopyWith<$Res> get ticksPerLittleBox {
+    return $TickDurationDataCopyWith<$Res>(_value.ticksPerLittleBox, (value) {
+      return _then(_value.copyWith(ticksPerLittleBox: value) as $Val);
     });
   }
 }
@@ -307,7 +314,8 @@ abstract class _$$TimelineGridConfigImplCopyWith<$Res>
   @override
   @useResult
   $Res call({
-    TickDurationData tickDuration,
+    TickDurationData ticksPerLittleBox,
+    int ticksPerSmallBox,
     int ticksPerMiddleBox,
     int middleBoxesPerLargeBox,
     bool autoSortOutline,
@@ -316,7 +324,7 @@ abstract class _$$TimelineGridConfigImplCopyWith<$Res>
   });
 
   @override
-  $TickDurationDataCopyWith<$Res> get tickDuration;
+  $TickDurationDataCopyWith<$Res> get ticksPerLittleBox;
 }
 
 /// @nodoc
@@ -333,7 +341,8 @@ class __$$TimelineGridConfigImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? tickDuration = null,
+    Object? ticksPerLittleBox = null,
+    Object? ticksPerSmallBox = null,
     Object? ticksPerMiddleBox = null,
     Object? middleBoxesPerLargeBox = null,
     Object? autoSortOutline = null,
@@ -342,10 +351,14 @@ class __$$TimelineGridConfigImplCopyWithImpl<$Res>
   }) {
     return _then(
       _$TimelineGridConfigImpl(
-        tickDuration: null == tickDuration
-            ? _value.tickDuration
-            : tickDuration // ignore: cast_nullable_to_non_nullable
+        ticksPerLittleBox: null == ticksPerLittleBox
+            ? _value.ticksPerLittleBox
+            : ticksPerLittleBox // ignore: cast_nullable_to_non_nullable
                   as TickDurationData,
+        ticksPerSmallBox: null == ticksPerSmallBox
+            ? _value.ticksPerSmallBox
+            : ticksPerSmallBox // ignore: cast_nullable_to_non_nullable
+                  as int,
         ticksPerMiddleBox: null == ticksPerMiddleBox
             ? _value.ticksPerMiddleBox
             : ticksPerMiddleBox // ignore: cast_nullable_to_non_nullable
@@ -375,7 +388,8 @@ class __$$TimelineGridConfigImplCopyWithImpl<$Res>
 
 class _$TimelineGridConfigImpl implements _TimelineGridConfig {
   const _$TimelineGridConfigImpl({
-    this.tickDuration = const TickDurationData(),
+    this.ticksPerLittleBox = const TickDurationData(),
+    this.ticksPerSmallBox = 1,
     this.ticksPerMiddleBox = 4,
     this.middleBoxesPerLargeBox = 6,
     this.autoSortOutline = false,
@@ -385,7 +399,10 @@ class _$TimelineGridConfigImpl implements _TimelineGridConfig {
 
   @override
   @JsonKey()
-  final TickDurationData tickDuration;
+  final TickDurationData ticksPerLittleBox;
+  @override
+  @JsonKey()
+  final int ticksPerSmallBox;
   @override
   @JsonKey()
   final int ticksPerMiddleBox;
@@ -403,7 +420,7 @@ class _$TimelineGridConfigImpl implements _TimelineGridConfig {
 
   @override
   String toString() {
-    return 'TimelineGridConfig(tickDuration: $tickDuration, ticksPerMiddleBox: $ticksPerMiddleBox, middleBoxesPerLargeBox: $middleBoxesPerLargeBox, autoSortOutline: $autoSortOutline, originLabel: $originLabel, originIso8601: $originIso8601)';
+    return 'TimelineGridConfig(ticksPerLittleBox: $ticksPerLittleBox, ticksPerSmallBox: $ticksPerSmallBox, ticksPerMiddleBox: $ticksPerMiddleBox, middleBoxesPerLargeBox: $middleBoxesPerLargeBox, autoSortOutline: $autoSortOutline, originLabel: $originLabel, originIso8601: $originIso8601)';
   }
 
   @override
@@ -411,8 +428,10 @@ class _$TimelineGridConfigImpl implements _TimelineGridConfig {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$TimelineGridConfigImpl &&
-            (identical(other.tickDuration, tickDuration) ||
-                other.tickDuration == tickDuration) &&
+            (identical(other.ticksPerLittleBox, ticksPerLittleBox) ||
+                other.ticksPerLittleBox == ticksPerLittleBox) &&
+            (identical(other.ticksPerSmallBox, ticksPerSmallBox) ||
+                other.ticksPerSmallBox == ticksPerSmallBox) &&
             (identical(other.ticksPerMiddleBox, ticksPerMiddleBox) ||
                 other.ticksPerMiddleBox == ticksPerMiddleBox) &&
             (identical(other.middleBoxesPerLargeBox, middleBoxesPerLargeBox) ||
@@ -428,7 +447,8 @@ class _$TimelineGridConfigImpl implements _TimelineGridConfig {
   @override
   int get hashCode => Object.hash(
     runtimeType,
-    tickDuration,
+    ticksPerLittleBox,
+    ticksPerSmallBox,
     ticksPerMiddleBox,
     middleBoxesPerLargeBox,
     autoSortOutline,
@@ -450,7 +470,8 @@ class _$TimelineGridConfigImpl implements _TimelineGridConfig {
 
 abstract class _TimelineGridConfig implements TimelineGridConfig {
   const factory _TimelineGridConfig({
-    final TickDurationData tickDuration,
+    final TickDurationData ticksPerLittleBox,
+    final int ticksPerSmallBox,
     final int ticksPerMiddleBox,
     final int middleBoxesPerLargeBox,
     final bool autoSortOutline,
@@ -459,7 +480,9 @@ abstract class _TimelineGridConfig implements TimelineGridConfig {
   }) = _$TimelineGridConfigImpl;
 
   @override
-  TickDurationData get tickDuration;
+  TickDurationData get ticksPerLittleBox;
+  @override
+  int get ticksPerSmallBox;
   @override
   int get ticksPerMiddleBox;
   @override

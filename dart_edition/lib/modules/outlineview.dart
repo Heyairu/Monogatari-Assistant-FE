@@ -3045,6 +3045,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       _updateSelectionAfterStorylineChange();
     });
 
+    ref.read(timelineActionsProvider).removeStorylinePlacements(id);
+
     _notifyChange();
   }
 
