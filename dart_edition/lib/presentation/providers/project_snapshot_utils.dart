@@ -3,6 +3,7 @@ import "dart:collection";
 import "../../models/base_info_data.dart" as base_info_module;
 import "../../models/chapter_selection_data.dart" as chapter_module;
 import "../../models/character_data.dart" as character_model;
+import "../../models/character_snapshot_data.dart" as snapshot_model;
 import "../../models/outline_data.dart" as outline_module;
 import "../../models/plan_data.dart" as plan_module;
 import "../../models/project_data.dart";
@@ -190,7 +191,9 @@ Map<String, character_model.CharacterEntryData> snapshotCharacterData(
 TimelineDocumentData snapshotTimelineDocument(TimelineDocumentData source) {
   return source.copyWith(
     tracks: _freezeListCopy(source.tracks),
-    placements: _freezeListCopy(source.placements),
+    placements: _freezeListCopy(
+      source.placements.map(normalizeTimelinePlacement).toList(growable: false),
+    ),
   );
 }
 
@@ -219,6 +222,25 @@ ProjectData snapshotProjectData(
         ),
       ),
     ),
+    characterStateBaselines:
+        Map<String, snapshot_model.CharacterStateBaseline>.unmodifiable(
+          source.characterStateBaselines.map(
+            (key, baseline) => MapEntry(
+              key,
+              baseline.copyWith(
+                patch: _snapshotCharacterStatePatch(baseline.patch),
+              ),
+            ),
+          ),
+        ),
+    characterStateChanges:
+        List<snapshot_model.CharacterStateChange>.unmodifiable(
+          source.characterStateChanges.map(
+            (change) => change.copyWith(
+              patch: _snapshotCharacterStatePatch(change.patch),
+            ),
+          ),
+        ),
     timelineDocument: snapshotTimelineDocument(source.timelineDocument),
     outlineChapterLinks: snapshotOutlineChapterLinks(
       source.outlineChapterLinks,
@@ -226,5 +248,22 @@ ProjectData snapshotProjectData(
     totalWords: source.totalWords,
     contentText: source.contentText,
     isDirty: source.isDirty,
+  );
+}
+
+snapshot_model.CharacterStatePatch _snapshotCharacterStatePatch(
+  snapshot_model.CharacterStatePatch patch,
+) {
+  return snapshot_model.CharacterStatePatch(
+    conflicts: patch.conflicts?.map((item) => item.copyWith()),
+    relationships: patch.relationships?.map((item) => item.copyWith()),
+    organizations: patch.organizations?.map((item) => item.copyWith()),
+    statusEntries: patch.statusEntries?.map((item) => item.copyWith()),
+    possessions: patch.possessions?.map((item) => item.copyWith()),
+    customFields: patch.customFields == null
+        ? null
+        : Map<String, character_model.CustomFieldValue>.from(
+            patch.customFields!,
+          ),
   );
 }

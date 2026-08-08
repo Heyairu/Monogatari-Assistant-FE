@@ -167,6 +167,10 @@ abstract final class TimelineCodec {
       final uuid = node.getAttribute("UUID")?.trim() ?? "";
       final trackUUID = node.getAttribute("TrackUUID")?.trim() ?? "";
       if (uuid.isEmpty || trackUUID.isEmpty) continue;
+      final range = normalizeTimelinePlacementRange(
+        startTick: int.tryParse(node.getAttribute("StartTick") ?? "") ?? 0,
+        durationTicks: _positiveInt(node.getAttribute("DurationTicks"), 1),
+      );
       placements.add(
         TimelinePlacementData(
           placementUUID: uuid,
@@ -180,8 +184,8 @@ abstract final class TimelineCodec {
             TimelineElementLevel.small,
           ),
           trackUUID: trackUUID,
-          startTick: int.tryParse(node.getAttribute("StartTick") ?? "") ?? 0,
-          durationTicks: _positiveInt(node.getAttribute("DurationTicks"), 1),
+          startTick: range.startTick,
+          durationTicks: range.durationTicks,
           order: int.tryParse(node.getAttribute("Order") ?? "") ?? 0,
           label: node.getAttribute("Label") ?? "",
         ),

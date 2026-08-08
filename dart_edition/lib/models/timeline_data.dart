@@ -7,6 +7,32 @@ part "timeline_data.freezed.dart";
 
 String _timelineUuid() => const Uuid().v4();
 
+/// Inclusive Tick range available to the Timeline playhead and text inputs.
+const int timelineMinimumTick = -(1 << 22);
+const int timelineMaximumTick = 1 << 22;
+
+/// Last Tick that a node may occupy. [TimelinePlacementData.endTick] is
+/// exclusive, so it may equal [timelineMaximumTick].
+const int timelineMaximumNodeTick = timelineMaximumTick - 1;
+
+int clampTimelineTick(int value) =>
+    value.clamp(timelineMinimumTick, timelineMaximumTick).toInt();
+
+int clampTimelineNodeStartTick(int value) =>
+    value.clamp(timelineMinimumTick, timelineMaximumNodeTick).toInt();
+
+({int startTick, int durationTicks}) normalizeTimelinePlacementRange({
+  required int startTick,
+  required int durationTicks,
+}) {
+  final normalizedStart = clampTimelineNodeStartTick(startTick);
+  final maximumDuration = timelineMaximumTick - normalizedStart;
+  return (
+    startTick: normalizedStart,
+    durationTicks: durationTicks.clamp(1, maximumDuration).toInt(),
+  );
+}
+
 enum TickDurationUnit {
   second,
   minute,
@@ -101,6 +127,10 @@ class TimelinePlacementData with _$TimelinePlacementData {
     int order = 0,
     String label = "",
   }) {
+    final range = normalizeTimelinePlacementRange(
+      startTick: startTick,
+      durationTicks: durationTicks,
+    );
     return TimelinePlacementData(
       placementUUID: _timelineUuid(),
       storylineUUID: storylineUUID,
@@ -109,14 +139,31 @@ class TimelinePlacementData with _$TimelinePlacementData {
       parentPlacementUUID: parentPlacementUUID,
       level: level,
       trackUUID: trackUUID,
-      startTick: startTick,
-      durationTicks: durationTicks < 1 ? 1 : durationTicks,
+      startTick: range.startTick,
+      durationTicks: range.durationTicks,
       order: order,
       label: label,
     );
   }
 
   int get endTick => startTick + durationTicks;
+}
+
+TimelinePlacementData normalizeTimelinePlacement(
+  TimelinePlacementData placement,
+) {
+  final range = normalizeTimelinePlacementRange(
+    startTick: placement.startTick,
+    durationTicks: placement.durationTicks,
+  );
+  if (range.startTick == placement.startTick &&
+      range.durationTicks == placement.durationTicks) {
+    return placement;
+  }
+  return placement.copyWith(
+    startTick: range.startTick,
+    durationTicks: range.durationTicks,
+  );
 }
 
 @freezed

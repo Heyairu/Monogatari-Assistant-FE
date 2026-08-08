@@ -1,6 +1,7 @@
 import "package:uuid/uuid.dart";
 
 import "character_data.dart";
+import "character_snapshot_data.dart";
 import "chapter_selection_data.dart";
 import "project_data.dart";
 import "timeline_data.dart";
@@ -20,9 +21,11 @@ class ProjectMigrationResult {
 /// Owns all project-format upgrades. Module codecs only decode their XML shape;
 /// they never guess which historical project version they received.
 class ProjectMigrator {
-  static const currentVersion = "1.10";
+  static const currentVersion = "1.12";
   static const _legacyMigrationCutoff = "1.08";
   static const _timelineProjectionCutoff = "1.10";
+  static const _characterSnapshotCutoff = "1.11";
+  static const _characterSnapshotTablesCutoff = "1.12";
   static const _uuid = Uuid();
 
   /// Whether the source still needs the destructive legacy normalization.
@@ -51,8 +54,16 @@ class ProjectMigrator {
         sourceVersion: sourceVersion,
         source: legacy.data,
       );
+      final snapshotUpgrade = _upgradeCharacterSnapshots(
+        sourceVersion: sourceVersion,
+        source: timelineUpgrade.data,
+      );
+      final tableUpgrade = _upgradeCharacterSnapshotTables(
+        sourceVersion: sourceVersion,
+        source: snapshotUpgrade.data,
+      );
       return ProjectMigrationResult(
-        data: timelineUpgrade.data,
+        data: tableUpgrade.data,
         warnings: legacy.warnings,
         wasMigrated: true,
       );
@@ -62,10 +73,178 @@ class ProjectMigrator {
       sourceVersion: sourceVersion,
       source: parsedData,
     );
+    final snapshotUpgrade = _upgradeCharacterSnapshots(
+      sourceVersion: sourceVersion,
+      source: timelineUpgrade.data,
+    );
+    final tableUpgrade = _upgradeCharacterSnapshotTables(
+      sourceVersion: sourceVersion,
+      source: snapshotUpgrade.data,
+    );
     return ProjectMigrationResult(
-      data: timelineUpgrade.data,
-      warnings: _validateReferences(timelineUpgrade.data),
-      wasMigrated: timelineUpgrade.changed,
+      data: tableUpgrade.data,
+      warnings: _validateReferences(tableUpgrade.data),
+      wasMigrated:
+          timelineUpgrade.changed ||
+          snapshotUpgrade.changed ||
+          tableUpgrade.changed,
+    );
+  }
+
+  static ({ProjectData data, bool changed}) _upgradeCharacterSnapshotTables({
+    required String? sourceVersion,
+    required ProjectData source,
+  }) {
+    final version = sourceVersion?.trim();
+    if ((version != null &&
+            version.isNotEmpty &&
+            _compareVersion(version, _characterSnapshotTablesCutoff) >= 0) ||
+        source.characterStateBaselines.isEmpty) {
+      return (data: source, changed: false);
+    }
+
+    final characters = Map<String, CharacterEntryData>.from(
+      source.characterData,
+    );
+    final unmatchedBaselines = <String, CharacterStateBaseline>{};
+    for (final entry in source.characterStateBaselines.entries) {
+      final character = characters[entry.key];
+      if (character == null) {
+        unmatchedBaselines[entry.key] = entry.value;
+        continue;
+      }
+      final defaultState = CharacterSnapshotState.fromCharacterEntry(character);
+      characters[entry.key] = entry.value
+          .resolve(defaultState)
+          .applyToCharacterEntry(character);
+    }
+
+    return (
+      data: ProjectData(
+        baseInfoData: source.baseInfoData,
+        segmentsData: source.segmentsData,
+        outlineData: source.outlineData,
+        foreshadowData: source.foreshadowData,
+        updatePlanData: source.updatePlanData,
+        worldSettingsData: source.worldSettingsData,
+        characterData: characters,
+        characterStates: source.characterStates,
+        characterStateBaselines: unmatchedBaselines,
+        characterStateChanges: source.characterStateChanges,
+        timelineDocument: source.timelineDocument,
+        outlineChapterLinks: source.outlineChapterLinks,
+        totalWords: source.totalWords,
+        contentText: source.contentText,
+        isDirty: source.isDirty,
+      ),
+      changed: true,
+    );
+  }
+
+  static ({ProjectData data, bool changed}) _upgradeCharacterSnapshots({
+    required String? sourceVersion,
+    required ProjectData source,
+  }) {
+    final version = sourceVersion?.trim();
+    if ((version != null &&
+            version.isNotEmpty &&
+            _compareVersion(version, _characterSnapshotCutoff) >= 0) ||
+        source.characterStates.isEmpty ||
+        source.characterStateBaselines.isNotEmpty ||
+        source.characterStateChanges.isNotEmpty) {
+      return (data: source, changed: false);
+    }
+
+    final baselines = <String, CharacterStateBaseline>{};
+    final changes = <CharacterStateChange>[];
+    final placementsById = {
+      for (final placement in source.timelineDocument.placements)
+        placement.placementUUID: placement,
+    };
+    final sceneIds = <String>{
+      for (final storyline in source.outlineData)
+        for (final event in storyline.scenes)
+          for (final scene in event.scenes) scene.sceneUUID,
+    };
+
+    for (final legacy in source.characterStates) {
+      final patch = CharacterStatePatch(
+        statusEntries: [
+          if (legacy.location.isNotEmpty)
+            CharacterProfileTableEntry(
+              name: "所在地",
+              description: legacy.location,
+            ),
+          if (legacy.healthStatus.isNotEmpty)
+            CharacterProfileTableEntry(
+              name: "健康狀態",
+              description: legacy.healthStatus,
+            ),
+          if (legacy.emotion.isNotEmpty)
+            CharacterProfileTableEntry(name: "情緒", description: legacy.emotion),
+          if (legacy.alignment.isNotEmpty)
+            CharacterProfileTableEntry(
+              name: "陣營",
+              description: legacy.alignment,
+            ),
+        ],
+        possessions: legacy.possessions.map(
+          (item) => CharacterPossessionEntry(name: item),
+        ),
+      );
+      final timeId = legacy.storyTimePointId?.trim();
+      final placement = timeId == null ? null : placementsById[timeId];
+      final directScene = timeId != null && sceneIds.contains(timeId)
+          ? timeId
+          : null;
+      final sceneUUID = placement?.sceneUUID ?? directScene;
+      if (sceneUUID == null || sceneUUID.isEmpty) {
+        baselines[legacy.characterId] = CharacterStateBaseline(
+          characterId: legacy.characterId,
+          patch: patch,
+          note: timeId == null || timeId.isEmpty
+              ? "由舊版無時間角色狀態遷移"
+              : "由舊版未解析時間點 $timeId 遷移",
+        );
+        continue;
+      }
+      changes.add(
+        CharacterStateChange(
+          characterId: legacy.characterId,
+          sceneUUID: sceneUUID,
+          sourcePlacementUUID: placement?.placementUUID,
+          fallbackTick: placement?.startTick ?? int.tryParse(timeId ?? "") ?? 0,
+          sequence: changes
+              .where(
+                (change) =>
+                    change.characterId == legacy.characterId &&
+                    change.sceneUUID == sceneUUID,
+              )
+              .length,
+          patch: patch,
+          note: "由舊版角色狀態遷移",
+        ),
+      );
+    }
+    return (
+      data: ProjectData(
+        baseInfoData: source.baseInfoData,
+        segmentsData: source.segmentsData,
+        outlineData: source.outlineData,
+        foreshadowData: source.foreshadowData,
+        updatePlanData: source.updatePlanData,
+        worldSettingsData: source.worldSettingsData,
+        characterData: source.characterData,
+        characterStates: const <CharacterState>[],
+        characterStateBaselines: baselines,
+        characterStateChanges: changes,
+        timelineDocument: source.timelineDocument,
+        outlineChapterLinks: source.outlineChapterLinks,
+        totalWords: source.totalWords,
+        contentText: source.contentText,
+        isDirty: source.isDirty,
+      ),
+      changed: true,
     );
   }
 
@@ -153,6 +332,8 @@ class ProjectMigrator {
         worldSettingsData: source.worldSettingsData,
         characterData: source.characterData,
         characterStates: source.characterStates,
+        characterStateBaselines: source.characterStateBaselines,
+        characterStateChanges: source.characterStateChanges,
         timelineDocument: document,
         outlineChapterLinks: source.outlineChapterLinks,
         totalWords: source.totalWords,
@@ -286,6 +467,8 @@ class ProjectMigrator {
       worldSettingsData: source.worldSettingsData,
       characterData: characters,
       characterStates: source.characterStates,
+      characterStateBaselines: source.characterStateBaselines,
+      characterStateChanges: source.characterStateChanges,
       timelineDocument: source.timelineDocument,
       outlineChapterLinks: source.outlineChapterLinks,
       totalWords: source.totalWords,
@@ -349,6 +532,47 @@ class ProjectMigrator {
             code: "dangling-character-state",
             message: "角色狀態引用了不存在的角色 ID，原值已保留。",
             originalText: state.characterId,
+          ),
+        );
+      }
+    }
+    for (final baseline in data.characterStateBaselines.values) {
+      if (!characterIds.contains(baseline.characterId)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-character-state-baseline",
+            message: "角色預設快照引用了不存在的角色 ID，原值已保留。",
+            originalText: baseline.characterId,
+          ),
+        );
+      }
+    }
+    for (final change in data.characterStateChanges) {
+      if (!characterIds.contains(change.characterId)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-character-state-change-character",
+            message: "角色快照引用了不存在的角色 ID，原值已保留。",
+            originalText: change.characterId,
+          ),
+        );
+      }
+      if (!sceneIds.contains(change.sceneUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-character-state-change-scene",
+            message: "角色快照引用了不存在的 Scene，將使用回退 Tick。",
+            originalText: change.sceneUUID,
+          ),
+        );
+      }
+      final placementUUID = change.sourcePlacementUUID;
+      if (placementUUID != null && !placementIds.contains(placementUUID)) {
+        warnings.add(
+          ProjectMigrationWarning(
+            code: "dangling-character-state-change-placement",
+            message: "角色快照的主要 placement 已不存在，將使用其他 Scene placement 或回退 Tick。",
+            originalText: placementUUID,
           ),
         );
       }

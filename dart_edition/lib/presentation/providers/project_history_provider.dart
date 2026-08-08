@@ -126,6 +126,8 @@ class ProjectHistoryEntry {
       worldSettingsData: snapshot.worldSettingsData,
       characterData: snapshot.characterData,
       characterStates: snapshot.characterStates,
+      characterStateBaselines: snapshot.characterStateBaselines,
+      characterStateChanges: snapshot.characterStateChanges,
       timelineDocument: snapshot.timelineDocument,
       outlineChapterLinks: snapshot.outlineChapterLinks,
       totalWords: snapshot.totalWords,

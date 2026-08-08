@@ -74,20 +74,20 @@ class MonogatariNavigationSidebar extends StatelessWidget {
               label: Text("大綱調整"),
             ),
             NavigationRailDestination(
-              icon: Icon(Icons.public),
-              label: Text("世界設定"),
+              icon: Icon(Icons.view_timeline_outlined),
+              label: Text("時間軸"),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.person),
               label: Text("角色設定"),
             ),
             NavigationRailDestination(
-              icon: Icon(Icons.view_timeline_outlined),
-              label: Text("時間軸"),
-            ),
-            NavigationRailDestination(
               icon: Icon(Icons.group),
               label: Text("關係設定"),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.public),
+              label: Text("世界設定"),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.assessment),
@@ -96,6 +96,10 @@ class MonogatariNavigationSidebar extends StatelessWidget {
             NavigationRailDestination(
               icon: Icon(Icons.library_books),
               label: Text("詞語參考"),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.palette_rounded),
+              label: Text("文字色票"),
             ),
             NavigationRailDestination(
               icon: Icon(Icons.spellcheck),

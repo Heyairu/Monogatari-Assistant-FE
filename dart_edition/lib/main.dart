@@ -47,6 +47,7 @@ import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
 import "modules/AboutView.dart" as AboutModule;
 import "modules/glossaryview.dart" as GlossaryModule;
+import "modules/palettesview.dart" as palettes_module;
 import "modules/outlineview.dart" as OutlineModule;
 import "modules/planview.dart" as PlanModule;
 import "modules/proofreadingview.dart" as ProofReadingModule;
@@ -353,7 +354,7 @@ class ContentView extends ConsumerStatefulWidget {
 
 class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   // 狀態變數
-  int slidePageCounts = 14;
+  int slidePageCounts = 15;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
   int _projectSessionVersion = 0;
@@ -423,8 +424,9 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   static const Set<int> _ignoredPageTransitionIndexes = {
     0, // Welcome
     9, // Glossary
-    10, // Proofreading
-    13, // About
+    10, // Palettes
+    11, // Proofreading
+    14, // About
   };
   static const Set<int> _projectBackedPageIndexes = {
     1, // Base info
@@ -1665,16 +1667,16 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         page = _buildOutlineView();
         break;
       case 4:
-        page = _buildWorldSettingsView();
+        page = _buildTimelineView();
         break;
       case 5:
         page = _buildCharacterSettingsView();
         break;
       case 6:
-        page = _buildTimelineView();
+        page = _buildRelationView();
         break;
       case 7:
-        page = _buildRelationView();
+        page = _buildWorldSettingsView();
         break;
       case 8:
         page = _buildPlanView();
@@ -1683,15 +1685,18 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         page = _buildGlossaryView();
         break;
       case 10:
-        page = _buildProofreadingView();
+        page = _buildPalettesView();
         break;
       case 11:
-        page = _buildCopilotView();
+        page = _buildProofreadingView();
         break;
       case 12:
-        page = _buildSettingView();
+        page = _buildCopilotView();
         break;
       case 13:
+        page = _buildSettingView();
+        break;
+      case 14:
         page = _buildAboutView();
         break;
       default:
@@ -2118,6 +2123,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
 
   Widget _buildGlossaryView() {
     return const GlossaryModule.GlossaryView();
+  }
+
+  Widget _buildPalettesView() {
+    return const palettes_module.PalettesView();
   }
 
   Widget _buildProofreadingView() {

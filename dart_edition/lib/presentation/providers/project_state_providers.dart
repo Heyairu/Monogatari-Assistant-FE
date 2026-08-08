@@ -8,6 +8,7 @@ import "package:path_provider/path_provider.dart";
 
 import "../../bin/settings_manager.dart";
 import "../../models/character_data.dart" as character_model;
+import "../../models/character_snapshot_data.dart" as snapshot_model;
 import "../../models/glossary_data.dart" as glossary_model;
 import "../../models/base_info_data.dart" as base_info_module;
 import "../../models/chapter_selection_data.dart" as chapter_module;
@@ -1295,6 +1296,138 @@ final characterStatesProvider =
       List<character_model.CharacterState>
     >(CharacterStatesNotifier.new);
 
+class CharacterStateBaselinesNotifier
+    extends Notifier<Map<String, snapshot_model.CharacterStateBaseline>> {
+  @override
+  Map<String, snapshot_model.CharacterStateBaseline> build() => const {};
+
+  void setBaselines(Map<String, snapshot_model.CharacterStateBaseline> value) {
+    state = Map<String, snapshot_model.CharacterStateBaseline>.unmodifiable(
+      value,
+    );
+  }
+
+  void setBaseline(snapshot_model.CharacterStateBaseline baseline) {
+    final characterId = baseline.characterId.trim();
+    if (characterId.isEmpty || state[characterId] == baseline) return;
+    state = Map<String, snapshot_model.CharacterStateBaseline>.unmodifiable({
+      ...state,
+      characterId: baseline,
+    });
+  }
+
+  void removeForCharacter(String characterId) {
+    if (!state.containsKey(characterId)) return;
+    final next = Map<String, snapshot_model.CharacterStateBaseline>.from(state)
+      ..remove(characterId);
+    state = Map<String, snapshot_model.CharacterStateBaseline>.unmodifiable(
+      next,
+    );
+  }
+}
+
+final characterStateBaselinesProvider =
+    NotifierProvider<
+      CharacterStateBaselinesNotifier,
+      Map<String, snapshot_model.CharacterStateBaseline>
+    >(CharacterStateBaselinesNotifier.new);
+
+class CharacterStateChangesNotifier
+    extends Notifier<List<snapshot_model.CharacterStateChange>> {
+  @override
+  List<snapshot_model.CharacterStateChange> build() => const [];
+
+  void setChanges(List<snapshot_model.CharacterStateChange> value) {
+    state = List<snapshot_model.CharacterStateChange>.unmodifiable(value);
+  }
+
+  snapshot_model.CharacterStateChange addChange(
+    snapshot_model.CharacterStateChange change,
+  ) {
+    final timeline = ref.read(timelineDocumentProvider);
+    final resolved = snapshot_model.resolveCharacterStateChangeTime(
+      change,
+      timeline,
+    );
+    var sequence = change.sequence;
+    final usedSequences = <int>{};
+    for (final current in state) {
+      if (current.characterId != change.characterId) continue;
+      final currentResolved = snapshot_model.resolveCharacterStateChangeTime(
+        current,
+        timeline,
+      );
+      if (currentResolved.resolvedTick == resolved.resolvedTick) {
+        usedSequences.add(current.sequence);
+      }
+    }
+    if (usedSequences.contains(sequence)) {
+      sequence = usedSequences.isEmpty
+          ? 0
+          : usedSequences.reduce((a, b) => a > b ? a : b) + 1;
+    }
+    final normalized = change.copyWith(sequence: sequence);
+    state = List<snapshot_model.CharacterStateChange>.unmodifiable([
+      ...state,
+      normalized,
+    ]);
+    return normalized;
+  }
+
+  bool updateChange(snapshot_model.CharacterStateChange change) {
+    final index = state.indexWhere(
+      (item) => item.stateChangeId == change.stateChangeId,
+    );
+    if (index < 0 || state[index] == change) return false;
+    final next = [...state]..[index] = change;
+    state = List<snapshot_model.CharacterStateChange>.unmodifiable(next);
+    return true;
+  }
+
+  bool deleteChange(String stateChangeId) {
+    final next = state
+        .where((change) => change.stateChangeId != stateChangeId)
+        .toList(growable: false);
+    if (next.length == state.length) return false;
+    state = List<snapshot_model.CharacterStateChange>.unmodifiable(next);
+    return true;
+  }
+
+  void deleteForCharacter(String characterId) {
+    final next = state
+        .where((change) => change.characterId != characterId)
+        .toList(growable: false);
+    if (next.length == state.length) return;
+    state = List<snapshot_model.CharacterStateChange>.unmodifiable(next);
+  }
+
+  snapshot_model.CharacterStateChange duplicateSnapshotToScene({
+    required String characterId,
+    required snapshot_model.CharacterSnapshotState source,
+    required String sceneUUID,
+    String? sourcePlacementUUID,
+    required int fallbackTick,
+    String note = "",
+  }) {
+    return addChange(
+      snapshot_model.CharacterStateChange(
+        characterId: characterId,
+        sceneUUID: sceneUUID,
+        sourcePlacementUUID: sourcePlacementUUID,
+        fallbackTick: fallbackTick,
+        patch: snapshot_model.CharacterStatePatch.fromState(source),
+        note: note,
+      ),
+    );
+  }
+}
+
+final characterStateChangesProvider =
+    NotifierProvider<
+      CharacterStateChangesNotifier,
+      List<snapshot_model.CharacterStateChange>
+    >(CharacterStateChangesNotifier.new);
+
 class ForeshadowDataNotifier
     extends Notifier<List<plan_module.ForeshadowItem>> {
   List<plan_module.ForeshadowItem> _createSnapshot(
@@ -2480,6 +2613,8 @@ final projectDataProvider = Provider<ProjectData>((ref) {
     worldSettingsData: ref.watch(worldSettingsDataProvider),
     characterData: ref.watch(characterDataProvider),
     characterStates: ref.watch(characterStatesProvider),
+    characterStateBaselines: ref.watch(characterStateBaselinesProvider),
+    characterStateChanges: ref.watch(characterStateChangesProvider),
     timelineDocument: ref.watch(timelineDocumentProvider),
     outlineChapterLinks: ref.watch(outlineChapterLinksProvider),
     totalWords: ref.watch(totalWordsProvider),

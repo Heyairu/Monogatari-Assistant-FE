@@ -23,6 +23,8 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final world = ref.watch(worldSettingsDataProvider);
   final character = ref.watch(characterDataProvider);
   final characterStates = ref.watch(characterStatesProvider);
+  final characterStateBaselines = ref.watch(characterStateBaselinesProvider);
+  final characterStateChanges = ref.watch(characterStateChangesProvider);
   final foreshadow = ref.watch(foreshadowDataProvider);
   final updatePlan = ref.watch(updatePlanDataProvider);
   final timeline = ref.watch(timelineDocumentProvider);
@@ -43,6 +45,8 @@ final projectDataAggregateProvider = Provider<int>((ref) {
     identityHashCode(world),
     identityHashCode(character),
     identityHashCode(characterStates),
+    identityHashCode(characterStateBaselines),
+    identityHashCode(characterStateChanges),
     identityHashCode(foreshadow),
     identityHashCode(updatePlan),
     identityHashCode(timeline),
@@ -421,6 +425,8 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       worldSettingsData: ref.read(worldSettingsDataProvider),
       characterData: ref.read(characterDataProvider),
       characterStates: ref.read(characterStatesProvider),
+      characterStateBaselines: ref.read(characterStateBaselinesProvider),
+      characterStateChanges: ref.read(characterStateChangesProvider),
       timelineDocument: ref.read(timelineDocumentProvider),
       outlineChapterLinks: ref.read(outlineChapterLinksProvider),
       totalWords: ref.read(totalWordsProvider),
@@ -462,6 +468,12 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     ref
         .read(characterStatesProvider.notifier)
         .setCharacterStates(snapshot.characterStates);
+    ref
+        .read(characterStateBaselinesProvider.notifier)
+        .setBaselines(snapshot.characterStateBaselines);
+    ref
+        .read(characterStateChangesProvider.notifier)
+        .setChanges(snapshot.characterStateChanges);
     ref
         .read(timelineDocumentProvider.notifier)
         .setDocument(snapshot.timelineDocument);

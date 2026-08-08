@@ -528,7 +528,9 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                     IconButton(
                       icon: const Icon(Icons.location_on_rounded),
                       tooltip: "返回目前時間軸",
-                      hoverColor: Theme.of(context).colorScheme.primaryContainer,
+                      hoverColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
                       onPressed: () => _setCurrentTick(state.currentTick),
                     ),
                   ],
@@ -584,7 +586,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               key: const ValueKey("timeline-current-tick-stepper"),
               label: "目前 Tick",
               value: state.currentTick,
-              minimum: -0x3fffffff,
+              minimum: timelineMinimumTick,
+              maximum: timelineMaximumTick,
               allowNegative: true,
               onChanged: _setCurrentTick,
             ),
@@ -2140,13 +2143,15 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
           _NumberStepper(
             label: "頭端 Tick",
             value: placement.startTick,
-            minimum: -0x7fffffff,
+            minimum: timelineMinimumTick,
+            maximum: timelineMaximumNodeTick,
             allowNegative: true,
             onChanged: (value) => widget.onUpdate(placement, startTick: value),
           ),
           _NumberStepper(
             label: "Tick 數",
             value: placement.durationTicks,
+            maximum: timelineMaximumTick - placement.startTick,
             onChanged: (value) =>
                 widget.onUpdate(placement, durationTicks: value),
           ),
@@ -2154,6 +2159,7 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
             label: "尾端 Tick",
             value: placement.endTick,
             minimum: placement.startTick + 1,
+            maximum: timelineMaximumTick,
             allowNegative: true,
             onChanged: (value) => widget.onUpdate(
               placement,
@@ -2250,6 +2256,7 @@ class _NumberStepper extends StatefulWidget {
   final String label;
   final int value;
   final int minimum;
+  final int? maximum;
   final bool allowNegative;
   final ValueChanged<int> onChanged;
 
@@ -2259,6 +2266,7 @@ class _NumberStepper extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.minimum = 1,
+    this.maximum,
     this.allowNegative = false,
   });
 
@@ -2303,7 +2311,10 @@ class _NumberStepperState extends State<_NumberStepper> {
       return;
     }
 
-    final nextValue = math.max(_minimum, parsedValue).toInt();
+    var nextValue = math.max(_minimum, parsedValue).toInt();
+    if (widget.maximum != null) {
+      nextValue = math.min(widget.maximum!, nextValue).toInt();
+    }
     _valueController.text = "$nextValue";
     if (nextValue != widget.value) {
       widget.onChanged(nextValue);
@@ -2328,7 +2339,7 @@ class _NumberStepperState extends State<_NumberStepper> {
               style: IconButton.styleFrom(foregroundColor: Colors.red),
             ),
             SizedBox(
-              width: 64,
+              width: 84,
               child: TextField(
                 controller: _valueController,
                 focusNode: _valueFocusNode,
@@ -2358,7 +2369,10 @@ class _NumberStepperState extends State<_NumberStepper> {
             ),
             IconButton(
               tooltip: "增加",
-              onPressed: () => widget.onChanged(widget.value + 1),
+              onPressed:
+                  widget.maximum == null || widget.value < widget.maximum!
+                  ? () => widget.onChanged(widget.value + 1)
+                  : null,
               icon: const Icon(Icons.add_circle),
               style: IconButton.styleFrom(foregroundColor: Colors.green),
             ),

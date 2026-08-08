@@ -33,6 +33,8 @@ import "../models/project_data.dart";
 import "../models/project_file.dart";
 import "../models/project_migrator.dart";
 import "../models/codecs/character_state_codec.dart";
+import "../models/codecs/character_snapshot_codec.dart";
+import "../models/character_snapshot_data.dart";
 import "../models/codecs/timeline_codec.dart";
 import "../models/timeline_data.dart";
 
@@ -1071,6 +1073,8 @@ class _ProjectParser {
     List<LocationData>? loadedWorldSettings;
     Map<String, CharacterEntryData>? loadedCharacterData;
     List<CharacterState>? loadedCharacterStates;
+    Map<String, CharacterStateBaseline>? loadedCharacterStateBaselines;
+    List<CharacterStateChange>? loadedCharacterStateChanges;
     TimelineProjectData? loadedTimeline;
 
     // 計算 contentText 和 totalWords
@@ -1140,6 +1144,16 @@ class _ProjectParser {
               loadedCharacterStates ??= CharacterStateCodec.loadElement(
                 element,
               );
+              break;
+
+            case "CharacterStateBaselines":
+              loadedCharacterStateBaselines ??=
+                  CharacterSnapshotCodec.loadBaselines(element);
+              break;
+
+            case "CharacterStateChanges":
+              loadedCharacterStateChanges ??=
+                  CharacterSnapshotCodec.loadChanges(element);
               break;
 
             case "Timeline":
@@ -1231,6 +1245,10 @@ class _ProjectParser {
       worldSettingsData: loadedWorldSettings ?? defaultData.worldSettingsData,
       characterData: loadedCharacterData ?? defaultData.characterData,
       characterStates: loadedCharacterStates ?? defaultData.characterStates,
+      characterStateBaselines:
+          loadedCharacterStateBaselines ?? defaultData.characterStateBaselines,
+      characterStateChanges:
+          loadedCharacterStateChanges ?? defaultData.characterStateChanges,
       timelineDocument: parsedTimelineDocument,
       outlineChapterLinks:
           loadedTimeline?.chapterLinks ?? defaultData.outlineChapterLinks,
@@ -1332,6 +1350,22 @@ class _ProjectMerger {
     if (characterStatesXml != null) {
       buffer.writeln();
       buffer.write(characterStatesXml);
+    }
+
+    final characterBaselinesXml = CharacterSnapshotCodec.saveBaselines(
+      data.characterStateBaselines,
+    );
+    if (characterBaselinesXml != null) {
+      buffer.writeln();
+      buffer.write(characterBaselinesXml);
+    }
+
+    final characterChangesXml = CharacterSnapshotCodec.saveChanges(
+      data.characterStateChanges,
+    );
+    if (characterChangesXml != null) {
+      buffer.writeln();
+      buffer.write(characterChangesXml);
     }
 
     buffer.writeln("</Project>");

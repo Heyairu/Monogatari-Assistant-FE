@@ -3,12 +3,14 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/bin/file.dart";
 import "package:monogatari_assistant/models/chapter_selection_data.dart";
+import "package:monogatari_assistant/models/codecs/timeline_codec.dart";
 import "package:monogatari_assistant/models/outline_data.dart";
 import "package:monogatari_assistant/models/timeline_data.dart";
 import "package:monogatari_assistant/modules/timelineview.dart";
 import "package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 import "package:monogatari_assistant/presentation/providers/timeline_providers.dart";
+import "package:xml/xml.dart" as xml;
 
 void main() {
   group("Timeline operations", () {
@@ -81,6 +83,88 @@ void main() {
       expect(linkedLarge.startTick, 30);
       expect(linkedMiddle.startTick, 31);
       expect(linkedSmall.startTick, 32);
+    });
+
+    test("Tick and placement mutations are clamped to the safe range", () {
+      final created = TimelinePlacementData.create(
+        level: TimelineElementLevel.small,
+        trackUUID: "track",
+        startTick: timelineMaximumTick,
+        durationTicks: timelineMaximumTick,
+      );
+      expect(created.startTick, timelineMaximumNodeTick);
+      expect(created.durationTicks, 1);
+      expect(created.endTick, timelineMaximumTick);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final view = container.read(timelineViewProvider.notifier);
+      view.setCurrentTick(timelineMaximumTick + 1000);
+      expect(
+        container.read(timelineViewProvider).currentTick,
+        timelineMaximumTick,
+      );
+      view.setCurrentTick(timelineMinimumTick - 1000);
+      expect(
+        container.read(timelineViewProvider).currentTick,
+        timelineMinimumTick,
+      );
+
+      final actions = container.read(timelineActionsProvider);
+      final placement = actions.addPlacement(
+        level: TimelineElementLevel.large,
+        label: "邊界節點",
+        startTick: timelineMaximumTick,
+      );
+      expect(placement.startTick, timelineMaximumNodeTick);
+      expect(placement.endTick, timelineMaximumTick);
+
+      actions.updatePlacement(
+        placement.placementUUID,
+        startTick: timelineMinimumTick - 1000,
+        durationTicks: timelineMaximumTick * 4,
+      );
+      var updated = container
+          .read(timelineDocumentProvider)
+          .placements
+          .singleWhere((item) => item.placementUUID == placement.placementUUID);
+      expect(updated.startTick, timelineMinimumTick);
+      expect(updated.endTick, timelineMaximumTick);
+
+      actions.resizePlacement(
+        placement.placementUUID,
+        startTick: timelineMaximumTick + 1000,
+      );
+      updated = container
+          .read(timelineDocumentProvider)
+          .placements
+          .singleWhere((item) => item.placementUUID == placement.placementUUID);
+      expect(updated.startTick, timelineMaximumNodeTick);
+      expect(updated.durationTicks, 1);
+      expect(updated.endTick, timelineMaximumTick);
+
+      container
+          .read(timelineDocumentProvider.notifier)
+          .setDocument(
+            const TimelineDocumentData(
+              tracks: [TimelineTrackData(trackUUID: "track", name: "主線")],
+              placements: [
+                TimelinePlacementData(
+                  placementUUID: "external-overflow",
+                  trackUUID: "track",
+                  startTick: timelineMaximumTick + 999,
+                  durationTicks: timelineMaximumTick * 99,
+                ),
+              ],
+            ),
+          );
+      final normalized = container
+          .read(timelineDocumentProvider)
+          .placements
+          .single;
+      expect(normalized.startTick, timelineMaximumNodeTick);
+      expect(normalized.durationTicks, 1);
+      expect(normalized.endTick, timelineMaximumTick);
     });
 
     test("outline large-box deletion removes only its timeline subtree", () {
@@ -659,6 +743,30 @@ void main() {
     );
   });
 
+  test("timeline XML clamps nodes that exceed the safe range", () {
+    final document = xml.XmlDocument.parse("""
+<Type>
+  <Name>Timeline</Name>
+  <Timeline SchemaVersion="1">
+    <Tracks>
+      <Track UUID="track" Name="主線" />
+    </Tracks>
+    <Placements>
+      <Placement UUID="overflow" TrackUUID="track" Level="small"
+          StartTick="999999999" DurationTicks="999999999" />
+    </Placements>
+  </Timeline>
+</Type>
+""");
+
+    final placement = TimelineCodec.loadElement(
+      document.rootElement,
+    )!.document.placements.single;
+    expect(placement.startTick, timelineMaximumNodeTick);
+    expect(placement.durationTicks, 1);
+    expect(placement.endTick, timelineMaximumTick);
+  });
+
   test(
     "project XML round-trips timeline grid, hierarchy, tracks and links",
     () {
@@ -818,7 +926,7 @@ void main() {
     final saved = FileService.generateProjectXMLWithoutLatestSaveUpdate(
       parsed.data,
     );
-    expect(saved, contains("<ver>1.10</ver>"));
+    expect(saved, contains("<ver>1.12</ver>"));
     expect(saved, contains('TicksPerSmallBox="1"'));
     final reopened = FileService.parseProjectXMLWithMetadata(saved);
     expect(reopened.wasMigrated, isFalse);
@@ -906,7 +1014,7 @@ void main() {
     final xml = FileService.generateProjectXMLWithoutLatestSaveUpdate(data);
     final parsed = FileService.parseProjectXMLWithMetadata(xml);
 
-    expect(xml, contains("<ver>1.10</ver>"));
+    expect(xml, contains("<ver>1.12</ver>"));
     expect(parsed.wasMigrated, isFalse);
     expect(parsed.data.timelineDocument.placements, isEmpty);
   });

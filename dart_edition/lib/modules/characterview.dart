@@ -30,8 +30,12 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
+import "../models/character_snapshot_data.dart";
 import "../models/world_settings_data.dart";
+import "../models/timeline_data.dart";
+import "../presentation/providers/character_snapshot_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/providers/timeline_providers.dart";
 import "character_relationship_operations.dart" as relationship_operations;
 
 export "../models/character_data.dart";
@@ -1756,6 +1760,8 @@ class CharacterView extends ConsumerStatefulWidget {
 
 class _CharacterViewState extends ConsumerState<CharacterView>
     with SingleTickerProviderStateMixin {
+  static const String _baselineSnapshotSelection = "__baseline__";
+
   // 拖動相關狀態
   bool _isDragging = false;
   String? _currentDragData;
@@ -1766,6 +1772,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   // Character List
   String? selectedCharacter;
   int? selectedCharacterIndex;
+  String? _selectedSnapshotChangeId;
+  Map<String, CustomFieldValue> _snapshotCustomFields =
+      <String, CustomFieldValue>{};
 
   List<String> get characters =>
       ref.read(characterDataProvider).keys.toList(growable: false);
@@ -2128,6 +2137,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       setState(() {
         selectedCharacter = nextSelected;
         selectedCharacterIndex = ids.indexOf(nextSelected);
+        _selectedSnapshotChangeId = null;
+        _snapshotCustomFields = <String, CustomFieldValue>{};
         _loadCharacterData(selectedCharacter!);
       });
       return;
@@ -2135,7 +2146,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
     final nextIndex = ids.indexOf(selectedCharacter!);
     final nextEntry = next[selectedCharacter!];
-    if (nextEntry != null &&
+    if (_selectedSnapshotChangeId == null &&
+        nextEntry != null &&
         !_sameRelationships(characterRelationships, nextEntry.relationships)) {
       setState(() {
         characterRelationships = _mergeDuplicateCharacterRelationships(
@@ -2199,7 +2211,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       owner: this,
       flush: _flushPendingCharacterDraft,
     );
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() {});
@@ -2459,11 +2471,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _buildSnapshotQuickControls(),
+          ),
           TabBar(
             controller: _tabController,
             isScrollable: true,
             tabs: const [
               Tab(text: "角色卡"),
+              Tab(text: "故事快照"),
               Tab(text: "自訂資料"),
               Tab(text: "進階設定"),
             ],
@@ -2486,20 +2503,189 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
+  Widget _buildSnapshotQuickControls() {
+    final characterId = selectedCharacter!;
+    final entries = ref.watch(characterSnapshotTimelineProvider(characterId));
+    final availableIds = entries
+        .map((entry) => entry.change?.stateChangeId)
+        .whereType<String>()
+        .toSet();
+    final selection =
+        _selectedSnapshotChangeId != null &&
+            availableIds.contains(_selectedSnapshotChangeId)
+        ? _selectedSnapshotChangeId!
+        : _baselineSnapshotSelection;
+    final selectedEntry = selection == _baselineSnapshotSelection
+        ? entries.first
+        : entries.firstWhere(
+            (entry) => entry.change?.stateChangeId == selection,
+            orElse: () => entries.first,
+          );
+
+    return Row(
+      children: [
+        Expanded(
+          child: AppDropdownField<String>(
+            key: ValueKey("character-snapshot-combo-$characterId-$selection"),
+            value: selection,
+            labelText: "角色快照",
+            options: [
+              const DropdownOption(
+                value: _baselineSnapshotSelection,
+                label: "預設",
+              ),
+              for (final entry in entries.where((entry) => !entry.isBaseline))
+                DropdownOption(
+                  value: entry.change!.stateChangeId,
+                  label:
+                      "Tick ${entry.snapshot.resolvedTick} · ${entry.sceneName}",
+                ),
+            ],
+            onChanged: (value) => _switchSnapshotSelection(value, entries),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(
+          key: const ValueKey("character-snapshot-toolbar-add"),
+          tooltip: "新增快照",
+          onPressed: () => _showAddSnapshotDialog(),
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+        ),
+        const SizedBox(width: 4),
+        IconButton.filledTonal(
+          key: const ValueKey("character-snapshot-toolbar-copy"),
+          tooltip: "複製目前快照",
+          onPressed: () => _showAddSnapshotDialog(
+            sourceState: selectedEntry.snapshot.state,
+            sourceLabel: selectedEntry.isBaseline
+                ? "預設"
+                : selectedEntry.sceneName,
+          ),
+          icon: const Icon(Icons.copy_all_outlined),
+        ),
+      ],
+    );
+  }
+
   Widget _buildCurrentTab() {
     switch (_tabController.index) {
       case 0:
         return _buildCoreProfileTab();
       case 1:
-        return _buildCustomFieldsTab();
+        return _buildCharacterSnapshotsTab();
       case 2:
-        return _buildAdvancedSettingsTab();
+        return _buildCustomFieldsTab();
+      case 3:
+        return _selectedSnapshotChangeId == null
+            ? _buildAdvancedSettingsTab()
+            : _buildLockedSnapshotTab("進階設定");
       default:
         return Container();
     }
   }
 
   Widget _buildCoreProfileTab() {
+    final characterId = selectedCharacter!;
+    final entries = ref.watch(characterSnapshotTimelineProvider(characterId));
+    final selectedEntry = _selectedSnapshotEntry(entries);
+    final isBaseline = selectedEntry.isBaseline;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!isBaseline) ...[
+          const AppNoticeBanner(
+            message: "正在編輯 Scene 快照：阻礙、人物關係、組織、角色狀態、擁有物品與自訂欄位可修改；其餘固定資料已鎖定。",
+            icon: Icons.lock_outline,
+            tone: AppFeedbackTone.info,
+          ),
+          const SizedBox(height: 8),
+        ],
+        _buildBaseCharacterProfileFields(),
+      ],
+    );
+  }
+
+  void _switchSnapshotSelection(
+    String? value,
+    List<CharacterSnapshotTimelineEntry> _,
+  ) {
+    _saveCurrentCharacterData();
+    final entries = ref.read(
+      characterSnapshotTimelineProvider(selectedCharacter!),
+    );
+    final selectedId = value == _baselineSnapshotSelection ? null : value;
+    final entry = selectedId == null
+        ? entries.first
+        : entries.firstWhere(
+            (item) => item.change?.stateChangeId == selectedId,
+            orElse: () => entries.first,
+          );
+    setState(() {
+      _selectedSnapshotChangeId = entry.change?.stateChangeId;
+      if (entry.isBaseline) {
+        _snapshotCustomFields = <String, CustomFieldValue>{};
+        _loadCharacterData(selectedCharacter!);
+      } else {
+        _loadSnapshotState(entry.snapshot.state);
+      }
+      _tabController.index = 0;
+    });
+  }
+
+  void _loadSnapshotState(CharacterSnapshotState state) {
+    hinderEvents = state.conflicts
+        .map(
+          (item) => <String, String>{
+            "event": item.obstacle,
+            "solve": item.resolution,
+          },
+        )
+        .toList();
+    characterRelationships = state.relationships
+        .map((item) => item.copyWith())
+        .toList();
+    organizations = state.organizations.map((item) => item.copyWith()).toList();
+    statusEntries = state.statusEntries.map((item) => item.copyWith()).toList();
+    possessions = state.possessions.map((item) => item.copyWith()).toList();
+    _snapshotCustomFields = Map<String, CustomFieldValue>.from(
+      state.customFields,
+    );
+    selectedHinderIndex = null;
+    selectedCharacterRelationshipIndex = null;
+    selectedOrganizationIndex = null;
+    selectedStatusIndex = null;
+    selectedPossessionIndex = null;
+    _clearSnapshotTableEditors();
+    _dirtyControllerKeys.clear();
+    _structuredFieldsDirty = false;
+  }
+
+  void _clearSnapshotTableEditors() {
+    _hinderEventController.clear();
+    _solveController.clear();
+    _relationshipPersonController.clear();
+    _relationshipDescriptionController.clear();
+    _organizationNameController.clear();
+    _organizationDescriptionController.clear();
+    _statusNameController.clear();
+    _statusDescriptionController.clear();
+    _possessionNameController.clear();
+    _possessionQuantityController.clear();
+    _possessionDescriptionController.clear();
+  }
+
+  CharacterSnapshotTimelineEntry _selectedSnapshotEntry(
+    List<CharacterSnapshotTimelineEntry> entries,
+  ) {
+    final selectedId = _selectedSnapshotChangeId;
+    if (selectedId == null) return entries.first;
+    return entries.firstWhere(
+      (entry) => entry.change?.stateChangeId == selectedId,
+      orElse: () => entries.first,
+    );
+  }
+
+  Widget _buildBaseCharacterProfileFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2512,26 +2698,30 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _buildTextField("性別：", _controllers["gender"]!),
         _buildTextField("生日：", _controllers["birthday"]!),
         const SizedBox(height: 8),
-        CardList(
-          title: "暱稱",
-          icon: Icons.alternate_email,
-          items: nicknames,
-          onAdd: (value) {
-            final nickname = value.trim();
-            if (nickname.isEmpty || nicknames.contains(nickname)) return;
-            setState(() => nicknames = [...nicknames, nickname]);
-            _markAsModified(structuredFields: true);
-          },
-          onRemove: (index) {
-            setState(() => nicknames = [...nicknames]..removeAt(index));
-            _markAsModified(structuredFields: true);
-          },
+        _fixedSnapshotControl(
+          CardList(
+            title: "暱稱",
+            icon: Icons.alternate_email,
+            items: nicknames,
+            onAdd: (value) {
+              final nickname = value.trim();
+              if (nickname.isEmpty || nicknames.contains(nickname)) return;
+              setState(() => nicknames = [...nicknames, nickname]);
+              _markAsModified(structuredFields: true);
+            },
+            onRemove: (index) {
+              setState(() => nicknames = [...nicknames]..removeAt(index));
+              _markAsModified(structuredFields: true);
+            },
+          ),
         ),
         const Divider(height: 32),
-        ExpansionTile(
-          title: SmallTitle(icon: Icons.theater_comedy, text: "角色類型"),
-          subtitle: Text(selectedCharacterType),
-          children: [_buildCharacterTypeOptions(), const SizedBox(height: 8)],
+        _fixedSnapshotControl(
+          ExpansionTile(
+            title: SmallTitle(icon: Icons.theater_comedy, text: "角色類型"),
+            subtitle: Text(selectedCharacterType),
+            children: [_buildCharacterTypeOptions(), const SizedBox(height: 8)],
+          ),
         ),
         const SizedBox(height: 8),
         ExpansionTile(
@@ -2760,6 +2950,833 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
+  Widget _buildCharacterSnapshotsTab() {
+    final characterId = selectedCharacter!;
+    final entries = ref.watch(characterSnapshotTimelineProvider(characterId));
+    final current = ref.watch(currentCharacterSnapshotProvider(characterId));
+    final currentTick = ref.watch(
+      timelineViewProvider.select((state) => state.currentTick),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: SmallTitle(
+                icon: Icons.auto_stories_outlined,
+                text: "故事狀態 · Tick $currentTick",
+              ),
+            ),
+            FilledButton.icon(
+              key: const ValueKey("character-snapshot-add"),
+              onPressed: () => _showAddSnapshotDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text("新增 Scene 快照"),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Card(
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("目前播放頭狀態", style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text(_snapshotStateSummary(current.state)),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showAddSnapshotDialog(
+                      sourceState: current.state,
+                      sourceLabel: "目前 Tick $currentTick",
+                    ),
+                    icon: const Icon(Icons.copy_outlined),
+                    label: const Text("複製目前狀態"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Expanded(
+              child: SmallTitle(icon: Icons.history, text: "所有快照"),
+            ),
+            Text("共 ${entries.length} 筆（含預設）"),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...List.generate(entries.length, (index) {
+          final entry = entries[index];
+          final previous = index == 0
+              ? CharacterSnapshotState()
+              : entries[index - 1].snapshot.state;
+          final diff = describeCharacterSnapshotDiff(
+            previous,
+            entry.snapshot.state,
+          );
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          entry.isBaseline
+                              ? Icons.flag_outlined
+                              : Icons.movie_outlined,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            entry.isBaseline
+                                ? "預設快照（故事開始前）"
+                                : "Tick ${entry.snapshot.resolvedTick} · ${entry.sceneName}",
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        if (entry.usesFallbackTick)
+                          const Tooltip(
+                            message: "Scene 尚未排定或主要 placement 已失效",
+                            child: Chip(label: Text("Fallback Tick")),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_snapshotStateSummary(entry.snapshot.state)),
+                    if (diff.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        "變更：${diff.keys.join("、")}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    if (entry.change?.note.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 6),
+                      Text("備註：${entry.change!.note.trim()}"),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _showAddSnapshotDialog(
+                            sourceState: entry.snapshot.state,
+                            sourceLabel: entry.isBaseline
+                                ? "預設快照"
+                                : entry.sceneName,
+                          ),
+                          icon: const Icon(Icons.copy_outlined),
+                          label: const Text("複製"),
+                        ),
+                        if (entry.isBaseline)
+                          FilledButton.tonalIcon(
+                            onPressed: () => _selectSnapshotForEditing(entry),
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text("編輯預設"),
+                          )
+                        else ...[
+                          OutlinedButton.icon(
+                            onPressed: () => _locateSnapshot(entry),
+                            icon: const Icon(Icons.my_location_outlined),
+                            label: const Text("定位"),
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: () => _selectSnapshotForEditing(entry),
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text("編輯"),
+                          ),
+                          IconButton(
+                            tooltip: "刪除快照",
+                            onPressed: () => _deleteSnapshot(entry.change!),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  String _snapshotStateSummary(CharacterSnapshotState state) {
+    final values = <String>[
+      "阻礙 ${state.conflicts.length}",
+      "人物關係 ${state.relationships.length}",
+      "組織 ${state.organizations.length}",
+      "角色狀態 ${state.statusEntries.length}",
+      "擁有物品 ${state.possessions.length}",
+      "自訂欄位 ${state.customFields.length}",
+    ];
+    return values.join("　");
+  }
+
+  Widget _fixedSnapshotControl(Widget child) {
+    final locked = _selectedSnapshotChangeId != null;
+    return IgnorePointer(
+      ignoring: locked,
+      child: Opacity(opacity: locked ? 0.5 : 1, child: child),
+    );
+  }
+
+  void _selectSnapshotForEditing(CharacterSnapshotTimelineEntry entry) {
+    _saveCurrentCharacterData();
+    setState(() {
+      _selectedSnapshotChangeId = entry.change?.stateChangeId;
+      if (entry.isBaseline) {
+        _snapshotCustomFields = <String, CustomFieldValue>{};
+        _loadCharacterData(selectedCharacter!);
+      } else {
+        _loadSnapshotState(entry.snapshot.state);
+      }
+      _tabController.index = 0;
+    });
+  }
+
+  Future<void> _deleteSnapshot(CharacterStateChange change) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("刪除快照？"),
+        content: const Text("刪除後，這個 Scene 之後的角色狀態會重新推導。"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("取消"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text("刪除"),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    ref
+        .read(characterStateChangesProvider.notifier)
+        .deleteChange(change.stateChangeId);
+    if (_selectedSnapshotChangeId == change.stateChangeId) {
+      setState(() {
+        _selectedSnapshotChangeId = null;
+        _snapshotCustomFields = <String, CustomFieldValue>{};
+        _loadCharacterData(selectedCharacter!);
+      });
+    }
+  }
+
+  Widget _buildLockedSnapshotTab(String title) {
+    return AppEmptyState(
+      title: "$title已鎖定",
+      description: "Scene 快照只允許修改五組角色 Table 與自訂欄位；切回「預設」即可編輯固定資料。",
+      icon: Icons.lock_outline,
+    );
+  }
+
+  TimelinePlacementData? _preferredPlacementForScene(String sceneUUID) {
+    final document = ref.read(timelineDocumentProvider);
+    final tracks = {
+      for (final track in document.tracks) track.trackUUID: track.order,
+    };
+    final matches = document.placements
+        .where(
+          (placement) =>
+              placement.sceneUUID == sceneUUID &&
+              placement.level == TimelineElementLevel.small,
+        )
+        .toList();
+    matches.sort((a, b) {
+      final byTick = a.startTick.compareTo(b.startTick);
+      if (byTick != 0) return byTick;
+      final byTrack = (tracks[a.trackUUID] ?? 0).compareTo(
+        tracks[b.trackUUID] ?? 0,
+      );
+      if (byTrack != 0) return byTrack;
+      return a.placementUUID.compareTo(b.placementUUID);
+    });
+    return matches.firstOrNull;
+  }
+
+  TimelinePlacementData? _findSnapshotContainer({
+    required TimelineDocumentData document,
+    required TimelineElementLevel level,
+    required String label,
+    String? parentPlacementUUID,
+    required int nearTick,
+  }) {
+    final normalized = label.trim().toLowerCase();
+    final matches = document.placements
+        .where(
+          (item) =>
+              item.level == level &&
+              item.parentPlacementUUID == parentPlacementUUID &&
+              item.label.trim().toLowerCase() == normalized,
+        )
+        .toList();
+    matches.sort((a, b) {
+      final aDistance = (a.startTick - nearTick).abs();
+      final bDistance = (b.startTick - nearTick).abs();
+      final byDistance = aDistance.compareTo(bDistance);
+      if (byDistance != 0) return byDistance;
+      return a.startTick.compareTo(b.startTick);
+    });
+    return matches.firstOrNull;
+  }
+
+  _SnapshotTimelinePreviewData _buildSnapshotTimelinePreview({
+    required TimelineDocumentData document,
+    required String largeLabel,
+    required String middleLabel,
+    required int currentTick,
+  }) {
+    final large = _findSnapshotContainer(
+      document: document,
+      level: TimelineElementLevel.large,
+      label: largeLabel,
+      nearTick: currentTick,
+    );
+    final middle = large == null
+        ? null
+        : _findSnapshotContainer(
+            document: document,
+            level: TimelineElementLevel.middle,
+            label: middleLabel,
+            parentPlacementUUID: large.placementUUID,
+            nearTick: currentTick,
+          );
+
+    late final String scopeLabel;
+    late final String emptyMessage;
+    late final List<TimelinePlacementData> placements;
+    TimelinePlacementData? scopePlacement;
+    if (middle != null) {
+      scopeLabel = "中箱：${middle.label}";
+      emptyMessage = "此中箱尚無小箱；新 Scene 會建立在這個中箱中。";
+      scopePlacement = middle;
+      placements = document.placements
+          .where(
+            (item) =>
+                item.level == TimelineElementLevel.small &&
+                item.parentPlacementUUID == middle.placementUUID,
+          )
+          .toList();
+    } else if (large != null) {
+      scopeLabel = "大箱：${large.label}";
+      emptyMessage = "找不到指定中箱；新中箱會建立在這個大箱中。";
+      scopePlacement = large;
+      placements = document.placements
+          .where(
+            (item) =>
+                item.level == TimelineElementLevel.middle &&
+                item.parentPlacementUUID == large.placementUUID,
+          )
+          .toList();
+    } else {
+      scopeLabel = "全域預覽";
+      emptyMessage = "找不到指定大箱；將建立新的大箱、中箱與 Scene。";
+      placements = document.placements
+          .where((item) => item.level == TimelineElementLevel.large)
+          .toList();
+    }
+    placements.sort((a, b) {
+      final byTick = a.startTick.compareTo(b.startTick);
+      if (byTick != 0) return byTick;
+      return a.order.compareTo(b.order);
+    });
+
+    var minTick = currentTick;
+    var maxTick = currentTick;
+    void include(TimelinePlacementData item) {
+      if (item.startTick < minTick) minTick = item.startTick;
+      if (item.endTick > maxTick) maxTick = item.endTick;
+    }
+
+    if (scopePlacement != null) include(scopePlacement);
+    for (final placement in placements) {
+      include(placement);
+    }
+    final padding = document.grid.ticksPerSmallBox < 1
+        ? 1
+        : document.grid.ticksPerSmallBox;
+    minTick = clampTimelineTick(minTick - padding);
+    maxTick = clampTimelineTick(maxTick + padding);
+    if (minTick == maxTick) {
+      if (maxTick < timelineMaximumTick) {
+        maxTick++;
+      } else {
+        minTick--;
+      }
+    }
+
+    return _SnapshotTimelinePreviewData(
+      scopeLabel: scopeLabel,
+      emptyMessage: emptyMessage,
+      placements: placements,
+      minTick: minTick,
+      maxTick: maxTick,
+    );
+  }
+
+  TimelinePlacementData _createQuickSnapshotScene({
+    required String largeLabel,
+    required String middleLabel,
+    required String sceneLabel,
+    required int tick,
+  }) {
+    final actions = ref.read(timelineActionsProvider);
+    var document = ref.read(timelineDocumentProvider);
+    var large = _findSnapshotContainer(
+      document: document,
+      level: TimelineElementLevel.large,
+      label: largeLabel,
+      nearTick: tick,
+    );
+    large ??= actions.addPlacement(
+      level: TimelineElementLevel.large,
+      label: largeLabel.trim(),
+      startTick: tick,
+    );
+    document = ref.read(timelineDocumentProvider);
+    var middle = _findSnapshotContainer(
+      document: document,
+      level: TimelineElementLevel.middle,
+      label: middleLabel,
+      parentPlacementUUID: large.placementUUID,
+      nearTick: tick,
+    );
+    middle ??= actions.addPlacement(
+      level: TimelineElementLevel.middle,
+      parentPlacementUUID: large.placementUUID,
+      label: middleLabel.trim(),
+      startTick: tick,
+    );
+    return actions.addPlacement(
+      level: TimelineElementLevel.small,
+      parentPlacementUUID: middle.placementUUID,
+      label: sceneLabel.trim(),
+      startTick: tick,
+    );
+  }
+
+  Future<void> _showAddSnapshotDialog({
+    CharacterSnapshotState? sourceState,
+    String? sourceLabel,
+  }) async {
+    final characterId = selectedCharacter;
+    if (characterId == null) return;
+    final sceneIndex = ref.read(timelineSceneIndexProvider);
+    final timelineEntries = ref.read(
+      characterSnapshotTimelineProvider(characterId),
+    );
+    final currentSnapshot = ref.read(
+      currentCharacterSnapshotProvider(characterId),
+    );
+    final currentTick = ref.read(timelineViewProvider).currentTick;
+    final timelineDocument = ref.read(timelineDocumentProvider);
+    const createValue = "__create_scene__";
+    String selectedScene = sceneIndex.keys.firstOrNull ?? createValue;
+    String selectedSource = sourceState != null ? "provided" : "current";
+    final largePlacements =
+        timelineDocument.placements
+            .where((item) => item.level == TimelineElementLevel.large)
+            .toList()
+          ..sort(
+            (a, b) => (a.startTick - currentTick).abs().compareTo(
+              (b.startTick - currentTick).abs(),
+            ),
+          );
+    final initialLarge = largePlacements.firstOrNull;
+    final initialMiddle = initialLarge == null
+        ? null
+        : timelineDocument.placements
+              .where(
+                (item) =>
+                    item.level == TimelineElementLevel.middle &&
+                    item.parentPlacementUUID == initialLarge.placementUUID,
+              )
+              .firstOrNull;
+    final largeName = TextEditingController(
+      text: initialLarge?.label.trim().isNotEmpty == true
+          ? initialLarge!.label.trim()
+          : "角色快照",
+    );
+    final middleName = TextEditingController(
+      text: initialMiddle?.label.trim().isNotEmpty == true
+          ? initialMiddle!.label.trim()
+          : "角色快照 Scene",
+    );
+    final sceneName = TextEditingController(text: "新 Scene");
+    final tick = TextEditingController(text: currentTick.toString());
+    var selectedTick = currentTick;
+    String? validationMessage;
+
+    final accepted = await AppDialog.showCustom<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final matchingLargeIds = timelineDocument.placements
+              .where(
+                (item) =>
+                    item.level == TimelineElementLevel.large &&
+                    item.label.trim().toLowerCase() ==
+                        largeName.text.trim().toLowerCase(),
+              )
+              .map((item) => item.placementUUID)
+              .toSet();
+          final middleOptions = timelineDocument.placements
+              .where(
+                (item) =>
+                    item.level == TimelineElementLevel.middle &&
+                    matchingLargeIds.contains(item.parentPlacementUUID),
+              )
+              .map((item) => item.label.trim())
+              .where((label) => label.isNotEmpty)
+              .toSet()
+              .toList();
+          final timelinePreview = _buildSnapshotTimelinePreview(
+            document: timelineDocument,
+            largeLabel: largeName.text,
+            middleLabel: middleName.text,
+            currentTick: selectedTick,
+          );
+
+          void setTick(int value) {
+            final normalized = clampTimelineTick(value);
+            setDialogState(() {
+              selectedTick = normalized;
+              tick.text = normalized.toString();
+              tick.selection = TextSelection.collapsed(
+                offset: tick.text.length,
+              );
+              validationMessage = null;
+            });
+          }
+
+          return AppDialog(
+            title: sourceLabel == null ? "新增 Scene 快照" : "複製 $sourceLabel",
+            icon: sourceLabel == null
+                ? Icons.add_photo_alternate_outlined
+                : Icons.copy_all_outlined,
+            maxWidth: 680,
+            content: SizedBox(
+              width: 632,
+              height: selectedScene == createValue
+                  ? (MediaQuery.sizeOf(context).height - 220).clamp(420, 680)
+                  : sourceState == null
+                  ? 150
+                  : 180,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppDropdownField<String>(
+                      key: const ValueKey("character-snapshot-scene-selector"),
+                      value: selectedScene,
+                      labelText: "綁定 Scene",
+                      options: [
+                        for (final entry in sceneIndex.entries)
+                          DropdownOption(
+                            value: entry.key,
+                            label:
+                                "${entry.value.storyline.storylineName} / ${entry.value.event.storyEvent} / ${entry.value.scene.sceneName}",
+                          ),
+                        const DropdownOption(
+                          value: createValue,
+                          label: "＋ 快速建立新 Scene",
+                        ),
+                      ],
+                      onChanged: (value) => setDialogState(
+                        () => selectedScene = value ?? createValue,
+                      ),
+                    ),
+                    if (selectedScene == createValue) ...[
+                      const SizedBox(height: 16),
+                      AppSectionCard(
+                        title: "Scene 階層",
+                        icon: Icons.account_tree_outlined,
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            AppComboBoxField(
+                              key: const ValueKey("snapshot-large-box-combo"),
+                              controller: largeName,
+                              options: timelineDocument.placements
+                                  .where(
+                                    (item) =>
+                                        item.level ==
+                                        TimelineElementLevel.large,
+                                  )
+                                  .map((item) => item.label),
+                              labelText: "大箱（可選既有或輸入新名稱）",
+                              hintText: "例如：第一幕",
+                              onChanged: (_) => setDialogState(() {}),
+                              onSelected: (_) {
+                                final matchingLarge = timelineDocument
+                                    .placements
+                                    .where(
+                                      (item) =>
+                                          item.level ==
+                                              TimelineElementLevel.large &&
+                                          item.label.trim().toLowerCase() ==
+                                              largeName.text
+                                                  .trim()
+                                                  .toLowerCase(),
+                                    )
+                                    .firstOrNull;
+                                final firstMiddle = matchingLarge == null
+                                    ? null
+                                    : timelineDocument.placements
+                                          .where(
+                                            (item) =>
+                                                item.level ==
+                                                    TimelineElementLevel
+                                                        .middle &&
+                                                item.parentPlacementUUID ==
+                                                    matchingLarge.placementUUID,
+                                          )
+                                          .firstOrNull;
+                                setDialogState(() {
+                                  if (firstMiddle != null) {
+                                    middleName.text = firstMiddle.label;
+                                  }
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            AppComboBoxField(
+                              key: const ValueKey("snapshot-middle-box-combo"),
+                              controller: middleName,
+                              options: middleOptions,
+                              labelText: "中箱（可選既有或輸入新名稱）",
+                              hintText: "例如：城門衝突",
+                              onChanged: (_) => setDialogState(() {}),
+                              onSelected: (_) => setDialogState(() {}),
+                            ),
+                            const SizedBox(height: 12),
+                            AppTextField(
+                              key: const ValueKey("snapshot-small-box-name"),
+                              controller: sceneName,
+                              labelText: "小箱（Scene 名稱）",
+                              hintText: "例如：抵達城門",
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _SnapshotTimelinePreview(
+                        key: const ValueKey("character-snapshot-tick-scrubber"),
+                        data: timelinePreview,
+                        currentTick: selectedTick,
+                        onTickChanged: setTick,
+                      ),
+                      const SizedBox(height: 12),
+                      AppTextField(
+                        key: const ValueKey("snapshot-tick-field"),
+                        controller: tick,
+                        labelText: "時間軸 Tick",
+                        helperText:
+                            "可輸入 $timelineMinimumTick～+$timelineMaximumTick，或在上方時間軸點擊／拖動 Scrubber。",
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: true,
+                        ),
+                        onChanged: (value) {
+                          final parsed = int.tryParse(value.trim());
+                          if (parsed == null) return;
+                          setDialogState(() {
+                            if (parsed < timelineMinimumTick ||
+                                parsed > timelineMaximumTick) {
+                              validationMessage =
+                                  "Tick 必須介於 $timelineMinimumTick～+$timelineMaximumTick。";
+                              return;
+                            }
+                            selectedTick = parsed;
+                            validationMessage = null;
+                          });
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    if (sourceState == null)
+                      AppDropdownField<String>(
+                        value: selectedSource,
+                        labelText: "初始內容",
+                        options: [
+                          const DropdownOption(value: "blank", label: "空白狀態"),
+                          const DropdownOption(
+                            value: "current",
+                            label: "目前播放頭狀態",
+                          ),
+                          for (
+                            var index = 0;
+                            index < timelineEntries.length;
+                            index++
+                          )
+                            DropdownOption(
+                              value: "entry:$index",
+                              label: timelineEntries[index].isBaseline
+                                  ? "預設快照"
+                                  : "Tick ${timelineEntries[index].snapshot.resolvedTick} · ${timelineEntries[index].sceneName}",
+                            ),
+                        ],
+                        onChanged: (value) => setDialogState(
+                          () => selectedSource = value ?? "current",
+                        ),
+                      )
+                    else
+                      AppNoticeBanner(
+                        title: "複製來源：${sourceLabel ?? "指定快照"}",
+                        message: "會複製來源當下的完整推導狀態。",
+                        icon: Icons.copy_outlined,
+                      ),
+                    if (validationMessage != null) ...[
+                      const SizedBox(height: 12),
+                      AppNoticeBanner(
+                        message: validationMessage!,
+                        tone: AppFeedbackTone.error,
+                        compact: true,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text("取消"),
+              ),
+              FilledButton(
+                key: const ValueKey("character-snapshot-dialog-confirm"),
+                onPressed: () {
+                  final parsedTick = int.tryParse(tick.text.trim());
+                  if (selectedScene == createValue &&
+                      (parsedTick == null ||
+                          parsedTick < timelineMinimumTick ||
+                          parsedTick > timelineMaximumTick)) {
+                    setDialogState(() {
+                      validationMessage =
+                          "Tick 必須介於 $timelineMinimumTick～+$timelineMaximumTick。";
+                    });
+                    return;
+                  }
+                  if (selectedScene == createValue &&
+                      (largeName.text.trim().isEmpty ||
+                          middleName.text.trim().isEmpty ||
+                          sceneName.text.trim().isEmpty)) {
+                    setDialogState(() {
+                      validationMessage = "請填寫大箱、中箱與小箱名稱。";
+                    });
+                    return;
+                  }
+                  if (selectedScene == createValue) selectedTick = parsedTick!;
+                  Navigator.pop(dialogContext, true);
+                },
+                child: const Text("建立快照"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    await Future<void>.delayed(kThemeAnimationDuration);
+    if (accepted != true || !mounted) {
+      largeName.dispose();
+      middleName.dispose();
+      sceneName.dispose();
+      tick.dispose();
+      return;
+    }
+
+    TimelinePlacementData? placement;
+    String sceneUUID;
+    if (selectedScene == createValue) {
+      placement = _createQuickSnapshotScene(
+        largeLabel: largeName.text.trim(),
+        middleLabel: middleName.text.trim(),
+        sceneLabel: sceneName.text.trim(),
+        tick: selectedTick,
+      );
+      sceneUUID = placement.sceneUUID!;
+    } else {
+      sceneUUID = selectedScene;
+      placement = _preferredPlacementForScene(sceneUUID);
+    }
+
+    var seed = sourceState;
+    if (seed == null) {
+      if (selectedSource == "blank") {
+        seed = CharacterSnapshotState();
+      } else if (selectedSource.startsWith("entry:")) {
+        final index = int.tryParse(selectedSource.substring(6));
+        seed = index == null || index < 0 || index >= timelineEntries.length
+            ? currentSnapshot.state
+            : timelineEntries[index].snapshot.state;
+      } else {
+        seed = currentSnapshot.state;
+      }
+    }
+    largeName.dispose();
+    middleName.dispose();
+    sceneName.dispose();
+    tick.dispose();
+    if (!mounted) return;
+    final created = ref
+        .read(characterStateChangesProvider.notifier)
+        .duplicateSnapshotToScene(
+          characterId: characterId,
+          source: seed,
+          sceneUUID: sceneUUID,
+          sourcePlacementUUID: placement?.placementUUID,
+          fallbackTick: placement?.startTick ?? currentTick,
+          note: sourceLabel == null ? "" : "複製自 $sourceLabel",
+        );
+    setState(() {
+      _selectedSnapshotChangeId = created.stateChangeId;
+      _loadSnapshotState(seed!);
+      _tabController.index = 0;
+    });
+    if (placement != null) {
+      ref
+          .read(timelineViewProvider.notifier)
+          .setCurrentTick(placement.startTick);
+    }
+    if (mounted) {
+      AppFeedback.success(context, "已新增 Scene 快照");
+    }
+  }
+
+  void _locateSnapshot(CharacterSnapshotTimelineEntry entry) {
+    ref
+        .read(timelineViewProvider.notifier)
+        .setCurrentTick(entry.snapshot.resolvedTick);
+    final placementUUID = entry.snapshot.sourcePlacementUUID;
+    if (placementUUID != null) {
+      ref.read(timelineViewProvider.notifier).select(placementUUID);
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("已定位至 Tick ${entry.snapshot.resolvedTick}")),
+    );
+  }
+
   Widget _buildAdvancedSettingsTab() {
     return Column(
       children: [
@@ -2813,8 +3830,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     final characterId = selectedCharacter;
     final fields = characterId == null
         ? const <String, CustomFieldValue>{}
-        : characterData[characterId]?.customFields ??
-              const <String, CustomFieldValue>{};
+        : _selectedSnapshotChangeId == null
+        ? characterData[characterId]?.customFields ??
+              const <String, CustomFieldValue>{}
+        : _snapshotCustomFields;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2985,6 +4004,16 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   void _updateCustomField(String key, CustomFieldValue value) {
     final characterId = selectedCharacter;
     if (characterId == null) return;
+    if (_selectedSnapshotChangeId != null) {
+      setState(() {
+        _snapshotCustomFields = <String, CustomFieldValue>{
+          ..._snapshotCustomFields,
+          key: value,
+        };
+      });
+      _saveSelectedSnapshotTables();
+      return;
+    }
     _saveCurrentCharacterData();
     _characterNotifier.updateCharacterEntry(
       characterId,
@@ -2997,6 +4026,15 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   void _removeCustomField(String key) {
     final characterId = selectedCharacter;
     if (characterId == null) return;
+    if (_selectedSnapshotChangeId != null) {
+      setState(() {
+        _snapshotCustomFields = Map<String, CustomFieldValue>.from(
+          _snapshotCustomFields,
+        )..remove(key);
+      });
+      _saveSelectedSnapshotTables();
+      return;
+    }
     _saveCurrentCharacterData();
     _characterNotifier.updateCharacterEntry(characterId, (current) {
       final fields = Map<String, CustomFieldValue>.from(current.customFields)
@@ -3373,7 +4411,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   Widget _buildTextField(String label, TextEditingController controller) {
-    return CharacterTextField(label: label, controller: controller);
+    return CharacterTextField(
+      label: label,
+      controller: controller,
+      enabled: _selectedSnapshotChangeId == null,
+    );
   }
 
   // MARK: - UI 元件建構
@@ -3382,7 +4424,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Widget _buildNameField(String label, TextEditingController controller) {
     // 這裡使用 CharacterTextField，它是一個 Stateless Widget
     // 名稱同步邏輯已經在 _setupListeners 中的 addListener 處理了
-    return CharacterTextField(label: label, controller: controller);
+    return CharacterTextField(
+      label: label,
+      controller: controller,
+      enabled: _selectedSnapshotChangeId == null,
+    );
   }
 
   // 多行文字欄位
@@ -3392,6 +4438,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       label: label,
       controller: controller,
       maxLines: 4,
+      enabled: _selectedSnapshotChangeId == null,
     );
   }
 
@@ -3935,6 +4982,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     setState(() {
       selectedCharacterIndex = index;
       selectedCharacter = characters[index];
+      _selectedSnapshotChangeId = null;
+      _snapshotCustomFields = <String, CustomFieldValue>{};
       _loadCharacterData(selectedCharacter!);
     });
   }
@@ -3957,6 +5006,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     final currentId = selectedCharacter;
     if (currentId == null) return;
+    if (_selectedSnapshotChangeId != null) {
+      _saveSelectedSnapshotTables();
+      _dirtyControllerKeys.clear();
+      _structuredFieldsDirty = false;
+      return;
+    }
     if (forceStructuredFields) {
       _structuredFieldsDirty = true;
     }
@@ -3987,6 +5042,39 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (didUpdate) _emitCharacterDataChanged();
     _commitSavedCharacterEntrySnapshot(nextEntry);
     _setNameFieldTextSilently(targetName);
+  }
+
+  CharacterSnapshotState _currentSnapshotTableState() {
+    return CharacterSnapshotState(
+      conflicts: hinderEvents.map(
+        (item) => CharacterConflict(
+          obstacle: item["event"] ?? "",
+          resolution: item["solve"] ?? "",
+        ),
+      ),
+      relationships: characterRelationships,
+      organizations: organizations,
+      statusEntries: statusEntries,
+      possessions: possessions,
+      customFields: _snapshotCustomFields,
+    );
+  }
+
+  void _saveSelectedSnapshotTables() {
+    final changeId = _selectedSnapshotChangeId;
+    if (changeId == null) return;
+    final changes = ref.read(characterStateChangesProvider);
+    final change = changes
+        .where((item) => item.stateChangeId == changeId)
+        .firstOrNull;
+    if (change == null) return;
+    ref
+        .read(characterStateChangesProvider.notifier)
+        .updateChange(
+          change.copyWith(
+            patch: CharacterStatePatch.fromState(_currentSnapshotTableState()),
+          ),
+        );
   }
 
   void _commitSavedCharacterEntrySnapshot(CharacterEntryData entry) {
@@ -4415,6 +5503,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       _newCharacterController.clear();
       selectedCharacter = entry.characterId;
       selectedCharacterIndex = characters.indexOf(entry.characterId);
+      _selectedSnapshotChangeId = null;
+      _snapshotCustomFields = <String, CustomFieldValue>{};
       _loadCharacterData(entry.characterId);
     });
   }
@@ -4434,6 +5524,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     if (!removed) {
       return;
     }
+    ref
+        .read(characterStateBaselinesProvider.notifier)
+        .removeForCharacter(characterId);
+    ref
+        .read(characterStateChangesProvider.notifier)
+        .deleteForCharacter(characterId);
     _emitCharacterDataChanged();
 
     final nextCharacters = characters;
@@ -4450,6 +5546,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         final nextIndex = index.clamp(0, nextCharacters.length - 1);
         selectedCharacterIndex = nextIndex;
         selectedCharacter = nextCharacters[nextIndex];
+        _selectedSnapshotChangeId = null;
+        _snapshotCustomFields = <String, CustomFieldValue>{};
         _loadCharacterData(selectedCharacter!);
       } else if (selectedCharacter != null) {
         selectedCharacterIndex = nextCharacters.indexOf(selectedCharacter!);
@@ -4941,6 +6039,313 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
 // MARK: - Independent Widgets
 
+class _SnapshotTimelinePreviewData {
+  final String scopeLabel;
+  final String emptyMessage;
+  final List<TimelinePlacementData> placements;
+  final int minTick;
+  final int maxTick;
+
+  _SnapshotTimelinePreviewData({
+    required this.scopeLabel,
+    required this.emptyMessage,
+    required Iterable<TimelinePlacementData> placements,
+    required this.minTick,
+    required this.maxTick,
+  }) : placements = List<TimelinePlacementData>.unmodifiable(placements);
+}
+
+class _SnapshotTimelinePreview extends StatelessWidget {
+  final _SnapshotTimelinePreviewData data;
+  final int currentTick;
+  final ValueChanged<int> onTickChanged;
+
+  const _SnapshotTimelinePreview({
+    super.key,
+    required this.data,
+    required this.currentTick,
+    required this.onTickChanged,
+  });
+
+  Color _nodeColor(BuildContext context, TimelineElementLevel level) {
+    final scheme = Theme.of(context).colorScheme;
+    return switch (level) {
+      TimelineElementLevel.large => scheme.primaryContainer,
+      TimelineElementLevel.middle => scheme.secondaryContainer,
+      TimelineElementLevel.small => scheme.tertiaryContainer,
+    };
+  }
+
+  Color _nodeForeground(BuildContext context, TimelineElementLevel level) {
+    final scheme = Theme.of(context).colorScheme;
+    return switch (level) {
+      TimelineElementLevel.large => scheme.onPrimaryContainer,
+      TimelineElementLevel.middle => scheme.onSecondaryContainer,
+      TimelineElementLevel.small => scheme.onTertiaryContainer,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSectionCard(
+      title: "簡易時間軸",
+      icon: Icons.timeline_outlined,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  data.scopeLabel,
+                  key: const ValueKey("snapshot-timeline-scope"),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Chip(label: Text("Tick $currentTick")),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const AppNoticeBanner(
+            message: "節點位置與長度在此為唯讀；點擊或拖動 Scrubber 可調整新 Scene 的 Tick。",
+            icon: Icons.lock_clock_outlined,
+            compact: true,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 170,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const horizontalPadding = 18.0;
+                final usableWidth =
+                    (constraints.maxWidth - horizontalPadding * 2).clamp(
+                      1.0,
+                      double.infinity,
+                    );
+                final span = data.maxTick - data.minTick;
+
+                double xForTick(int tick) {
+                  final normalized =
+                      (tick.clamp(data.minTick, data.maxTick) - data.minTick) /
+                      span;
+                  return horizontalPadding + normalized * usableWidth;
+                }
+
+                int tickForX(double x) {
+                  final normalized = ((x - horizontalPadding) / usableWidth)
+                      .clamp(0.0, 1.0);
+                  return data.minTick + (normalized * span).round();
+                }
+
+                final scrubberX = xForTick(currentTick);
+                return Semantics(
+                  slider: true,
+                  label: "快照 Tick Scrubber",
+                  value: "Tick $currentTick",
+                  increasedValue: currentTick < timelineMaximumTick
+                      ? "Tick ${currentTick + 1}"
+                      : null,
+                  decreasedValue: currentTick > timelineMinimumTick
+                      ? "Tick ${currentTick - 1}"
+                      : null,
+                  onIncrease: currentTick < timelineMaximumTick
+                      ? () => onTickChanged(currentTick + 1)
+                      : null,
+                  onDecrease: currentTick > timelineMinimumTick
+                      ? () => onTickChanged(currentTick - 1)
+                      : null,
+                  child: GestureDetector(
+                    key: const ValueKey("snapshot-timeline-canvas"),
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) =>
+                        onTickChanged(tickForX(details.localPosition.dx)),
+                    onHorizontalDragStart: (details) =>
+                        onTickChanged(tickForX(details.localPosition.dx)),
+                    onHorizontalDragUpdate: (details) =>
+                        onTickChanged(tickForX(details.localPosition.dx)),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.resizeLeftRight,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerLowest,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                          for (var index = 0; index <= 4; index++) ...[
+                            Builder(
+                              builder: (context) {
+                                final tickValue =
+                                    data.minTick + (span * index / 4).round();
+                                final x = xForTick(tickValue);
+                                return Positioned(
+                                  left: x - 28,
+                                  top: 6,
+                                  width: 56,
+                                  child: Text(
+                                    "$tickValue",
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelSmall,
+                                  ),
+                                );
+                              },
+                            ),
+                            Builder(
+                              builder: (context) {
+                                final tickValue =
+                                    data.minTick + (span * index / 4).round();
+                                return Positioned(
+                                  left: xForTick(tickValue),
+                                  top: 28,
+                                  bottom: 8,
+                                  child: VerticalDivider(
+                                    width: 1,
+                                    thickness: 1,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                          if (data.placements.isEmpty)
+                            Positioned(
+                              left: 24,
+                              right: 24,
+                              top: 72,
+                              child: Text(
+                                data.emptyMessage,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            )
+                          else
+                            for (
+                              var index = 0;
+                              index < data.placements.length;
+                              index++
+                            )
+                              Builder(
+                                builder: (context) {
+                                  final placement = data.placements[index];
+                                  final left = xForTick(placement.startTick);
+                                  final right = xForTick(placement.endTick);
+                                  final width = (right - left).clamp(
+                                    64.0,
+                                    usableWidth,
+                                  );
+                                  return Positioned(
+                                    left: left,
+                                    top: 52 + (index % 2) * 46,
+                                    width: width,
+                                    height: 36,
+                                    child: Tooltip(
+                                      message:
+                                          "${placement.label} · Tick ${placement.startTick}–${placement.endTick - 1}",
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: _nodeColor(
+                                            context,
+                                            placement.level,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: _nodeForeground(
+                                              context,
+                                              placement.level,
+                                            ).withValues(alpha: 0.35),
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              placement.label.trim().isEmpty
+                                                  ? "未命名節點"
+                                                  : placement.label,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelMedium
+                                                  ?.copyWith(
+                                                    color: _nodeForeground(
+                                                      context,
+                                                      placement.level,
+                                                    ),
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                          Positioned(
+                            left: scrubberX - 1,
+                            top: 28,
+                            bottom: 8,
+                            width: 2,
+                            child: ColoredBox(
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                          ),
+                          Positioned(
+                            left: scrubberX - 9,
+                            top: 20,
+                            width: 18,
+                            height: 18,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.tertiary,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.surface,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.drag_indicator,
+                                size: 12,
+                                color: Theme.of(context).colorScheme.onTertiary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class CharacterSlider extends StatefulWidget {
   final String title;
   final String leftLabel;
@@ -5007,6 +6412,7 @@ class CharacterTextField extends StatelessWidget {
   final TextEditingController controller;
   final String? hintText;
   final int maxLines;
+  final bool enabled;
 
   const CharacterTextField({
     super.key,
@@ -5014,6 +6420,7 @@ class CharacterTextField extends StatelessWidget {
     required this.controller,
     this.hintText,
     this.maxLines = 1,
+    this.enabled = true,
   });
 
   @override
@@ -5025,6 +6432,7 @@ class CharacterTextField extends StatelessWidget {
         maxLines: maxLines,
         labelText: label,
         hintText: hintText,
+        enabled: enabled,
       ),
     );
   }

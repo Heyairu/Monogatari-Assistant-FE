@@ -121,8 +121,9 @@ class TimelineViewNotifier extends Notifier<TimelineViewState> {
   }
 
   void setCurrentTick(int value) {
-    if (state.currentTick == value) return;
-    state = state.copyWith(currentTick: value);
+    final normalized = clampTimelineTick(value);
+    if (state.currentTick == normalized) return;
+    state = state.copyWith(currentTick: normalized);
   }
 
   void setQuery(String value) => state = state.copyWith(query: value);
@@ -565,18 +566,41 @@ class TimelineActions {
     final document = _document;
     final current = _findPlacement(document.placements, placementUUID);
     if (current == null) return const TimelineMutationResult.unchanged();
-    final nextStart = startTick ?? current.startTick;
-    final delta = nextStart - current.startTick;
     final descendants = _descendantIds(document.placements, placementUUID);
+    final subtree = document.placements
+        .where(
+          (placement) =>
+              placement.placementUUID == placementUUID ||
+              descendants.contains(placement.placementUUID),
+        )
+        .toList(growable: false);
+    final subtreeStart = subtree
+        .map((placement) => placement.startTick)
+        .reduce((a, b) => a < b ? a : b);
+    final subtreeEnd = subtree
+        .map((placement) => placement.endTick)
+        .reduce((a, b) => a > b ? a : b);
+    final requestedStart = clampTimelineNodeStartTick(
+      startTick ?? current.startTick,
+    );
+    final requestedDelta = requestedStart - current.startTick;
+    final delta = requestedDelta
+        .clamp(
+          timelineMinimumTick - subtreeStart,
+          timelineMaximumTick - subtreeEnd,
+        )
+        .toInt();
+    final nextStart = current.startTick + delta;
+    final nextRange = normalizeTimelinePlacementRange(
+      startTick: nextStart,
+      durationTicks: durationTicks ?? current.durationTicks,
+    );
     var placements = <TimelinePlacementData>[
       for (final placement in document.placements)
         if (placement.placementUUID == placementUUID)
           placement.copyWith(
-            startTick: nextStart,
-            durationTicks: (durationTicks ?? placement.durationTicks).clamp(
-              1,
-              1 << 30,
-            ),
+            startTick: nextRange.startTick,
+            durationTicks: nextRange.durationTicks,
             trackUUID: trackUUID ?? placement.trackUUID,
             label: label ?? placement.label,
           )
@@ -610,12 +634,14 @@ class TimelineActions {
     final current = _findPlacement(document.placements, placementUUID);
     if (current == null) return const TimelineMutationResult.unchanged();
 
-    var nextStart = startTick ?? current.startTick;
-    var nextEnd = endTick ?? current.endTick;
+    var nextStart = clampTimelineNodeStartTick(startTick ?? current.startTick);
+    var nextEnd = (endTick ?? current.endTick)
+        .clamp(timelineMinimumTick + 1, timelineMaximumTick)
+        .toInt();
     if (startTick != null) {
-      nextStart = nextStart.clamp(-(1 << 30), nextEnd - 1);
+      nextStart = nextStart.clamp(timelineMinimumTick, nextEnd - 1).toInt();
     } else {
-      nextEnd = nextEnd.clamp(nextStart + 1, 1 << 30);
+      nextEnd = nextEnd.clamp(nextStart + 1, timelineMaximumTick).toInt();
     }
     if (nextStart == current.startTick && nextEnd == current.endTick) {
       return const TimelineMutationResult.unchanged();
