@@ -21,11 +21,12 @@ class ProjectMigrationResult {
 /// Owns all project-format upgrades. Module codecs only decode their XML shape;
 /// they never guess which historical project version they received.
 class ProjectMigrator {
-  static const currentVersion = "1.12";
+  static const currentVersion = "1.14";
   static const _legacyMigrationCutoff = "1.08";
   static const _timelineProjectionCutoff = "1.10";
   static const _characterSnapshotCutoff = "1.11";
   static const _characterSnapshotTablesCutoff = "1.12";
+  static const _projectUuidCutoff = "1.14";
   static const _uuid = Uuid();
 
   /// Whether the source still needs the destructive legacy normalization.
@@ -87,8 +88,16 @@ class ProjectMigrator {
       wasMigrated:
           timelineUpgrade.changed ||
           snapshotUpgrade.changed ||
-          tableUpgrade.changed,
+          tableUpgrade.changed ||
+          _requiresProjectUuidUpgrade(sourceVersion),
     );
+  }
+
+  static bool _requiresProjectUuidUpgrade(String? sourceVersion) {
+    final version = sourceVersion?.trim();
+    return version == null ||
+        version.isEmpty ||
+        _compareVersion(version, _projectUuidCutoff) < 0;
   }
 
   static ({ProjectData data, bool changed}) _upgradeCharacterSnapshotTables({
@@ -121,6 +130,7 @@ class ProjectMigrator {
 
     return (
       data: ProjectData(
+        projectUUID: source.projectUUID,
         baseInfoData: source.baseInfoData,
         segmentsData: source.segmentsData,
         outlineData: source.outlineData,
@@ -228,6 +238,7 @@ class ProjectMigrator {
     }
     return (
       data: ProjectData(
+        projectUUID: source.projectUUID,
         baseInfoData: source.baseInfoData,
         segmentsData: source.segmentsData,
         outlineData: source.outlineData,
@@ -324,6 +335,7 @@ class ProjectMigrator {
     }
     return (
       data: ProjectData(
+        projectUUID: source.projectUUID,
         baseInfoData: source.baseInfoData,
         segmentsData: source.segmentsData,
         outlineData: source.outlineData,
@@ -459,6 +471,7 @@ class ProjectMigrator {
         .toList(growable: false);
 
     final migratedData = ProjectData(
+      projectUUID: source.projectUUID,
       baseInfoData: source.baseInfoData,
       segmentsData: source.segmentsData,
       outlineData: outline,

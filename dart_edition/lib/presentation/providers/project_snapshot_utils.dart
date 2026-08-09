@@ -208,6 +208,7 @@ ProjectData snapshotProjectData(
   base_info_module.BaseInfoData? baseInfoOverride,
 }) {
   return ProjectData(
+    projectUUID: source.projectUUID,
     baseInfoData: snapshotBaseInfoData(baseInfoOverride ?? source.baseInfoData),
     segmentsData: snapshotSegmentsData(source.segmentsData),
     outlineData: snapshotOutlineData(source.outlineData),

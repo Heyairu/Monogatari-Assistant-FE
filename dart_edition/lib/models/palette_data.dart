@@ -33,9 +33,19 @@ const List<PaletteSvPreset> paletteSvPresets = <PaletteSvPreset>[
 
 const List<int> paletteGrayValues = <int>[0, 20, 50, 80, 100];
 
-final List<int> paletteHueDegrees = List<int>.unmodifiable(
-  List<int>.generate(20, (int index) => index * 18),
-);
+const List<int> paletteHueDegrees = <int>[
+  0,
+  18,
+  54,
+  90,
+  126,
+  162,
+  198,
+  234,
+  270,
+  306,
+  342,
+];
 
 String _padPaletteValue(int value) => value.toString().padLeft(3, "0");
 

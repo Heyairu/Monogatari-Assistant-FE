@@ -151,6 +151,28 @@ void main() {
     expect(repository.lastAutoBackupContent, repository.generatedXml);
     expect(repository.lastGenerateProjectXmlUpdateLatestSave, true);
   });
+
+  test('save-as payload receives a new UUID without mutating source', () async {
+    final repository = _BlockingFileRepository();
+    final container = ProviderContainer(
+      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+    );
+    addTearDown(container.dispose);
+    const originalUuid = '123e4567-e89b-42d3-a456-426614174000';
+    final source = ProjectData.empty(projectUUID: originalUuid);
+    final controller = container.read(projectIoControllerProvider.notifier);
+
+    final regularPayload = await controller.prepareProjectPayload(source);
+    final saveAsPayload = await controller.prepareProjectPayload(
+      source,
+      regenerateProjectUuid: true,
+    );
+
+    expect(regularPayload.snapshot.projectUUID, originalUuid);
+    expect(saveAsPayload.snapshot.projectUUID, isNot(originalUuid));
+    expect(saveAsPayload.snapshot.projectUUID, isNotEmpty);
+    expect(source.projectUUID, originalUuid);
+  });
 }
 
 class _BlockingFileRepository implements FileRepository {

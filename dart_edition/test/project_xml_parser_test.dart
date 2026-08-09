@@ -7,7 +7,7 @@ void main() {
   test("parseProjectXMLWithMetadata loads version and chapter data once", () {
     const xmlContent = """
 <?xml version="1.0" encoding="UTF-8"?>
-<Project>
+<Project UUID="123e4567-e89b-42d3-a456-426614174000">
   <ver>9.99</ver>
   <Type>
     <Name>ChapterSelection</Name>
@@ -23,6 +23,7 @@ void main() {
     final result = FileService.parseProjectXMLWithMetadata(xmlContent);
 
     expect(result.projectVersion, "9.99");
+    expect(result.data.projectUUID, "123e4567-e89b-42d3-a456-426614174000");
     expect(result.data.segmentsData, hasLength(1));
     expect(result.data.segmentsData.first.segmentName, "Part 1");
     expect(result.data.segmentsData.first.chapters, hasLength(1));
@@ -47,4 +48,27 @@ void main() {
       expect(projectFile.content, isEmpty);
     },
   );
+
+  test("project UUID round-trips and regular saves keep it unchanged", () {
+    const projectUuid = "123e4567-e89b-42d3-a456-426614174001";
+    final data = ProjectData.empty(projectUUID: projectUuid);
+
+    final firstSave = FileService.generateProjectXML(data);
+    final loaded = FileService.parseProjectXMLWithMetadata(firstSave);
+    final secondSave = FileService.generateProjectXML(loaded.data);
+
+    expect(firstSave, contains('<Project UUID="$projectUuid">'));
+    expect(firstSave, contains("<ver>1.14</ver>"));
+    expect(loaded.data.projectUUID, projectUuid);
+    expect(secondSave, contains('<Project UUID="$projectUuid">'));
+  });
+
+  test("legacy project without UUID receives one while loading", () {
+    final result = FileService.parseProjectXMLWithMetadata(
+      "<Project><ver>1.12</ver></Project>",
+    );
+
+    expect(result.data.projectUUID, isNotEmpty);
+    expect(result.wasMigrated, true);
+  });
 }

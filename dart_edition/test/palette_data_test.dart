@@ -4,17 +4,24 @@ import "package:monogatari_assistant/models/palette_data.dart";
 void main() {
   group("Palette definitions", () {
     test("builds the required hue, SV, and gray slots", () {
-      expect(paletteHueDegrees, hasLength(20));
-      expect(paletteHueDegrees.first, 0);
-      expect(paletteHueDegrees.last, 342);
-      for (var index = 1; index < paletteHueDegrees.length; index++) {
-        expect(paletteHueDegrees[index] - paletteHueDegrees[index - 1], 18);
-      }
+      expect(paletteHueDegrees, <int>[
+        0,
+        18,
+        54,
+        90,
+        126,
+        162,
+        198,
+        234,
+        270,
+        306,
+        342,
+      ]);
 
       expect(paletteSvPresets, hasLength(12));
       expect(paletteGrayValues, <int>[0, 20, 50, 80, 100]);
-      expect(allPaletteSlots, hasLength(245));
-      expect(paletteSlotById, hasLength(245));
+      expect(allPaletteSlots, hasLength(137));
+      expect(paletteSlotById, hasLength(137));
       expect(paletteSlotById, contains("h000-s100-v020"));
       expect(paletteSlotById, contains("h342-s020-v100"));
       expect(paletteSlotById, contains("gray-v000"));

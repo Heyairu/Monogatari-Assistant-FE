@@ -549,6 +549,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   Timer? _autoScrollTimer;
   Timer? _outlineDraftTimer;
   VoidCallback? _pendingOutlineDraftCommit;
+  bool _isSyncingControllers = false;
   ScrollController? _currentScrollController;
   final ScrollController _pageScrollController = ScrollController();
   final ScrollController _storylineListScrollController = ScrollController();
@@ -744,6 +745,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _scheduleOutlineDraft() {
+    if (_isSyncingControllers) return;
     final storylineId = selectedStorylineID;
     if (storylineId == null) return;
     final eventId = selectedEventID;
@@ -1208,6 +1210,15 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   }
 
   void _syncAllControllers() {
+    _isSyncingControllers = true;
+    try {
+      _syncAllControllersFromSelection();
+    } finally {
+      _isSyncingControllers = false;
+    }
+  }
+
+  void _syncAllControllersFromSelection() {
     final si = selectedStorylineIndex;
     if (si != null && si >= 0 && si < storylines.length) {
       final storyline = storylines[si];

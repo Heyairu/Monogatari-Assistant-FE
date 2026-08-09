@@ -35,6 +35,7 @@ import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_history_provider.dart";
+import "presentation/providers/project_snapshot_utils.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/timeline_providers.dart";
 import "presentation/providers/word_count_providers.dart";
@@ -1279,10 +1280,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     _projectHistoryRecordTimer = null;
     _isApplyingProjectHistory = true;
     final initialState = _initialStateForHistoryEntry(entry);
+    final historyData = snapshotProjectData(entry.data)
+      ..projectUUID = ref.read(projectUuidProvider);
 
     setState(() {
       slidePageIndexNow = entry.pageIndex < 0 ? 0 : entry.pageIndex;
-      _applyProjectData(entry.data, initialState);
+      _applyProjectData(historyData, initialState);
     });
     _projectDataRevision++;
     _lastRecordedProjectDataRevision = _projectDataRevision;
@@ -2728,15 +2731,15 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _resetAutoBackupBaseline();
         _applyProjectData(result.data, initialState);
       });
-      _beginProjectIoSession(result.projectFile);
-      _editorCoordinatorNotifier.resetAfterProjectLoaded();
-      _resetProjectHistory();
-      if (!mounted) {
+      final activeProjectSession = _beginProjectIoSession(result.projectFile);
+      _updateAllWordCounts();
+      _showMessage("新專案建立成功！");
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
         return;
       }
-      _showMessage("新專案建立成功！");
-
-      _updateAllWordCounts();
+      _resetProjectHistory();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         _showError("建立新專案失敗：${e.toString()}");
@@ -2827,19 +2830,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
-      _beginProjectIoSession(projectFile);
-      _editorCoordinatorNotifier.resetAfterProjectLoaded();
-      _resetProjectHistory();
+      final activeProjectSession = _beginProjectIoSession(projectFile);
 
       // Start the background count immediately after applying the project.
       // Persisting the recent-project entry can involve platform storage and
       // must not delay the visible total word count.
       _updateAllWordCounts();
-
-      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
-      if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
-        return;
-      }
       final migrationSuffix = loadResult.wasMigrated
           ? "（已在記憶體升級至 ${FileService.projectVersion}，${loadResult.migrationWarnings.length} 項警告）"
           : "";
@@ -2851,6 +2847,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _showMessage(
         "專案開啟成功：${projectFile.nameWithoutExtension}$migrationSuffix",
       );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
+      _resetProjectHistory();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
+
+      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         _showError("開啟專案失敗：${e.toString()}");
@@ -2945,17 +2952,10 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _resetAutoBackupBaseline();
         _applyProjectData(data, initialState);
       });
-      _beginProjectIoSession(projectFile);
-      _editorCoordinatorNotifier.resetAfterProjectLoaded();
-      _resetProjectHistory();
+      final activeProjectSession = _beginProjectIoSession(projectFile);
 
       // Keep word-count refresh independent from recent-project persistence.
       _updateAllWordCounts();
-
-      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
-      if (!mounted || !_projectIoCoordinator.isCurrent(switchSession)) {
-        return;
-      }
       final migrationSuffix = loadResult.wasMigrated
           ? "（已在記憶體升級至 ${FileService.projectVersion}，${loadResult.migrationWarnings.length} 項警告）"
           : "";
@@ -2967,6 +2967,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _showMessage(
         "專案開啟成功：${projectFile.nameWithoutExtension}$migrationSuffix",
       );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
+      _resetProjectHistory();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
+
+      await _editorCoordinatorNotifier.recordRecentProject(projectFile);
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         final message = e.toString();
@@ -3044,14 +3055,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     final session = _projectIoSession;
     final revision = _projectDataRevision;
     final currentData = _collectProjectData();
+    ProjectIoPayload? saveAsPayload;
 
     try {
       final runResult = await _projectIoCoordinator.run(session, () async {
-        final payload = await _sharedProjectIoPayload(
-          session: session,
-          revision: revision,
-          data: currentData,
-        );
+        final payload = await ref
+            .read(projectIoControllerProvider.notifier)
+            .prepareProjectPayload(currentData, regenerateProjectUuid: true);
+        saveAsPayload = payload;
         return ref
             .read(projectIoControllerProvider.notifier)
             .saveProject(
@@ -3068,8 +3079,21 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         return;
       }
       setState(() => currentProject = savedProject);
+      final adoptedProjectUuid = saveAsPayload?.snapshot.projectUUID;
+      if (adoptedProjectUuid != null) {
+        final beganApplying = _editorCoordinatorNotifier
+            .beginApplyingProjectData();
+        ref
+            .read(projectUuidProvider.notifier)
+            .setProjectUuid(adoptedProjectUuid);
+        if (beganApplying) {
+          _editorCoordinatorNotifier.endApplyingProjectData();
+        }
+      }
       if (_projectDataRevision == revision) {
         _markAsSaved();
+      } else {
+        _editorCoordinatorNotifier.markAsModified();
       }
       _beginProjectIoSession(savedProject);
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);

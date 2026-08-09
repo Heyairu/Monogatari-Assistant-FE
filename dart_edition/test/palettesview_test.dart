@@ -41,18 +41,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text("文字調色盤"), findsOneWidget);
+    expect(find.text("文字色票"), findsOneWidget);
     expect(find.byType(AppTextField), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>("palette-import-export-menu")),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>("palette-hue-342")),
       findsOneWidget,
     );
-    final ChoiceChip hueButton = tester.widget<ChoiceChip>(
+    final IconButton hueButton = tester.widget<IconButton>(
       find.byKey(const ValueKey<String>("palette-hue-342")),
     );
     final Color expectedHueColor = HSVColor.fromAHSV(1, 342, 0.8, 1).toColor();
-    expect(hueButton.backgroundColor, expectedHueColor);
-    expect(hueButton.selectedColor, expectedHueColor);
+    expect(
+      hueButton.style?.backgroundColor?.resolve(const <WidgetState>{}),
+      expectedHueColor,
+    );
 
     await tester.tap(find.text("S 100% · V 20%").first);
     await tester.pumpAndSettle();

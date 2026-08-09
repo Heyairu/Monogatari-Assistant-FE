@@ -63,4 +63,33 @@ void main() {
 
     expect(container.read(editorCoordinatorProvider).hasUnsavedChanges, false);
   });
+
+  test(
+    'clean checkpoint after success message absorbs frame-late sync',
+    () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final coordinator = container.read(editorCoordinatorProvider.notifier);
+      container
+          .read(segmentsDataProvider.notifier)
+          .updateSegmentsData((current) => [...current]);
+      coordinator.pushMessage('Project opened');
+
+      // The project switch establishes its clean checkpoint only after the
+      // success message frame and any provider synchronization it triggered.
+      coordinator.resetAfterProjectLoaded();
+
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+
+      expect(
+        container.read(editorCoordinatorProvider).hasUnsavedChanges,
+        false,
+      );
+      expect(
+        container.read(editorCoordinatorProvider).messageText,
+        'Project opened',
+      );
+    },
+  );
 }

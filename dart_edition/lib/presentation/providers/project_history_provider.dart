@@ -118,6 +118,7 @@ class ProjectHistoryEntry {
     // another deep snapshot. This lightweight view shares every project
     // collection with [snapshot] and only replaces BaseInfoData.
     final file_module.ProjectData comparisonView = file_module.ProjectData(
+      projectUUID: snapshot.projectUUID,
       baseInfoData: snapshot.baseInfoData.copyWith(latestSave: null),
       segmentsData: snapshot.segmentsData,
       outlineData: snapshot.outlineData,

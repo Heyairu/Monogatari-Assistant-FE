@@ -1,5 +1,9 @@
 import "dart:async";
+import "dart:convert";
+import "dart:io";
+import "dart:math" as math;
 
+import "package:file_picker/file_picker.dart";
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -253,6 +257,117 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     return hits;
   }
 
+  Future<void> _exportPalette() async {
+    if (!_commitActiveEditor()) {
+      return;
+    }
+    final String? savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: "匯出文字色票",
+      fileName: "Palettes.json",
+      type: FileType.custom,
+      allowedExtensions: const <String>["json"],
+    );
+    if (!mounted || savedPath == null) {
+      return;
+    }
+
+    final String resolvedPath = savedPath.toLowerCase().endsWith(".json")
+        ? savedPath
+        : "$savedPath.json";
+    try {
+      final String content = PaletteDataCodec.encode(
+        ref.read(paletteStateProvider),
+      );
+      await File(resolvedPath).writeAsString(content, flush: true);
+      if (!mounted) {
+        return;
+      }
+      final String fileName = resolvedPath
+          .replaceAll("\\", "/")
+          .split("/")
+          .last;
+      AppFeedback.success(
+        context,
+        "色票匯出完成：$fileName",
+        duration: const Duration(seconds: 2),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.error(
+        context,
+        "色票匯出失敗：$error",
+        duration: const Duration(seconds: 2),
+      );
+    }
+  }
+
+  Future<void> _importPalette() async {
+    if (!_commitActiveEditor()) {
+      return;
+    }
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      dialogTitle: "匯入文字色票",
+      type: FileType.custom,
+      allowedExtensions: const <String>["json"],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    try {
+      final PlatformFile picked = result.files.first;
+      String? raw;
+      if (picked.bytes != null) {
+        raw = utf8.decode(picked.bytes!);
+      } else if (picked.path != null) {
+        raw = await File(picked.path!).readAsString();
+      }
+      if (raw == null || raw.trim().isEmpty) {
+        throw const FormatException("檔案沒有內容");
+      }
+
+      final PaletteDecodeResult decoded = PaletteDataCodec.decode(raw);
+      final PaletteImportMergeResult merged = _notifier.mergeImportedData(
+        decoded.data,
+      );
+      if (merged.changed) {
+        await _notifier.flushPalettePersistence();
+      }
+      if (!mounted) {
+        return;
+      }
+
+      final String warningText = decoded.warnings.isEmpty
+          ? ""
+          : "，另略過 ${decoded.warnings.length} 項格式問題";
+      if (merged.changed) {
+        AppFeedback.success(
+          context,
+          "匯入完成：新增 ${merged.addedPlacements} 個色票詞條、略過 ${merged.skippedDuplicates} 個重複詞條$warningText",
+          duration: const Duration(seconds: 3),
+        );
+      } else {
+        AppFeedback.info(
+          context,
+          "沒有新增色票；已略過 ${merged.skippedDuplicates} 個重複詞條$warningText",
+          duration: const Duration(seconds: 2),
+        );
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.error(
+        context,
+        "色票匯入失敗：檔案格式錯誤或無法讀取",
+        duration: const Duration(seconds: 2),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final PaletteStateData state = ref.watch(paletteStateProvider);
@@ -342,21 +457,61 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
             Text("文字色票", style: Theme.of(context).textTheme.titleLarge),
           ],
         ),
-        SizedBox(
-          width: 320,
-          child: AppTextField(
-            key: const ValueKey<String>("palette-search-field"),
-            controller: _searchController,
-            hintText: "搜尋詞條……",
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _searchController.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: "清除搜尋",
-                    onPressed: _searchController.clear,
-                    icon: const Icon(Icons.clear),
-                  ),
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            PopupMenuButton<String>(
+              key: const ValueKey<String>("palette-import-export-menu"),
+              tooltip: "匯入或匯出色票",
+              onSelected: (String value) {
+                switch (value) {
+                  case "import":
+                    unawaited(_importPalette());
+                    break;
+                  case "export":
+                    unawaited(_exportPalette());
+                    break;
+                }
+              },
+              itemBuilder: (BuildContext context) =>
+                  const <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: "import",
+                      child: ListTile(
+                        leading: Icon(Icons.file_open_outlined),
+                        title: Text("匯入色票……"),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: "export",
+                      child: ListTile(
+                        leading: Icon(Icons.save_alt_outlined),
+                        title: Text("匯出色票……"),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+              icon: const Icon(Icons.import_export_outlined),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 320,
+              child: AppTextField(
+                key: const ValueKey<String>("palette-search-field"),
+                controller: _searchController,
+                hintText: "搜尋詞條……",
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: "清除搜尋",
+                        onPressed: _searchController.clear,
+                        icon: const Icon(Icons.clear),
+                      ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -407,14 +562,73 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text("Hue", style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                for (final int hue in paletteHueDegrees) _buildHueButton(hue),
-              ],
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double availableWidth = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : 520;
+                final double diameter = math.min(availableWidth, 520);
+                return Center(
+                  child: SizedBox.square(
+                    dimension: diameter,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: const _HueRingPainter(),
+                            ),
+                          ),
+                        ),
+                        Center(
+                          child: Container(
+                            width: diameter * 0.28,
+                            height: diameter * 0.28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerLowest,
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outlineVariant,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                Text(
+                                  "Hue",
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.labelMedium,
+                                ),
+                                Text(
+                                  "$_selectedHue°",
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: HSVColor.fromAHSV(
+                                          1,
+                                          _selectedHue.toDouble(),
+                                          0.6,
+                                          0.8,
+                                        ).toColor(),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        for (final int hue in paletteHueDegrees)
+                          ..._buildHueRingItems(hue, diameter),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -422,7 +636,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     );
   }
 
-  Widget _buildHueButton(int hue) {
+  List<Widget> _buildHueRingItems(int hue, double diameter) {
     final bool selected = hue == _selectedHue;
     final Color swatchColor = HSVColor.fromAHSV(
       1,
@@ -434,27 +648,65 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     final Color outlineColor = selected
         ? Theme.of(context).colorScheme.onSurface
         : foregroundColor.withAlpha(120);
+    final double angle = (hue - 90) * math.pi / 180;
+    final double center = diameter / 2;
+    final double buttonSize = diameter < 360 ? 40 : 48;
+    final double buttonRadius = diameter * 0.405;
+    final double labelRadius = diameter * 0.29;
+    final Offset direction = Offset(math.cos(angle), math.sin(angle));
+    final Offset buttonCenter =
+        Offset(center, center) + direction * buttonRadius;
+    final Offset labelCenter = Offset(center, center) + direction * labelRadius;
 
-    return Semantics(
-      label: "選擇色相 $hue 度，飽和度 80%，明度 100%",
-      button: true,
-      selected: selected,
-      child: ChoiceChip(
-        key: ValueKey<String>("palette-hue-$hue"),
-        selected: selected,
-        showCheckmark: true,
-        checkmarkColor: foregroundColor,
-        backgroundColor: swatchColor,
-        selectedColor: swatchColor,
-        labelStyle: TextStyle(
-          color: foregroundColor,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    return <Widget>[
+      Positioned(
+        left: buttonCenter.dx - buttonSize / 2,
+        top: buttonCenter.dy - buttonSize / 2,
+        width: buttonSize,
+        height: buttonSize,
+        child: Semantics(
+          label: "色相 $hue°，飽和度 80%，明度 100%",
+          button: true,
+          selected: selected,
+          child: IconButton(
+            key: ValueKey<String>("palette-hue-$hue"),
+            tooltip: "Hue $hue°",
+            onPressed: () => _selectHue(hue),
+            style: IconButton.styleFrom(
+              backgroundColor: swatchColor,
+              foregroundColor: foregroundColor,
+              side: BorderSide(color: outlineColor, width: selected ? 3 : 1),
+              shape: const CircleBorder(),
+              padding: EdgeInsets.zero,
+            ),
+            icon: Icon(
+              selected ? Icons.check : Icons.circle,
+              size: selected ? 22 : 8,
+            ),
+          ),
         ),
-        side: BorderSide(color: outlineColor, width: selected ? 2 : 1),
-        onSelected: (_) => _selectHue(hue),
-        label: Text("$hue°"),
       ),
-    );
+      Positioned(
+        left: labelCenter.dx - 27,
+        top: labelCenter.dy - 12,
+        width: 54,
+        height: 24,
+        child: ExcludeSemantics(
+          child: Center(
+            child: Text(
+              "$hue°",
+              maxLines: 1,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected
+                    ? Colors.green
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   Widget _buildSlotWrap(
@@ -672,4 +924,34 @@ class _PaletteSearchHit {
   final PaletteEntry entry;
 
   const _PaletteSearchHit({required this.slot, required this.entry});
+}
+
+class _HueRingPainter extends CustomPainter {
+  const _HueRingPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect bounds = Offset.zero & size;
+    final Offset center = bounds.center;
+    final double radius = size.shortestSide * 0.405;
+    final Paint ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(8, size.shortestSide * 0.026)
+      ..shader = const SweepGradient(
+        colors: <Color>[
+          Color(0xFFFF3333),
+          Color(0xFFFFFF33),
+          Color(0xFF33FF33),
+          Color(0xFF33FFFF),
+          Color(0xFF3333FF),
+          Color(0xFFFF33FF),
+          Color(0xFFFF3333),
+        ],
+        transform: GradientRotation(-math.pi / 2),
+      ).createShader(bounds);
+    canvas.drawCircle(center, radius, ringPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueRingPainter oldDelegate) => false;
 }

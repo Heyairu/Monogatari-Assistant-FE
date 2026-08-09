@@ -1,3 +1,5 @@
+import "package:uuid/uuid.dart";
+
 import "base_info_data.dart";
 import "chapter_selection_data.dart";
 import "character_data.dart";
@@ -8,6 +10,12 @@ import "timeline_data.dart";
 import "world_settings_data.dart";
 
 class ProjectData {
+  static const Uuid _uuid = Uuid();
+  static final RegExp _uuidPattern = RegExp(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+  );
+
+  String projectUUID;
   BaseInfoData baseInfoData;
   List<SegmentData> segmentsData;
   List<StorylineData> outlineData;
@@ -25,6 +33,7 @@ class ProjectData {
   bool isDirty;
 
   ProjectData({
+    String? projectUUID,
     required this.baseInfoData,
     required this.segmentsData,
     required this.outlineData,
@@ -40,12 +49,23 @@ class ProjectData {
     this.totalWords = 0,
     this.contentText = "",
     this.isDirty = false,
-  }) : timelineDocument = timelineDocument ?? TimelineDocumentData.initial(),
+  }) : projectUUID = isValidProjectUUID(projectUUID)
+           ? projectUUID!.trim()
+           : createProjectUUID(),
+       timelineDocument = timelineDocument ?? TimelineDocumentData.initial(),
        outlineChapterLinks =
            outlineChapterLinks ?? const <OutlineChapterLinkData>[];
 
-  factory ProjectData.empty() {
+  static String createProjectUUID() => _uuid.v4();
+
+  static bool isValidProjectUUID(String? value) {
+    if (value == null) return false;
+    return _uuidPattern.hasMatch(value.trim());
+  }
+
+  factory ProjectData.empty({String? projectUUID}) {
     return ProjectData(
+      projectUUID: projectUUID,
       baseInfoData: BaseInfoData(),
       segmentsData: [
         SegmentData(

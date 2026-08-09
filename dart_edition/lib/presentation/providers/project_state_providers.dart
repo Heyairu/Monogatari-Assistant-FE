@@ -830,7 +830,9 @@ class OutlineDataNotifier extends Notifier<List<outline_module.StorylineData>> {
     )
     update,
   ) {
-    setOutlineData(update(state));
+    final updated = update(state);
+    if (identical(updated, state)) return;
+    setOutlineData(updated);
   }
 }
 
@@ -2587,6 +2589,20 @@ final totalWordsProvider = NotifierProvider<TotalWordsNotifier, int>(
   TotalWordsNotifier.new,
 );
 
+class ProjectUuidNotifier extends Notifier<String> {
+  @override
+  String build() => ProjectData.createProjectUUID();
+
+  void setProjectUuid(String value) {
+    if (state == value) return;
+    state = value;
+  }
+}
+
+final projectUuidProvider = NotifierProvider<ProjectUuidNotifier, String>(
+  ProjectUuidNotifier.new,
+);
+
 class CurrentProjectFileNotifier extends Notifier<ProjectFile?> {
   @override
   ProjectFile? build() {
@@ -2605,6 +2621,7 @@ final currentProjectFileProvider =
 
 final projectDataProvider = Provider<ProjectData>((ref) {
   return ProjectData(
+    projectUUID: ref.watch(projectUuidProvider),
     baseInfoData: ref.watch(baseInfoDataProvider),
     segmentsData: ref.watch(segmentsDataProvider),
     outlineData: ref.watch(outlineDataProvider),

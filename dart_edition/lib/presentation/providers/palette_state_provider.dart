@@ -39,6 +39,21 @@ class PaletteMutationResult {
 }
 
 @immutable
+class PaletteImportMergeResult {
+  final int addedEntries;
+  final int addedPlacements;
+  final int skippedDuplicates;
+
+  const PaletteImportMergeResult({
+    required this.addedEntries,
+    required this.addedPlacements,
+    required this.skippedDuplicates,
+  });
+
+  bool get changed => addedPlacements > 0;
+}
+
+@immutable
 class PaletteEntryRemovalRecord {
   final PaletteEntry entry;
   final Map<String, int> slotIndexes;
@@ -259,6 +274,73 @@ class PaletteStateNotifier extends Notifier<PaletteStateData> {
     nextSlots[slotId] = sorted;
     _commit(nextSlots, <String, PaletteEntry>{...state.entryIndex});
     return true;
+  }
+
+  PaletteImportMergeResult mergeImportedData(PaletteStateData imported) {
+    final Map<String, List<String>> nextSlots = _copySlots();
+    final Map<String, PaletteEntry> nextEntries = <String, PaletteEntry>{
+      ...state.entryIndex,
+    };
+    final Map<String, String> importedIdMap = <String, String>{};
+    var addedEntries = 0;
+    var addedPlacements = 0;
+    var skippedDuplicates = 0;
+
+    for (final PaletteSlotDefinition slot in allPaletteSlots) {
+      final List<String> incomingIds =
+          imported.slotEntryIds[slot.id] ?? const <String>[];
+      if (incomingIds.isEmpty) {
+        continue;
+      }
+
+      final List<String> targetIds = nextSlots.putIfAbsent(
+        slot.id,
+        () => <String>[],
+      );
+      final Set<String> targetTerms = <String>{
+        for (final String id in targetIds)
+          normalizePaletteTerm(nextEntries[id]?.text ?? ""),
+      }..remove("");
+
+      for (final String importedId in incomingIds) {
+        final PaletteEntry? importedEntry = imported.entryIndex[importedId];
+        if (importedEntry == null) {
+          continue;
+        }
+        final String normalized = normalizePaletteTerm(importedEntry.text);
+        if (!targetTerms.add(normalized)) {
+          skippedDuplicates++;
+          continue;
+        }
+
+        final String resolvedId;
+        final String? existingMapping = importedIdMap[importedId];
+        if (existingMapping == null) {
+          var candidateId = importedId;
+          while (nextEntries.containsKey(candidateId)) {
+            candidateId = "palette-entry-${_uuid.v4()}";
+          }
+          resolvedId = candidateId;
+          importedIdMap[importedId] = candidateId;
+          nextEntries[candidateId] = importedEntry.copyWith(id: candidateId);
+          addedEntries++;
+        } else {
+          resolvedId = existingMapping;
+        }
+        targetIds.add(resolvedId);
+        addedPlacements++;
+      }
+    }
+
+    nextSlots.removeWhere((String _, List<String> ids) => ids.isEmpty);
+    if (addedPlacements > 0) {
+      _commit(nextSlots, nextEntries);
+    }
+    return PaletteImportMergeResult(
+      addedEntries: addedEntries,
+      addedPlacements: addedPlacements,
+      skippedDuplicates: skippedDuplicates,
+    );
   }
 
   Future<void> flushPalettePersistence() async {

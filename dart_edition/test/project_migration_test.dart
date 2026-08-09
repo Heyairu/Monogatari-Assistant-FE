@@ -113,7 +113,7 @@ void main() {
     );
 
     final savedXml = FileService.generateProjectXML(result.data);
-    expect(savedXml, contains("<ver>1.12</ver>"));
+    expect(savedXml, contains("<ver>1.14</ver>"));
     expect(savedXml, contains("Name=\"Alice &amp; Co\""));
     expect(savedXml, isNot(contains("DisplayName=")));
     expect(savedXml, contains("Id=\"${bob.key}\""));
@@ -185,7 +185,7 @@ void main() {
 
     final result = FileService.parseProjectXMLWithMetadata(xml);
     final character = result.data.characterData.values.single;
-    expect(result.wasMigrated, isFalse);
+    expect(result.wasMigrated, isTrue);
     expect(character.likeItemList, ["Tea"]);
     expect(character.relationships, isEmpty);
   });
@@ -283,7 +283,7 @@ void main() {
       currentWithoutProfileXml,
     );
     final currentCharacter = current.data.characterData.values.single;
-    expect(current.wasMigrated, isFalse);
+    expect(current.wasMigrated, isTrue);
     expect(currentCharacter.characterType, defaultCharacterType);
     expect(currentCharacter.likeItemList, ["Tea"]);
     expect(currentCharacter.relationships, isEmpty);

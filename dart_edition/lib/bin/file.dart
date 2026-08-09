@@ -940,7 +940,7 @@ class ProjectManager {
 
       if (format == "xml") {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        buffer.writeln("<Project>");
+        buffer.writeln('<Project UUID="${currentData.projectUUID}">');
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
 
         if (selectedModules.contains("BaseInfo")) {
@@ -1064,6 +1064,7 @@ class _ProjectParser {
     // 準備載入的數據 - 使用 ProjectData.empty() 作為預設值
     final defaultData = ProjectData.empty();
     String? projectVersion;
+    String? projectUUID;
 
     BaseInfoModule.BaseInfoData? loadedBaseInfo;
     List<ChapterModule.SegmentData>? loadedSegments;
@@ -1083,6 +1084,10 @@ class _ProjectParser {
 
     try {
       final document = xml.XmlDocument.parse(xmlContent);
+      final rootUUID = document.rootElement.getAttribute("UUID")?.trim();
+      if (ProjectData.isValidProjectUUID(rootUUID)) {
+        projectUUID = rootUUID;
+      }
       final version = document
           .findAllElements("ver")
           .firstOrNull
@@ -1237,6 +1242,7 @@ class _ProjectParser {
     }
 
     final decodedData = ProjectData(
+      projectUUID: projectUUID ?? defaultData.projectUUID,
       baseInfoData: parsedBaseInfo,
       segmentsData: parsedSegments,
       outlineData: parsedOutline,
@@ -1264,7 +1270,7 @@ class _ProjectParser {
       projectVersion: projectVersion,
       data: migration.data,
       migrationWarnings: migration.warnings,
-      wasMigrated: migration.wasMigrated,
+      wasMigrated: migration.wasMigrated || projectUUID == null,
     );
   }
 
@@ -1284,7 +1290,7 @@ class _ProjectMerger {
     final buffer = StringBuffer();
 
     buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-    buffer.writeln("<Project>");
+    buffer.writeln('<Project UUID="${data.projectUUID}">');
     buffer.writeln("<ver>${FileService.projectVersion}</ver>");
 
     // BaseInfo

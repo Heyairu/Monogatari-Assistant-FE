@@ -17,6 +17,7 @@ import "timeline_providers.dart";
 /// project provider publishes a new snapshot. Consumers can listen to this
 /// provider instead of adding multiple individual `ref.listen` calls.
 final projectDataAggregateProvider = Provider<int>((ref) {
+  final projectUuid = ref.watch(projectUuidProvider);
   final base = ref.watch(baseInfoDataProvider);
   final segments = ref.watch(segmentsDataProvider);
   final outline = ref.watch(outlineDataProvider);
@@ -31,6 +32,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final timelineLinks = ref.watch(outlineChapterLinksProvider);
 
   return Object.hash(
+    projectUuid,
     Object.hash(
       base.bookName,
       base.author,
@@ -417,6 +419,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
   file_module.ProjectData collectProjectData() {
     return file_module.ProjectData(
+      projectUUID: ref.read(projectUuidProvider),
       baseInfoData: ref.read(baseInfoDataProvider),
       segmentsData: ref.read(segmentsDataProvider),
       outlineData: ref.read(outlineDataProvider),
@@ -443,6 +446,8 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     chapter_module.ChapterData.clearAllWordCountCache();
 
     final snapshot = data;
+
+    ref.read(projectUuidProvider.notifier).setProjectUuid(snapshot.projectUUID);
 
     ref
         .read(baseInfoDataProvider.notifier)

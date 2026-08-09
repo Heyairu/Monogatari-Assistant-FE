@@ -12,17 +12,17 @@ v1 不包含自訂色盤、圖片取色、跨格拖曳、匯入/匯出，或寫�
 
 ### Hue
 
-Hue 採 HSV 標準的 `0 <= H < 360` 度。從 0 起，每 18 度新增一刻度，最後一格為 342；360 與 0 同色，因此不建立重複格。
+Hue 採 HSV 標準的 `0 <= H < 360` 度，並使用固定的 11 個刻度。最後一格為 342；360 與 0 同色，因此不建立重複格。
 
 | 項目 | 定義 |
 | --- | --- |
 | 起點 | `0°` |
-| 間距 | `18°` |
+| 刻度模式 | 固定表 |
 | 終點 | `342°` |
-| 格數 | `20` |
-| 清單 | `0, 18, 36, 54, 72, 90, 108, 126, 144, 162, 180, 198, 216, 234, 252, 270, 288, 306, 324, 342` |
+| 格數 | `11` |
+| 清單 | `0, 18, 54, 90, 126, 162, 198, 234, 270, 306, 342` |
 
-以 `List.generate(20, (index) => index * 18)` 產生，避免將色相值散落在多個檔案。
+以單一 immutable 常數表定義，UI、slot generator 與測試共用同一資料來源。
 
 ### 彩色色格的 S/V 組合
 
@@ -43,7 +43,7 @@ Hue 採 HSV 標準的 `0 <= H < 360` 度。從 0 起，每 18 度新增一刻度
 | 11 | `s20-v80`  | 20%  |  80% | 11 |
 | 12 | `s20-v100` | 20%  | 100% | 12 |
 
-彩色色格總數為 `20 × 12 = 240`。
+彩色色格總數為 `11 × 12 = 132`。
 
 ### 灰階
 
@@ -57,16 +57,16 @@ Hue 採 HSV 標準的 `0 <= H < 360` 度。從 0 起，每 18 度新增一刻度
 | `gray-v080` | 360° | 0% |  80% | 灰階 · V  80% |
 | `gray-v100` | 360° | 0% | 100% | 灰階 · V 100% |
 
-v1 合計 `240 + 5 = 245` 個可放置詞條的固定格位。色彩一律由 Flutter 的 `HSVColor.fromAHSV(1, h, s / 100, v / 100).toColor()` 產生；JSON 不儲存可推導的 RGB 或 HEX。
+v1 合計 `132 + 5 = 137` 個可放置詞條的固定格位。色彩一律由 Flutter 的 `HSVColor.fromAHSV(1, h, s / 100, v / 100).toColor()` 產生；JSON 不儲存可推導的 RGB 或 HEX。
 
 ## 3. 畫面與操作
 
-不一次展開 20 × 12 + 1 × 5 的矩陣，否則文字 Chip 沒有足夠寬度。採用「Hue 選擇器 + 當前 Hue 的可折疊區塊」：
+不一次展開 11 × 12 + 1 × 5 的矩陣，否則文字 Chip 沒有足夠寬度。採用「Hue 選擇器 + 當前 Hue 的可折疊區塊」：
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ 文字調色盤                                      [搜尋詞條……]     │
-│ Hue： [0°] [18°] [36°] … [342°]  （每個按鈕顯示對應色票）         │
+│ Hue： [0°] [18°] [54°] … [342°]  （每個按鈕顯示對應色票）         │
 ├────────────────────────────────────────────────────────────────┤
 │ H 198°                                                          │
 │ ┌─────────────────────────────────────────────────────────┐    │
@@ -78,7 +78,7 @@ v1 合計 `240 + 5 = 245` 個可放置詞條的固定格位。色彩一律由 Fl
 │ └─────────────────────────────────────────────────────────┘    │  └────────────────────────────────────────────────────────────────┘
 ```
 
-- Hue 選擇器用 `Wrap`；窄螢幕可使用水平捲動。每格除色票外都顯示數字，例如 `H 180°`，不只靠顏色表意。
+- Hue 選擇器用 `Wrap`；窄螢幕可使用水平捲動。每格除色票外都顯示數字，例如 `H 198°`，不只靠顏色表意。
 - 選定 Hue 後，以 `GridView.builder` / `SliverGrid` 顯示 12 張 SV 卡。建議 `maxCrossAxisExtent: 280`，使桌面呈 2–4 欄、手機呈 1 欄。
 - 灰階使用獨立的 `ExpansionTile` 區段，不隨 Hue 切換。
 - 色格卡必顯示 H/S/V、色票、詞條數與 Chip 流；長文字 Chip 可換行，不截斷使用者資料。
@@ -119,7 +119,7 @@ class PaletteStateData {
 }
 ```
 
-建立 immutable `PaletteSlotDefinition`，含 `id`、`kind`、`hue`、`saturation`、`value`、`sortOrder`。`allPaletteSlots` 是 240 個彩色 slot 與 5 個灰階 slot 的唯一來源，供 UI、驗證與序列化共同使用。entry ID 以現有 `uuid` 依賴產生，例如 `palette-entry-<uuid-v4>`。
+建立 immutable `PaletteSlotDefinition`，含 `id`、`kind`、`hue`、`saturation`、`value`、`sortOrder`。`allPaletteSlots` 是 132 個彩色 slot 與 5 個灰階 slot 的唯一來源，供 UI、驗證與序列化共同使用。entry ID 以現有 `uuid` 依賴產生，例如 `palette-entry-<uuid-v4>`。
 
 彩色 key 格式為 `h{HHH}-s{SSS}-v{VVV}`，例：`h018-s050-v100`；灰階 key 為 `gray-v{VVV}`，例：`gray-v020`。百分比固定是整數且補零。
 
@@ -217,11 +217,11 @@ Notifier 每次 mutation 建立新 snapshot，排程 240–300 ms debounce；`re
 
 ### Phase 1：資料核心
 
-1. 實作 Hue/SV/灰階定義、245 個 slot key 與測試。
+1. 實作 Hue/SV/灰階定義、137 個 slot key 與測試。
 2. 完成 `PaletteEntry`、JSON decoder/encoder、normalizer、seed asset。
 3. 完成 notifier 的 hydrate、add、rename、remove、restore、sort、flush。
 
-驗收：正確生成 20 個 Hue、12 組 SV、5 組灰階；JSON round-trip 保留 ID、文字、時間及 slot 順序。
+驗收：正確生成 11 個 Hue、12 組 SV、5 組灰階；JSON round-trip 保留 ID、文字、時間及 slot 順序。
 
 ### Phase 2：View
 
@@ -229,7 +229,7 @@ Notifier 每次 mutation 建立新 snapshot，排程 240–300 ms debounce；`re
 2. 實作 inline 新增/編輯、刪除/復原、排序與驗證。
 3. 加上 tooltip、semantics、keyboard focus order 與高對比文字。
 
-驗收：任一 245 格皆可新增、修改、刪除詞條；切換 Hue 不遺失草稿；搜尋可找到彩色與灰階中的詞條。
+驗收：任一 137 格皆可新增、修改、刪除詞條；切換 Hue 不遺失草稿；搜尋可找到彩色與灰階中的詞條。
 
 ### Phase 3：整合與品質
 
@@ -241,8 +241,8 @@ Notifier 每次 mutation 建立新 snapshot，排程 240–300 ms debounce；`re
 
 ## 8. 測試清單
 
-- Hue generator 只含 0–342、共 20 項且每項差 18。
-- SV preset 恰有 12 項，順序與規格表一致；`allPaletteSlots` 恰有 245 項且 key 唯一。
+- Hue 固定表為 `0, 18, 54, 90, 126, 162, 198, 234, 270, 306, 342`，共 11 項。
+- SV preset 恰有 12 項，順序與規格表一致；`allPaletteSlots` 恰有 137 項且 key 唯一。
 - `h000-s100-v020`、`h342-s020-v100`、`gray-v000`、`gray-v100` 存在；灰階 S 均為 0。
 - JSON round-trip 保留 slot 順序；空 slot 不寫出；未知 slot、壞 reference、孤立 entry 會被安全移除。
 - 空白、過長、同 slot 重複詞條會被拒絕；不同 slot 可保存同文字。
@@ -254,7 +254,7 @@ Notifier 每次 mutation 建立新 snapshot，排程 240–300 ms debounce；`re
 ## 9. 完成定義
 
 - 側欄可進入「文字調色盤」。
-- 分類精確含 20 Hue、12 組 S/V 與 5 組獨立灰階 Value。
+- 分類精確含 11 Hue、12 組 S/V 與 5 組獨立灰階 Value。
 - 每格均能以 Chip 新增、編輯、刪除、復原與排序文字詞條，並可搜尋。
 - 資料以獨立 `Data/Palettes.json` 持久化，首次由 asset seed 建立。
 - 格式錯誤、未知資料、寫檔失敗皆有安全處理；資料不會被靜默遺失。

@@ -85,8 +85,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
   ProjectIoStatus build() => const ProjectIoStatus.idle();
 
   Future<ProjectIoPayload> prepareProjectPayload(
-    ProjectData currentData,
-  ) async {
+    ProjectData currentData, {
+    bool regenerateProjectUuid = false,
+  }) async {
     final useCase = ref.read(projectFileUseCaseProvider);
     final baseInfoSnapshot = base_info_module.BaseInfoCodec.createSaveSnapshot(
       data: currentData.baseInfoData,
@@ -96,6 +97,9 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       currentData,
       baseInfoOverride: baseInfoSnapshot,
     );
+    if (regenerateProjectUuid) {
+      snapshotData.projectUUID = ProjectData.createProjectUUID();
+    }
     final xmlContent = await useCase.generateProjectXml(snapshotData);
     return ProjectIoPayload(snapshot: snapshotData, xmlContent: xmlContent);
   }
@@ -392,7 +396,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
 
       if (format == "xml") {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        buffer.writeln("<Project>");
+        buffer.writeln('<Project UUID="${snapshotData.projectUUID}">');
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
 
         if (selectedModules.contains("BaseInfo")) {

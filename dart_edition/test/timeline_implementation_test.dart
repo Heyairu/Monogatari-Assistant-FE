@@ -926,7 +926,7 @@ void main() {
     final saved = FileService.generateProjectXMLWithoutLatestSaveUpdate(
       parsed.data,
     );
-    expect(saved, contains("<ver>1.12</ver>"));
+    expect(saved, contains("<ver>1.14</ver>"));
     expect(saved, contains('TicksPerSmallBox="1"'));
     final reopened = FileService.parseProjectXMLWithMetadata(saved);
     expect(reopened.wasMigrated, isFalse);
@@ -1014,7 +1014,7 @@ void main() {
     final xml = FileService.generateProjectXMLWithoutLatestSaveUpdate(data);
     final parsed = FileService.parseProjectXMLWithMetadata(xml);
 
-    expect(xml, contains("<ver>1.12</ver>"));
+    expect(xml, contains("<ver>1.14</ver>"));
     expect(parsed.wasMigrated, isFalse);
     expect(parsed.data.timelineDocument.placements, isEmpty);
   });
