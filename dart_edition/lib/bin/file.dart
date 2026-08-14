@@ -306,12 +306,18 @@ class _SystemBridge {
     required String content,
   }) async {
     if (Platform.isAndroid) {
-      return await FilePicker.platform.saveFile(
-        dialogTitle: "儲存專案檔案",
-        fileName: defaultName,
-        type: FileType.any,
-        bytes: utf8.encode(content),
-      );
+      try {
+        // file_picker 8.x writes through ACTION_CREATE_DOCUMENT but returns a
+        // guessed Downloads path instead of the selected SAF content URI.
+        // Keeping that path makes every later scoped-storage write fail and
+        // reopens Save As. The app bridge returns the real persistable URI.
+        return await platform.invokeMethod<String>("saveProjectFile", {
+          "fileName": defaultName,
+          "content": content,
+        });
+      } on PlatformException catch (e) {
+        throw FileException("儲存 Android 專案檔案失敗: ${e.message}");
+      }
     } else if (Platform.isIOS) {
       return await FilePicker.platform.saveFile(
         dialogTitle: "儲存專案檔案",
@@ -1268,6 +1274,7 @@ class _ProjectParser {
 
     return ProjectParseResult(
       projectVersion: projectVersion,
+      sourceProjectUuid: projectUUID,
       data: migration.data,
       migrationWarnings: migration.warnings,
       wasMigrated: migration.wasMigrated || projectUUID == null,
@@ -2163,8 +2170,7 @@ class FileService {
           return projectFile;
         } catch (e) {
           debugPrint("SAF Write failed (URI might be invalid or expired): $e");
-          // Fallback to saveProjectAs if writing to URI fails
-          return await saveProjectAs(projectFile);
+          throw FileException("原儲存位置已無法寫入；請明確使用「另存為」重新選擇位置。原因：$e");
         }
       }
 
@@ -2178,9 +2184,10 @@ class FileService {
           projectFile.content = "";
           return projectFile;
         } catch (e) {
-          // 在移動設備上，如果直接寫入失敗（常見於外部存儲權限問題），則退回到另存新檔
-          // 這樣可以確保檔案能被儲存，雖然會跳出對話框，但優於儲存失敗
-          if (Platform.isAndroid || Platform.isIOS) {
+          // iOS retains its previous explicit recovery behavior. Android
+          // projects should use their persisted SAF URI and must never open a
+          // surprise Save As dialog when a known location becomes invalid.
+          if (Platform.isIOS) {
             return await saveProjectAs(projectFile);
           }
           rethrow;

@@ -8,6 +8,10 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array/>
 	<!-- 添加文件訪問權限 -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>

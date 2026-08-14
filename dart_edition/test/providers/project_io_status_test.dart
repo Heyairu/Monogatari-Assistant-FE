@@ -56,6 +56,7 @@ void main() {
   });
 
   test('loadProject parsing blocks editor until data is loaded', () async {
+    const sourceProjectUuid = '123e4567-e89b-42d3-a456-426614174000';
     final repository = _BlockingFileRepository();
     final container = ProviderContainer(
       overrides: [fileRepositoryProvider.overrideWithValue(repository)],
@@ -83,9 +84,13 @@ void main() {
     expect(container.read(editorCoordinatorProvider).isLoading, true);
 
     repository.loadCompleter.complete(
-      ProjectParseResult(projectVersion: '0.1.0', data: ProjectData.empty()),
+      ProjectParseResult(
+        projectVersion: '0.1.0',
+        sourceProjectUuid: sourceProjectUuid,
+        data: ProjectData.empty(projectUUID: sourceProjectUuid),
+      ),
     );
-    await loadFuture;
+    final loadResult = await loadFuture;
 
     final finishedStatus = container
         .read(projectIoControllerProvider)
@@ -93,6 +98,9 @@ void main() {
     expect(finishedStatus?.isParsing, false);
     expect(finishedStatus?.isBusy, false);
     expect(container.read(editorCoordinatorProvider).isLoading, false);
+    expect(loadResult.persistedXmlContent, '<Project />');
+    expect(loadResult.persistedProjectUuid, sourceProjectUuid);
+    expect(projectFile.content, isEmpty);
   });
 
   test('saveProjectAutoBackup does not retain a full XML baseline', () async {
@@ -173,6 +181,49 @@ void main() {
     expect(saveAsPayload.snapshot.projectUUID, isNotEmpty);
     expect(source.projectUUID, originalUuid);
   });
+
+  test(
+    'verified remote snapshot overwrites only the known current location',
+    () async {
+      const projectUuid = '123e4567-e89b-42d3-a456-426614174000';
+      const xml = '<Project UUID="$projectUuid"><ver>1.0</ver></Project>';
+      final repository = _BlockingFileRepository();
+      final container = ProviderContainer(
+        overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(container.dispose);
+      final current = ProjectFile(
+        fileName: 'same.mnproj',
+        filePath: 'C:/projects/same.mnproj',
+        content: '',
+      );
+
+      final overwrite = container
+          .read(projectIoControllerProvider.notifier)
+          .overwriteAndLoadExternalProjectSnapshot(
+            currentProject: current,
+            xmlContent: xml,
+          );
+      await repository.loadStarted.future;
+      repository.loadCompleter.complete(
+        ProjectParseResult(
+          projectVersion: '1.0',
+          sourceProjectUuid: projectUuid,
+          data: ProjectData.empty(projectUUID: projectUuid),
+        ),
+      );
+      final written = await repository.saveStarted.future;
+      expect(written.filePath, current.filePath);
+      expect(written.uri, current.uri);
+      expect(written.content, xml);
+      repository.saveCompleter.complete(written);
+
+      final result = await overwrite;
+      expect(result.projectFile.filePath, current.filePath);
+      expect(result.persistedProjectUuid, projectUuid);
+      expect(result.data.projectUUID, projectUuid);
+    },
+  );
 }
 
 class _BlockingFileRepository implements FileRepository {
@@ -334,6 +385,7 @@ class _BlockingFileRepository implements FileRepository {
   Future<ProjectParseResult> loadProjectParseResultFromXml(
     ProjectFile projectFile,
   ) {
+    projectFile.takeContent();
     if (!loadStarted.isCompleted) {
       loadStarted.complete(projectFile);
     }

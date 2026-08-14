@@ -19,6 +19,7 @@ import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
+import "../presentation/providers/p2p_sync_providers.dart";
 
 class SettingView extends ConsumerStatefulWidget {
   const SettingView({super.key});
@@ -65,6 +66,8 @@ class _SettingViewState extends ConsumerState<SettingView> {
     bool autoBackupEnabled,
     int autoBackupIntervalMinutes,
     int autoBackupMaxSizeMb,
+    bool allowSingleDevicePairingConfirmation,
+    bool allowPersistentP2pVerification,
   })
   get _settingsViewState => ref.watch(
     settingsStateProvider.select((state) {
@@ -79,6 +82,10 @@ class _SettingViewState extends ConsumerState<SettingView> {
         autoBackupEnabled: settings?.autoBackupEnabled ?? false,
         autoBackupIntervalMinutes: settings?.autoBackupIntervalMinutes ?? 5,
         autoBackupMaxSizeMb: settings?.autoBackupMaxSizeMb ?? 512,
+        allowSingleDevicePairingConfirmation:
+            settings?.allowSingleDevicePairingConfirmation ?? true,
+        allowPersistentP2pVerification:
+            settings?.allowPersistentP2pVerification ?? false,
       );
     }),
   );
@@ -171,7 +178,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
                     _buildAutoBackupSetting(),
                     const SizedBox(height: 8),
                     _buildPlaceholderSetting("語言設定", Icons.language),
-                    _buildPlaceholderSetting("文件同步", Icons.sync),
+                    _buildP2pSyncSetting(),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
                   ],
                 ),
@@ -180,6 +187,39 @@ class _SettingViewState extends ConsumerState<SettingView> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildP2pSyncSetting() {
+    return Column(
+      children: [
+        SwitchWithIconTitle(
+          key: const Key("p2p-single-device-confirmation-setting"),
+          title: "允許單端確認配對碼",
+          icon: Icons.phonelink_lock_outlined,
+          subtitle: "僅在兩台裝置都開啟時生效；任一台確認後，另一台會驗證簽章並自動回簽",
+          value: _settingsViewState.allowSingleDevicePairingConfirmation,
+          onChanged: (value) async {
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setAllowSingleDevicePairingConfirmation(value);
+            ref.read(p2pSyncProvider.notifier).handlePairingPreferenceChanged();
+          },
+        ),
+        SwitchWithIconTitle(
+          key: const Key("p2p-persistent-verification-setting"),
+          title: "持久驗證（14 天）",
+          icon: Icons.verified_user_outlined,
+          subtitle: "僅在兩台裝置都開啟時生效；期限內可自動驗證，每次成功連線會重新續簽 14 天",
+          value: _settingsViewState.allowPersistentP2pVerification,
+          onChanged: (value) async {
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setAllowPersistentP2pVerification(value);
+            ref.read(p2pSyncProvider.notifier).handlePairingPreferenceChanged();
+          },
+        ),
+      ],
     );
   }
 

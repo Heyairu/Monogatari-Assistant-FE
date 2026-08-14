@@ -50,6 +50,8 @@ class ProjectIoStatus {
 class ProjectLoadResult {
   final ProjectFile projectFile;
   final ProjectData data;
+  final String? persistedXmlContent;
+  final String? persistedProjectUuid;
   final String? projectVersion;
   final List<ProjectMigrationWarning> migrationWarnings;
   final bool wasMigrated;
@@ -57,6 +59,8 @@ class ProjectLoadResult {
   const ProjectLoadResult({
     required this.projectFile,
     required this.data,
+    this.persistedXmlContent,
+    this.persistedProjectUuid,
     this.projectVersion,
     this.migrationWarnings = const <ProjectMigrationWarning>[],
     this.wasMigrated = false,
@@ -188,6 +192,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     );
     try {
       final useCase = ref.read(projectFileUseCaseProvider);
+      final persistedXmlContent = projectFile.content;
       final parseResult = await useCase.loadProjectParseResultFromXml(
         projectFile,
       );
@@ -201,6 +206,122 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       return ProjectLoadResult(
         projectFile: projectFile,
         data: snapshot,
+        persistedXmlContent: persistedXmlContent.isEmpty
+            ? null
+            : persistedXmlContent,
+        persistedProjectUuid: parseResult.sourceProjectUuid,
+        projectVersion: parseResult.projectVersion,
+        migrationWarnings: parseResult.migrationWarnings,
+        wasMigrated: parseResult.wasMigrated,
+      );
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Saves an already-serialized, externally verified project snapshot to a
+  /// user-selected location and parses the exact bytes that were verified.
+  ///
+  /// Unlike the normal Save As flow this deliberately does not regenerate the
+  /// project UUID. The caller remains responsible for trust/session checks and
+  /// for deciding whether the returned project should replace editor state.
+  Future<ProjectLoadResult> saveAndLoadExternalProjectSnapshotAs({
+    required String suggestedFileName,
+    required String xmlContent,
+  }) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.saveProjectAs,
+        isSaving: true,
+      ),
+    );
+    try {
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final projectFile = ProjectFile(
+        fileName: suggestedFileName,
+        filePath: null,
+        content: xmlContent,
+      );
+      final savedProject = await useCase.saveProjectAs(projectFile);
+
+      // saveProjectAs consumes its transient payload. Parse the same verified
+      // XML from memory instead of reopening a platform URI with weaker or
+      // already-expired permissions.
+      savedProject.content = xmlContent;
+      final parseResult = await useCase.loadProjectParseResultFromXml(
+        savedProject,
+      );
+      final snapshot = snapshotProjectData(parseResult.data);
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.openProject,
+          message: "外部 snapshot 已另存並解析完成",
+        ),
+      );
+      return ProjectLoadResult(
+        projectFile: savedProject,
+        data: snapshot,
+        persistedXmlContent: xmlContent,
+        persistedProjectUuid: parseResult.sourceProjectUuid,
+        projectVersion: parseResult.projectVersion,
+        migrationWarnings: parseResult.migrationWarnings,
+        wasMigrated: parseResult.wasMigrated,
+      );
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Parses an already-verified snapshot and overwrites the currently opened
+  /// project at its known path/URI. The caller must obtain explicit user
+  /// confirmation before invoking this method.
+  Future<ProjectLoadResult> overwriteAndLoadExternalProjectSnapshot({
+    required ProjectFile currentProject,
+    required String xmlContent,
+  }) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.saveProject,
+        isSaving: true,
+        isParsing: true,
+      ),
+    );
+    try {
+      if (currentProject.isNewFile) {
+        throw FileException("目前專案沒有可安全覆蓋的既有儲存位置。");
+      }
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final parseFile = ProjectFile(
+        fileName: currentProject.fileName,
+        filePath: currentProject.filePath,
+        uri: currentProject.uri,
+        content: xmlContent,
+      );
+      final parseResult = await useCase.loadProjectParseResultFromXml(
+        parseFile,
+      );
+      final savedProject = await useCase.saveProjectToKnownLocation(
+        ProjectFile(
+          fileName: currentProject.fileName,
+          filePath: currentProject.filePath,
+          uri: currentProject.uri,
+          content: xmlContent,
+        ),
+      );
+      final snapshot = snapshotProjectData(parseResult.data);
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.openProject,
+          message: "遠端 snapshot 已覆蓋目前專案並解析完成",
+        ),
+      );
+      return ProjectLoadResult(
+        projectFile: savedProject,
+        data: snapshot,
+        persistedXmlContent: xmlContent,
+        persistedProjectUuid: parseResult.sourceProjectUuid,
         projectVersion: parseResult.projectVersion,
         migrationWarnings: parseResult.migrationWarnings,
         wasMigrated: parseResult.wasMigrated,

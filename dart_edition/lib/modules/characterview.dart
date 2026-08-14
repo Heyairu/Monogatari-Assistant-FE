@@ -2545,14 +2545,17 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(width: 8),
-        IconButton.filledTonal(
+        IconButton(
           key: const ValueKey("character-snapshot-toolbar-add"),
           tooltip: "新增快照",
           onPressed: () => _showAddSnapshotDialog(),
+          style: IconButton.styleFrom(
+            foregroundColor: Colors.green,
+          ),
           icon: const Icon(Icons.add_photo_alternate_outlined),
         ),
         const SizedBox(width: 4),
-        IconButton.filledTonal(
+        IconButton(
           key: const ValueKey("character-snapshot-toolbar-copy"),
           tooltip: "複製目前快照",
           onPressed: () => _showAddSnapshotDialog(
@@ -2561,7 +2564,22 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 ? "預設"
                 : selectedEntry.sceneName,
           ),
+          style: IconButton.styleFrom(
+            foregroundColor: Colors.green,
+          ),
           icon: const Icon(Icons.copy_all_outlined),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          key: const ValueKey("character-snapshot-toolbar-delete"),
+          tooltip: "刪除目前快照",
+          onPressed: selectedEntry.isBaseline
+              ? null
+              : () => _deleteSnapshot(selectedEntry.change!),
+          style: IconButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+          icon: const Icon(Icons.delete_outline),
         ),
       ],
     );

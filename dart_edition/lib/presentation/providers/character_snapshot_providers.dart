@@ -1,5 +1,6 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
+import "../../models/character_data.dart";
 import "../../models/character_snapshot_data.dart";
 import "project_state_providers.dart";
 import "timeline_providers.dart";
@@ -52,6 +53,43 @@ final currentCharacterSnapshotProvider =
         atTick: currentTick,
       );
     });
+
+/// The complete character-card projection at a historical Tick.
+///
+/// Each entry is resolved separately. This is important for relationship
+/// graphs: a connection comes from that character's own most recent snapshot
+/// at or before the selected Tick, rather than from the most recently changed
+/// character in the whole project.
+final characterDataAtSnapshotTickProvider =
+    Provider.family<Map<String, CharacterEntryData>, int>((ref, tick) {
+      final characters = ref.watch(characterDataProvider);
+      final baselines = ref.watch(characterStateBaselinesProvider);
+      final changes = ref.watch(characterStateChangesProvider);
+      final timeline = ref.watch(timelineDocumentProvider);
+      return Map<String, CharacterEntryData>.unmodifiable({
+        for (final entry in characters.entries)
+          entry.key: resolveCharacterSnapshot(
+            characterId: entry.key,
+            baseline: baselines[entry.key],
+            defaultState: CharacterSnapshotState.fromCharacterEntry(
+              entry.value,
+            ),
+            changes: changes,
+            timeline: timeline,
+            atTick: tick,
+          ).state.applyToCharacterEntry(entry.value),
+      });
+    });
+
+/// All story events that contain snapshot changes, ordered by their resolved
+/// timeline Tick. Consumers can use an event as a historical graph cursor.
+final characterSnapshotEventsProvider = Provider<List<CharacterSnapshotEvent>>(
+  (ref) => buildCharacterSnapshotEvents(
+    changes: ref.watch(characterStateChangesProvider),
+    timeline: ref.watch(timelineDocumentProvider),
+    sceneNames: ref.watch(characterSceneNamesProvider),
+  ),
+);
 
 final characterStateChangesAtCurrentTickProvider =
     Provider<List<ResolvedCharacterStateChange>>((ref) {

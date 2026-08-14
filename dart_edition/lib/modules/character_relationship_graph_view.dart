@@ -5,8 +5,9 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
 import "../models/character_data.dart";
+import "../models/character_snapshot_data.dart";
+import "../presentation/providers/character_snapshot_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
-import "../ui_library/dialogs.dart";
 import "character_relationship_editor.dart";
 import "character_relationship_graph_controller.dart";
 import "character_relationship_graph_mapper.dart";
@@ -76,6 +77,9 @@ class _CharacterRelationshipGraphViewState
   final FocusNode _searchFocusNode = FocusNode();
   Size _viewportSize = Size.zero;
   bool _initialGlobalPreviewScheduled = false;
+  String? _selectedSnapshotEventId;
+
+  bool get _isViewingSnapshot => _selectedSnapshotEventId != null;
 
   @override
   void initState() {
@@ -96,6 +100,7 @@ class _CharacterRelationshipGraphViewState
     _controller
       ..setNeighborsOnly(false)
       ..clearSelection();
+    _selectedSnapshotEventId = null;
     _initialGlobalPreviewScheduled = false;
   }
 
@@ -111,7 +116,15 @@ class _CharacterRelationshipGraphViewState
 
   @override
   Widget build(BuildContext context) {
-    final characters = ref.watch(characterDataProvider);
+    final snapshotEvents = ref.watch(characterSnapshotEventsProvider);
+    final selectedSnapshotEvent = _selectedSnapshotEvent(snapshotEvents);
+    final characters = selectedSnapshotEvent == null
+        ? ref.watch(characterDataProvider)
+        : ref.watch(
+            characterDataAtSnapshotTickProvider(
+              selectedSnapshotEvent.resolvedTick,
+            ),
+          );
     final graph = _mapper.map(characters);
     _discardMissingSelection(graph);
 
@@ -122,7 +135,7 @@ class _CharacterRelationshipGraphViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildToolbar(characters, graph),
+        _buildToolbar(characters, graph, snapshotEvents, selectedSnapshotEvent),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -133,6 +146,17 @@ class _CharacterRelationshipGraphViewState
         ),
       ],
     );
+  }
+
+  CharacterSnapshotEvent? _selectedSnapshotEvent(
+    List<CharacterSnapshotEvent> events,
+  ) {
+    final id = _selectedSnapshotEventId;
+    if (id == null) return null;
+    for (final event in events) {
+      if (event.id == id) return event;
+    }
+    return null;
   }
 
   void _discardMissingSelection(CharacterRelationshipGraphData graph) {
@@ -173,6 +197,8 @@ class _CharacterRelationshipGraphViewState
   Widget _buildToolbar(
     Map<String, CharacterEntryData> characters,
     CharacterRelationshipGraphData graph,
+    List<CharacterSnapshotEvent> snapshotEvents,
+    CharacterSnapshotEvent? selectedSnapshotEvent,
   ) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -192,8 +218,48 @@ class _CharacterRelationshipGraphViewState
               children: [
                 Padding(
                   padding: EdgeInsets.all(12),
-                  child: LargeTitle(icon: Icons.people_alt_rounded, text: "關係設定"),
+                  child: LargeTitle(
+                    icon: Icons.people_alt_rounded,
+                    text: "關係設定",
+                  ),
                 ),
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: AppDropdownField<String>(
+                    key: const ValueKey("relationship-snapshot-selector"),
+                    value: selectedSnapshotEvent?.id ?? "__current__",
+                    labelText: "關係快照",
+                    options: [
+                      const DropdownOption(
+                        value: "__current__",
+                        label: "預設角色資料",
+                      ),
+                      for (final event in snapshotEvents)
+                        DropdownOption(
+                          value: event.id,
+                          label:
+                              "Tick ${event.resolvedTick} · ${event.sceneName}（${event.changedCharacterIds.length} 位角色變更）",
+                        ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedSnapshotEventId = value == "__current__"
+                            ? null
+                            : value;
+                      });
+                    },
+                  ),
+                ),
+                if (selectedSnapshotEvent != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: AppNoticeBanner(
+                      message:
+                          "正在檢視 Tick ${selectedSnapshotEvent.resolvedTick} 的關係快照；每位角色皆採用自己在此 Tick 前最後一次變更的關係。",
+                      icon: Icons.history_toggle_off_outlined,
+                      tone: AppFeedbackTone.info,
+                    ),
+                  ),
                 SizedBox(
                   width: constraints.maxWidth,
                   child: RawAutocomplete<String>(
@@ -307,7 +373,9 @@ class _CharacterRelationshipGraphViewState
                 ),
                 IconButton(
                   tooltip: "新增關係",
-                  onPressed: () => _addRelationship(characters),
+                  onPressed: _isViewingSnapshot
+                      ? null
+                      : () => _addRelationship(characters),
                   icon: const Icon(Icons.add_link),
                 ),
                 IconButton(
@@ -519,7 +587,9 @@ class _CharacterRelationshipGraphViewState
                     const SizedBox(width: 10),
                     const Expanded(child: Text("目前沒有關係；可在此新增，或回到角色設定編輯。")),
                     TextButton.icon(
-                      onPressed: () => _addRelationship(characters),
+                      onPressed: _isViewingSnapshot
+                          ? null
+                          : () => _addRelationship(characters),
                       icon: const Icon(Icons.add),
                       label: const Text("新增"),
                     ),
@@ -826,13 +896,19 @@ class _CharacterRelationshipGraphViewState
           runSpacing: 8,
           children: [
             FilledButton.tonalIcon(
-              onPressed: () =>
-                  _addRelationship(characters, sourceCharacterId: node.id),
+              onPressed: _isViewingSnapshot
+                  ? null
+                  : () => _addRelationship(
+                      characters,
+                      sourceCharacterId: node.id,
+                    ),
               icon: const Icon(Icons.add_link),
               label: const Text("新增關係"),
             ),
             OutlinedButton.icon(
-              onPressed: () => _createTargetFromNode(node.id),
+              onPressed: _isViewingSnapshot
+                  ? null
+                  : () => _createTargetFromNode(node.id),
               icon: const Icon(Icons.person_add_alt),
               label: const Text("建立目標人物"),
             ),
@@ -885,14 +961,18 @@ class _CharacterRelationshipGraphViewState
           runSpacing: 8,
           children: [
             FilledButton.tonalIcon(
-              onPressed: () => _editRelationship(characters, edge),
+              onPressed: _isViewingSnapshot
+                  ? null
+                  : () => _editRelationship(characters, edge),
               icon: const Icon(Icons.edit_outlined),
               label: const Text("編輯"),
             ),
             if (edge.resolutionKind ==
                 CharacterRelationshipResolutionKind.unresolved)
               OutlinedButton.icon(
-                onPressed: () => _createCharacterForEdge(edge),
+                onPressed: _isViewingSnapshot
+                    ? null
+                    : () => _createCharacterForEdge(edge),
                 icon: const Icon(Icons.person_add_alt),
                 label: const Text("建立人物"),
               ),
@@ -900,7 +980,9 @@ class _CharacterRelationshipGraphViewState
               style: TextButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.error,
               ),
-              onPressed: () => _deleteRelationship(edge),
+              onPressed: _isViewingSnapshot
+                  ? null
+                  : () => _deleteRelationship(edge),
               icon: const Icon(Icons.delete_outline),
               label: const Text("刪除"),
             ),

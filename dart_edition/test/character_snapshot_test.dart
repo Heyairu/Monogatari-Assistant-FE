@@ -8,6 +8,7 @@ import "package:monogatari_assistant/models/outline_data.dart";
 import "package:monogatari_assistant/models/project_migrator.dart";
 import "package:monogatari_assistant/models/timeline_data.dart";
 import "package:monogatari_assistant/modules/characterview.dart";
+import "package:monogatari_assistant/presentation/providers/character_snapshot_providers.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 
 void main() {
@@ -100,6 +101,92 @@ void main() {
       expect(atA.state.relationships, isEmpty);
       expect(atB.state.relationships.single.person, "守衛");
     });
+
+    test(
+      "relationship snapshot events group changes and resolve every character at its own latest Tick",
+      () {
+        const alice = "alice";
+        const bob = "bob";
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container
+            .read(timelineDocumentProvider.notifier)
+            .setDocument(timeline());
+        container.read(characterDataProvider.notifier).setCharacterData({
+          alice: const CharacterEntryData(
+            characterId: alice,
+            displayName: "愛麗絲",
+            relationships: [
+              CharacterRelationship(person: "鮑伯", relationship: "陌生人"),
+            ],
+          ),
+          bob: const CharacterEntryData(
+            characterId: bob,
+            displayName: "鮑伯",
+            relationships: [
+              CharacterRelationship(person: "愛麗絲", relationship: "陌生人"),
+            ],
+          ),
+        });
+        container.read(characterStateChangesProvider.notifier).setChanges([
+          CharacterStateChange(
+            stateChangeId: "alice-at-a",
+            characterId: alice,
+            sceneUUID: sceneA,
+            sourcePlacementUUID: "placement-a",
+            fallbackTick: 10,
+            patch: CharacterStatePatch(
+              relationships: const [
+                CharacterRelationship(person: "鮑伯", relationship: "盟友"),
+              ],
+            ),
+          ),
+          CharacterStateChange(
+            stateChangeId: "bob-at-b",
+            characterId: bob,
+            sceneUUID: sceneB,
+            sourcePlacementUUID: "placement-b",
+            fallbackTick: 20,
+            patch: CharacterStatePatch(
+              relationships: const [
+                CharacterRelationship(person: "愛麗絲", relationship: "信任"),
+              ],
+            ),
+          ),
+          CharacterStateChange(
+            stateChangeId: "alice-at-a-status",
+            characterId: alice,
+            sceneUUID: sceneA,
+            sourcePlacementUUID: "placement-a",
+            fallbackTick: 10,
+            sequence: 1,
+            patch: CharacterStatePatch(
+              statusEntries: const [
+                CharacterProfileTableEntry(name: "所在地", description: "城門"),
+              ],
+            ),
+          ),
+        ]);
+
+        final events = container.read(characterSnapshotEventsProvider);
+        expect(events.map((event) => event.resolvedTick), [10, 20]);
+        expect(events.first.stateChangeIds, hasLength(2));
+        expect(events.first.changedCharacterIds, {alice});
+        expect(events.last.changedCharacterIds, {bob});
+
+        final atFirstEvent = container.read(
+          characterDataAtSnapshotTickProvider(10),
+        );
+        expect(atFirstEvent[alice]!.relationships.single.relationship, "盟友");
+        expect(atFirstEvent[bob]!.relationships.single.relationship, "陌生人");
+
+        final atSecondEvent = container.read(
+          characterDataAtSnapshotTickProvider(20),
+        );
+        expect(atSecondEvent[alice]!.relationships.single.relationship, "盟友");
+        expect(atSecondEvent[bob]!.relationships.single.relationship, "信任");
+      },
+    );
 
     test(
       "snapshot follows its Scene placement and falls back when removed",

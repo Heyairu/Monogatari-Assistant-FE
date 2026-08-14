@@ -1,7 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 16 Local Network Protection opt-in uses this temporary
+         permission. Apps targeting Android 17 must migrate to
+         ACCESS_LOCAL_NETWORK instead. -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:maxSdkVersion="36"
+        android:usesPermissionFlags="neverForLocation" />
     <application
         android:label="物語Assistant"
         android:name="${applicationName}"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

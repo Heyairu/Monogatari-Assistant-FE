@@ -96,12 +96,14 @@ class ProjectData {
 
 class ProjectParseResult {
   final String? projectVersion;
+  final String? sourceProjectUuid;
   final ProjectData data;
   final List<ProjectMigrationWarning> migrationWarnings;
   final bool wasMigrated;
 
   const ProjectParseResult({
     required this.projectVersion,
+    this.sourceProjectUuid,
     required this.data,
     this.migrationWarnings = const <ProjectMigrationWarning>[],
     this.wasMigrated = false,

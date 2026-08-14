@@ -31,10 +31,16 @@ import "bin/findreplace.dart";
 import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
+import "data/p2p/p2p_snapshot_quarantine.dart";
+import "domain/models/p2p_sync_models.dart";
+import "domain/models/p2p_revision_models.dart";
+import "domain/models/p2p_snapshot_models.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_history_provider.dart";
+import "presentation/providers/p2p_sync_providers.dart";
+import "presentation/widgets/p2p_conflict_resolution_dialog.dart";
 import "presentation/providers/project_snapshot_utils.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/timeline_providers.dart";
@@ -67,6 +73,8 @@ typedef _CoordinatorUiEventState = ({
   int errorEventId,
   String? errorMessage,
 });
+
+enum _P2pSnapshotApplyChoice { cancel, overwriteCurrent, saveAs }
 
 class _ProjectIoBusyIndicator extends ConsumerWidget {
   const _ProjectIoBusyIndicator();
@@ -353,7 +361,8 @@ class ContentView extends ConsumerStatefulWidget {
   ConsumerState<ContentView> createState() => _ContentViewState();
 }
 
-class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
+class _ContentViewState extends ConsumerState<ContentView>
+    with WindowListener, WidgetsBindingObserver {
   // 狀態變數
   int slidePageCounts = 15;
   int slidePageIndexCurrent = 0;
@@ -419,6 +428,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   late ProjectIoSessionToken _projectIoSession;
   bool _isProjectSwitching = false;
   bool _isApplyingProjectHistory = false;
+  bool _isP2pProjectStatusPublishScheduled = false;
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
   );
@@ -667,6 +677,12 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(p2pSyncProvider.notifier).initialize());
+      _publishLocalP2pProjectStatusNow();
+    });
     _projectIoSession = _projectIoCoordinator.beginSession("");
     _wordCountService.addListener(_handleWordCountServiceChanged);
 
@@ -750,6 +766,28 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
                   next.autoBackupIntervalMinutes) {
             _configureAutoBackupTimer(next);
           }
+        },
+      ),
+    );
+
+    _subscriptions.add(
+      ref.listenManual<ProjectFile?>(currentProjectFileProvider, (
+        previous,
+        next,
+      ) {
+        _publishLocalP2pProjectStatus();
+      }),
+    );
+    _subscriptions.add(
+      ref.listenManual<String>(projectUuidProvider, (previous, next) {
+        _publishLocalP2pProjectStatus();
+      }),
+    );
+    _subscriptions.add(
+      ref.listenManual<bool>(
+        editorCoordinatorProvider.select((state) => state.hasUnsavedChanges),
+        (previous, next) {
+          _publishLocalP2pProjectStatus();
         },
       ),
     );
@@ -920,7 +958,17 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(p2pSyncProvider.notifier).handleAppResumed());
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     CharacterDraftSessionCoordinator.instance.flushAndClose(
       _projectSessionVersion,
     );
@@ -1041,12 +1089,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       final session = _projectIoSession;
       final revision = _projectDataRevision;
       final currentData = _collectProjectData();
+      ProjectIoPayload? persistedPayload;
       final runResult = await _projectIoCoordinator.run(session, () async {
         final payload = await _sharedProjectIoPayload(
           session: session,
           revision: revision,
           data: currentData,
         );
+        persistedPayload = payload;
         return ref
             .read(projectIoControllerProvider.notifier)
             .saveProjectAutoSave(
@@ -1065,6 +1115,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (_projectDataRevision == revision) {
         _markAsSaved();
       }
+      await _recordP2pPersistedRevision(persistedPayload);
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
     } catch (error, stackTrace) {
       debugPrint("AutoSave failed: $error\n$stackTrace");
@@ -2048,12 +2099,395 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
   }
 
   Widget _buildWelcomeView() {
+    final project = currentProject;
+    final projectUuid = ref.watch(projectUuidProvider);
+    final hasPersistentLocation =
+        project != null &&
+        ((project.filePath?.trim().isNotEmpty ?? false) ||
+            (project.uri?.trim().isNotEmpty ?? false));
     return WelcomeModule.WelcomeView(
       onNewProject: _newProject,
       onOpenProject: _openProject,
       onOpenRecentProject: _openRecentProject,
       onDeleteRecentProject: _deleteRecentProject,
+      localP2pProject: project == null
+          ? null
+          : P2pProjectStatus(
+              fileName: project.fullFileName,
+              hasPersistentLocation: hasPersistentLocation,
+              hasUnsavedChanges: hasUnsavedChanges,
+              projectUuid: projectUuid,
+              isPersistedSnapshotValidated: hasPersistentLocation,
+            ),
+      onSaveProject: _saveProject,
+      onSaveProjectAs: _saveProjectAs,
+      onChooseSyncProject: _openProject,
+      onApplyVerifiedP2pSnapshot: _applyVerifiedP2pSnapshot,
+      onResolveConcurrentP2pSnapshot: _resolveConcurrentP2pSnapshot,
     );
+  }
+
+  Future<bool> _resolveConcurrentP2pSnapshot(
+    P2pVerifiedSnapshot snapshot,
+  ) async {
+    if (_isProjectSwitching || !mounted || currentProject == null) return false;
+    final notifier = ref.read(p2pSyncProvider.notifier);
+    final plan = await notifier.prepareConcurrentMerge(snapshot);
+    if (!mounted || plan == null) {
+      _showError(
+        ref.read(p2pSyncProvider).revisionMetadataError ?? "無法準備三方合併。",
+      );
+      return false;
+    }
+    final resolution = plan.conflicts.isEmpty
+        ? P2pConflictResolutionResult(const <String, P2pConflictSide>{})
+        : await P2pConflictResolutionDialog.show(
+            context,
+            conflicts: plan.conflicts,
+          );
+    if (!mounted || resolution == null) return false;
+    final syncState = ref.read(p2pSyncProvider);
+    final graph = syncState.localRevisionGraph;
+    final activeMergeSession = syncState.trustedPeer == null
+        ? ""
+        : "${syncState.trustedPeer!.deviceId}:${plan.localRevision.revisionId}:${plan.remoteRevision.revisionId}";
+    if (graph == null ||
+        !syncState.hasAuthenticatedTransport ||
+        !plan.matchesHeads(
+          activeSessionId: activeMergeSession,
+          headRevisionIds: graph.headIds,
+        )) {
+      _showError("合併期間 revision heads 已變更；未套用過期的衝突選擇。");
+      return false;
+    }
+
+    late final ProjectData resolvedData;
+    try {
+      resolvedData = plan.apply(resolution);
+    } catch (error) {
+      _showError("無法套用衝突選擇：$error");
+      return false;
+    }
+    _isProjectSwitching = true;
+    final session = _projectIoSession;
+    try {
+      final runResult = await _projectIoCoordinator.run(session, () async {
+        final controller = ref.read(projectIoControllerProvider.notifier);
+        final payload = await controller.prepareProjectPayload(
+          resolvedData,
+          regenerateProjectUuid: false,
+        );
+        final saved = await controller.saveProject(
+          currentProject: currentProject,
+          currentData: resolvedData,
+          forceSaveAs: false,
+          preparedPayload: payload,
+        );
+        return (saved: saved, payload: payload);
+      });
+      final result = runResult.value;
+      if (!mounted ||
+          result == null ||
+          !_projectIoCoordinator.isCurrent(session)) {
+        return false;
+      }
+      final resolvedGraph = await notifier.recordResolvedSnapshot(
+        parentRevisionIds: <String>[
+          plan.localRevision.revisionId,
+          plan.remoteRevision.revisionId,
+        ],
+        xmlContent: result.payload.xmlContent,
+        formatVersion: FileService.projectVersion,
+      );
+      if (!mounted || resolvedGraph == null) {
+        _showError("合併文件已寫入，但 resolve revision 建立失敗；請立即重試同步以復原 metadata。");
+        return false;
+      }
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(resolvedData, _settingsState.wordCountMode);
+      setState(() {
+        currentProject = result.saved;
+        _applyProjectData(resolvedData, initialState);
+      });
+      _markAsSaved();
+      _updateAllWordCounts();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      _showMessage("欄位衝突已解決並建立雙 parent revision；正在等待對方 ACK。");
+      return true;
+    } catch (error) {
+      if (mounted) _showError("無法保存 resolve revision：$error");
+      return false;
+    } finally {
+      _isProjectSwitching = false;
+    }
+  }
+
+  Future<bool> _applyVerifiedP2pSnapshot(P2pVerifiedSnapshot snapshot) async {
+    if (_isProjectSwitching || !mounted) return false;
+    if (!_isCurrentP2pSnapshot(snapshot)) {
+      _showError("同步 session 或遠端 revision 已變更，請重新下載 snapshot。");
+      return false;
+    }
+
+    final currentFile = currentProject;
+    final currentName = currentFile?.fullFileName;
+    final canOverwriteCurrent =
+        currentFile != null &&
+        !currentFile.isNewFile &&
+        ref.read(projectUuidProvider).trim().toLowerCase() ==
+            snapshot.manifest.projectUuid;
+    final choice = await showDialog<_P2pSnapshotApplyChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(canOverwriteCurrent ? "覆蓋目前專案？" : "儲存並開啟遠端版本？"),
+        content: Text(
+          canOverwriteCurrent
+              ? "遠端 snapshot 已完整驗證，且 UUID 與目前的「$currentName」相同。繼續會以遠端版本覆蓋此檔案；此動作無法由檔案系統復原。您也可以另存副本。"
+              : currentName == null
+              ? "遠端 snapshot 已完整驗證。請選擇儲存位置；若選擇既有檔案，確認後會覆蓋該檔案。取消不會修改目前編輯器。"
+              : "遠端 snapshot 已完整驗證，但目前文件不能安全地直接覆蓋。請另存副本；若選擇既有檔案，確認後會覆蓋該檔案。",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_P2pSnapshotApplyChoice.cancel),
+            child: const Text("取消"),
+          ),
+          if (canOverwriteCurrent)
+            FilledButton.tonal(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(_P2pSnapshotApplyChoice.saveAs),
+              child: const Text("另存副本"),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(
+              canOverwriteCurrent
+                  ? _P2pSnapshotApplyChoice.overwriteCurrent
+                  : _P2pSnapshotApplyChoice.saveAs,
+            ),
+            child: Text(canOverwriteCurrent ? "確認覆蓋" : "選擇儲存位置"),
+          ),
+        ],
+      ),
+    );
+    if (choice == null ||
+        choice == _P2pSnapshotApplyChoice.cancel ||
+        !mounted) {
+      return false;
+    }
+    if (!_isCurrentP2pSnapshot(snapshot)) {
+      _showError("確認期間同步 session 已變更，未寫入任何專案。");
+      return false;
+    }
+
+    if (FileService.isProjectVersionNewerThanSupported(
+      snapshot.manifest.formatVersion,
+    )) {
+      final shouldContinue =
+          await ProjectManager.showVersionCompatibilityDialog(
+            context,
+            fileVersion: snapshot.manifest.formatVersion,
+            supportedVersion: FileService.projectVersion,
+          );
+      if (!mounted || !shouldContinue || !_isCurrentP2pSnapshot(snapshot)) {
+        return false;
+      }
+    }
+
+    _isProjectSwitching = true;
+    final switchSession = _projectIoCoordinator.beginSession(
+      "switch:p2p:${snapshot.manifest.revisionId}",
+    );
+    _projectIoSession = switchSession;
+    try {
+      final remoteName = ref
+          .read(p2pSyncProvider)
+          .remoteProjectOffer
+          ?.fileName
+          ?.trim();
+      final suggestedName = remoteName == null || remoteName.isEmpty
+          ? "P2P_${snapshot.manifest.projectUuid.substring(0, 8)}.mnproj"
+          : remoteName;
+      final runResult = await _projectIoCoordinator.run(switchSession, () {
+        final controller = ref.read(projectIoControllerProvider.notifier);
+        if (choice == _P2pSnapshotApplyChoice.overwriteCurrent &&
+            currentFile != null) {
+          return controller.overwriteAndLoadExternalProjectSnapshot(
+            currentProject: currentFile,
+            xmlContent: snapshot.xmlContent,
+          );
+        }
+        return controller.saveAndLoadExternalProjectSnapshotAs(
+          suggestedFileName: suggestedName,
+          xmlContent: snapshot.xmlContent,
+        );
+      });
+      final loadResult = runResult.value;
+      if (!mounted ||
+          loadResult == null ||
+          !_projectIoCoordinator.isCurrent(switchSession) ||
+          !_isCurrentP2pSnapshot(snapshot)) {
+        if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
+          _showError("snapshot 已寫入，但同步 session 已失效，因此未切換目前編輯器。");
+        }
+        return false;
+      }
+
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(loadResult.data, _settingsState.wordCountMode);
+      setState(() {
+        _resetProjectSessionUiState();
+        currentProject = loadResult.projectFile;
+        _resetAutoBackupBaseline();
+        _applyProjectData(loadResult.data, initialState);
+      });
+      final activeProjectSession = _beginProjectIoSession(
+        loadResult.projectFile,
+      );
+      _updateAllWordCounts();
+      for (final warning in loadResult.migrationWarnings) {
+        debugPrint(
+          "P2P project migration warning [${warning.code}]: ${warning.message}",
+        );
+      }
+      _showMessage(
+        choice == _P2pSnapshotApplyChoice.overwriteCurrent
+            ? "遠端 snapshot 已覆蓋並開啟：${loadResult.projectFile.nameWithoutExtension}"
+            : "遠端 snapshot 已另存並開啟：${loadResult.projectFile.nameWithoutExtension}",
+      );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return false;
+      }
+      _resetProjectHistory();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      await _editorCoordinatorNotifier.recordRecentProject(
+        loadResult.projectFile,
+      );
+      return mounted &&
+          _projectIoCoordinator.isCurrent(activeProjectSession) &&
+          _isCurrentP2pSnapshot(snapshot);
+    } catch (error) {
+      if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
+        final message = error.toString();
+        if (!message.contains("另存檔案已取消")) {
+          _showError("無法儲存或開啟遠端 snapshot：$message");
+        }
+        _beginProjectIoSession(currentProject);
+      }
+      return false;
+    } finally {
+      if (_projectIoCoordinator.isCurrent(switchSession)) {
+        _beginProjectIoSession(currentProject);
+      }
+      _isProjectSwitching = false;
+    }
+  }
+
+  bool _isCurrentP2pSnapshot(P2pVerifiedSnapshot snapshot) {
+    final syncState = ref.read(p2pSyncProvider);
+    return syncState.hasAuthenticatedTransport &&
+        syncState.sessionProjectUuid == snapshot.manifest.projectUuid &&
+        syncState.remoteSnapshotManifest == snapshot.manifest &&
+        syncState.snapshotManifestStatus ==
+            P2pSnapshotManifestStatus.available &&
+        syncState.revisionSummaryRelation ==
+            P2pRevisionSummaryRelation.remoteAhead;
+  }
+
+  Future<void> _recordP2pPersistedRevision(ProjectIoPayload? payload) async {
+    if (payload == null) return;
+    final recorded = await ref
+        .read(p2pSyncProvider.notifier)
+        .recordPersistedSnapshot(
+          projectUuid: payload.snapshot.projectUUID,
+          xmlContent: payload.xmlContent,
+          formatVersion: FileService.projectVersion,
+        );
+    if (!recorded) {
+      debugPrint(
+        "Project saved, but P2P revision metadata could not be recorded.",
+      );
+    }
+  }
+
+  Future<void> _ensureP2pBaselineForLoadedProject(
+    ProjectLoadResult loadResult,
+    ProjectIoSessionToken session,
+  ) async {
+    if (!mounted || !_projectIoCoordinator.isCurrent(session)) return;
+    final xmlContent = loadResult.persistedXmlContent;
+    final sourceProjectUuid = loadResult.persistedProjectUuid
+        ?.trim()
+        .toLowerCase();
+    final loadedProjectUuid = loadResult.data.projectUUID.trim().toLowerCase();
+    final formatVersion = loadResult.projectVersion?.trim();
+    final hasExactPersistedIdentity =
+        xmlContent != null &&
+        xmlContent.isNotEmpty &&
+        sourceProjectUuid != null &&
+        sourceProjectUuid == loadedProjectUuid &&
+        P2pProjectStatus.isValidProjectUuid(sourceProjectUuid) &&
+        formatVersion != null &&
+        formatVersion.isNotEmpty;
+    if (!hasExactPersistedIdentity) {
+      debugPrint(
+        "Skipped automatic P2P baseline: persisted XML needs a normal save to establish an exact UUID/version identity.",
+      );
+      return;
+    }
+
+    // Publish the newly loaded file before recording. This makes the notifier
+    // reject a late result if the user switches projects during the write.
+    _publishLocalP2pProjectStatusNow();
+    final recorded = await ref
+        .read(p2pSyncProvider.notifier)
+        .recordPersistedSnapshot(
+          projectUuid: sourceProjectUuid,
+          xmlContent: xmlContent,
+          formatVersion: formatVersion,
+        );
+    if (!mounted || !_projectIoCoordinator.isCurrent(session)) return;
+    if (!recorded) {
+      debugPrint("Automatic P2P baseline could not be recorded.");
+    }
+  }
+
+  void _publishLocalP2pProjectStatus() {
+    if (!mounted || _isP2pProjectStatusPublishScheduled) return;
+    _isP2pProjectStatusPublishScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isP2pProjectStatusPublishScheduled = false;
+      if (!mounted) return;
+      _publishLocalP2pProjectStatusNow();
+    });
+  }
+
+  void _publishLocalP2pProjectStatusNow() {
+    final project = ref.read(currentProjectFileProvider);
+    final hasPersistentLocation =
+        project != null &&
+        ((project.filePath?.trim().isNotEmpty ?? false) ||
+            (project.uri?.trim().isNotEmpty ?? false));
+    ref
+        .read(p2pSyncProvider.notifier)
+        .updateLocalProjectStatus(
+          project == null
+              ? null
+              : P2pProjectStatus(
+                  fileName: project.fullFileName,
+                  hasPersistentLocation: hasPersistentLocation,
+                  hasUnsavedChanges: ref
+                      .read(editorCoordinatorProvider)
+                      .hasUnsavedChanges,
+                  projectUuid: ref.read(projectUuidProvider),
+                  isPersistedSnapshotValidated: hasPersistentLocation,
+                ),
+        );
   }
 
   // 各個頁面的建構方法（符合 Material Design）
@@ -2854,6 +3288,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _resetProjectHistory();
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
+      await _ensureP2pBaselineForLoadedProject(
+        loadResult,
+        activeProjectSession,
+      );
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
+
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
         return;
@@ -2974,6 +3416,14 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       _resetProjectHistory();
       _editorCoordinatorNotifier.resetAfterProjectLoaded();
 
+      await _ensureP2pBaselineForLoadedProject(
+        loadResult,
+        activeProjectSession,
+      );
+      if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
+        return;
+      }
+
       await _editorCoordinatorNotifier.recordRecentProject(projectFile);
       if (!mounted || !_projectIoCoordinator.isCurrent(activeProjectSession)) {
         return;
@@ -3009,6 +3459,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
     final session = _projectIoSession;
     final revision = _projectDataRevision;
     final currentData = _collectProjectData();
+    ProjectIoPayload? persistedPayload;
 
     try {
       final runResult = await _projectIoCoordinator.run(session, () async {
@@ -3017,6 +3468,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
           revision: revision,
           data: currentData,
         );
+        persistedPayload = payload;
         return ref
             .read(projectIoControllerProvider.notifier)
             .saveProject(
@@ -3039,6 +3491,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
       if (_projectIdentity(savedProject) != session.projectIdentity) {
         _beginProjectIoSession(savedProject);
       }
+      await _recordP2pPersistedRevision(persistedPayload);
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       if (!mounted) {
         return;
@@ -3096,6 +3549,7 @@ class _ContentViewState extends ConsumerState<ContentView> with WindowListener {
         _editorCoordinatorNotifier.markAsModified();
       }
       _beginProjectIoSession(savedProject);
+      await _recordP2pPersistedRevision(saveAsPayload);
       await _editorCoordinatorNotifier.recordRecentProject(savedProject);
       if (!mounted) {
         return;

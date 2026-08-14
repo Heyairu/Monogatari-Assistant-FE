@@ -23,6 +23,7 @@ void main() {
     final result = FileService.parseProjectXMLWithMetadata(xmlContent);
 
     expect(result.projectVersion, "9.99");
+    expect(result.sourceProjectUuid, "123e4567-e89b-42d3-a456-426614174000");
     expect(result.data.projectUUID, "123e4567-e89b-42d3-a456-426614174000");
     expect(result.data.segmentsData, hasLength(1));
     expect(result.data.segmentsData.first.segmentName, "Part 1");
@@ -69,6 +70,7 @@ void main() {
     );
 
     expect(result.data.projectUUID, isNotEmpty);
+    expect(result.sourceProjectUuid, isNull);
     expect(result.wasMigrated, true);
   });
 }

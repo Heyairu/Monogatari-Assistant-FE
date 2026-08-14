@@ -30,13 +30,15 @@
 
 		{"content": "欸嘿啾咪～","source": "《緋染天空》茅森月歌"},
 
-		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "Monogatari Assistant"},
-		{"content": "外觀可以在設定頁面修改。","source": "Monogatari Assistant"},
-		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "Monogatari Assistant"},
-		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant"},
-		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant"},
-		{"content": "Beta 8 介面重大改變！","source": "Monogatari Assistant"},
-		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant"},
+		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "MonoAshi"},
+		{"content": "外觀可以在設定頁面修改。","source": "MonoAshi"},
+		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "MonoAshi"},
+		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "MonoAshi"},
+		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "MonoAshi"},
+		{"content": "Beta 8 介面重大改變！","source": "MonoAshi"},
+		{"content": "文字 Palettes 參考了蔡淇華的文字調色盤原理，採用 MonoAshi Pastal* Scheme(TM)打造。","source": "MonoAshi"},
+		{"content": "同步功能採用了P2P架構。","source": "MonoAshi"},
+		{"content": "平沢憂並不會幫妳寫稿。\n（畢竟你不是小唯）","source": "MonoAshi 關心您"},
 		{"content": "我恨蛸壺屋。","source": "Heyairu"},
 
 		{"content": "Never gonna give you up,\nNever gonna let you down,\nNever gonna run around and desert you.","source":"Rick Astley"},
@@ -46,6 +48,9 @@
 		{"content": "實驗是檢驗真理的唯一試金石。","source":"胡適（1891-1962）"},
 		{"content": "生於憂患，死於空難","source":"徐志摩（1897-1931）並沒有說過這句話"},
 		{"content": "悄悄的我走了，正如我悄悄的來；我揮一揮衣袖，不帶走一片雲彩。","source":"徐志摩（1897-1931）"},
+		{"content": "Eureka!","source":"阿基米德（287-212 BC）"},
+		{"content": "不要碰我的圓！","source":"阿基米德（287-212 BC）"},
+		{"content": "給我開槓桿，我可以賠掉整個地球","source":"阿基米德（287-212 BC）並沒有說過這句話"},
 
 		{"content": "忠就是真誠。勤就是勤勞奮進。\n宏就是包容寬大。毅就是堅忍卓絕。","source":"板橋高中"},
 		{"content": "看　古今中外　有志者畢竟成功。","source":"板橋高中"},

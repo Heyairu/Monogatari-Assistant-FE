@@ -363,6 +363,35 @@ class CharacterSnapshotTimelineEntry {
   });
 }
 
+/// A story event that contains one or more character snapshot changes.
+///
+/// Relationship views use [resolvedTick] as their historical cursor. At that
+/// cursor every character is resolved independently, so an unchanged
+/// character keeps the relationship values from its own latest earlier
+/// snapshot (or its default card).
+class CharacterSnapshotEvent {
+  final String id;
+  final int resolvedTick;
+  final String sceneUUID;
+  final String? resolvedPlacementUUID;
+  final String sceneName;
+  final bool usesFallbackTick;
+  final List<String> stateChangeIds;
+  final Set<String> changedCharacterIds;
+
+  CharacterSnapshotEvent({
+    required this.id,
+    required this.resolvedTick,
+    required this.sceneUUID,
+    required this.resolvedPlacementUUID,
+    required this.sceneName,
+    required this.usesFallbackTick,
+    Iterable<String> stateChangeIds = const <String>[],
+    Iterable<String> changedCharacterIds = const <String>[],
+  }) : stateChangeIds = List<String>.unmodifiable(stateChangeIds),
+       changedCharacterIds = Set<String>.unmodifiable(changedCharacterIds);
+}
+
 ResolvedCharacterStateChange resolveCharacterStateChangeTime(
   CharacterStateChange change,
   TimelineDocumentData timeline,
@@ -516,6 +545,53 @@ List<CharacterSnapshotTimelineEntry> buildCharacterSnapshotTimeline({
     );
   }
   return List<CharacterSnapshotTimelineEntry>.unmodifiable(result);
+}
+
+/// Returns every Scene event that has at least one character snapshot change.
+/// Changes from the same Scene placement at the same Tick are represented by a
+/// single event, while retaining all affected character IDs for the UI.
+List<CharacterSnapshotEvent> buildCharacterSnapshotEvents({
+  required Iterable<CharacterStateChange> changes,
+  required TimelineDocumentData timeline,
+  Map<String, String> sceneNames = const <String, String>{},
+}) {
+  final grouped = <String, List<ResolvedCharacterStateChange>>{};
+  for (final change in changes) {
+    final resolved = resolveCharacterStateChangeTime(change, timeline);
+    final key = [
+      resolved.resolvedTick,
+      change.sceneUUID,
+      resolved.resolvedPlacementUUID ?? "fallback",
+    ].join("::");
+    grouped
+        .putIfAbsent(key, () => <ResolvedCharacterStateChange>[])
+        .add(resolved);
+  }
+
+  final result = <CharacterSnapshotEvent>[];
+  for (final entry in grouped.entries) {
+    final first = entry.value.first;
+    result.add(
+      CharacterSnapshotEvent(
+        id: entry.key,
+        resolvedTick: first.resolvedTick,
+        sceneUUID: first.change.sceneUUID,
+        resolvedPlacementUUID: first.resolvedPlacementUUID,
+        sceneName: sceneNames[first.change.sceneUUID] ?? first.change.sceneUUID,
+        usesFallbackTick: entry.value.any((item) => item.usesFallbackTick),
+        stateChangeIds: entry.value.map((item) => item.change.stateChangeId),
+        changedCharacterIds: entry.value.map((item) => item.change.characterId),
+      ),
+    );
+  }
+  result.sort((left, right) {
+    final byTick = left.resolvedTick.compareTo(right.resolvedTick);
+    if (byTick != 0) return byTick;
+    final byScene = left.sceneName.compareTo(right.sceneName);
+    if (byScene != 0) return byScene;
+    return left.id.compareTo(right.id);
+  });
+  return List<CharacterSnapshotEvent>.unmodifiable(result);
 }
 
 Map<String, String> describeCharacterSnapshotDiff(

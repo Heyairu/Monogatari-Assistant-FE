@@ -64,6 +64,9 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
       autoBackupEnabled: snapshot.autoBackupEnabled,
       autoBackupIntervalMinutes: snapshot.autoBackupIntervalMinutes,
       autoBackupMaxSizeMb: snapshot.autoBackupMaxSizeMb,
+      allowSingleDevicePairingConfirmation:
+          snapshot.allowSingleDevicePairingConfirmation,
+      allowPersistentP2pVerification: snapshot.allowPersistentP2pVerification,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -123,6 +126,24 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     await ref
         .read(settingsRepositoryProvider)
         .saveAutoBackupMaxSizeMb(normalized);
+  }
+
+  Future<void> setAllowSingleDevicePairingConfirmation(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(
+      current.copyWith(allowSingleDevicePairingConfirmation: value),
+    );
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveAllowSingleDevicePairingConfirmation(value);
+  }
+
+  Future<void> setAllowPersistentP2pVerification(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(allowPersistentP2pVerification: value));
+    await ref
+        .read(settingsRepositoryProvider)
+        .saveAllowPersistentP2pVerification(value);
   }
 
   Future<void> addRecentProject({

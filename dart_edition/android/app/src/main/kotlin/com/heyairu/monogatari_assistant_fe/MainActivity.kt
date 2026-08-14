@@ -1,8 +1,12 @@
 package com.heyairu.monogatari_assistant_fe
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -12,15 +16,420 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import androidx.annotation.NonNull
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.SocketTimeoutException
+import kotlin.concurrent.thread
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.heyairu.monogatari_assistant/file"
+    private val P2P_CHANNEL = "com.heyairu.monogatari_assistant/p2p"
     private val SELECT_BACKUP_DIRECTORY_REQUEST = 4101
+    private val LOCAL_NETWORK_PERMISSION_REQUEST = 4102
+    private val SAVE_PROJECT_FILE_REQUEST = 4103
     private val BACKUP_PREFS = "monogatari_backup_preferences"
     private val BACKUP_TREE_URI_KEY = "auto_backup_tree_uri"
     private val BACKUP_FOLDER_NAME = "MonoAshi_Backup"
     private var pendingBackupDirectoryResult: MethodChannel.Result? = null
+    private var pendingLocalNetworkPermissionResult: MethodChannel.Result? = null
+    private var pendingProjectSaveResult: MethodChannel.Result? = null
+    private var pendingProjectSaveContent: String? = null
+
+    private fun saveProjectFile(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val fileName = call.argument<String>("fileName")?.trim()
+        val content = call.argument<String>("content")
+        if (fileName.isNullOrEmpty() || content == null) {
+            result.error("INVALID_ARGS", "Project file name or content is invalid", null)
+            return
+        }
+        if (pendingProjectSaveResult != null) {
+            result.error("REQUEST_ACTIVE", "A project save request is already active", null)
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_TITLE, fileName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(packageManager) == null) {
+            result.error("NO_FILE_MANAGER", "No document provider can save project files", null)
+            return
+        }
+
+        pendingProjectSaveResult = result
+        pendingProjectSaveContent = content
+        try {
+            startActivityForResult(intent, SAVE_PROJECT_FILE_REQUEST)
+        } catch (error: Exception) {
+            pendingProjectSaveResult = null
+            pendingProjectSaveContent = null
+            result.error("SAVE_DIALOG_ERROR", "Failed to open project save dialog: ${error.message}", null)
+        }
+    }
+
+    private class P2pNativeProbeException(
+        val code: String,
+        message: String,
+        cause: Throwable? = null
+    ) : Exception(message, cause)
+
+    private fun ensureLocalNetworkPermission(result: MethodChannel.Result) {
+        // This project currently targets SDK 36. Android 16 uses
+        // NEARBY_WIFI_DEVICES only when Local Network Protection is enabled
+        // through its compatibility flag. Other versions retain implicit LAN
+        // access through INTERNET until the project targets SDK 37.
+        if (Build.VERSION.SDK_INT != 36) {
+            result.success(true)
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED) {
+            result.success(true)
+            return
+        }
+
+        if (pendingLocalNetworkPermissionResult != null) {
+            result.error("REQUEST_ACTIVE", "A local network permission request is already active", null)
+            return
+        }
+
+        pendingLocalNetworkPermissionResult = result
+        requestPermissions(
+            arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES),
+            LOCAL_NETWORK_PERMISSION_REQUEST
+        )
+    }
+
+    private fun readBoundedProbeLine(socket: Socket, maxBytes: Int): String {
+        val input = socket.getInputStream()
+        val bytes = ByteArrayOutputStream()
+        while (bytes.size() <= maxBytes) {
+            val value = input.read()
+            if (value < 0) {
+                throw P2pNativeProbeException(
+                    "INCOMPATIBLE_ENDPOINT",
+                    "The peer closed before returning a complete P2P probe response"
+                )
+            }
+            if (value == '\n'.code) {
+                return bytes.toString(Charsets.UTF_8.name())
+            }
+            bytes.write(value)
+        }
+        throw P2pNativeProbeException(
+            "INCOMPATIBLE_ENDPOINT",
+            "The peer P2P probe response exceeded the size limit"
+        )
+    }
+
+    private fun runWifiBoundLineExchange(
+        host: String,
+        port: Int,
+        requestLine: String,
+        maxResponseBytes: Int,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int
+    ): String {
+        if (requestLine.contains('\n') || requestLine.contains('\r') ||
+            requestLine.toByteArray(Charsets.UTF_8).size > 65536
+        ) {
+            throw P2pNativeProbeException(
+                "INVALID_REQUEST",
+                "The P2P request line is invalid"
+            )
+        }
+        val connectivityManager =
+            getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val localNetworks = connectivityManager.allNetworks.filter { network ->
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
+                capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+        }
+        if (localNetworks.isEmpty()) {
+            throw P2pNativeProbeException(
+                "NO_LOCAL_NETWORK",
+                "No active Wi-Fi or Ethernet network is available"
+            )
+        }
+
+        var lastFailure: P2pNativeProbeException? = null
+        for (network in localNetworks) {
+            var responseStage = false
+            try {
+                Socket().use { socket ->
+                    // Bind only this P2P socket. Other application traffic keeps
+                    // its normal route and remains unaffected by VPN/cellular state.
+                    network.bindSocket(socket)
+                    socket.tcpNoDelay = true
+                    socket.connect(
+                        InetSocketAddress(host, port),
+                        connectTimeoutMillis
+                    )
+                    responseStage = true
+                    socket.soTimeout = readTimeoutMillis
+                    val output = socket.getOutputStream()
+                    output.write("$requestLine\n".toByteArray(Charsets.UTF_8))
+                    output.flush()
+                    return readBoundedProbeLine(socket, maxResponseBytes)
+                }
+            } catch (error: P2pNativeProbeException) {
+                if (error.code == "INCOMPATIBLE_ENDPOINT") throw error
+                lastFailure = error
+            } catch (error: SocketTimeoutException) {
+                lastFailure = P2pNativeProbeException(
+                    if (responseStage) "RESPONSE_TIMEOUT" else "CONNECT_TIMEOUT",
+                    if (responseStage) {
+                        "TCP connected over Wi-Fi, but the peer did not answer the P2P probe"
+                    } else {
+                        "TCP could not connect over the active Wi-Fi network"
+                    },
+                    error
+                )
+            } catch (error: IOException) {
+                lastFailure = P2pNativeProbeException(
+                    if (responseStage) "RESPONSE_FAILED" else "CONNECT_FAILED",
+                    if (responseStage) {
+                        "The Wi-Fi P2P probe failed while reading the peer response"
+                    } else {
+                        "TCP could not connect over the active Wi-Fi network"
+                    },
+                    error
+                )
+            }
+        }
+
+        throw lastFailure ?: P2pNativeProbeException(
+            "CONNECT_FAILED",
+            "TCP could not connect over any active local network"
+        )
+    }
+
+    private fun runWifiBoundLineExchanges(
+        host: String,
+        port: Int,
+        requestLines: List<String>,
+        maxResponseBytes: Int,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int
+    ): List<String> {
+        if (requestLines.isEmpty() || requestLines.size > 32 ||
+            requestLines.any { requestLine ->
+                requestLine.contains('\n') || requestLine.contains('\r') ||
+                    requestLine.toByteArray(Charsets.UTF_8).size > 65536
+            }
+        ) {
+            throw P2pNativeProbeException(
+                "INVALID_REQUEST",
+                "The P2P request line batch is invalid"
+            )
+        }
+        val connectivityManager =
+            getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val localNetworks = connectivityManager.allNetworks.filter { network ->
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
+                capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+        }
+        if (localNetworks.isEmpty()) {
+            throw P2pNativeProbeException(
+                "NO_LOCAL_NETWORK",
+                "No active Wi-Fi or Ethernet network is available"
+            )
+        }
+
+        var lastFailure: P2pNativeProbeException? = null
+        for (network in localNetworks) {
+            var responseStage = false
+            try {
+                Socket().use { socket ->
+                    network.bindSocket(socket)
+                    socket.tcpNoDelay = true
+                    socket.connect(
+                        InetSocketAddress(host, port),
+                        connectTimeoutMillis
+                    )
+                    responseStage = true
+                    socket.soTimeout = readTimeoutMillis
+                    val output = socket.getOutputStream()
+                    val responses = ArrayList<String>(requestLines.size)
+                    for (requestLine in requestLines) {
+                        output.write("$requestLine\n".toByteArray(Charsets.UTF_8))
+                        output.flush()
+                        responses.add(readBoundedProbeLine(socket, maxResponseBytes))
+                    }
+                    return responses
+                }
+            } catch (error: P2pNativeProbeException) {
+                if (error.code == "INCOMPATIBLE_ENDPOINT") throw error
+                lastFailure = error
+            } catch (error: SocketTimeoutException) {
+                val failure = P2pNativeProbeException(
+                    if (responseStage) "RESPONSE_TIMEOUT" else "CONNECT_TIMEOUT",
+                    if (responseStage) {
+                        "TCP connected over Wi-Fi, but the peer did not answer the P2P exchange"
+                    } else {
+                        "TCP could not connect over the active Wi-Fi network"
+                    },
+                    error
+                )
+                if (responseStage) throw failure
+                lastFailure = failure
+            } catch (error: IOException) {
+                val failure = P2pNativeProbeException(
+                    if (responseStage) "RESPONSE_FAILED" else "CONNECT_FAILED",
+                    if (responseStage) {
+                        "The Wi-Fi P2P exchange failed while reading the peer response"
+                    } else {
+                        "TCP could not connect over the active Wi-Fi network"
+                    },
+                    error
+                )
+                if (responseStage) throw failure
+                lastFailure = failure
+            }
+        }
+
+        throw lastFailure ?: P2pNativeProbeException(
+            "CONNECT_FAILED",
+            "TCP could not connect over any active local network"
+        )
+    }
+
+    private fun runWifiBoundProbe(
+        host: String,
+        port: Int,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int
+    ) {
+        val response = runWifiBoundLineExchange(
+            host,
+            port,
+            "MONOGATARI_P2P_PROBE/1",
+            128,
+            connectTimeoutMillis,
+            readTimeoutMillis
+        )
+        if (response != "MONOGATARI_P2P_REACHABLE/1") {
+            throw P2pNativeProbeException(
+                "INCOMPATIBLE_ENDPOINT",
+                "The target is not a compatible Monogatari Assistant P2P endpoint"
+            )
+        }
+    }
+
+    private fun probeWifiEndpoint(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val host = call.argument<String>("host")
+        val port = call.argument<Int>("port")
+        val connectTimeoutMillis = call.argument<Int>("connectTimeoutMillis") ?: 8000
+        val readTimeoutMillis = call.argument<Int>("readTimeoutMillis") ?: 8000
+        if (host.isNullOrBlank() || port == null || port !in 1..65535) {
+            result.error("INVALID_ENDPOINT", "Host or port is invalid", null)
+            return
+        }
+
+        thread(name = "P2pWifiProbe") {
+            try {
+                runWifiBoundProbe(host, port, connectTimeoutMillis, readTimeoutMillis)
+                runOnUiThread { result.success(true) }
+            } catch (error: P2pNativeProbeException) {
+                runOnUiThread { result.error(error.code, error.message, null) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "NATIVE_PROBE_FAILED",
+                        error.message ?: "Android Wi-Fi P2P probe failed",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exchangeWifiLine(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val host = call.argument<String>("host")
+        val port = call.argument<Int>("port")
+        val requestLine = call.argument<String>("requestLine")
+        val maxResponseBytes = call.argument<Int>("maxResponseBytes") ?: 2048
+        val connectTimeoutMillis = call.argument<Int>("connectTimeoutMillis") ?: 8000
+        val readTimeoutMillis = call.argument<Int>("readTimeoutMillis") ?: 8000
+        if (host.isNullOrBlank() || port == null || port !in 1..65535 ||
+            requestLine.isNullOrEmpty() || maxResponseBytes !in 1..65536
+        ) {
+            result.error("INVALID_ENDPOINT", "Wi-Fi line exchange arguments are invalid", null)
+            return
+        }
+
+        thread(name = "P2pWifiExchange") {
+            try {
+                val response = runWifiBoundLineExchange(
+                    host,
+                    port,
+                    requestLine,
+                    maxResponseBytes,
+                    connectTimeoutMillis,
+                    readTimeoutMillis
+                )
+                runOnUiThread { result.success(response) }
+            } catch (error: P2pNativeProbeException) {
+                runOnUiThread { result.error(error.code, error.message, null) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "NATIVE_EXCHANGE_FAILED",
+                        error.message ?: "Android Wi-Fi P2P exchange failed",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
+    private fun exchangeWifiLines(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        val host = call.argument<String>("host")
+        val port = call.argument<Int>("port")
+        val requestLines = call.argument<List<String>>("requestLines")
+        val maxResponseBytes = call.argument<Int>("maxResponseBytes") ?: 2048
+        val connectTimeoutMillis = call.argument<Int>("connectTimeoutMillis") ?: 8000
+        val readTimeoutMillis = call.argument<Int>("readTimeoutMillis") ?: 8000
+        if (host.isNullOrBlank() || port == null || port !in 1..65535 ||
+            requestLines.isNullOrEmpty() || requestLines.size > 32 ||
+            maxResponseBytes !in 1..65536
+        ) {
+            result.error("INVALID_ENDPOINT", "Wi-Fi line exchange arguments are invalid", null)
+            return
+        }
+
+        thread(name = "P2pWifiBatchExchange") {
+            try {
+                val responses = runWifiBoundLineExchanges(
+                    host,
+                    port,
+                    requestLines,
+                    maxResponseBytes,
+                    connectTimeoutMillis,
+                    readTimeoutMillis
+                )
+                runOnUiThread { result.success(responses) }
+            } catch (error: P2pNativeProbeException) {
+                runOnUiThread { result.error(error.code, error.message, null) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "NATIVE_EXCHANGE_FAILED",
+                        error.message ?: "Android Wi-Fi P2P batch exchange failed",
+                        null
+                    )
+                }
+            }
+        }
+    }
 
     private fun buildInitialTreeUri(path: String? = null): Uri? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -221,6 +630,43 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == SAVE_PROJECT_FILE_REQUEST) {
+            val pendingResult = pendingProjectSaveResult
+            val content = pendingProjectSaveContent
+            pendingProjectSaveResult = null
+            pendingProjectSaveContent = null
+            if (pendingResult == null) {
+                super.onActivityResult(requestCode, resultCode, data)
+                return
+            }
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                pendingResult.success(null)
+                return
+            }
+
+            val uri = data.data!!
+            val permissionFlags = data.flags and (
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            try {
+                if (permissionFlags == 0) {
+                    throw SecurityException("Document provider did not grant persistent read/write access")
+                }
+                contentResolver.takePersistableUriPermission(uri, permissionFlags)
+                val outputStream = contentResolver.openOutputStream(uri, "wt")
+                    ?: throw IOException("Document provider returned no output stream")
+                outputStream.use {
+                    it.write((content ?: "").toByteArray(Charsets.UTF_8))
+                    it.flush()
+                }
+                pendingResult.success(uri.toString())
+            } catch (error: Exception) {
+                pendingResult.error("SAVE_PROJECT_ERROR", "Failed to persist project file: ${error.message}", null)
+            }
+            return
+        }
+
         if (requestCode == SELECT_BACKUP_DIRECTORY_REQUEST) {
             val pendingResult = pendingBackupDirectoryResult
             pendingBackupDirectoryResult = null
@@ -252,8 +698,34 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (requestCode == LOCAL_NETWORK_PERMISSION_REQUEST) {
+            val pendingResult = pendingLocalNetworkPermissionResult
+            pendingLocalNetworkPermissionResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            pendingResult?.success(granted)
+            return
+        }
+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, P2P_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "ensureLocalNetworkPermission" -> ensureLocalNetworkPermission(result)
+                "probeWifiEndpoint" -> probeWifiEndpoint(call, result)
+                "exchangeWifiLine" -> exchangeWifiLine(call, result)
+                "exchangeWifiLines" -> exchangeWifiLines(call, result)
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "writeToUri" -> {
@@ -263,8 +735,11 @@ class MainActivity : FlutterActivity() {
                     if (uriString != null && content != null) {
                         try {
                             val uri = Uri.parse(uriString)
-                            contentResolver.openOutputStream(uri, "wt")?.use { outputStream ->
+                            val outputStream = contentResolver.openOutputStream(uri, "wt")
+                                ?: throw IOException("Document provider returned no output stream")
+                            outputStream.use {
                                 outputStream.write(content.toByteArray(Charsets.UTF_8))
+                                outputStream.flush()
                             }
                             result.success(true)
                         } catch (e: Exception) {
@@ -274,6 +749,7 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "URI or content cannot be null", null)
                     }
                 }
+                "saveProjectFile" -> saveProjectFile(call, result)
                 "persistUriPermission" -> {
                     val uriString = call.argument<String>("uri")
                     if (uriString.isNullOrBlank()) {
