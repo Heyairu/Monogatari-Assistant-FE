@@ -5,6 +5,8 @@ import "dart:io";
 import "package:cryptography/cryptography.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:monogatari_assistant/application/collaboration/project_collaborative_text_codec.dart";
+import "package:monogatari_assistant/application/collaboration/project_record_codec.dart";
 import "package:monogatari_assistant/data/p2p/p2p_endpoint_service.dart";
 import "package:monogatari_assistant/data/p2p/p2p_identity_store.dart";
 import "package:monogatari_assistant/data/p2p/p2p_lan_permission_gateway.dart";
@@ -14,13 +16,23 @@ import "package:monogatari_assistant/data/p2p/p2p_snapshot_content_store.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_download.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_endpoint_gateway.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_quarantine.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_protocol.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_document.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_operation.dart";
 import "package:monogatari_assistant/domain/models/p2p_pairing_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_revision_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_resolution_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_snapshot_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_sync_models.dart";
+import "package:monogatari_assistant/models/base_info_data.dart";
+import "package:monogatari_assistant/models/chapter_selection_data.dart";
+import "package:monogatari_assistant/models/character_data.dart";
+import "package:monogatari_assistant/models/project_data.dart";
+import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
+import "package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart";
 import "package:monogatari_assistant/presentation/providers/global_state_providers.dart";
 import "package:monogatari_assistant/presentation/providers/p2p_sync_providers.dart";
+import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 P2pProjectStatus _savedProject(String uuid, String name) {
@@ -31,6 +43,38 @@ P2pProjectStatus _savedProject(String uuid, String name) {
     projectUuid: uuid,
     isPersistedSnapshotValidated: true,
   );
+}
+
+ProjectData _multiBatchBootstrapProject(String projectUuid) {
+  final chapters = List<ChapterData>.generate(
+    40,
+    (index) => ChapterData(
+      chapterUUID: "chapter-$index",
+      chapterName: "Chapter $index",
+      chapterContent: "Content $index",
+    ),
+  );
+  return ProjectData.empty(projectUUID: projectUuid)
+    ..baseInfoData = const BaseInfoData(
+      bookName: "Synced Book",
+      author: "Author",
+    )
+    ..segmentsData = <SegmentData>[
+      SegmentData(
+        segmentUUID: "folder-1",
+        segmentName: "Folder",
+        chapters: chapters,
+        childNodeOrder: chapters
+            .map((chapter) => chapter.chapterUUID)
+            .toList(growable: false),
+      ),
+    ]
+    ..characterData = const <String, CharacterEntryData>{
+      "character-1": CharacterEntryData(
+        characterId: "character-1",
+        displayName: "Synced Character",
+      ),
+    };
 }
 
 class _MemorySecureStore implements P2pSecureKeyValueStore {
@@ -105,6 +149,10 @@ class _MemorySnapshotContentStore implements P2pSnapshotContentStore {
 }
 
 class _FakeP2pEndpointService implements P2pEndpointService {
+  bool collaborationStreamActive = false;
+  bool collaborationStreamSupported = true;
+  _FakeP2pEndpointService? collaborationPeer;
+  String collaborationRemoteAddress = "192.168.1.30";
   final StreamController<P2pInboundProbe> _inboundProbeController =
       StreamController<P2pInboundProbe>.broadcast();
   final StreamController<P2pInboundProjectOffer>
@@ -122,6 +170,9 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   final StreamController<P2pInboundRevisionGraph>
   _inboundRevisionGraphController =
       StreamController<P2pInboundRevisionGraph>.broadcast();
+  final StreamController<P2pInboundCollaborationBatch>
+  _inboundCollaborationBatchController =
+      StreamController<P2pInboundCollaborationBatch>.broadcast();
   List<String> addresses = const <String>["192.168.1.20"];
   Object? startError;
   Object? probeError;
@@ -142,6 +193,8 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   P2pRevisionSummary? negotiatedRemoteRevisionSummary;
   P2pRevisionGraph? localRevisionGraph;
   P2pRevisionGraph? negotiatedRemoteRevisionGraph;
+  CollaborationSyncBatch? localCollaborationBatch;
+  CollaborationSyncBatch? negotiatedRemoteCollaborationBatch;
   P2pResolutionAck? localResolutionAck;
   P2pResolutionAck? negotiatedRemoteResolutionAck;
   P2pSnapshotManifest? localSnapshotManifest;
@@ -151,6 +204,9 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   bool snapshotContentTransferEnabled = false;
   P2pSnapshotChunkLoader? snapshotChunkLoader;
   P2pSnapshotChunkLoader? negotiatedSnapshotChunkLoader;
+
+  @override
+  bool get hasActiveCollaborationStream => collaborationStreamActive;
 
   @override
   Stream<P2pInboundProbe> get inboundProbes => _inboundProbeController.stream;
@@ -175,6 +231,10 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   Stream<P2pInboundRevisionGraph> get inboundRevisionGraphs =>
       _inboundRevisionGraphController.stream;
 
+  @override
+  Stream<P2pInboundCollaborationBatch> get inboundCollaborationBatches =>
+      _inboundCollaborationBatchController.stream;
+
   void emitInboundProbe(String remoteAddress) {
     _inboundProbeController.add(P2pInboundProbe(remoteAddress: remoteAddress));
   }
@@ -182,6 +242,15 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   void emitInboundProjectOffer(String remoteAddress, P2pProjectOffer offer) {
     _inboundProjectOfferController.add(
       P2pInboundProjectOffer(remoteAddress: remoteAddress, offer: offer),
+    );
+  }
+
+  void emitInboundCollaborationBatch(
+    String remoteAddress,
+    CollaborationSyncBatch batch,
+  ) {
+    _inboundCollaborationBatchController.add(
+      P2pInboundCollaborationBatch(remoteAddress: remoteAddress, batch: batch),
     );
   }
 
@@ -262,6 +331,11 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   @override
   void updateLocalRevisionGraph(P2pRevisionGraph? graph) {
     localRevisionGraph = graph;
+  }
+
+  @override
+  void updateLocalCollaborationBatch(CollaborationSyncBatch? batch) {
+    localCollaborationBatch = batch;
   }
 
   @override
@@ -420,6 +494,32 @@ class _FakeP2pEndpointService implements P2pEndpointService {
   }
 
   @override
+  Future<CollaborationSyncBatch> negotiateCollaborationBatch(
+    P2pEndpoint endpoint,
+    CollaborationSyncBatch localBatch, {
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    localCollaborationBatch = localBatch;
+    collaborationPeer?.emitInboundCollaborationBatch(
+      collaborationRemoteAddress,
+      localBatch,
+    );
+    return negotiatedRemoteCollaborationBatch ??
+        collaborationPeer?.localCollaborationBatch ??
+        localBatch;
+  }
+
+  @override
+  Future<bool> openCollaborationStream(
+    P2pEndpoint endpoint, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (!collaborationStreamSupported) return false;
+    collaborationStreamActive = true;
+    return true;
+  }
+
+  @override
   Future<P2pSnapshotManifest?> negotiateSnapshotManifest(
     P2pEndpoint endpoint, {
     required String projectUuid,
@@ -481,6 +581,7 @@ class _FakeP2pEndpointService implements P2pEndpointService {
     await _inboundPairingConfirmationController.close();
     await _inboundRevisionSummaryController.close();
     await _inboundRevisionGraphController.close();
+    await _inboundCollaborationBatchController.close();
     installedSessionKeys?.destroy();
   }
 }
@@ -495,6 +596,19 @@ class _FakeP2pLanPermissionGateway implements P2pLanPermissionGateway {
   Future<bool> ensureAccess() async {
     requestCount++;
     return granted;
+  }
+}
+
+class _FixedP2pSyncNotifier extends P2pSyncNotifier {
+  final P2pSyncState initialState;
+
+  _FixedP2pSyncNotifier(this.initialState);
+
+  @override
+  P2pSyncState build() => initialState;
+
+  void replaceState(P2pSyncState nextState) {
+    state = nextState;
   }
 }
 
@@ -721,6 +835,357 @@ void main() {
       expect(state.projectNegotiation?.requiresDialog, isFalse);
       expect(state.selectedProjectSource, P2pProjectSource.local);
       expect(state.sessionProjectUuid, "123e4567-e89b-12d3-a456-426614174000");
+    },
+  );
+
+  test(
+    "P2P provider keeps the original source after receiver adopts its UUID",
+    () async {
+      final service = _FakeP2pEndpointService();
+      final container = ProviderContainer(
+        overrides: [p2pEndpointServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(p2pSyncProvider.notifier);
+      const endpoint = P2pEndpoint(host: "192.168.1.30", port: 42942);
+      const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+
+      expect(
+        await notifier.connectAndNegotiate(
+          endpoint,
+          _savedProject(projectUuid, "local.mnproj"),
+        ),
+        isTrue,
+      );
+      expect(
+        container.read(p2pSyncProvider).selectedProjectSource,
+        P2pProjectSource.local,
+      );
+
+      service.negotiatedRemoteOffer = P2pProjectOffer.project(
+        projectUuid: projectUuid,
+        fileName: "記憶體專案",
+      );
+      await notifier.refreshPeerOffer();
+
+      final state = container.read(p2pSyncProvider);
+      expect(
+        state.projectNegotiation?.kind,
+        P2pProjectNegotiationKind.sameProject,
+      );
+      expect(state.selectedProjectSource, P2pProjectSource.local);
+      expect(state.sessionProjectUuid, projectUuid);
+    },
+  );
+
+  test(
+    "memory receiver selects the first chapter after operation bootstrap",
+    () async {
+      const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+      const remoteAddress = "192.168.1.30";
+      final service = _FakeP2pEndpointService();
+      final fixedP2p = _FixedP2pSyncNotifier(const P2pSyncState());
+      final container = ProviderContainer(
+        overrides: [
+          p2pEndpointServiceProvider.overrideWithValue(service),
+          p2pSyncProvider.overrideWith(() => fixedP2p),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(collaborationProvider);
+
+      final remoteOffer = P2pProjectOffer.project(
+        projectUuid: projectUuid,
+        fileName: "memory.mnproj",
+      );
+      fixedP2p.replaceState(
+        P2pSyncState(
+          reachablePeer: const P2pEndpoint(host: remoteAddress, port: 45510),
+          remoteProjectOffer: remoteOffer,
+          selectedProjectSource: P2pProjectSource.remote,
+          sessionProjectUuid: projectUuid,
+          secureTransportStatus: P2pSecureTransportStatus.authenticated,
+        ),
+      );
+
+      expect(container.read(segmentsDataProvider), isEmpty);
+      expect(container.read(editorSelectionProvider).selectedChapID, isNull);
+
+      final data = ProjectData.empty(projectUUID: projectUuid);
+      final folder = data.segmentsData.single;
+      final chapter = folder.chapters.single.copyWith(
+        chapterName: "Remote Chapter",
+        chapterContent: "遠端章節內容",
+      );
+      data.segmentsData = [
+        folder.copyWith(
+          chapters: [chapter],
+          childNodeOrder: <String>[chapter.chapterUUID],
+        ),
+      ];
+      final source = CollaborationDocument.operationBacked(
+        projectUuid: projectUuid,
+        replicaId: "desktop-replica",
+        chapterTexts: <String, String>{
+          chapter.chapterUUID: chapter.chapterContent,
+        },
+        projectTexts: ProjectCollaborativeTextCodec.snapshot(data),
+        projectRecords: ProjectRecordCodec.snapshot(
+          data,
+          omitCollaborativeText: true,
+        ).values,
+      );
+      final operations = source.operationsAfter(const <String, int>{});
+      expect(operations.length, greaterThan(1));
+
+      CollaborationSyncBatch batch(
+        Iterable<CollaborationOperation> selectedOperations,
+      ) {
+        return CollaborationSyncBatch(
+          projectUuid: projectUuid,
+          senderReplicaId: source.replicaId,
+          acknowledgedSequences: source.acknowledgedSequences,
+          operations: selectedOperations,
+        );
+      }
+
+      service.emitInboundCollaborationBatch(
+        remoteAddress,
+        batch(operations.take(operations.length - 1)),
+      );
+      await pumpEventQueue();
+
+      expect(container.read(editorSelectionProvider).selectedChapID, isNull);
+
+      service.emitInboundCollaborationBatch(
+        remoteAddress,
+        batch(operations.skip(operations.length - 1)),
+      );
+      await pumpEventQueue();
+
+      expect(
+        container.read(editorSelectionProvider).selectedChapID,
+        chapter.chapterUUID,
+      );
+      expect(container.read(editorContentProvider), "遠端章節內容");
+    },
+  );
+
+  test(
+    "operation bootstrap advances from CRDT text batches to typed records",
+    () async {
+      const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+      const sourceAddress = "192.168.1.20";
+      const receiverAddress = "192.168.1.30";
+      final sourceService = _FakeP2pEndpointService();
+      final receiverService = _FakeP2pEndpointService();
+      final sourceP2p = _FixedP2pSyncNotifier(const P2pSyncState());
+      final receiverP2p = _FixedP2pSyncNotifier(const P2pSyncState());
+      final sourceContainer = ProviderContainer(
+        overrides: [
+          p2pEndpointServiceProvider.overrideWithValue(sourceService),
+          p2pSyncProvider.overrideWith(() => sourceP2p),
+        ],
+      );
+      final receiverContainer = ProviderContainer(
+        overrides: [
+          p2pEndpointServiceProvider.overrideWithValue(receiverService),
+          p2pSyncProvider.overrideWith(() => receiverP2p),
+        ],
+      );
+      addTearDown(sourceContainer.dispose);
+      addTearDown(receiverContainer.dispose);
+
+      final data = _multiBatchBootstrapProject(projectUuid);
+      final chapters = data.segmentsData.single.chapters;
+      sourceContainer.read(collaborationProvider.notifier).openProject(data);
+      receiverContainer.read(collaborationProvider);
+
+      final sourceOffer = P2pProjectOffer.project(
+        projectUuid: projectUuid,
+        fileName: "source.mnproj",
+      );
+      sourceP2p.replaceState(
+        P2pSyncState(
+          reachablePeer: const P2pEndpoint(host: receiverAddress, port: 45510),
+          localProjectOffer: sourceOffer,
+          remoteProjectOffer: const P2pProjectOffer.none(),
+          selectedProjectSource: P2pProjectSource.local,
+          sessionProjectUuid: projectUuid,
+          secureTransportStatus: P2pSecureTransportStatus.authenticated,
+        ),
+      );
+      receiverP2p.replaceState(
+        P2pSyncState(
+          reachablePeer: const P2pEndpoint(host: sourceAddress, port: 45510),
+          remoteProjectOffer: sourceOffer,
+          selectedProjectSource: P2pProjectSource.remote,
+          sessionProjectUuid: projectUuid,
+          secureTransportStatus: P2pSecureTransportStatus.authenticated,
+        ),
+      );
+
+      final firstSourceBatch = sourceService.localCollaborationBatch;
+      expect(firstSourceBatch, isNotNull);
+      expect(firstSourceBatch!.operations, hasLength(32));
+      expect(
+        firstSourceBatch.operations.whereType<ProjectDataRecordOperation>(),
+        isEmpty,
+      );
+
+      var completed = false;
+      for (var exchange = 0; exchange < 10; exchange += 1) {
+        receiverService.emitInboundCollaborationBatch(
+          sourceAddress,
+          sourceService.localCollaborationBatch!,
+        );
+        await pumpEventQueue();
+        sourceService.emitInboundCollaborationBatch(
+          receiverAddress,
+          receiverService.localCollaborationBatch!,
+        );
+        await pumpEventQueue();
+        completed =
+            receiverContainer.read(baseInfoDataProvider).bookName ==
+                "Synced Book" &&
+            receiverContainer
+                    .read(segmentsDataProvider)
+                    .singleOrNull
+                    ?.chapters
+                    .length ==
+                chapters.length &&
+            receiverContainer
+                .read(characterDataProvider)
+                .containsKey("character-1");
+        if (completed) break;
+      }
+
+      expect(completed, isTrue);
+      expect(
+        receiverContainer.read(editorSelectionProvider).selectedChapID,
+        chapters.first.chapterUUID,
+      );
+      expect(
+        receiverContainer.read(editorContentProvider),
+        chapters.first.chapterContent,
+      );
+    },
+  );
+
+  test(
+    "bounded collaboration polling completes a multi-batch memory project",
+    () async {
+      const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+      const sourceAddress = "192.168.1.20";
+      const receiverAddress = "192.168.1.30";
+      final sourceService = _FakeP2pEndpointService()
+        ..collaborationStreamSupported = false
+        ..collaborationRemoteAddress = sourceAddress;
+      final receiverService = _FakeP2pEndpointService()
+        ..collaborationStreamSupported = false
+        ..collaborationRemoteAddress = receiverAddress;
+      sourceService.collaborationPeer = receiverService;
+      receiverService.collaborationPeer = sourceService;
+      final sourceP2p = _FixedP2pSyncNotifier(const P2pSyncState());
+      final receiverP2p = _FixedP2pSyncNotifier(const P2pSyncState());
+      final sourceContainer = ProviderContainer(
+        overrides: [
+          p2pEndpointServiceProvider.overrideWithValue(sourceService),
+          p2pSyncProvider.overrideWith(() => sourceP2p),
+        ],
+      );
+      final receiverContainer = ProviderContainer(
+        overrides: [
+          p2pEndpointServiceProvider.overrideWithValue(receiverService),
+          p2pSyncProvider.overrideWith(() => receiverP2p),
+        ],
+      );
+      addTearDown(sourceContainer.dispose);
+      addTearDown(receiverContainer.dispose);
+
+      final data = _multiBatchBootstrapProject(projectUuid);
+      sourceContainer.read(collaborationProvider.notifier).openProject(data);
+      receiverContainer.read(collaborationProvider);
+      final aggregateSubscription = receiverContainer.listen<int>(
+        projectDataAggregateProvider,
+        (previous, next) {
+          if (previous == null ||
+              previous == next ||
+              receiverContainer
+                  .read(editorCoordinatorProvider)
+                  .isApplyingProjectData) {
+            return;
+          }
+          receiverContainer
+              .read(collaborationProvider.notifier)
+              .captureProjectData(
+                receiverContainer
+                    .read(editorCoordinatorProvider.notifier)
+                    .collectProjectData(),
+              );
+        },
+      );
+      addTearDown(aggregateSubscription.close);
+      final sourceOffer = P2pProjectOffer.project(
+        projectUuid: projectUuid,
+        fileName: "source.mnproj",
+      );
+      final sourceAuthenticatedState = P2pSyncState(
+        reachablePeer: const P2pEndpoint(host: receiverAddress, port: 45510),
+        localProjectOffer: sourceOffer,
+        remoteProjectOffer: const P2pProjectOffer.none(),
+        selectedProjectSource: P2pProjectSource.local,
+        sessionProjectUuid: projectUuid,
+        secureTransportStatus: P2pSecureTransportStatus.authenticated,
+      );
+      final receiverAuthenticatedState = P2pSyncState(
+        reachablePeer: const P2pEndpoint(host: sourceAddress, port: 45510),
+        remoteProjectOffer: sourceOffer,
+        selectedProjectSource: P2pProjectSource.remote,
+        sessionProjectUuid: projectUuid,
+        secureTransportStatus: P2pSecureTransportStatus.authenticated,
+      );
+      sourceP2p.replaceState(sourceAuthenticatedState);
+      receiverP2p.replaceState(receiverAuthenticatedState);
+
+      bool receiverIsComplete() =>
+          receiverContainer.read(baseInfoDataProvider).bookName ==
+              "Synced Book" &&
+          receiverContainer
+                  .read(segmentsDataProvider)
+                  .singleOrNull
+                  ?.chapters
+                  .length ==
+              40 &&
+          receiverContainer
+              .read(characterDataProvider)
+              .containsKey("character-1");
+
+      Future<bool> waitForReceiver() async {
+        for (var attempt = 0; attempt < 60; attempt += 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (receiverIsComplete()) return true;
+        }
+        return false;
+      }
+
+      expect(await waitForReceiver(), isTrue);
+      expect(
+        receiverContainer.read(editorContentProvider),
+        data.segmentsData.single.chapters.first.chapterContent,
+      );
+
+      sourceP2p.replaceState(const P2pSyncState());
+      receiverP2p.replaceState(const P2pSyncState());
+      sourceP2p.replaceState(sourceAuthenticatedState);
+      receiverP2p.replaceState(receiverAuthenticatedState);
+
+      expect(receiverContainer.read(segmentsDataProvider), isEmpty);
+      expect(await waitForReceiver(), isTrue);
+      expect(
+        receiverContainer.read(editorContentProvider),
+        data.segmentsData.single.chapters.first.chapterContent,
+      );
     },
   );
 
@@ -1771,6 +2236,36 @@ void main() {
     );
     expect(service.localSnapshotManifest, state.localSnapshotManifest);
     expect(state.revisionMetadataError, isNull);
+
+    const draftXml = "<Project><Title>draft</Title></Project>";
+    expect(
+      await notifier.recordDraftSnapshot(
+        projectUuid: "123e4567-e89b-12d3-a456-426614174000",
+        xmlContent: draftXml,
+        formatVersion: "1.0",
+      ),
+      isTrue,
+    );
+    final draftState = container.read(p2pSyncProvider);
+    expect(draftState.localHeadIsDraft, isTrue);
+    expect(draftState.localRevisionDelta, isNotNull);
+    expect(
+      service.localRevisionSummary?.isDraft(
+        draftState.localRevisionHead!.revisionId,
+      ),
+      isTrue,
+    );
+    expect(service.localRevisionSummary?.delta, isNotNull);
+
+    expect(
+      await notifier.recordPersistedSnapshot(
+        projectUuid: "123e4567-e89b-12d3-a456-426614174000",
+        xmlContent: draftXml,
+        formatVersion: "1.0",
+      ),
+      isTrue,
+    );
+    expect(container.read(p2pSyncProvider).localHeadIsDraft, isFalse);
   });
 
   test(

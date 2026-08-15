@@ -92,6 +92,29 @@ class ProjectData {
       outlineChapterLinks: const <OutlineChapterLinkData>[],
     );
   }
+
+  /// Empty receiver state for an operation-backed collaboration bootstrap.
+  ///
+  /// Unlike [empty], this must not invent local structural record IDs. Remote
+  /// typed operations will provide every folder, chapter, outline item, world
+  /// node and timeline track.
+  factory ProjectData.collaborationShell({required String projectUUID}) {
+    return ProjectData(
+      projectUUID: projectUUID,
+      baseInfoData: BaseInfoData(),
+      segmentsData: const <SegmentData>[],
+      outlineData: const <StorylineData>[],
+      foreshadowData: const <ForeshadowItem>[],
+      updatePlanData: const <UpdatePlanItem>[],
+      worldSettingsData: const <LocationData>[],
+      characterData: const <String, CharacterEntryData>{},
+      characterStates: const <CharacterState>[],
+      characterStateBaselines: const <String, CharacterStateBaseline>{},
+      characterStateChanges: const <CharacterStateChange>[],
+      timelineDocument: const TimelineDocumentData(),
+      outlineChapterLinks: const <OutlineChapterLinkData>[],
+    );
+  }
 }
 
 class ProjectParseResult {

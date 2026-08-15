@@ -20,8 +20,10 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/outline_data.dart";
+import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
 export "../models/outline_data.dart";
 
@@ -541,6 +543,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
   final TextEditingController sceneLocationController = TextEditingController();
   final TextEditingController sceneFocusController = TextEditingController();
   final TextEditingController sceneConflictController = TextEditingController();
+  final Map<TextEditingController, FocusNode> _collaborationFocusNodes = {};
 
   // 拖動相關狀態
   bool _isDragging = false;
@@ -1136,6 +1139,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     sceneLocationController.dispose();
     sceneFocusController.dispose();
     sceneConflictController.dispose();
+    for (final focusNode in _collaborationFocusNodes.values) {
+      focusNode.dispose();
+    }
+    _collaborationFocusNodes.clear();
     _renameListController?.dispose();
     _renameListController = null;
 
@@ -1866,6 +1873,34 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     });
   }
 
+  Widget _buildCollaborativeOutlineField({
+    required TextEditingController controller,
+    required String? documentId,
+    required InputDecoration decoration,
+    int maxLines = 1,
+  }) {
+    final focusNode = _collaborationFocusNodes.putIfAbsent(
+      controller,
+      FocusNode.new,
+    );
+    final field = AppTextField(
+      controller: controller,
+      focusNode: focusNode,
+      decoration: decoration,
+      maxLines: maxLines,
+    );
+    if (documentId == null) return field;
+    return CollaborativeProjectTextFieldRegion(
+      key: ValueKey("outline-text-$documentId"),
+      fieldId: documentId,
+      crdtDocumentId: documentId,
+      controller: controller,
+      focusNode: focusNode,
+      shouldPublishTextChanges: () => !_isSyncingControllers,
+      child: field,
+    );
+  }
+
   Widget _buildStorylineDetails() {
     final si = selectedStorylineIndex;
     if (si == null || si < 0 || si >= storylines.length)
@@ -1886,8 +1921,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            AppTextField(
+            _buildCollaborativeOutlineField(
               controller: storylineNameController,
+              documentId: ProjectCollaborativeTextCodec.outlineStorylineFieldId(
+                selectedStorylineID!,
+                "storylineName",
+              ),
               decoration: const InputDecoration(
                 labelText: "故事線名稱",
                 border: OutlineInputBorder(),
@@ -1895,8 +1934,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
             ),
             const SizedBox(height: 12),
-            AppTextField(
+            _buildCollaborativeOutlineField(
               controller: storylineTypeController,
+              documentId: ProjectCollaborativeTextCodec.outlineStorylineFieldId(
+                selectedStorylineID!,
+                "storylineType",
+              ),
               decoration: const InputDecoration(
                 labelText: "類型 (如：開頭、中段、高潮、結尾)",
                 border: OutlineInputBorder(),
@@ -1904,8 +1947,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
             ),
             const SizedBox(height: 12),
-            AppTextField(
+            _buildCollaborativeOutlineField(
               controller: storylineConflictController,
+              documentId: ProjectCollaborativeTextCodec.outlineStorylineFieldId(
+                selectedStorylineID!,
+                "conflictPoint",
+              ),
               decoration: const InputDecoration(
                 labelText: "主要衝突",
                 border: OutlineInputBorder(),
@@ -1915,8 +1962,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             const SizedBox(height: 16),
             Text("備註", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            AppTextField(
+            _buildCollaborativeOutlineField(
               controller: storylineMemoController,
+              documentId: ProjectCollaborativeTextCodec.outlineStorylineFieldId(
+                selectedStorylineID!,
+                "memo",
+              ),
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 hintText: "輸入備註...",
@@ -2306,8 +2357,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventNameController.text = event.storyEvent;
                   });
                 }
-                return AppTextField(
+                return _buildCollaborativeOutlineField(
                   controller: eventNameController,
+                  documentId: ProjectCollaborativeTextCodec.outlineEventFieldId(
+                    event.storyEventUUID,
+                    "storyEvent",
+                  ),
                   decoration: const InputDecoration(
                     labelText: "事件名稱",
                     border: OutlineInputBorder(),
@@ -2326,8 +2381,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventConflictController.text = event.conflictPoint;
                   });
                 }
-                return AppTextField(
+                return _buildCollaborativeOutlineField(
                   controller: eventConflictController,
+                  documentId: ProjectCollaborativeTextCodec.outlineEventFieldId(
+                    event.storyEventUUID,
+                    "conflictPoint",
+                  ),
                   decoration: const InputDecoration(
                     labelText: "衝突點",
                     border: OutlineInputBorder(),
@@ -2404,8 +2463,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     eventMemoController.text = event.memo;
                   });
                 }
-                return AppTextField(
+                return _buildCollaborativeOutlineField(
                   controller: eventMemoController,
+                  documentId: ProjectCollaborativeTextCodec.outlineEventFieldId(
+                    event.storyEventUUID,
+                    "memo",
+                  ),
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: "輸入備註...",
@@ -2738,8 +2801,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     sceneNameController.text = scene.sceneName;
                   });
                 }
-                return AppTextField(
+                return _buildCollaborativeOutlineField(
                   controller: sceneNameController,
+                  documentId: ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                    scene.sceneUUID,
+                    "sceneName",
+                  ),
                   decoration: const InputDecoration(
                     labelText: "場景名稱",
                     border: OutlineInputBorder(),
@@ -2761,8 +2828,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneTimeController.text = scene.time;
                         });
                       }
-                      return AppTextField(
+                      return _buildCollaborativeOutlineField(
                         controller: sceneTimeController,
+                        documentId:
+                            ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                              scene.sceneUUID,
+                              "time",
+                            ),
                         decoration: const InputDecoration(
                           labelText: "時間",
                           border: OutlineInputBorder(),
@@ -2781,8 +2853,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneLocationController.text = scene.location;
                         });
                       }
-                      return AppTextField(
+                      return _buildCollaborativeOutlineField(
                         controller: sceneLocationController,
+                        documentId:
+                            ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                              scene.sceneUUID,
+                              "location",
+                            ),
                         decoration: const InputDecoration(
                           labelText: "地點",
                           border: OutlineInputBorder(),
@@ -2807,8 +2884,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneFocusController.text = scene.focusPoint;
                         });
                       }
-                      return AppTextField(
+                      return _buildCollaborativeOutlineField(
                         controller: sceneFocusController,
+                        documentId:
+                            ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                              scene.sceneUUID,
+                              "focusPoint",
+                            ),
                         decoration: const InputDecoration(
                           labelText: "聚焦點",
                           border: OutlineInputBorder(),
@@ -2827,8 +2909,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           sceneConflictController.text = scene.conflictPoint;
                         });
                       }
-                      return AppTextField(
+                      return _buildCollaborativeOutlineField(
                         controller: sceneConflictController,
+                        documentId:
+                            ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                              scene.sceneUUID,
+                              "conflictPoint",
+                            ),
                         decoration: const InputDecoration(
                           labelText: "衝突點",
                           border: OutlineInputBorder(),
@@ -2935,8 +3022,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     sceneMemoController.text = scene.memo;
                   });
                 }
-                return AppTextField(
+                return _buildCollaborativeOutlineField(
                   controller: sceneMemoController,
+                  documentId: ProjectCollaborativeTextCodec.outlineSceneFieldId(
+                    scene.sceneUUID,
+                    "memo",
+                  ),
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: "輸入備註...",

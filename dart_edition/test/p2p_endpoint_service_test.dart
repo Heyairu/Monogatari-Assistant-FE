@@ -10,6 +10,8 @@ import "package:monogatari_assistant/data/p2p/p2p_secure_channel.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_download.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_endpoint_gateway.dart";
 import "package:monogatari_assistant/data/p2p/p2p_snapshot_quarantine.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_document.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_protocol.dart";
 import "package:monogatari_assistant/domain/models/p2p_revision_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_resolution_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_snapshot_models.dart";
@@ -123,12 +125,14 @@ P2pRevisionMetadata _testRevision({
   required String authorDeviceId,
   required String revisionHex,
   required String contentHex,
+  List<String> parents = const <String>[],
+  int clockCounter = 1,
 }) {
   return P2pRevisionMetadata(
     revisionId: List<String>.filled(64, revisionHex).join(),
     projectUuid: projectUuid,
-    parents: const <String>[],
-    clock: P2pVersionVector(<String, int>{authorDeviceId: 1}),
+    parents: parents,
+    clock: P2pVersionVector(<String, int>{authorDeviceId: clockCounter}),
     authorDeviceId: authorDeviceId,
     createdAtEpochSeconds: 1,
     contentSha256: List<String>.filled(64, contentHex).join(),
@@ -371,11 +375,19 @@ void main() {
         revisionHex: "b",
         contentHex: "c",
       );
+      final clientBaseRevision = _testRevision(
+        projectUuid: projectUuid,
+        authorDeviceId: keys.client.localDeviceId,
+        revisionHex: "a",
+        contentHex: "f",
+      );
       final clientRevision = _testRevision(
         projectUuid: projectUuid,
         authorDeviceId: keys.client.localDeviceId,
         revisionHex: "d",
         contentHex: "e",
+        parents: <String>[clientBaseRevision.revisionId],
+        clockCounter: 2,
       );
       final serverSummary = P2pRevisionSummary(
         projectUuid: projectUuid,
@@ -384,6 +396,13 @@ void main() {
       final clientSummary = P2pRevisionSummary(
         projectUuid: projectUuid,
         heads: <P2pRevisionMetadata>[clientRevision],
+        draftHeadIds: <String>{clientRevision.revisionId},
+        delta: P2pRevisionDelta.tryCreate(
+          baseRevision: clientBaseRevision,
+          targetRevision: clientRevision,
+          baseBytes: "before".codeUnits,
+          targetBytes: "before!".codeUnits,
+        ),
       );
       final serverManifest = P2pSnapshotManifest(
         projectUuid: projectUuid,
@@ -449,6 +468,192 @@ void main() {
       );
     },
   );
+
+  test("authenticated endpoint exchanges realtime operation batches", () async {
+    final reservation = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final port = reservation.port;
+    await reservation.close();
+    final server = IoP2pEndpointService();
+    final client = IoP2pEndpointService();
+    addTearDown(server.dispose);
+    addTearDown(client.dispose);
+    final keys = _testSessionKeys();
+    server.installAuthenticatedSession(keys.server);
+    client.installAuthenticatedSession(keys.client);
+    const projectUuid = "323e4567-e89b-12d3-a456-426614174000";
+    final offer = P2pProjectOffer.project(
+      projectUuid: projectUuid,
+      fileName: "realtime.mnproj",
+    );
+    server.updateLocalProjectOffer(offer);
+    client.updateLocalProjectOffer(offer);
+    final serverDocument = CollaborationDocument.seeded(
+      projectUuid: projectUuid,
+      replicaId: keys.server.localDeviceId,
+      chapterTexts: const <String, String>{"chapter-1": "a"},
+    ).createLocalTextEdit(documentId: "chapter-1", nextText: "as");
+    final clientDocument = CollaborationDocument.seeded(
+      projectUuid: projectUuid,
+      replicaId: keys.client.localDeviceId,
+      chapterTexts: const <String, String>{"chapter-1": "a"},
+    ).createLocalTextEdit(documentId: "chapter-1", nextText: "ac");
+    final serverChapter = serverDocument.chapter("chapter-1")!;
+    final serverBatch = serverDocument.buildBatch(
+      remoteAcknowledgedSequences: const <String, int>{},
+      presence: CollaboratorPresence(
+        replicaId: keys.server.localDeviceId,
+        ipAddress: "192.168.1.10",
+        target: ChapterTextCursorTarget(
+          chapterId: "chapter-1",
+          anchor: serverChapter.anchorAtOffset(2),
+          focus: serverChapter.anchorAtOffset(2),
+        ),
+        presenceSequence: 1,
+        sentAtEpochMs: 1,
+      ),
+    );
+    final clientBatch = clientDocument.buildBatch(
+      remoteAcknowledgedSequences: const <String, int>{},
+    );
+    server.updateLocalCollaborationBatch(serverBatch);
+    client.updateLocalCollaborationBatch(clientBatch);
+    await server.start(port: port);
+    final inbound = server.inboundCollaborationBatches.first;
+
+    final response = await client.negotiateCollaborationBatch(
+      P2pEndpoint(host: InternetAddress.loopbackIPv4.address, port: port),
+      clientBatch,
+    );
+
+    expect(response.operations, hasLength(1));
+    expect(response.presence?.ipAddress, InternetAddress.loopbackIPv4.address);
+    final received = await inbound;
+    expect(received.batch.operations, hasLength(1));
+    expect(received.batch.senderReplicaId, keys.client.localDeviceId);
+    expect(jsonEncode(response.toJson()), isNot(contains("xmlContent")));
+  });
+
+  test("authenticated collaboration stream pushes batches both ways", () async {
+    final reservation = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final port = reservation.port;
+    await reservation.close();
+    final server = IoP2pEndpointService();
+    final client = IoP2pEndpointService();
+    addTearDown(server.dispose);
+    addTearDown(client.dispose);
+    final keys = _testSessionKeys();
+    server.installAuthenticatedSession(keys.server);
+    client.installAuthenticatedSession(keys.client);
+    const projectUuid = "323e4567-e89b-12d3-a456-426614174000";
+    final offer = P2pProjectOffer.project(
+      projectUuid: projectUuid,
+      fileName: "stream.mnproj",
+    );
+    server.updateLocalProjectOffer(offer);
+    client.updateLocalProjectOffer(offer);
+    final serverDocument = CollaborationDocument.seeded(
+      projectUuid: projectUuid,
+      replicaId: keys.server.localDeviceId,
+      chapterTexts: const <String, String>{"chapter-1": "a"},
+    ).createLocalTextEdit(documentId: "chapter-1", nextText: "as");
+    final clientDocument = CollaborationDocument.seeded(
+      projectUuid: projectUuid,
+      replicaId: keys.client.localDeviceId,
+      chapterTexts: const <String, String>{"chapter-1": "a"},
+    ).createLocalTextEdit(documentId: "chapter-1", nextText: "ac");
+    server.updateLocalCollaborationBatch(
+      serverDocument.buildBatch(
+        remoteAcknowledgedSequences: const <String, int>{},
+      ),
+    );
+    client.updateLocalCollaborationBatch(
+      clientDocument.buildBatch(
+        remoteAcknowledgedSequences: const <String, int>{},
+      ),
+    );
+    await server.start(port: port);
+    final serverInitial = server.inboundCollaborationBatches.first;
+    final clientInitial = client.inboundCollaborationBatches.first;
+
+    expect(
+      await client.openCollaborationStream(
+        P2pEndpoint(host: InternetAddress.loopbackIPv4.address, port: port),
+      ),
+      isTrue,
+    );
+    expect(client.hasActiveCollaborationStream, isTrue);
+    expect(
+      (await serverInitial.timeout(
+        const Duration(seconds: 3),
+      )).batch.senderReplicaId,
+      keys.client.localDeviceId,
+    );
+    expect(
+      (await clientInitial.timeout(
+        const Duration(seconds: 3),
+      )).batch.senderReplicaId,
+      keys.server.localDeviceId,
+    );
+
+    final nextClientDocument = clientDocument.createLocalTextEdit(
+      documentId: "chapter-1",
+      nextText: "ac!",
+    );
+    final serverPush = server.inboundCollaborationBatches.firstWhere(
+      (event) => event.batch.operations.length == 2,
+    );
+    client.updateLocalCollaborationBatch(
+      nextClientDocument.buildBatch(
+        remoteAcknowledgedSequences: const <String, int>{},
+        presence: CollaboratorPresence(
+          replicaId: keys.client.localDeviceId,
+          ipAddress: "203.0.113.99",
+          target: const ProjectFieldCursorTarget(
+            fieldId: "baseInfo.toRecap",
+            anchorOffset: 3,
+            focusOffset: 3,
+          ),
+          presenceSequence: 2,
+          sentAtEpochMs: 2,
+        ),
+      ),
+    );
+    final receivedByServer = await serverPush.timeout(
+      const Duration(seconds: 3),
+    );
+    expect(receivedByServer.batch.senderReplicaId, keys.client.localDeviceId);
+    expect(
+      receivedByServer.batch.presence?.ipAddress,
+      InternetAddress.loopbackIPv4.address,
+    );
+    expect(
+      receivedByServer.batch.presence?.target,
+      isA<ProjectFieldCursorTarget>(),
+    );
+
+    final nextServerDocument = serverDocument.createLocalTextEdit(
+      documentId: "chapter-1",
+      nextText: "as!",
+    );
+    final clientPush = client.inboundCollaborationBatches.firstWhere(
+      (event) => event.batch.operations.length == 2,
+    );
+    server.updateLocalCollaborationBatch(
+      nextServerDocument.buildBatch(
+        remoteAcknowledgedSequences: const <String, int>{},
+      ),
+    );
+    final receivedByClient = await clientPush.timeout(
+      const Duration(seconds: 3),
+    );
+    expect(receivedByClient.batch.senderReplicaId, keys.server.localDeviceId);
+  });
 
   test(
     "IO P2P endpoint exchanges bounded snapshot chunks only when explicitly enabled",

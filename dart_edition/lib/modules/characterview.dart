@@ -30,12 +30,14 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
+import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../models/character_snapshot_data.dart";
 import "../models/world_settings_data.dart";
 import "../models/timeline_data.dart";
 import "../presentation/providers/character_snapshot_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 import "character_relationship_operations.dart" as relationship_operations;
 
 export "../models/character_data.dart";
@@ -1919,6 +1921,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
 
   // Unified Text Controllers
   final Map<String, TextEditingController> _controllers = {};
+  final Map<TextEditingController, String> _controllerKeys = {};
+  final Map<String, FocusNode> _collaborationFocusNodes = {};
 
   // Alignment - 陣營 (九宮格)
   String? selectedAlignment;
@@ -2086,7 +2090,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   void _setupListeners() {
     // 建立所有控制項
     for (var key in CharacterCodec.allControllerKeys) {
-      _controllers[key] = TextEditingController();
+      final controller = TextEditingController();
+      _controllers[key] = controller;
+      _controllerKeys[controller] = key;
+      _collaborationFocusNodes[key] = FocusNode();
     }
 
     // Name needs specific sync
@@ -2249,6 +2256,11 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       controller.dispose();
     }
     _controllers.clear();
+    _controllerKeys.clear();
+    for (final focusNode in _collaborationFocusNodes.values) {
+      focusNode.dispose();
+    }
+    _collaborationFocusNodes.clear();
 
     _hinderEventController.dispose();
     _solveController.dispose();
@@ -2549,9 +2561,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           key: const ValueKey("character-snapshot-toolbar-add"),
           tooltip: "新增快照",
           onPressed: () => _showAddSnapshotDialog(),
-          style: IconButton.styleFrom(
-            foregroundColor: Colors.green,
-          ),
+          style: IconButton.styleFrom(foregroundColor: Colors.green),
           icon: const Icon(Icons.add_photo_alternate_outlined),
         ),
         const SizedBox(width: 4),
@@ -2564,9 +2574,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 ? "預設"
                 : selectedEntry.sceneName,
           ),
-          style: IconButton.styleFrom(
-            foregroundColor: Colors.green,
-          ),
+          style: IconButton.styleFrom(foregroundColor: Colors.green),
           icon: const Icon(Icons.copy_all_outlined),
         ),
         const SizedBox(width: 4),
@@ -4257,17 +4265,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowLove, howToShowLoveLabels),
                 const SizedBox(height: 8),
-                AppTextField(
-                  controller: _controllers["otherShowLove"]!,
-                  decoration: const InputDecoration(
-                    labelText: "其他",
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
+                _buildTextField("其他", _controllers["otherShowLove"]!),
               ],
             ),
           ),
@@ -4285,17 +4283,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(howToShowGoodwill, howToShowGoodwillLabels),
                 const SizedBox(height: 8),
-                AppTextField(
-                  controller: _controllers["otherGoodwill"]!,
-                  decoration: const InputDecoration(
-                    labelText: "其他",
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
+                _buildTextField("其他", _controllers["otherGoodwill"]!),
               ],
             ),
           ),
@@ -4316,17 +4304,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 const SizedBox(height: 8),
                 _buildCheckboxGroup(handleHatePeople, handleHatePeopleLabels),
                 const SizedBox(height: 8),
-                AppTextField(
-                  controller: _controllers["otherHatePeople"]!,
-                  decoration: const InputDecoration(
-                    labelText: "其他",
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
+                _buildTextField("其他", _controllers["otherHatePeople"]!),
               ],
             ),
           ),
@@ -4374,13 +4352,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 16),
-        AppTextField(
+        _buildCollaborativeCharacterTextField(
+          label: "原文姓名",
           controller: _controllers["originalName"]!,
-          decoration: const InputDecoration(
-            labelText: "原文姓名",
-            hintText: "例如：桜田如羽",
-            border: OutlineInputBorder(),
-          ),
+          hintText: "例如：桜田如羽",
         ),
         const SizedBox(height: 16),
         CardList(
@@ -4429,10 +4404,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   }
 
   Widget _buildTextField(String label, TextEditingController controller) {
-    return CharacterTextField(
+    return _buildCollaborativeCharacterTextField(
       label: label,
       controller: controller,
-      enabled: _selectedSnapshotChangeId == null,
     );
   }
 
@@ -4442,21 +4416,56 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   Widget _buildNameField(String label, TextEditingController controller) {
     // 這裡使用 CharacterTextField，它是一個 Stateless Widget
     // 名稱同步邏輯已經在 _setupListeners 中的 addListener 處理了
-    return CharacterTextField(
+    return _buildCollaborativeCharacterTextField(
       label: label,
       controller: controller,
-      enabled: _selectedSnapshotChangeId == null,
     );
   }
 
   // 多行文字欄位
 
   Widget _buildMultilineField(String label, TextEditingController controller) {
-    return CharacterTextField(
+    return _buildCollaborativeCharacterTextField(
       label: label,
       controller: controller,
       maxLines: 4,
+    );
+  }
+
+  Widget _buildCollaborativeCharacterTextField({
+    required String label,
+    required TextEditingController controller,
+    int maxLines = 1,
+    String? hintText,
+  }) {
+    final controllerKey = _controllerKeys[controller];
+    final characterId = selectedCharacter;
+    final focusNode = controllerKey == null
+        ? null
+        : _collaborationFocusNodes[controllerKey];
+    final field = CharacterTextField(
+      label: label,
+      controller: controller,
+      focusNode: focusNode,
+      hintText: hintText,
+      maxLines: maxLines,
       enabled: _selectedSnapshotChangeId == null,
+    );
+    if (controllerKey == null || characterId == null || focusNode == null) {
+      return field;
+    }
+    final documentId = ProjectCollaborativeTextCodec.characterFieldId(
+      characterId,
+      controllerKey,
+    );
+    return CollaborativeProjectTextFieldRegion(
+      key: ValueKey("character-text-$characterId-$controllerKey"),
+      fieldId: documentId,
+      crdtDocumentId: documentId,
+      controller: controller,
+      focusNode: focusNode,
+      shouldPublishTextChanges: () => !_isLoading,
+      child: field,
     );
   }
 
@@ -4868,14 +4877,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
         ),
         const SizedBox(height: 8),
-        AppTextField(
+        _buildCollaborativeCharacterTextField(
+          label: "其他：",
           controller: _controllers["otherRelationship"]!,
-          decoration: const InputDecoration(
-            labelText: "其他：",
-            hintText: "其他……",
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          ),
+          hintText: "其他……",
         ),
         const SizedBox(height: 8),
         CheckboxListTile(
@@ -6431,6 +6436,7 @@ class CharacterTextField extends StatelessWidget {
   final String? hintText;
   final int maxLines;
   final bool enabled;
+  final FocusNode? focusNode;
 
   const CharacterTextField({
     super.key,
@@ -6439,6 +6445,7 @@ class CharacterTextField extends StatelessWidget {
     this.hintText,
     this.maxLines = 1,
     this.enabled = true,
+    this.focusNode,
   });
 
   @override
@@ -6447,6 +6454,7 @@ class CharacterTextField extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8.0),
       child: AppTextField(
         controller: controller,
+        focusNode: focusNode,
         maxLines: maxLines,
         labelText: label,
         hintText: hintText,

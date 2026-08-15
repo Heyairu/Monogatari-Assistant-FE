@@ -1578,6 +1578,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 ),
                 PopupMenuButton<String>(
                   tooltip: "匯入匯出",
+                  iconColor: scheme.onSurface,
                   onSelected: (value) {
                     switch (value) {
                       case "import":
@@ -1613,7 +1614,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                       ),
                     ];
                   },
-                  icon: const Icon(Icons.import_export_outlined),
+                  icon: Icon(
+                    Icons.import_export_outlined,
+                    color: scheme.onSurface,
+                  ),
                 ),
               ],
             ),

@@ -25,7 +25,9 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/world_settings_data.dart";
+import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
 export "../models/world_settings_data.dart";
 
@@ -273,11 +275,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   final TextEditingController locationNameController = TextEditingController();
   final TextEditingController locationTypeController = TextEditingController();
   final TextEditingController locationNoteController = TextEditingController();
+  final FocusNode _locationNameFocusNode = FocusNode();
+  final FocusNode _locationTypeFocusNode = FocusNode();
+  final FocusNode _locationNoteFocusNode = FocusNode();
   final ScrollController _pageScrollController = ScrollController();
   final ScrollController _treeScrollController = ScrollController();
   final ScrollController _detailScrollController = ScrollController();
   Timer? _detailDraftTimer;
   VoidCallback? _pendingDetailCommit;
+  bool _isSyncingDetailControllers = false;
   int _templateLoadGeneration = 0;
 
   @override
@@ -331,6 +337,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     locationNameController.dispose();
     locationTypeController.dispose();
     locationNoteController.dispose();
+    _locationNameFocusNode.dispose();
+    _locationTypeFocusNode.dispose();
+    _locationNoteFocusNode.dispose();
     _pageScrollController.dispose();
     _treeScrollController.dispose();
     _detailScrollController.dispose();
@@ -350,6 +359,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _scheduleDetailDraft() {
+    if (_isSyncingDetailControllers) return;
     final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
     final name = locationNameController.text;
@@ -497,6 +507,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final locations = ref.watch(worldSettingsDataProvider);
     final flatList = _buildFlatList(locations);
     final viewportHeight = MediaQuery.sizeOf(context).height;
+    final menuIconColor = Theme.of(context).colorScheme.onSurface;
     const listMinHeight = 320.0;
     final listHeight = math.max(viewportHeight * 0.4, listMinHeight);
 
@@ -519,12 +530,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                         const LargeTitle(icon: Icons.public, text: "世界設定"),
                         const Spacer(),
                         PopupMenuButton<String>(
-                          icon: const Row(
+                          icon: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.grid_view),
-                              SizedBox(width: 4),
-                              Text("模板管理"),
+                              Icon(Icons.grid_view, color: menuIconColor),
+                              const SizedBox(width: 4),
+                              const Text("模板管理"),
                             ],
                           ),
                           onSelected: (value) {
@@ -877,23 +888,53 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           const SizedBox(height: 16),
 
           // 名稱
-          AppTextField(
+          CollaborativeProjectTextFieldRegion(
+            key: ValueKey("world-name-${location.id}"),
+            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "localName",
+            ),
+            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "localName",
+            ),
             controller: locationNameController,
-            decoration: const InputDecoration(
-              labelText: "名稱",
-              border: OutlineInputBorder(),
-              isDense: true,
+            focusNode: _locationNameFocusNode,
+            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+            child: AppTextField(
+              controller: locationNameController,
+              focusNode: _locationNameFocusNode,
+              decoration: const InputDecoration(
+                labelText: "名稱",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
           ),
           const SizedBox(height: 12),
 
           // 類型
-          AppTextField(
+          CollaborativeProjectTextFieldRegion(
+            key: ValueKey("world-type-${location.id}"),
+            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "localType",
+            ),
+            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "localType",
+            ),
             controller: locationTypeController,
-            decoration: const InputDecoration(
-              labelText: "類型",
-              border: OutlineInputBorder(),
-              isDense: true,
+            focusNode: _locationTypeFocusNode,
+            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+            child: AppTextField(
+              controller: locationTypeController,
+              focusNode: _locationTypeFocusNode,
+              decoration: const InputDecoration(
+                labelText: "類型",
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -992,13 +1033,28 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           // 備註
           const Text("備註:", style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          AppTextField(
-            controller: locationNoteController,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
+          CollaborativeProjectTextFieldRegion(
+            key: ValueKey("world-note-${location.id}"),
+            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "note",
             ),
-            maxLines: 4,
+            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+              location.id,
+              "note",
+            ),
+            controller: locationNoteController,
+            focusNode: _locationNoteFocusNode,
+            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+            child: AppTextField(
+              controller: locationNoteController,
+              focusNode: _locationNoteFocusNode,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 4,
+            ),
           ),
         ],
       ),
@@ -1415,28 +1471,33 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   }
 
   void _syncDetailControllers() {
-    final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
-    if (_customValueEditorLocationId != displayNodeId) {
-      _customValueEditorLocationId = displayNodeId;
-      _clearCustomValueEditor();
-    }
-    if (displayNodeId == null) {
+    _isSyncingDetailControllers = true;
+    try {
+      final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
+      if (_customValueEditorLocationId != displayNodeId) {
+        _customValueEditorLocationId = displayNodeId;
+        _clearCustomValueEditor();
+      }
+      if (displayNodeId == null) {
+        _setControllerTextIfChanged(locationNameController, "");
+        _setControllerTextIfChanged(locationTypeController, "");
+        _setControllerTextIfChanged(locationNoteController, "");
+        return;
+      }
+      final location = _getLocation(displayNodeId, _locations);
+      if (location != null) {
+        _setControllerTextIfChanged(locationNameController, location.localName);
+        _setControllerTextIfChanged(locationTypeController, location.localType);
+        _setControllerTextIfChanged(locationNoteController, location.note);
+        return;
+      }
+
       _setControllerTextIfChanged(locationNameController, "");
       _setControllerTextIfChanged(locationTypeController, "");
       _setControllerTextIfChanged(locationNoteController, "");
-      return;
+    } finally {
+      _isSyncingDetailControllers = false;
     }
-    final location = _getLocation(displayNodeId, _locations);
-    if (location != null) {
-      _setControllerTextIfChanged(locationNameController, location.localName);
-      _setControllerTextIfChanged(locationTypeController, location.localType);
-      _setControllerTextIfChanged(locationNoteController, location.note);
-      return;
-    }
-
-    _setControllerTextIfChanged(locationNameController, "");
-    _setControllerTextIfChanged(locationTypeController, "");
-    _setControllerTextIfChanged(locationNoteController, "");
   }
 
   void _setControllerTextIfChanged(

@@ -460,7 +460,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                 children: [
                   Text(
                     bothMissing
-                        ? "本機與對方都沒有已儲存且可驗證的目標文件，請先準備一份文件。"
+                        ? "本機與對方都沒有記憶體中的目標專案；建立新專案後即可直接協作，不必先儲存檔案。"
                         : "雙方的 Project UUID 不同，請決定本次同步應採用哪一份文件。",
                   ),
                   if (!bothMissing) ...[
@@ -482,7 +482,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                   onPressed: () => Navigator.of(
                     dialogContext,
                   ).pop(_P2pSelectionAction.prepareLocal),
-                  child: const Text("在本機準備文件"),
+                  child: const Text("建立本機專案"),
                 )
               else ...[
                 if (widget.onChooseSyncProject != null ||
@@ -575,7 +575,11 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
       local: widget.localP2pProject,
       requireRemote: false,
     );
-    if (localPreflight.canSync) {
+    if (localPreflight.canCollaborate) {
+      if (!localPreflight.canSync) {
+        _showMessage("目前記憶體專案已可即時同步；儲存只用來建立 XML checkpoint。");
+        return;
+      }
       final onChooseSyncProject = widget.onChooseSyncProject;
       if (onChooseSyncProject != null) {
         await onChooseSyncProject();
@@ -595,14 +599,14 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text("同步前請先準備文件"),
+          title: const Text("準備同步專案"),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("只有已儲存、沒有待存修改且 UUID 有效的專案才能同步。"),
+                const Text("即時協作只需要記憶體中的有效 Project UUID，不要求先寫入檔案。"),
                 const SizedBox(height: 12),
                 ...issues.map(
                   (issue) => Padding(
@@ -625,6 +629,16 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text("取消"),
             ),
+            if (preflight.issues.contains(
+                  P2pProjectPreflightIssue.noLocalProject,
+                ) &&
+                widget.onNewProject != null)
+              FilledButton(
+                onPressed: () => Navigator.of(
+                  dialogContext,
+                ).pop(_P2pPreparationAction.createNew),
+                child: const Text("建立記憶體專案"),
+              ),
             if (widget.onChooseSyncProject != null ||
                 widget.onOpenProject != null)
               TextButton(
@@ -661,6 +675,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
       case _P2pPreparationAction.chooseProject:
         final callback = widget.onChooseSyncProject ?? widget.onOpenProject;
         await callback?.call();
+        break;
+      case _P2pPreparationAction.createNew:
+        await widget.onNewProject?.call();
         break;
     }
   }
@@ -715,9 +732,12 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
     P2pSyncState state,
   ) {
     if (_isReceivingRemoteProject(state)) {
-      return "將由對方提供文件；同步時再選擇儲存位置";
+      return "將由對方提供記憶體專案；不必先選擇儲存位置";
     }
-    if (preflight.requiresSave) return "請先儲存同步文件";
+    if (preflight.canCollaborate && !preflight.canSync) {
+      return "記憶體專案可即時同步；尚未建立 XML checkpoint";
+    }
+    if (preflight.requiresSave) return "請先建立或開啟一個專案";
     if (preflight.issues.contains(
       P2pProjectPreflightIssue.localProjectHasConflict,
     )) {
@@ -895,6 +915,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
       if (!downloaded || !mounted) return;
       transfer = ref.read(p2pSnapshotTransferProvider);
     }
+    syncState = ref.read(p2pSyncProvider);
     final apply = widget.onApplyVerifiedP2pSnapshot;
     final verified = transfer.verifiedSnapshot;
     if (verified == null) return;
@@ -1873,6 +1894,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                                 ?.copyWith(
                                   color:
                                       localP2pPreflight.canSync ||
+                                          localP2pPreflight.canCollaborate ||
                                           _isReceivingRemoteProject(p2pState)
                                       ? Theme.of(context).colorScheme.primary
                                       : Theme.of(context).colorScheme.error,
@@ -1905,7 +1927,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                                 onPressed: _handlePrepareP2pProject,
                                 icon: const Icon(Icons.description_outlined),
                                 label: Text(
-                                  localP2pPreflight.canSync ||
+                                  localP2pPreflight.canCollaborate ||
                                           _isReceivingRemoteProject(p2pState)
                                       ? "更換同步文件"
                                       : "準備同步文件",
@@ -2008,6 +2030,6 @@ class _DidYouKnowData {
   final String source;
 }
 
-enum _P2pPreparationAction { save, saveAs, chooseProject }
+enum _P2pPreparationAction { save, saveAs, chooseProject, createNew }
 
 enum _P2pSelectionAction { local, remote, prepareLocal, chooseOther }

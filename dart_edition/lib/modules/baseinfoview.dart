@@ -18,11 +18,13 @@ import "package:intl/intl.dart";
 import "package:xml/xml.dart" as xml;
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
+import "../application/collaboration/project_collaboration_fields.dart";
 import "../bin/settings_manager.dart";
 import "../models/base_info_data.dart";
 import "../models/codecs/xml_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/word_count_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
 export "../models/base_info_data.dart";
 
@@ -243,6 +245,12 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
   late final TextEditingController _toRecapController;
   late final TextEditingController _storyTypeController;
   late final TextEditingController _introController;
+  late final FocusNode _bookNameFocusNode;
+  late final FocusNode _authorFocusNode;
+  late final FocusNode _purposeFocusNode;
+  late final FocusNode _toRecapFocusNode;
+  late final FocusNode _storyTypeFocusNode;
+  late final FocusNode _introFocusNode;
 
   @override
   void initState() {
@@ -255,6 +263,12 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     _toRecapController = TextEditingController();
     _storyTypeController = TextEditingController();
     _introController = TextEditingController();
+    _bookNameFocusNode = FocusNode();
+    _authorFocusNode = FocusNode();
+    _purposeFocusNode = FocusNode();
+    _toRecapFocusNode = FocusNode();
+    _storyTypeFocusNode = FocusNode();
+    _introFocusNode = FocusNode();
 
     // 添加監聽器
     _bookNameController.addListener(() {
@@ -346,6 +360,12 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     _toRecapController.dispose();
     _storyTypeController.dispose();
     _introController.dispose();
+    _bookNameFocusNode.dispose();
+    _authorFocusNode.dispose();
+    _purposeFocusNode.dispose();
+    _toRecapFocusNode.dispose();
+    _storyTypeFocusNode.dispose();
+    _introFocusNode.dispose();
     super.dispose();
   }
 
@@ -456,6 +476,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                       label: "書名",
                       hint: "輸入書名",
                       controller: _bookNameController,
+                      focusNode: _bookNameFocusNode,
+                      fieldId: ProjectCollaborationFields.baseInfoBookName,
                       icon: Icons.book,
                     ),
 
@@ -466,6 +488,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                       label: "作者",
                       hint: "輸入作者名",
                       controller: _authorController,
+                      focusNode: _authorFocusNode,
+                      fieldId: ProjectCollaborationFields.baseInfoAuthor,
                       icon: Icons.person,
                     ),
 
@@ -476,6 +500,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                       label: "主旨",
                       hint: "輸入故事主旨",
                       controller: _purposeController,
+                      focusNode: _purposeFocusNode,
+                      fieldId: ProjectCollaborationFields.baseInfoPurpose,
                       icon: Icons.lightbulb_outline,
                     ),
 
@@ -486,6 +512,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                       label: "一句話簡介",
                       hint: "輸入一句話簡介",
                       controller: _toRecapController,
+                      focusNode: _toRecapFocusNode,
+                      fieldId: ProjectCollaborationFields.baseInfoToRecap,
                       icon: Icons.summarize,
                     ),
 
@@ -496,6 +524,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
                       label: "類型",
                       hint: "輸入作品類型",
                       controller: _storyTypeController,
+                      focusNode: _storyTypeFocusNode,
+                      fieldId: ProjectCollaborationFields.baseInfoStoryType,
                       icon: Icons.category,
                     ),
 
@@ -530,6 +560,8 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     required String label,
     required String hint,
     required TextEditingController controller,
+    required FocusNode focusNode,
+    required String fieldId,
     required IconData icon,
   }) {
     return Column(
@@ -537,10 +569,16 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       children: [
         SmallTitle(icon: icon, text: label),
         const SizedBox(height: 8),
-        AppTextField(
+        CollaborativeProjectTextFieldRegion(
+          fieldId: fieldId,
           controller: controller,
-          selectAllOnFocus: false,
-          hintText: hint,
+          focusNode: focusNode,
+          child: AppTextField(
+            controller: controller,
+            focusNode: focusNode,
+            selectAllOnFocus: false,
+            hintText: hint,
+          ),
         ),
       ],
     );
@@ -562,11 +600,17 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       children: [
         const SmallTitle(icon: Icons.description, text: "簡介"),
         const SizedBox(height: 8),
-        AppTextField(
+        CollaborativeProjectTextFieldRegion(
+          fieldId: ProjectCollaborationFields.baseInfoIntro,
           controller: _introController,
-          selectAllOnFocus: false,
-          hintText: "輸入作品簡介",
-          maxLines: 6,
+          focusNode: _introFocusNode,
+          child: AppTextField(
+            controller: _introController,
+            focusNode: _introFocusNode,
+            selectAllOnFocus: false,
+            hintText: "輸入作品簡介",
+            maxLines: 6,
+          ),
         ),
       ],
     );

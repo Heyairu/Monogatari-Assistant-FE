@@ -182,6 +182,23 @@ void main() {
     expect(source.projectUUID, originalUuid);
   });
 
+  test('first persistence keeps the in-memory collaboration UUID', () {
+    final memoryProject = ProjectFile(
+      fileName: 'memory.mnproj',
+      filePath: null,
+      content: '',
+    );
+    final persistedProject = ProjectFile(
+      fileName: 'saved.mnproj',
+      filePath: 'C:/projects/saved.mnproj',
+      content: '',
+    );
+
+    expect(shouldRegenerateProjectUuidForSaveAs(memoryProject), isFalse);
+    expect(shouldRegenerateProjectUuidForSaveAs(null), isFalse);
+    expect(shouldRegenerateProjectUuidForSaveAs(persistedProject), isTrue);
+  });
+
   test(
     'verified remote snapshot overwrites only the known current location',
     () async {

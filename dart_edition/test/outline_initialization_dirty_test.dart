@@ -10,18 +10,25 @@ void main() {
     tester,
   ) async {
     final container = ProviderContainer();
-    addTearDown(container.dispose);
-    container.read(editorCoordinatorProvider);
+    try {
+      container.read(editorCoordinatorProvider);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: OutlineAdjustView()),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: OutlineAdjustView()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    expect(container.read(editorCoordinatorProvider).hasUnsavedChanges, false);
+      expect(
+        container.read(editorCoordinatorProvider).hasUnsavedChanges,
+        false,
+      );
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      container.dispose();
+    }
   });
 }

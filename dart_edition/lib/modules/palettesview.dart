@@ -440,29 +440,36 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Wrap(
-      spacing: 16,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      alignment: WrapAlignment.spaceBetween,
+    final menuIconColor = Theme.of(context).colorScheme.onSurface;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        LargeTitle(icon: Icons.palette_outlined, text: "文字色票"),
+        const SizedBox(height: 12),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
-              Icons.palette_outlined,
-              color: Theme.of(context).colorScheme.primary,
+            Expanded(
+              child: AppTextField(
+                key: const ValueKey<String>("palette-search-field"),
+                controller: _searchController,
+                hintText: "搜尋詞條……",
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: "清除搜尋",
+                        onPressed: _searchController.clear,
+                        icon: const Icon(Icons.clear),
+                      ),
+              ),
             ),
-            const SizedBox(width: 10),
-            Text("文字色票", style: Theme.of(context).textTheme.titleLarge),
-          ],
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
+            const SizedBox(width: 8),
             PopupMenuButton<String>(
               key: const ValueKey<String>("palette-import-export-menu"),
               tooltip: "匯入或匯出色票",
+              iconColor: menuIconColor,
               onSelected: (String value) {
                 switch (value) {
                   case "import":
@@ -492,23 +499,9 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
                       ),
                     ),
                   ],
-              icon: const Icon(Icons.import_export_outlined),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 320,
-              child: AppTextField(
-                key: const ValueKey<String>("palette-search-field"),
-                controller: _searchController,
-                hintText: "搜尋詞條……",
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: "清除搜尋",
-                        onPressed: _searchController.clear,
-                        icon: const Icon(Icons.clear),
-                      ),
+              icon: Icon(
+                Icons.import_export_outlined,
+                color: menuIconColor,
               ),
             ),
           ],
@@ -601,9 +594,14 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
                               children: <Widget>[
                                 Text(
                                   "Hue",
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.labelMedium,
+                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                        color: HSVColor.fromAHSV(
+                                          1,
+                                          _selectedHue.toDouble(),
+                                          0.6,
+                                          0.8,
+                                        ).toColor(),
+                                  ),
                                 ),
                                 Text(
                                   "$_selectedHue°",

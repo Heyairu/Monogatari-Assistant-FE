@@ -10,6 +10,13 @@ import "../../models/codecs/timeline_codec.dart";
 import "core_providers.dart";
 import "project_snapshot_utils.dart";
 
+/// A first save binds the in-memory collaboration project to a path and must
+/// preserve its UUID. Only Save As from an already persisted file creates a
+/// distinct project identity.
+bool shouldRegenerateProjectUuidForSaveAs(ProjectFile? currentProject) {
+  return currentProject != null && !currentProject.isNewFile;
+}
+
 enum ProjectIoOperation {
   idle,
   newProject,
@@ -105,6 +112,28 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       snapshotData.projectUUID = ProjectData.createProjectUUID();
     }
     final xmlContent = await useCase.generateProjectXml(snapshotData);
+    return ProjectIoPayload(snapshot: snapshotData, xmlContent: xmlContent);
+  }
+
+  /// Serializes an immutable collaboration draft without changing save-time
+  /// fields and without writing the user's project file.
+  Future<ProjectIoPayload> prepareDraftProjectPayload(
+    ProjectData currentData,
+  ) async {
+    final useCase = ref.read(projectFileUseCaseProvider);
+    final baseInfoSnapshot = base_info_module.BaseInfoCodec.createSaveSnapshot(
+      data: currentData.baseInfoData,
+      contentText: currentData.contentText,
+      updateLatestSave: false,
+    );
+    final snapshotData = snapshotProjectData(
+      currentData,
+      baseInfoOverride: baseInfoSnapshot,
+    );
+    final xmlContent = await useCase.generateProjectXml(
+      snapshotData,
+      updateLatestSave: false,
+    );
     return ProjectIoPayload(snapshot: snapshotData, xmlContent: xmlContent);
   }
 
@@ -264,6 +293,47 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         data: snapshot,
         persistedXmlContent: xmlContent,
         persistedProjectUuid: parseResult.sourceProjectUuid,
+        projectVersion: parseResult.projectVersion,
+        migrationWarnings: parseResult.migrationWarnings,
+        wasMigrated: parseResult.wasMigrated,
+      );
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Parses a verified collaboration draft in memory. No file API is called.
+  Future<ProjectLoadResult> parseExternalProjectSnapshot({
+    required ProjectFile currentProject,
+    required String xmlContent,
+  }) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.openProject,
+        isParsing: true,
+      ),
+    );
+    try {
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final parseResult = await useCase.loadProjectParseResultFromXml(
+        ProjectFile(
+          fileName: currentProject.fileName,
+          filePath: currentProject.filePath,
+          uri: currentProject.uri,
+          content: xmlContent,
+        ),
+      );
+      final snapshot = snapshotProjectData(parseResult.data);
+      state = const AsyncData(
+        ProjectIoStatus(
+          operation: ProjectIoOperation.openProject,
+          message: "遠端 draft 已在記憶體中解析完成",
+        ),
+      );
+      return ProjectLoadResult(
+        projectFile: currentProject,
+        data: snapshot,
         projectVersion: parseResult.projectVersion,
         migrationWarnings: parseResult.migrationWarnings,
         wasMigrated: parseResult.wasMigrated,

@@ -47,6 +47,16 @@ void main() {
       find.byKey(const ValueKey<String>("palette-import-export-menu")),
       findsOneWidget,
     );
+    final Rect titleBounds = tester.getRect(find.text("文字色票"));
+    final Rect searchBounds = tester.getRect(
+      find.byKey(const ValueKey<String>("palette-search-field")),
+    );
+    final Rect importExportBounds = tester.getRect(
+      find.byKey(const ValueKey<String>("palette-import-export-menu")),
+    );
+    expect(searchBounds.top, greaterThan(titleBounds.bottom));
+    expect(importExportBounds.left, greaterThan(searchBounds.left));
+    expect(importExportBounds.center.dy, closeTo(searchBounds.center.dy, 1));
     expect(
       find.byKey(const ValueKey<String>("palette-hue-342")),
       findsOneWidget,

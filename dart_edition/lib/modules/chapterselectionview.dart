@@ -33,6 +33,7 @@ import "../bin/settings_manager.dart";
 import "../models/chapter_selection_data.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
 export "../models/chapter_selection_data.dart";
 
@@ -1594,9 +1595,15 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               )
             : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
       ),
-      subtitle: Text(
-        "${chapter.getWordCount(wordCountMode)} 字",
-        style: Theme.of(context).textTheme.bodySmall,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "${chapter.getWordCount(wordCountMode)} 字",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          ChapterRemotePresenceBadges(chapterId: chapter.chapterUUID),
+        ],
       ),
       leading: SizedBox(
         width: 48,

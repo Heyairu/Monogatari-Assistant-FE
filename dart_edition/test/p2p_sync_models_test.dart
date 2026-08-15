@@ -64,7 +64,7 @@ void main() {
       },
     );
 
-    test("blocks an unsaved or dirty local project", () {
+    test("allows realtime collaboration before XML persistence", () {
       final unsaved = P2pProjectPreflight.evaluate(
         local: _project(persisted: false),
         requireRemote: false,
@@ -74,6 +74,12 @@ void main() {
         contains(P2pProjectPreflightIssue.localProjectNotPersisted),
       );
       expect(unsaved.requiresSave, isTrue);
+      expect(unsaved.canSync, isFalse);
+      expect(unsaved.canCollaborate, isTrue);
+      expect(
+        P2pProjectOffer.fromStatus(_project(persisted: false)).hasProject,
+        isTrue,
+      );
 
       final dirty = P2pProjectPreflight.evaluate(
         local: _project(dirty: true),
@@ -84,6 +90,11 @@ void main() {
         contains(P2pProjectPreflightIssue.localProjectDirty),
       );
       expect(dirty.canSync, isFalse);
+      expect(dirty.canCollaborate, isTrue);
+      expect(
+        P2pProjectOffer.fromStatus(_project(dirty: true)).hasProject,
+        isTrue,
+      );
     });
 
     test("blocks UUID mismatch and untrusted remote", () {

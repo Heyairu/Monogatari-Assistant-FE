@@ -12,6 +12,7 @@ P2pRevisionMetadata _revision({
   required P2pVersionVector clock,
   required String author,
   List<String> parents = const <String>[],
+  String? contentHash,
 }) {
   return P2pRevisionMetadata(
     revisionId: id,
@@ -20,7 +21,7 @@ P2pRevisionMetadata _revision({
     clock: clock,
     authorDeviceId: author,
     createdAtEpochSeconds: 1770000000,
-    contentSha256: _hash("f"),
+    contentSha256: contentHash ?? _hash("f"),
     formatVersion: "1.0",
   );
 }
@@ -108,6 +109,43 @@ void main() {
       localSummary.compare(remoteSummary),
       P2pRevisionSummaryRelation.concurrent,
     );
+  });
+
+  test("draft summary round-trips a bounded revision-bound delta", () {
+    final base = _revision(
+      id: _hash("a"),
+      clock: P2pVersionVector(<String, int>{_deviceA: 1}),
+      author: _deviceA,
+      contentHash: _hash("1"),
+    );
+    final target = _revision(
+      id: _hash("b"),
+      clock: P2pVersionVector(<String, int>{_deviceA: 2}),
+      author: _deviceA,
+      parents: <String>[base.revisionId],
+      contentHash: _hash("2"),
+    );
+    final baseBytes = "abcdef".codeUnits;
+    final targetBytes = "abcXYdef".codeUnits;
+    final delta = P2pRevisionDelta.tryCreate(
+      baseRevision: base,
+      targetRevision: target,
+      baseBytes: baseBytes,
+      targetBytes: targetBytes,
+    );
+    expect(delta, isNotNull);
+    expect(String.fromCharCodes(delta!.applyTo(baseBytes)), "abcXYdef");
+
+    final summary = P2pRevisionSummary(
+      projectUuid: _projectId,
+      heads: <P2pRevisionMetadata>[target],
+      draftHeadIds: <String>{target.revisionId},
+      delta: delta,
+    );
+    final decoded = P2pRevisionSummary.fromJson(summary.toJson());
+    expect(decoded.isDraft(target.revisionId), isTrue);
+    expect(decoded.delta?.targetRevisionId, target.revisionId);
+    expect(decoded.compare(summary), P2pRevisionSummaryRelation.equal);
   });
 
   test("version vectors reject invalid device IDs and zero counters", () {

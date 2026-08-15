@@ -386,6 +386,12 @@
       "languageVersion": "3.3"
     },
     {
+      "name": "flutter_svg",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_svg-2.0.10+1",
+      "packageUri": "lib/",
+      "languageVersion": "2.19"
+    },
+    {
       "name": "flutter_test",
       "rootUri": "file:///C:/Users/Heyai/flutter/packages/flutter_test",
       "packageUri": "lib/",
@@ -576,6 +582,12 @@
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/path-1.9.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
+    },
+    {
+      "name": "path_parsing",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/path_parsing-1.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.3"
     },
     {
       "name": "path_provider",
@@ -948,6 +960,24 @@
       "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/uuid-4.5.3",
       "packageUri": "lib/",
       "languageVersion": "3.0"
+    },
+    {
+      "name": "vector_graphics",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/vector_graphics-1.2.3",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
+      "name": "vector_graphics_codec",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/vector_graphics_codec-1.1.13",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
+      "name": "vector_graphics_compiler",
+      "rootUri": "file:///C:/Users/Heyai/AppData/Local/Pub/Cache/hosted/pub.dev/vector_graphics_compiler-1.3.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
     },
     {
       "name": "vector_math",

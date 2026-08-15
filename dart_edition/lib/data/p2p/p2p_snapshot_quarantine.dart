@@ -24,6 +24,46 @@ class P2pVerifiedSnapshot {
   const P2pVerifiedSnapshot({required this.manifest, required this.xmlContent});
 }
 
+/// Verifies an in-memory snapshot reconstructed from an authenticated delta.
+///
+/// This intentionally applies the same hash, UTF-8, XML, UUID and format
+/// checks as the quarantine finalization path before returning trusted data.
+Future<P2pVerifiedSnapshot> verifyP2pSnapshotBytes(
+  P2pSnapshotManifest manifest,
+  List<int> bytes,
+) async {
+  if (bytes.length != manifest.contentLength) {
+    throw const FormatException("P2P snapshot 長度與 manifest 不符。");
+  }
+  final digest = (await Sha256().hash(
+    bytes,
+  )).bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();
+  if (digest != manifest.contentSha256) {
+    throw const FormatException("P2P snapshot SHA-256 與 manifest 不符。");
+  }
+  final xmlContent = utf8.decode(bytes, allowMalformed: false);
+  _validateSnapshotXml(manifest, xmlContent);
+  return P2pVerifiedSnapshot(manifest: manifest, xmlContent: xmlContent);
+}
+
+void _validateSnapshotXml(P2pSnapshotManifest manifest, String xmlContent) {
+  if (RegExp(r"<!DOCTYPE", caseSensitive: false).hasMatch(xmlContent)) {
+    throw const FormatException("P2P quarantine XML 不允許 DOCTYPE。");
+  }
+  final document = XmlDocument.parse(xmlContent);
+  final root = document.rootElement;
+  if (root.name.qualified != "Project" ||
+      root.getAttribute("UUID")?.trim().toLowerCase() != manifest.projectUuid) {
+    throw const FormatException("P2P quarantine XML Project UUID 不符。");
+  }
+  final versions = root.findElements("ver").toList(growable: false);
+  if (versions.length != 1 ||
+      versions.single.children.any((node) => node is XmlElement) ||
+      versions.single.innerText.trim() != manifest.formatVersion) {
+    throw const FormatException("P2P quarantine XML format version 不符。");
+  }
+}
+
 abstract class P2pSnapshotQuarantineStorage {
   Future<P2pStoredQuarantineTransfer> openTransfer(
     P2pSnapshotManifest manifest,
@@ -668,22 +708,7 @@ class P2pSnapshotQuarantineSession {
   }
 
   void _validateXml(String xmlContent) {
-    if (RegExp(r"<!DOCTYPE", caseSensitive: false).hasMatch(xmlContent)) {
-      throw const FormatException("P2P quarantine XML 不允許 DOCTYPE。");
-    }
-    final document = XmlDocument.parse(xmlContent);
-    final root = document.rootElement;
-    if (root.name.qualified != "Project" ||
-        root.getAttribute("UUID")?.trim().toLowerCase() !=
-            manifest.projectUuid) {
-      throw const FormatException("P2P quarantine XML Project UUID 不符。");
-    }
-    final versions = root.findElements("ver").toList(growable: false);
-    if (versions.length != 1 ||
-        versions.single.children.any((node) => node is XmlElement) ||
-        versions.single.innerText.trim() != manifest.formatVersion) {
-      throw const FormatException("P2P quarantine XML format version 不符。");
-    }
+    _validateSnapshotXml(manifest, xmlContent);
   }
 
   Future<void> _markFailed() async {

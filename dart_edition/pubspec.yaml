@@ -32,6 +32,7 @@ dependencies:
   code_text_field: ^1.1.0
   flutter_highlight: ^0.7.0
   highlight: ^0.7.0
+  flutter_svg: 2.0.10+1
 
 
 dev_dependencies:
@@ -56,6 +57,7 @@ flutter:
     # ICONS
     - assets/icon/Title.png
     - assets/icon/app_icon.png
+    - assets/images/splash_decoration.svg
 
     # JSON
     - assets/jsons/didyouknow.json

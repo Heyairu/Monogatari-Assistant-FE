@@ -35,12 +35,14 @@ import "data/p2p/p2p_snapshot_quarantine.dart";
 import "domain/models/p2p_sync_models.dart";
 import "domain/models/p2p_revision_models.dart";
 import "domain/models/p2p_snapshot_models.dart";
+import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
 import "presentation/providers/project_io_providers.dart";
 import "presentation/providers/project_history_provider.dart";
 import "presentation/providers/p2p_sync_providers.dart";
 import "presentation/widgets/p2p_conflict_resolution_dialog.dart";
+import "presentation/widgets/splash_screen.dart";
 import "presentation/providers/project_snapshot_utils.dart";
 import "presentation/providers/project_state_providers.dart";
 import "presentation/providers/timeline_providers.dart";
@@ -104,19 +106,86 @@ class _ProjectIoBusyIndicator extends ConsumerWidget {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 初始化 window_manager
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.linux ||
-          defaultTargetPlatform == TargetPlatform.macOS)) {
-    await windowManager.ensureInitialized();
+  if (_isDesktopPlatform) {
+    await _DesktopSplashWindowController.prepare();
   }
 
   runApp(const ProviderScope(child: MainApp()));
 }
 
-class MainApp extends ConsumerWidget {
+bool get _isDesktopPlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS);
+
+class _DesktopSplashWindowController {
+  static const Size splashSize = Size(540, 360);
+  static Size? _mainWindowSize;
+
+  static Future<void> prepare() async {
+    await windowManager.ensureInitialized();
+    _mainWindowSize = await windowManager.getSize();
+
+    unawaited(
+      windowManager.waitUntilReadyToShow(
+        const WindowOptions(
+          size: splashSize,
+          center: true,
+          backgroundColor: Colors.transparent,
+          titleBarStyle: TitleBarStyle.hidden,
+          windowButtonVisibility: false,
+        ),
+        () async {
+          await windowManager.setAsFrameless();
+          await windowManager.show();
+          await windowManager.focus();
+        },
+      ),
+    );
+  }
+
+  static Future<void> restoreMainWindow() async {
+    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    final mainWindowSize = _mainWindowSize;
+    if (mainWindowSize != null) {
+      await windowManager.setSize(mainWindowSize);
+      await windowManager.center();
+    }
+  }
+}
+
+class MainApp extends ConsumerStatefulWidget {
   const MainApp({super.key});
+
+  @override
+  ConsumerState<MainApp> createState() => _MainAppState();
+}
+
+class _MainAppState extends ConsumerState<MainApp> {
+  static const _desktopSplashMinimumDuration = Duration(seconds: 5);
+
+  Timer? _splashTimer;
+  bool _minimumSplashElapsed = !_isDesktopPlatform;
+  bool _mainWindowRestored = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isDesktopPlatform) {
+      _splashTimer = Timer(_desktopSplashMinimumDuration, () {
+        if (mounted) {
+          setState(() => _minimumSplashElapsed = true);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _splashTimer?.cancel();
+    super.dispose();
+  }
 
   ThemeMode _convertThemeMode(AppThemeMode mode) {
     switch (mode) {
@@ -130,24 +199,27 @@ class MainApp extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final bootstrap = ref.watch(appInitializationProvider);
 
-    if (bootstrap.isLoading) {
+    final keepDesktopSplashVisible =
+        _isDesktopPlatform && !_minimumSplashElapsed;
+    if (bootstrap.isLoading || keepDesktopSplashVisible) {
       return MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text("正在載入..."),
-              ],
-            ),
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6750A4),
           ),
         ),
+        home: const AppSplash(),
       );
+    }
+
+    if (_isDesktopPlatform && !_mainWindowRestored) {
+      _mainWindowRestored = true;
+      unawaited(_DesktopSplashWindowController.restoreMainWindow());
     }
 
     if (bootstrap.hasError) {
@@ -429,6 +501,8 @@ class _ContentViewState extends ConsumerState<ContentView>
   bool _isProjectSwitching = false;
   bool _isApplyingProjectHistory = false;
   bool _isP2pProjectStatusPublishScheduled = false;
+  bool _hasUnpersistedRemoteDraft = false;
+  String? _p2pAutoApplyApprovedSessionKey;
   static const Duration _projectHistoryRecordDelay = Duration(
     milliseconds: 500,
   );
@@ -722,10 +796,25 @@ class _ContentViewState extends ConsumerState<ContentView>
       final String currentText = textController.text;
       final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
+      final chapterId = selectedChapID;
+      final focusOffset = _clampOffset(
+        textController.selection.extentOffset,
+        currentText.length,
+      );
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
       if (textChanged) {
         cancelFindAllMatches(textController);
+        if (chapterId != null) {
+          ref
+              .read(collaborationProvider.notifier)
+              .recordLocalTextEdit(
+                chapterId: chapterId,
+                nextText: currentText,
+                anchorOffset: normalizedOffset,
+                focusOffset: focusOffset,
+              );
+        }
         _lastObservedEditorText = currentText;
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         _editorCoordinatorNotifier.markAsModified();
@@ -742,6 +831,15 @@ class _ContentViewState extends ConsumerState<ContentView>
         }
       } else if (_cursorOffset != normalizedOffset) {
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
+      }
+      if (!textChanged && chapterId != null) {
+        ref
+            .read(collaborationProvider.notifier)
+            .updateLocalCursor(
+              chapterId: chapterId,
+              anchorOffset: normalizedOffset,
+              focusOffset: focusOffset,
+            );
       }
     });
 
@@ -798,10 +896,24 @@ class _ContentViewState extends ConsumerState<ContentView>
           return;
         }
 
-        final currentSelection = _clampSelection(
-          textController.selection,
-          next,
-        );
+        final selectionRebase = ref
+            .read(collaborationProvider)
+            .localSelectionRebase;
+        final currentSelection =
+            selectionRebase != null &&
+                selectionRebase.documentId == selectedChapID &&
+                selectionRebase.expectedText == next
+            ? TextSelection(
+                baseOffset: _clampOffset(
+                  selectionRebase.anchorOffset,
+                  next.length,
+                ),
+                extentOffset: _clampOffset(
+                  selectionRebase.focusOffset,
+                  next.length,
+                ),
+              )
+            : _clampSelection(textController.selection, next);
 
         final coordinatorNotifier = ref.read(
           editorCoordinatorProvider.notifier,
@@ -814,6 +926,13 @@ class _ContentViewState extends ConsumerState<ContentView>
             composing: TextRange.empty,
           );
           _lastObservedEditorText = next;
+          if (selectionRebase != null &&
+              selectionRebase.documentId == selectedChapID &&
+              selectionRebase.expectedText == next) {
+            ref
+                .read(collaborationProvider.notifier)
+                .consumeLocalSelectionRebase(selectionRebase.revision);
+          }
         } finally {
           if (beganSync) {
             coordinatorNotifier.endSync();
@@ -874,6 +993,10 @@ class _ContentViewState extends ConsumerState<ContentView>
         }
 
         _projectDataRevision++;
+        _hasUnpersistedRemoteDraft = false;
+        ref
+            .read(collaborationProvider.notifier)
+            .captureProjectData(_collectProjectData());
         _scheduleProjectHistoryRecord(_projectDataRevision);
       }),
     );
@@ -1112,6 +1235,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         return;
       }
       setState(() => currentProject = savedProject);
+      _hasUnpersistedRemoteDraft = false;
       if (_projectDataRevision == revision) {
         _markAsSaved();
       }
@@ -2115,7 +2239,8 @@ class _ContentViewState extends ConsumerState<ContentView>
           : P2pProjectStatus(
               fileName: project.fullFileName,
               hasPersistentLocation: hasPersistentLocation,
-              hasUnsavedChanges: hasUnsavedChanges,
+              hasUnsavedChanges:
+                  hasUnsavedChanges && !_hasUnpersistedRemoteDraft,
               projectUuid: projectUuid,
               isPersistedSnapshotValidated: hasPersistentLocation,
             ),
@@ -2230,6 +2355,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       return false;
     }
 
+    final syncState = ref.read(p2pSyncProvider);
     final currentFile = currentProject;
     final currentName = currentFile?.fullFileName;
     final canOverwriteCurrent =
@@ -2237,42 +2363,52 @@ class _ContentViewState extends ConsumerState<ContentView>
         !currentFile.isNewFile &&
         ref.read(projectUuidProvider).trim().toLowerCase() ==
             snapshot.manifest.projectUuid;
-    final choice = await showDialog<_P2pSnapshotApplyChoice>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(canOverwriteCurrent ? "覆蓋目前專案？" : "儲存並開啟遠端版本？"),
-        content: Text(
-          canOverwriteCurrent
-              ? "遠端 snapshot 已完整驗證，且 UUID 與目前的「$currentName」相同。繼續會以遠端版本覆蓋此檔案；此動作無法由檔案系統復原。您也可以另存副本。"
-              : currentName == null
-              ? "遠端 snapshot 已完整驗證。請選擇儲存位置；若選擇既有檔案，確認後會覆蓋該檔案。取消不會修改目前編輯器。"
-              : "遠端 snapshot 已完整驗證，但目前文件不能安全地直接覆蓋。請另存副本；若選擇既有檔案，確認後會覆蓋該檔案。",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(_P2pSnapshotApplyChoice.cancel),
-            child: const Text("取消"),
+    final hasLocalUnsavedChanges =
+        hasUnsavedChanges && !_hasUnpersistedRemoteDraft;
+    if (hasLocalUnsavedChanges) {
+      _showError("目前工作副本已有即時 operation；snapshot 僅供初始化或 checkpoint，不能覆蓋編輯中的專案。");
+      return false;
+    }
+
+    final remoteIsDraft =
+        syncState.remoteHeadIsDraft &&
+        syncState.remoteRevisionSummary?.heads.single.revisionId ==
+            snapshot.manifest.revisionId;
+    late final _P2pSnapshotApplyChoice? choice;
+    if (canOverwriteCurrent) {
+      final allowed = await _confirmP2pSessionAutoApply(
+        snapshot,
+        appliesInMemory: remoteIsDraft,
+      );
+      choice = allowed ? _P2pSnapshotApplyChoice.overwriteCurrent : null;
+    } else {
+      choice = await showDialog<_P2pSnapshotApplyChoice>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text("儲存並開啟遠端版本？"),
+          content: Text(
+            currentName == null
+                ? "遠端 snapshot 已完整驗證。請選擇儲存位置；若選擇既有檔案，確認後會覆蓋該檔案。取消不會修改目前編輯器。"
+                : "遠端 snapshot 已完整驗證，但目前文件不能安全地直接套用。請另存副本。",
           ),
-          if (canOverwriteCurrent)
-            FilledButton.tonal(
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(_P2pSnapshotApplyChoice.cancel),
+              child: const Text("取消"),
+            ),
+            FilledButton(
               onPressed: () => Navigator.of(
                 dialogContext,
               ).pop(_P2pSnapshotApplyChoice.saveAs),
-              child: const Text("另存副本"),
+              child: const Text("選擇儲存位置"),
             ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(
-              canOverwriteCurrent
-                  ? _P2pSnapshotApplyChoice.overwriteCurrent
-                  : _P2pSnapshotApplyChoice.saveAs,
-            ),
-            child: Text(canOverwriteCurrent ? "確認覆蓋" : "選擇儲存位置"),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
     if (choice == null ||
         choice == _P2pSnapshotApplyChoice.cancel ||
         !mounted) {
@@ -2295,6 +2431,12 @@ class _ContentViewState extends ConsumerState<ContentView>
       if (!mounted || !shouldContinue || !_isCurrentP2pSnapshot(snapshot)) {
         return false;
       }
+    }
+
+    if (remoteIsDraft &&
+        choice == _P2pSnapshotApplyChoice.overwriteCurrent &&
+        currentFile != null) {
+      return _applyVerifiedP2pDraftInMemory(snapshot, currentFile);
     }
 
     _isProjectSwitching = true;
@@ -2384,6 +2526,104 @@ class _ContentViewState extends ConsumerState<ContentView>
       if (_projectIoCoordinator.isCurrent(switchSession)) {
         _beginProjectIoSession(currentProject);
       }
+      _isProjectSwitching = false;
+    }
+  }
+
+  String? _currentP2pSecureSessionKey() {
+    final state = ref.read(p2pSyncProvider);
+    final projectUuid = state.sessionProjectUuid;
+    final peerId = state.trustedPeer?.deviceId;
+    final localNonce = state.localPairingChallenge?.nonceBase64;
+    final remoteNonce = state.remotePairingChallenge?.nonceBase64;
+    if (!state.hasAuthenticatedTransport ||
+        projectUuid == null ||
+        peerId == null ||
+        localNonce == null ||
+        remoteNonce == null) {
+      return null;
+    }
+    return "$projectUuid|$peerId|$localNonce|$remoteNonce";
+  }
+
+  Future<bool> _confirmP2pSessionAutoApply(
+    P2pVerifiedSnapshot snapshot, {
+    required bool appliesInMemory,
+  }) async {
+    final sessionKey = _currentP2pSecureSessionKey();
+    if (sessionKey == null) return false;
+    if (_p2pAutoApplyApprovedSessionKey == sessionKey) return true;
+    final approved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("允許此 Session 自動套用同步？"),
+        content: Text(
+          appliesInMemory
+              ? "遠端 draft 已完整驗證。允許後，此安全 session 的後續 draft 會在本機沒有自行修改時自動套用到編輯器；不會頻繁寫入 .mnproj，直到您手動儲存。"
+              : "遠端 revision 已完整驗證。允許後，此安全 session 在本機乾淨時可自動套用後續版本，不再逐次顯示覆蓋確認。目標專案：${snapshot.manifest.projectUuid.substring(0, 8)}。",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text("暫不允許"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text("允許此 Session"),
+          ),
+        ],
+      ),
+    );
+    if (approved == true &&
+        mounted &&
+        _currentP2pSecureSessionKey() == sessionKey) {
+      _p2pAutoApplyApprovedSessionKey = sessionKey;
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _applyVerifiedP2pDraftInMemory(
+    P2pVerifiedSnapshot snapshot,
+    ProjectFile currentFile,
+  ) async {
+    _isProjectSwitching = true;
+    final session = _projectIoSession;
+    try {
+      final runResult = await _projectIoCoordinator.run(session, () {
+        return ref
+            .read(projectIoControllerProvider.notifier)
+            .parseExternalProjectSnapshot(
+              currentProject: currentFile,
+              xmlContent: snapshot.xmlContent,
+            );
+      });
+      final loadResult = runResult.value;
+      if (!mounted ||
+          loadResult == null ||
+          !_projectIoCoordinator.isCurrent(session) ||
+          !_isCurrentP2pSnapshot(snapshot)) {
+        return false;
+      }
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(loadResult.data, _settingsState.wordCountMode);
+      _hasUnpersistedRemoteDraft = true;
+      setState(() {
+        _applyProjectData(loadResult.data, initialState);
+      });
+      _updateAllWordCounts();
+      _editorCoordinatorNotifier.resetAfterProjectLoaded();
+      _editorCoordinatorNotifier.markAsModified();
+      _resetProjectHistory();
+      _publishLocalP2pProjectStatusNow();
+      _showMessage("遠端 draft 已近即時套用；.mnproj 尚未寫入，手動儲存時才會升格。");
+      return true;
+    } catch (error) {
+      if (mounted) _showError("無法在記憶體中套用遠端 draft：$error");
+      return false;
+    } finally {
       _isProjectSwitching = false;
     }
   }
@@ -2481,9 +2721,9 @@ class _ContentViewState extends ConsumerState<ContentView>
               : P2pProjectStatus(
                   fileName: project.fullFileName,
                   hasPersistentLocation: hasPersistentLocation,
-                  hasUnsavedChanges: ref
-                      .read(editorCoordinatorProvider)
-                      .hasUnsavedChanges,
+                  hasUnsavedChanges:
+                      ref.read(editorCoordinatorProvider).hasUnsavedChanges &&
+                      !_hasUnpersistedRemoteDraft,
                   projectUuid: ref.read(projectUuidProvider),
                   isPersistedSnapshotValidated: hasPersistentLocation,
                 ),
@@ -3102,6 +3342,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 檔案操作方法
   void _resetProjectSessionUiState() {
+    _hasUnpersistedRemoteDraft = false;
     CharacterDraftSessionCoordinator.instance.flushAndClose(
       _projectSessionVersion,
     );
@@ -3485,6 +3726,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         return;
       }
       setState(() => currentProject = savedProject);
+      _hasUnpersistedRemoteDraft = false;
       if (_projectDataRevision == revision) {
         _markAsSaved();
       }
@@ -3514,7 +3756,12 @@ class _ContentViewState extends ConsumerState<ContentView>
       final runResult = await _projectIoCoordinator.run(session, () async {
         final payload = await ref
             .read(projectIoControllerProvider.notifier)
-            .prepareProjectPayload(currentData, regenerateProjectUuid: true);
+            .prepareProjectPayload(
+              currentData,
+              regenerateProjectUuid: shouldRegenerateProjectUuidForSaveAs(
+                currentProject,
+              ),
+            );
         saveAsPayload = payload;
         return ref
             .read(projectIoControllerProvider.notifier)
@@ -3532,6 +3779,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         return;
       }
       setState(() => currentProject = savedProject);
+      _hasUnpersistedRemoteDraft = false;
       final adoptedProjectUuid = saveAsPayload?.snapshot.projectUUID;
       if (adoptedProjectUuid != null) {
         final beganApplying = _editorCoordinatorNotifier
@@ -3609,6 +3857,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       data: data,
       initialState: initialState,
     );
+    ref.read(collaborationProvider.notifier).openProject(data);
 
     if (previousSelectedChapID != selectedChapID) {
       _proofreadingChapterSwitchVersion++;

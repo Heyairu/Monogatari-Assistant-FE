@@ -4,7 +4,10 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
+import "../presentation/providers/collaboration_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
+import "../presentation/providers/project_state_providers.dart";
+import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
 class EditorTextBox extends ConsumerStatefulWidget {
   final CodeController controller;
@@ -25,6 +28,9 @@ class EditorTextBox extends ConsumerStatefulWidget {
 }
 
 class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
+  final GlobalKey<RemoteTextCursorOverlayState> _remoteCursorLayerKey =
+      GlobalKey<RemoteTextCursorOverlayState>();
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +61,23 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     if (!mounted) {
       return;
     }
+    if (widget.focusNode.hasFocus) {
+      final chapterId = ref.read(editorSelectionProvider).selectedChapID;
+      final selection = widget.controller.selection;
+      if (chapterId != null && selection.isValid) {
+        ref
+            .read(collaborationProvider.notifier)
+            .updateLocalCursor(
+              chapterId: chapterId,
+              anchorOffset: selection.baseOffset
+                  .clamp(0, widget.controller.text.length)
+                  .toInt(),
+              focusOffset: selection.extentOffset
+                  .clamp(0, widget.controller.text.length)
+                  .toInt(),
+            );
+      }
+    }
     setState(() {});
   }
 
@@ -66,6 +89,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       ),
     );
     final colorScheme = Theme.of(context).colorScheme;
+    final remoteCursors = ref.watch(activeChapterRemoteCursorsProvider);
     final textStyle = Theme.of(
       context,
     ).textTheme.labelLarge?.copyWith(height: 1.6, fontSize: fontSize);
@@ -121,18 +145,37 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                     offset: const Offset(-gutterCompensation, 0),
                     child: SizedBox(
                       width: compensatedWidth,
-                      child: CodeField(
-                        controller: widget.controller,
-                        focusNode: widget.focusNode,
-                        expands: true,
-                        maxLines: null,
-                        minLines: null,
-                        wrap: true,
-                        horizontalScroll: false,
-                        lineNumbers: false,
-                        background: editorBackground,
-                        textStyle: textStyle,
-                        cursorColor: colorScheme.primary,
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          _remoteCursorLayerKey.currentState?.refresh();
+                          return false;
+                        },
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: CodeField(
+                                controller: widget.controller,
+                                focusNode: widget.focusNode,
+                                expands: true,
+                                maxLines: null,
+                                minLines: null,
+                                wrap: true,
+                                horizontalScroll: false,
+                                lineNumbers: false,
+                                background: editorBackground,
+                                textStyle: textStyle,
+                                cursorColor: colorScheme.primary,
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: RemoteTextCursorOverlay(
+                                key: _remoteCursorLayerKey,
+                                controller: widget.controller,
+                                cursors: remoteCursors,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );

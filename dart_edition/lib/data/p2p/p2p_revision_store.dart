@@ -34,11 +34,66 @@ class SharedPreferencesP2pRevisionKeyValueStore
   }
 }
 
+class P2pRevisionDraftState {
+  final Set<String> draftHeadIds;
+  final P2pRevisionDelta? delta;
+
+  P2pRevisionDraftState({
+    Iterable<String> draftHeadIds = const <String>[],
+    this.delta,
+  }) : draftHeadIds = Set<String>.unmodifiable(
+         draftHeadIds.map((value) => value.trim().toLowerCase()),
+       );
+
+  const P2pRevisionDraftState.empty()
+    : draftHeadIds = const <String>{},
+      delta = null;
+
+  factory P2pRevisionDraftState.fromJson(Map<String, Object?> json) {
+    final ids = json["draftHeadIds"];
+    final deltaJson = json["delta"];
+    if (ids is! List || ids.any((value) => value is! String)) {
+      throw const FormatException("P2P draft revision state 無效。");
+    }
+    P2pRevisionDelta? delta;
+    if (deltaJson != null) {
+      if (deltaJson is! Map) {
+        throw const FormatException("P2P draft revision delta 無效。");
+      }
+      delta = P2pRevisionDelta.fromJson(
+        deltaJson.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    }
+    return P2pRevisionDraftState(
+      draftHeadIds: ids.cast<String>(),
+      delta: delta,
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "draftHeadIds": draftHeadIds.toList()..sort(),
+    if (delta != null) "delta": delta!.toJson(),
+  };
+}
+
+class P2pDraftRevisionRecord {
+  final P2pRevisionGraph graph;
+  final P2pSnapshotManifest manifest;
+  final P2pRevisionDraftState draftState;
+
+  const P2pDraftRevisionRecord({
+    required this.graph,
+    required this.manifest,
+    required this.draftState,
+  });
+}
+
 class P2pRevisionStore {
   static const String _storagePrefix = "p2p.revision_graph.v1.";
   static const String _corruptStoragePrefix = "p2p.revision_graph.corrupt.v1.";
   static const String _manifestStoragePrefix = "p2p.snapshot_manifest.v1.";
   static const String _resolutionAckStoragePrefix = "p2p.resolution_ack.v1.";
+  static const String _draftStateStoragePrefix = "p2p.draft_state.v1.";
 
   final P2pRevisionKeyValueStore _storage;
   final P2pSnapshotContentStore _contentStore;
@@ -55,6 +110,13 @@ class P2pRevisionStore {
 
   Future<P2pRevisionGraph> loadGraph(String projectUuid) {
     return _serialize(() => _loadGraph(projectUuid));
+  }
+
+  Future<P2pRevisionDraftState> loadDraftState(String projectUuid) {
+    return _serialize(() async {
+      final graph = await _loadGraph(projectUuid);
+      return _loadDraftState(graph);
+    });
   }
 
   Future<P2pResolutionAck?> loadResolutionAck(String projectUuid) {
@@ -135,6 +197,17 @@ class P2pRevisionStore {
         );
         await _contentStore.writeSnapshot(manifest, contentBytes);
         await _writeManifest(manifest);
+        final draftState = await _loadDraftState(graph);
+        if (draftState.draftHeadIds.contains(existing.revisionId)) {
+          await _writeDraftState(
+            graph,
+            P2pRevisionDraftState(
+              draftHeadIds: draftState.draftHeadIds.where(
+                (revisionId) => revisionId != existing.revisionId,
+              ),
+            ),
+          );
+        }
         return graph;
       }
 
@@ -191,7 +264,149 @@ class P2pRevisionStore {
       await _contentStore.writeSnapshot(manifest, contentBytes);
       await _writeManifest(manifest);
       await _writeGraph(next);
+      final previousDraftState = await _loadDraftState(graph);
+      await _writeDraftState(
+        next,
+        P2pRevisionDraftState(
+          draftHeadIds: previousDraftState.draftHeadIds.where(
+            next.headIds.contains,
+          ),
+        ),
+      );
       return next;
+    });
+  }
+
+  /// Records an immutable draft snapshot in app-private storage only.
+  ///
+  /// This never writes the user's `.mnproj`.  A bounded delta is retained for
+  /// the latest draft when its parent snapshot is locally available.
+  Future<P2pDraftRevisionRecord> recordDraftSnapshot({
+    required String projectUuid,
+    required String authorDeviceId,
+    required String xmlContent,
+    required String formatVersion,
+    String? preferredParentRevisionId,
+    DateTime? now,
+  }) {
+    return _serialize(() async {
+      final contentBytes = utf8.encode(xmlContent);
+      if (contentBytes.isEmpty ||
+          contentBytes.length > P2pSnapshotManifest.maxSnapshotBytes) {
+        throw const FormatException("P2P draft snapshot 必須介於 1 byte 與 64 MiB。");
+      }
+      final graph = await _loadGraphForRecording(projectUuid);
+      final contentHash = _hex((await _sha256.hash(contentBytes)).bytes);
+      final normalizedFormatVersion = formatVersion.trim();
+      final matchingHeads = graph.heads
+          .where(
+            (revision) =>
+                revision.contentSha256 == contentHash &&
+                revision.formatVersion == normalizedFormatVersion,
+          )
+          .toList(growable: false);
+      if (matchingHeads.length == 1) {
+        final existing = matchingHeads.single;
+        final manifest = P2pSnapshotManifest(
+          projectUuid: existing.projectUuid,
+          revisionId: existing.revisionId,
+          contentSha256: existing.contentSha256,
+          contentLength: contentBytes.length,
+          formatVersion: existing.formatVersion,
+        );
+        await _contentStore.writeSnapshot(manifest, contentBytes);
+        await _writeManifest(manifest);
+        return P2pDraftRevisionRecord(
+          graph: graph,
+          manifest: manifest,
+          draftState: await _loadDraftState(graph),
+        );
+      }
+
+      var parentIds = graph.headIds;
+      if (graph.hasConflict) {
+        final preferredParent = preferredParentRevisionId?.trim().toLowerCase();
+        if (preferredParent == null ||
+            !graph.headIds.contains(preferredParent)) {
+          throw StateError(
+            "目前 revision graph 有多個 heads，且無法識別本機 draft 分支；請先完成衝突合併。",
+          );
+        }
+        parentIds = <String>{preferredParent};
+      }
+
+      var clock = P2pVersionVector.empty();
+      for (final parentId in parentIds) {
+        clock = clock.merge(graph.revisions[parentId]!.clock);
+      }
+      clock = clock.increment(authorDeviceId);
+      final createdAt = (now ?? DateTime.now()).toUtc();
+      final unsigned = P2pRevisionMetadata(
+        revisionId: List<String>.filled(64, "0").join(),
+        projectUuid: projectUuid,
+        parents: parentIds,
+        clock: clock,
+        authorDeviceId: authorDeviceId,
+        createdAtEpochSeconds: createdAt.millisecondsSinceEpoch ~/ 1000,
+        contentSha256: contentHash,
+        formatVersion: formatVersion,
+      );
+      final revisionId = _hex(
+        (await _sha256.hash(utf8.encode(unsigned.canonicalPayload))).bytes,
+      );
+      final revision = P2pRevisionMetadata(
+        revisionId: revisionId,
+        projectUuid: unsigned.projectUuid,
+        parents: unsigned.parents,
+        clock: unsigned.clock,
+        authorDeviceId: unsigned.authorDeviceId,
+        createdAtEpochSeconds: unsigned.createdAtEpochSeconds,
+        contentSha256: unsigned.contentSha256,
+        formatVersion: unsigned.formatVersion,
+      );
+      final next = graph.append(revision);
+      final manifest = P2pSnapshotManifest(
+        projectUuid: revision.projectUuid,
+        revisionId: revision.revisionId,
+        contentSha256: revision.contentSha256,
+        contentLength: contentBytes.length,
+        formatVersion: revision.formatVersion,
+      );
+
+      P2pRevisionDelta? delta;
+      if (revision.parents.length == 1) {
+        final baseRevision = graph.revisions[revision.parents.single]!;
+        final baseXml = await _loadSnapshotXmlUnlocked(
+          projectUuid: graph.projectUuid,
+          revisionId: baseRevision.revisionId,
+        );
+        if (baseXml != null) {
+          delta = P2pRevisionDelta.tryCreate(
+            baseRevision: baseRevision,
+            targetRevision: revision,
+            baseBytes: utf8.encode(baseXml),
+            targetBytes: contentBytes,
+          );
+        }
+      }
+
+      await _contentStore.writeSnapshot(manifest, contentBytes);
+      await _writeManifest(manifest);
+      await _writeGraph(next);
+      final previousDraftState = await _loadDraftState(graph);
+      final draftState = P2pRevisionDraftState(
+        draftHeadIds: <String>{
+          ...previousDraftState.draftHeadIds.where(next.headIds.contains),
+          revision.revisionId,
+        },
+        delta: delta,
+      );
+      await _writeDraftState(next, draftState);
+      return P2pDraftRevisionRecord(
+        graph: next,
+        manifest: manifest,
+        draftState: draftState,
+      );
     });
   }
 
@@ -214,28 +429,12 @@ class P2pRevisionStore {
     required String projectUuid,
     required String revisionId,
   }) {
-    return _serialize(() async {
-      final manifest = await _loadSnapshotManifest(
+    return _serialize(
+      () => _loadSnapshotXmlUnlocked(
         projectUuid: projectUuid,
         revisionId: revisionId,
-      );
-      if (manifest == null ||
-          !await _contentStore.containsVerifiedSnapshot(manifest)) {
-        return null;
-      }
-      final bytes = <int>[];
-      for (var index = 0; index < manifest.chunkCount; index++) {
-        final chunk = await _contentStore.readChunk(manifest, index);
-        chunk.validateAgainst(manifest);
-        bytes.addAll(chunk.bytes);
-      }
-      final digest = _hex((await _sha256.hash(bytes)).bytes);
-      if (bytes.length != manifest.contentLength ||
-          digest != manifest.contentSha256) {
-        throw const FormatException("已保存的 snapshot 內容驗證失敗。");
-      }
-      return utf8.decode(bytes, allowMalformed: false);
-    });
+      ),
+    );
   }
 
   Future<P2pSnapshotManifest?> loadSnapshotManifest({
@@ -286,6 +485,8 @@ class P2pRevisionStore {
     required P2pRevisionGraph remoteGraph,
     required P2pSnapshotManifest manifest,
     required String xmlContent,
+    Iterable<String> remoteDraftHeadIds = const <String>[],
+    P2pRevisionDelta? remoteDelta,
   }) {
     return _serialize(() async {
       await _verifyRevisionIds(remoteGraph);
@@ -308,9 +509,41 @@ class P2pRevisionStore {
       }
       final localGraph = await _loadGraph(remoteGraph.projectUuid);
       final merged = localGraph.mergedWith(remoteGraph);
+      final localDraftState = await _loadDraftState(localGraph);
+      final normalizedRemoteDraftIds = remoteDraftHeadIds
+          .map((value) => value.trim().toLowerCase())
+          .toSet();
+      if (!remoteGraph.headIds.containsAll(normalizedRemoteDraftIds)) {
+        throw const FormatException("遠端 draft heads 與 revision graph 不符。");
+      }
+      final nextDraftIds = <String>{
+        ...localDraftState.draftHeadIds.where(merged.headIds.contains),
+      };
+      for (final remoteHeadId in remoteGraph.headIds) {
+        if (normalizedRemoteDraftIds.contains(remoteHeadId)) {
+          nextDraftIds.add(remoteHeadId);
+        } else {
+          nextDraftIds.remove(remoteHeadId);
+        }
+      }
+      final acceptedDelta =
+          remoteDelta != null &&
+              normalizedRemoteDraftIds.contains(remoteDelta.targetRevisionId) &&
+              merged.revisions[remoteDelta.baseRevisionId] != null &&
+              merged.revisions[remoteDelta.targetRevisionId] != null &&
+              remoteDelta.matchesRevisions(
+                base: merged.revisions[remoteDelta.baseRevisionId]!,
+                target: merged.revisions[remoteDelta.targetRevisionId]!,
+              )
+          ? remoteDelta
+          : null;
       await _contentStore.writeSnapshot(manifest, bytes);
       await _writeManifest(manifest);
       await _writeGraph(merged);
+      await _writeDraftState(
+        merged,
+        P2pRevisionDraftState(draftHeadIds: nextDraftIds, delta: acceptedDelta),
+      );
     });
   }
 
@@ -380,6 +613,7 @@ class P2pRevisionStore {
       await _contentStore.writeSnapshot(manifest, contentBytes);
       await _writeManifest(manifest);
       await _writeGraph(next);
+      await _writeDraftState(next, const P2pRevisionDraftState.empty());
       return next;
     });
   }
@@ -481,6 +715,69 @@ class P2pRevisionStore {
     return manifest;
   }
 
+  Future<String?> _loadSnapshotXmlUnlocked({
+    required String projectUuid,
+    required String revisionId,
+  }) async {
+    final manifest = await _loadSnapshotManifest(
+      projectUuid: projectUuid,
+      revisionId: revisionId,
+    );
+    if (manifest == null ||
+        !await _contentStore.containsVerifiedSnapshot(manifest)) {
+      return null;
+    }
+    final bytes = <int>[];
+    for (var index = 0; index < manifest.chunkCount; index++) {
+      final chunk = await _contentStore.readChunk(manifest, index);
+      chunk.validateAgainst(manifest);
+      bytes.addAll(chunk.bytes);
+    }
+    final digest = _hex((await _sha256.hash(bytes)).bytes);
+    if (bytes.length != manifest.contentLength ||
+        digest != manifest.contentSha256) {
+      throw const FormatException("已保存的 snapshot 內容驗證失敗。");
+    }
+    return utf8.decode(bytes, allowMalformed: false);
+  }
+
+  Future<P2pRevisionDraftState> _loadDraftState(P2pRevisionGraph graph) async {
+    final stored = await _storage.read(_draftStateKey(graph.projectUuid));
+    if (stored == null) return const P2pRevisionDraftState.empty();
+    final decoded = jsonDecode(stored);
+    if (decoded is! Map) {
+      throw const FormatException("已保存的 P2P draft state 不是 JSON object。");
+    }
+    final state = P2pRevisionDraftState.fromJson(
+      decoded.map((key, value) => MapEntry(key.toString(), value)),
+    );
+    if (!graph.headIds.containsAll(state.draftHeadIds) ||
+        (state.delta != null &&
+            (!state.draftHeadIds.contains(state.delta!.targetRevisionId) ||
+                graph.revisions[state.delta!.baseRevisionId] == null ||
+                graph.revisions[state.delta!.targetRevisionId] == null ||
+                !state.delta!.matchesRevisions(
+                  base: graph.revisions[state.delta!.baseRevisionId]!,
+                  target: graph.revisions[state.delta!.targetRevisionId]!,
+                )))) {
+      throw const FormatException("已保存的 P2P draft state 與 graph 不符。");
+    }
+    return state;
+  }
+
+  Future<void> _writeDraftState(
+    P2pRevisionGraph graph,
+    P2pRevisionDraftState state,
+  ) {
+    if (!graph.headIds.containsAll(state.draftHeadIds)) {
+      throw const FormatException("P2P draft heads 必須是 graph heads。");
+    }
+    return _storage.write(
+      _draftStateKey(graph.projectUuid),
+      jsonEncode(state.toJson()),
+    );
+  }
+
   Future<void> _writeGraph(P2pRevisionGraph graph) async {
     await _verifyRevisionIds(graph);
     await _storage.write(
@@ -526,6 +823,9 @@ class P2pRevisionStore {
 
   String _resolutionAckKey(String projectUuid) =>
       "$_resolutionAckStoragePrefix$projectUuid";
+
+  String _draftStateKey(String projectUuid) =>
+      "$_draftStateStoragePrefix$projectUuid";
 
   String _hex(List<int> bytes) =>
       bytes.map((byte) => byte.toRadixString(16).padLeft(2, "0")).join();

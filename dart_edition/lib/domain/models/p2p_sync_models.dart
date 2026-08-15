@@ -132,6 +132,13 @@ class P2pProjectStatus {
         !hasPendingConflict;
   }
 
+  /// A memory-resident project is enough for the realtime operation channel.
+  /// Persistence and dirty-state checks belong to XML checkpoint transfer,
+  /// not to CRDT/typed-operation collaboration.
+  bool get isCollaborationReady {
+    return hasValidUuid && isFormatSupported && !hasPendingConflict;
+  }
+
   String get shortUuid {
     final value = projectUuid?.trim();
     if (value == null || value.isEmpty) return "—";
@@ -183,7 +190,7 @@ class P2pProjectOffer {
   }
 
   factory P2pProjectOffer.fromStatus(P2pProjectStatus? status) {
-    if (status == null || !status.isLocallyReady) {
+    if (status == null || !status.isCollaborationReady) {
       return const P2pProjectOffer.none();
     }
     return P2pProjectOffer.project(
@@ -297,6 +304,15 @@ class P2pProjectPreflightResult {
   const P2pProjectPreflightResult(this.issues);
 
   bool get canSync => issues.isEmpty;
+
+  bool get canCollaborate {
+    return issues.difference(const <P2pProjectPreflightIssue>{
+      P2pProjectPreflightIssue.localProjectNotPersisted,
+      P2pProjectPreflightIssue.localProjectDirty,
+      P2pProjectPreflightIssue.remoteProjectNotPersisted,
+      P2pProjectPreflightIssue.remoteProjectDirty,
+    }).isEmpty;
+  }
 
   bool get requiresSave {
     return issues.contains(P2pProjectPreflightIssue.noLocalProject) ||

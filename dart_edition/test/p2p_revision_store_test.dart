@@ -147,6 +147,78 @@ void main() {
     expect(repeated.singleHead!.revisionId, first.singleHead!.revisionId);
   });
 
+  test(
+    "draft snapshot stays internal and an identical save promotes its revision",
+    () async {
+      final storage = _MemoryRevisionStorage();
+      final contentStore = _MemorySnapshotContentStore();
+      final store = _store(storage, contentStore: contentStore);
+      final base = await store.recordPersistedSnapshot(
+        projectUuid: _projectId,
+        authorDeviceId: _deviceId,
+        xmlContent:
+            '<Project UUID="$_projectId"><ver>1.0</ver><Title>Base</Title></Project>',
+        formatVersion: "1.0",
+        now: DateTime.utc(2026, 8, 14, 1),
+      );
+      final draftXml =
+          '<Project UUID="$_projectId"><ver>1.0</ver><Title>Draft</Title></Project>';
+      final draft = await store.recordDraftSnapshot(
+        projectUuid: _projectId,
+        authorDeviceId: _deviceId,
+        xmlContent: draftXml,
+        formatVersion: "1.0",
+        now: DateTime.utc(2026, 8, 14, 1, 1),
+      );
+
+      expect(draft.graph.revisions, hasLength(2));
+      expect(draft.graph.singleHead!.parents, <String>[
+        base.singleHead!.revisionId,
+      ]);
+      expect(draft.draftState.draftHeadIds, <String>{
+        draft.graph.singleHead!.revisionId,
+      });
+      expect(draft.draftState.delta, isNotNull);
+      expect(
+        utf8.decode(
+          draft.draftState.delta!.applyTo(
+            utf8.encode(
+              '<Project UUID="$_projectId"><ver>1.0</ver><Title>Base</Title></Project>',
+            ),
+          ),
+        ),
+        draftXml,
+      );
+
+      final promoted = await store.recordPersistedSnapshot(
+        projectUuid: _projectId,
+        authorDeviceId: _deviceId,
+        xmlContent: draftXml,
+        formatVersion: "1.0",
+      );
+      expect(promoted.revisions, hasLength(2));
+      expect(
+        promoted.singleHead!.revisionId,
+        draft.graph.singleHead!.revisionId,
+      );
+      expect((await store.loadDraftState(_projectId)).draftHeadIds, isEmpty);
+      expect(
+        await store.loadSnapshotXml(
+          projectUuid: _projectId,
+          revisionId: promoted.singleHead!.revisionId,
+        ),
+        draftXml,
+      );
+      expect(
+        storage.values.keys.every(
+          (key) =>
+              key.startsWith("p2p.") && !key.toLowerCase().contains("mnproj"),
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test("tampered persisted metadata is rejected on load", () async {
     final storage = _MemoryRevisionStorage();
     final contentStore = _MemorySnapshotContentStore();

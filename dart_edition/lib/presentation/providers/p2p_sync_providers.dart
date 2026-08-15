@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:convert";
 
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -46,6 +47,8 @@ class P2pSyncState {
   final P2pTrustedPeer? trustedPeer;
   final P2pRevisionGraph? localRevisionGraph;
   final P2pSnapshotManifest? localSnapshotManifest;
+  final Set<String> localDraftHeadIds;
+  final P2pRevisionDelta? localRevisionDelta;
   final bool isRevisionMetadataLoading;
   final String? revisionMetadataError;
   final P2pSecureTransportStatus secureTransportStatus;
@@ -90,6 +93,8 @@ class P2pSyncState {
     this.trustedPeer,
     this.localRevisionGraph,
     this.localSnapshotManifest,
+    this.localDraftHeadIds = const <String>{},
+    this.localRevisionDelta,
     this.isRevisionMetadataLoading = false,
     this.revisionMetadataError,
     this.secureTransportStatus = P2pSecureTransportStatus.inactive,
@@ -135,6 +140,18 @@ class P2pSyncState {
       remotePairingChallenge?.allowsPersistentVerification == true;
 
   P2pRevisionMetadata? get localRevisionHead => localRevisionGraph?.singleHead;
+
+  bool get localHeadIsDraft {
+    final head = localRevisionHead;
+    return head != null && localDraftHeadIds.contains(head.revisionId);
+  }
+
+  bool get remoteHeadIsDraft {
+    final summary = remoteRevisionSummary;
+    return summary != null &&
+        summary.heads.length == 1 &&
+        summary.isDraft(summary.heads.single.revisionId);
+  }
 
   bool get hasAuthenticatedTransport =>
       secureTransportStatus == P2pSecureTransportStatus.authenticated;
@@ -189,6 +206,8 @@ class P2pSyncState {
     Object? trustedPeer = _p2pUnset,
     Object? localRevisionGraph = _p2pUnset,
     Object? localSnapshotManifest = _p2pUnset,
+    Set<String>? localDraftHeadIds,
+    Object? localRevisionDelta = _p2pUnset,
     bool? isRevisionMetadataLoading,
     Object? revisionMetadataError = _p2pUnset,
     P2pSecureTransportStatus? secureTransportStatus,
@@ -265,6 +284,12 @@ class P2pSyncState {
       localSnapshotManifest: identical(localSnapshotManifest, _p2pUnset)
           ? this.localSnapshotManifest
           : localSnapshotManifest as P2pSnapshotManifest?,
+      localDraftHeadIds: Set<String>.unmodifiable(
+        localDraftHeadIds ?? this.localDraftHeadIds,
+      ),
+      localRevisionDelta: identical(localRevisionDelta, _p2pUnset)
+          ? this.localRevisionDelta
+          : localRevisionDelta as P2pRevisionDelta?,
       isRevisionMetadataLoading:
           isRevisionMetadataLoading ?? this.isRevisionMetadataLoading,
       revisionMetadataError: identical(revisionMetadataError, _p2pUnset)
@@ -406,7 +431,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
   Timer? _offerRefreshTimer;
   Timer? _pairingChallengeRefreshTimer;
   bool _offerRefreshInProgress = false;
-  bool _revisionSummaryRefreshInProgress = false;
+  Future<void>? _revisionSummaryRefreshOperation;
+  bool _revisionSummaryRefreshPending = false;
   bool _revisionGraphRefreshInProgress = false;
   DateTime? _lastRevisionSummaryRefreshAt;
   String? _loadedRevisionProjectUuid;
@@ -873,7 +899,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       return;
     }
     final secureGeneration = ++_secureTransportGeneration;
-    _revisionSummaryRefreshInProgress = false;
+    _revisionSummaryRefreshOperation = null;
+    _revisionSummaryRefreshPending = false;
     state = state.copyWith(
       secureTransportStatus: P2pSecureTransportStatus.establishing,
       remoteRevisionSummary: null,
@@ -935,10 +962,28 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
     }
   }
 
-  Future<void> refreshRevisionSummary() async {
-    if (!state.hasAuthenticatedTransport || _revisionSummaryRefreshInProgress) {
-      return;
+  Future<void> refreshRevisionSummary() {
+    if (!state.hasAuthenticatedTransport) return Future<void>.value();
+    final active = _revisionSummaryRefreshOperation;
+    if (active != null) {
+      _revisionSummaryRefreshPending = true;
+      return active.then((_) async {
+        if (!_revisionSummaryRefreshPending) return;
+        _revisionSummaryRefreshPending = false;
+        await refreshRevisionSummary();
+      });
     }
+    late final Future<void> operation;
+    operation = _performRevisionSummaryRefresh().whenComplete(() {
+      if (identical(_revisionSummaryRefreshOperation, operation)) {
+        _revisionSummaryRefreshOperation = null;
+      }
+    });
+    _revisionSummaryRefreshOperation = operation;
+    return operation;
+  }
+
+  Future<void> _performRevisionSummaryRefresh() async {
     final endpoint = state.reachablePeer;
     final localGraph = _effectiveLocalRevisionGraph();
     if (endpoint == null || localGraph == null) return;
@@ -946,7 +991,6 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
     final localSummary = _summaryForGraph(localGraph);
     _lastRevisionSummaryRefreshAt = DateTime.now().toUtc();
     _endpointService.updateLocalRevisionSummary(localSummary);
-    _revisionSummaryRefreshInProgress = true;
     try {
       final exchange = await _endpointService.negotiateRevisionSummary(
         endpoint,
@@ -1004,10 +1048,6 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       state = state.copyWith(
         secureTransportError: "加密通道目前不可用：${error.message}",
       );
-    } finally {
-      if (secureGeneration == _secureTransportGeneration) {
-        _revisionSummaryRefreshInProgress = false;
-      }
     }
   }
 
@@ -1346,7 +1386,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
 
   void _clearAuthenticatedTransport() {
     ++_secureTransportGeneration;
-    _revisionSummaryRefreshInProgress = false;
+    _revisionSummaryRefreshOperation = null;
+    _revisionSummaryRefreshPending = false;
     _revisionGraphRefreshInProgress = false;
     _lastRevisionSummaryRefreshAt = null;
     _lastAcceptedSnapshotSyncRequestId = null;
@@ -1470,6 +1511,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       state = state.copyWith(
         localRevisionGraph: null,
         localSnapshotManifest: null,
+        localDraftHeadIds: const <String>{},
+        localRevisionDelta: null,
         remoteRevisionGraph: null,
         commonAncestorRevisionIds: const <String>{},
         isRevisionGraphLoading: false,
@@ -1487,6 +1530,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       state = state.copyWith(
         localRevisionGraph: null,
         localSnapshotManifest: null,
+        localDraftHeadIds: const <String>{},
+        localRevisionDelta: null,
         // Persisting a verified snapshot republishes the same project from
         // the file/provider layer. The remote DAG is still the capability
         // needed by installAppliedRemoteSnapshot(), both for an initially
@@ -1567,6 +1612,7 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
               revisionId: workingRevision.revisionId,
             );
       final manifests = await _loadAvailableManifests(graph);
+      final draftState = await _revisionStore.loadDraftState(projectUuid);
       final resolutionAck = await _revisionStore.loadResolutionAck(projectUuid);
       if (_disposed || _loadedRevisionProjectUuid != projectUuid) return;
       _localSnapshotManifests = manifests;
@@ -1574,6 +1620,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
         localIdentity: identity,
         localRevisionGraph: graph,
         localSnapshotManifest: manifest,
+        localDraftHeadIds: draftState.draftHeadIds,
+        localRevisionDelta: draftState.delta,
         isRevisionMetadataLoading: false,
         revisionMetadataError: null,
         localResolutionAck: resolutionAck,
@@ -1590,6 +1638,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       state = state.copyWith(
         localRevisionGraph: null,
         localSnapshotManifest: null,
+        localDraftHeadIds: const <String>{},
+        localRevisionDelta: null,
         isRevisionMetadataLoading: false,
         revisionMetadataError:
             "無法載入 revision metadata：${_describeError(error)}",
@@ -1653,6 +1703,9 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
               revisionId: workingRevision.revisionId,
             );
       final manifests = await _loadAvailableManifests(graph);
+      final draftState = await _revisionStore.loadDraftState(
+        normalizedProjectUuid,
+      );
       if (_disposed || _currentLocalProjectUuid != normalizedProjectUuid) {
         return true;
       }
@@ -1662,6 +1715,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
         localIdentity: identity,
         localRevisionGraph: graph,
         localSnapshotManifest: manifest,
+        localDraftHeadIds: draftState.draftHeadIds,
+        localRevisionDelta: draftState.delta,
         isRevisionMetadataLoading: false,
         revisionMetadataError: null,
       );
@@ -1698,6 +1753,127 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
     }
   }
 
+  Future<bool> recordDraftSnapshot({
+    required String projectUuid,
+    required String xmlContent,
+    required String formatVersion,
+  }) async {
+    final normalizedProjectUuid = projectUuid.trim().toLowerCase();
+    if (!P2pProjectStatus.isValidProjectUuid(normalizedProjectUuid) ||
+        _currentLocalProjectUuid != normalizedProjectUuid) {
+      return false;
+    }
+    final previousHeadRevisionId =
+        state.localRevisionGraph?.singleHead?.revisionId;
+    try {
+      final identity =
+          state.localIdentity ?? await _identityStore.loadOrCreateIdentity();
+      final previousWorkingRevision = state.localRevisionGraph == null
+          ? null
+          : _workingRevisionForGraph(
+              state.localRevisionGraph!,
+              localDeviceId: identity.deviceId,
+              preferredRevisionId: state.localSnapshotManifest?.revisionId,
+            );
+      final record = await _revisionStore.recordDraftSnapshot(
+        projectUuid: normalizedProjectUuid,
+        authorDeviceId: identity.deviceId,
+        xmlContent: xmlContent,
+        formatVersion: formatVersion,
+        preferredParentRevisionId: previousWorkingRevision?.revisionId,
+      );
+      if (_disposed || _currentLocalProjectUuid != normalizedProjectUuid) {
+        return true;
+      }
+      final manifests = await _loadAvailableManifests(record.graph);
+      _loadedRevisionProjectUuid = normalizedProjectUuid;
+      _localSnapshotManifests = manifests;
+      state = state.copyWith(
+        localIdentity: identity,
+        localRevisionGraph: record.graph,
+        localSnapshotManifest: record.manifest,
+        localDraftHeadIds: record.draftState.draftHeadIds,
+        localRevisionDelta: record.draftState.delta,
+        isRevisionMetadataLoading: false,
+        revisionMetadataError: null,
+      );
+      _endpointService.updateLocalRevisionGraph(record.graph);
+      _endpointService.updateLocalRevisionSummary(
+        _summaryForGraph(record.graph),
+      );
+      _endpointService.updateLocalSnapshotManifests(manifests.values);
+      if (state.hasAuthenticatedTransport &&
+          state.sessionProjectUuid == normalizedProjectUuid &&
+          record.manifest.revisionId != previousHeadRevisionId) {
+        _endpointService.updateLocalSnapshotSyncRequest(
+          P2pSnapshotSyncRequest(
+            requestId:
+                "draft-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${(++_snapshotSyncRequestCounter).toRadixString(36)}",
+            projectUuid: record.manifest.projectUuid,
+            revisionId: record.manifest.revisionId,
+            contentSha256: record.manifest.contentSha256,
+          ),
+        );
+        state = state.copyWith(
+          message: record.draftState.delta == null
+              ? "draft revision 已建立；正在透過加密通道傳送 summary。"
+              : "draft revision 已建立；正在透過加密通道傳送 summary/delta。",
+        );
+        unawaited(refreshRevisionSummary());
+      }
+      return true;
+    } catch (error) {
+      if (!_disposed && _currentLocalProjectUuid == normalizedProjectUuid) {
+        state = state.copyWith(
+          revisionMetadataError: "無法建立 draft revision：${_describeError(error)}",
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<P2pVerifiedSnapshot?> materializeRemoteDelta(
+    P2pSnapshotManifest manifest,
+  ) async {
+    final summary = state.remoteRevisionSummary;
+    final delta = summary?.delta;
+    final localGraph = state.localRevisionGraph;
+    if (!state.hasAuthenticatedTransport ||
+        summary == null ||
+        delta == null ||
+        localGraph == null ||
+        delta.projectUuid != manifest.projectUuid ||
+        delta.targetRevisionId != manifest.revisionId ||
+        delta.targetContentSha256 != manifest.contentSha256 ||
+        summary.heads.length != 1 ||
+        summary.heads.single.revisionId != manifest.revisionId) {
+      return null;
+    }
+    final baseRevision = localGraph.revisions[delta.baseRevisionId];
+    final targetRevision = summary.heads.single;
+    if (baseRevision == null ||
+        !delta.matchesRevisions(base: baseRevision, target: targetRevision)) {
+      return null;
+    }
+    try {
+      final baseXml = await _revisionStore.loadSnapshotXml(
+        projectUuid: manifest.projectUuid,
+        revisionId: baseRevision.revisionId,
+      );
+      if (baseXml == null) return null;
+      final targetBytes = delta.applyTo(utf8.encode(baseXml));
+      return verifyP2pSnapshotBytes(manifest, targetBytes);
+    } catch (error) {
+      if (!_disposed) {
+        state = state.copyWith(
+          revisionMetadataError:
+              "已拒絕無效的 revision delta，將改用完整 snapshot：${_describeError(error)}",
+        );
+      }
+      return null;
+    }
+  }
+
   Future<bool> installAppliedRemoteSnapshot(
     P2pVerifiedSnapshot snapshot, {
     required P2pRevisionGraph verifiedRemoteGraph,
@@ -1731,13 +1907,17 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
     }
     final activeProjectUuid = transferAuthorization.projectUuid;
     try {
+      final remoteSummary = state.remoteRevisionSummary;
       await _revisionStore.installVerifiedRemoteSnapshot(
         remoteGraph: verifiedRemoteGraph,
         manifest: manifest,
         xmlContent: snapshot.xmlContent,
+        remoteDraftHeadIds: remoteSummary?.draftHeadIds ?? const <String>{},
+        remoteDelta: remoteSummary?.delta,
       );
       final graph = await _revisionStore.loadGraph(activeProjectUuid);
       final manifests = await _loadAvailableManifests(graph);
+      final draftState = await _revisionStore.loadDraftState(activeProjectUuid);
       final head = graph.singleHead;
       final headManifest = head == null ? null : manifests[head.revisionId];
       if (_disposed ||
@@ -1764,18 +1944,23 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
         );
         await _revisionStore.saveResolutionAck(resolutionAck);
       }
-      final localSummary = _summaryForGraph(graph);
-      final remoteSummary = P2pRevisionSummary.fromGraph(verifiedRemoteGraph);
+      final installedRemoteSummary =
+          remoteSummary ?? P2pRevisionSummary.fromGraph(verifiedRemoteGraph);
       state = state.copyWith(
         localRevisionGraph: graph,
         localSnapshotManifest: headManifest,
+        localDraftHeadIds: draftState.draftHeadIds,
+        localRevisionDelta: draftState.delta,
         isRevisionMetadataLoading: false,
         revisionMetadataError: null,
-        remoteRevisionSummary: remoteSummary,
+        remoteRevisionSummary: installedRemoteSummary,
         remoteRevisionGraph: verifiedRemoteGraph,
         commonAncestorRevisionIds: graph.commonAncestorIds(verifiedRemoteGraph),
-        revisionSummaryRelation: localSummary.compare(remoteSummary),
         localResolutionAck: resolutionAck,
+      );
+      final localSummary = _summaryForGraph(graph);
+      state = state.copyWith(
+        revisionSummaryRelation: localSummary.compare(installedRemoteSummary),
       );
       _endpointService.updateLocalRevisionGraph(graph);
       _endpointService.updateLocalResolutionAck(resolutionAck);
@@ -1817,13 +2002,19 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       return false;
     }
     try {
+      final remoteSummary = state.remoteRevisionSummary;
       await _revisionStore.installVerifiedRemoteSnapshot(
         remoteGraph: remoteGraph,
         manifest: manifest,
         xmlContent: snapshot.xmlContent,
+        remoteDraftHeadIds: remoteSummary?.draftHeadIds ?? const <String>{},
+        remoteDelta: remoteSummary?.delta,
       );
       final graph = await _revisionStore.loadGraph(manifest.projectUuid);
       final manifests = await _loadAvailableManifests(graph);
+      final draftState = await _revisionStore.loadDraftState(
+        manifest.projectUuid,
+      );
       if (_disposed || state.sessionProjectUuid != manifest.projectUuid) {
         return false;
       }
@@ -1833,6 +2024,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
         // This manifest identifies the currently open local branch even after
         // the verified remote branch is added to the same DAG.
         localSnapshotManifest: state.localSnapshotManifest,
+        localDraftHeadIds: draftState.draftHeadIds,
+        localRevisionDelta: draftState.delta,
         revisionMetadataError: null,
       );
       _endpointService.updateLocalRevisionGraph(graph);
@@ -1964,6 +2157,8 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
         localIdentity: identity,
         localRevisionGraph: graph,
         localSnapshotManifest: manifest,
+        localDraftHeadIds: const <String>{},
+        localRevisionDelta: null,
         remoteRevisionSummary: null,
         revisionSummaryRelation: null,
         remoteRevisionGraph: null,
@@ -2039,17 +2234,39 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
   }
 
   P2pRevisionSummary _summaryForGraph(P2pRevisionGraph graph) {
-    if (!graph.hasConflict) return P2pRevisionSummary.fromGraph(graph);
+    if (!graph.hasConflict) {
+      return P2pRevisionSummary.fromGraph(
+        graph,
+        draftHeadIds: state.localDraftHeadIds.where(graph.headIds.contains),
+        delta:
+            state.localRevisionDelta?.targetRevisionId ==
+                graph.singleHead?.revisionId
+            ? state.localRevisionDelta
+            : null,
+      );
+    }
     final workingRevision = _workingRevisionForGraph(
       graph,
       localDeviceId: state.localIdentity?.deviceId,
       preferredRevisionId: state.localSnapshotManifest?.revisionId,
     );
     return workingRevision == null
-        ? P2pRevisionSummary.fromGraph(graph)
+        ? P2pRevisionSummary.fromGraph(
+            graph,
+            draftHeadIds: state.localDraftHeadIds.where(graph.headIds.contains),
+          )
         : P2pRevisionSummary(
             projectUuid: graph.projectUuid,
             heads: <P2pRevisionMetadata>[workingRevision],
+            draftHeadIds:
+                state.localDraftHeadIds.contains(workingRevision.revisionId)
+                ? <String>{workingRevision.revisionId}
+                : const <String>{},
+            delta:
+                state.localRevisionDelta?.targetRevisionId ==
+                    workingRevision.revisionId
+                ? state.localRevisionDelta
+                : null,
           );
   }
 
@@ -2088,13 +2305,19 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       P2pProjectNegotiationKind.remoteProvides => remoteOffer.projectUuid,
       P2pProjectNegotiationKind.selectionRequired => null,
     };
+    final selectedProjectSource =
+        automaticSource ??
+        (sessionProjectUuid != null &&
+                state.sessionProjectUuid == sessionProjectUuid
+            ? state.selectedProjectSource
+            : null);
     state = state.copyWith(
       connectionStatus: connectionStatus,
       reachablePeer: reachablePeer,
       inboundPeerAddress: inboundPeerAddress,
       remoteProjectOffer: remoteOffer,
       projectNegotiation: negotiation,
-      selectedProjectSource: automaticSource,
+      selectedProjectSource: selectedProjectSource,
       sessionProjectUuid: sessionProjectUuid,
       negotiationGeneration: state.negotiationGeneration + 1,
       message: _negotiationMessage(negotiation),
@@ -2824,10 +3047,14 @@ class P2pSnapshotTransferNotifier extends Notifier<P2pSnapshotTransferState> {
     state = P2pSnapshotTransferState(
       status: P2pSnapshotTransferStatus.downloading,
       manifest: authorization.manifest,
-      message: "正在透過 authenticated encrypted transport 下載並驗證 snapshot…",
+      message: "正在透過 authenticated encrypted transport 重建或下載並驗證 snapshot…",
     );
     try {
-      final verified = await _coordinator.download(authorization.manifest);
+      final deltaVerified = await ref
+          .read(p2pSyncProvider.notifier)
+          .materializeRemoteDelta(authorization.manifest);
+      final verified =
+          deltaVerified ?? await _coordinator.download(authorization.manifest);
       if (_disposed ||
           generation != _generation ||
           !authorization.matches(ref.read(p2pSyncProvider))) {
@@ -2838,7 +3065,9 @@ class P2pSnapshotTransferNotifier extends Notifier<P2pSnapshotTransferState> {
         status: P2pSnapshotTransferStatus.verified,
         manifest: authorization.manifest,
         verifiedSnapshot: verified,
-        message: "snapshot 已完成 chunk、SHA-256、XML、UUID 與版本驗證；尚未寫入專案。",
+        message: deltaVerified == null
+            ? "snapshot 已完成 chunk、SHA-256、XML、UUID 與版本驗證；尚未寫入專案。"
+            : "snapshot 已由加密 delta 重建，並完成 SHA-256、XML、UUID 與版本驗證；尚未寫入專案。",
       );
       return true;
     } on P2pSnapshotDownloadCancelledException {

@@ -359,7 +359,7 @@ void main() {
         find.byKey(const Key("p2p-immediate-sync-button")),
       );
 
-      expect(find.text("將由對方提供文件；同步時再選擇儲存位置"), findsOneWidget);
+      expect(find.text("將由對方提供記憶體專案；不必先選擇儲存位置"), findsOneWidget);
       expect(find.text("請先儲存同步文件"), findsNothing);
       final button = tester.widget<FilledButton>(
         find.byKey(const Key("p2p-immediate-sync-button")),
@@ -686,7 +686,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("雙方都沒有同步文件"), findsOneWidget);
-    expect(find.text("在本機準備文件"), findsOneWidget);
+    expect(find.text("建立本機專案"), findsOneWidget);
     expect(find.text("使用本機文件"), findsNothing);
     expect(find.text("使用對方文件"), findsNothing);
   });

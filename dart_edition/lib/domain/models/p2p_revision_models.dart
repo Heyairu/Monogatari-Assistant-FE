@@ -1,5 +1,6 @@
 import "dart:collection";
 import "dart:convert";
+import "dart:typed_data";
 
 import "p2p_sync_models.dart";
 
@@ -681,32 +682,267 @@ class P2pRevisionGraphAssembler {
   }
 }
 
+/// A bounded byte delta carried with a revision summary.
+///
+/// The delta is useful for the common near-real-time case where a short edit
+/// changes only a small part of the serialized project.  It is always bound to
+/// the base/target revision IDs and content hashes.  Larger changes simply
+/// omit the delta and continue through the existing verified chunk path.
+class P2pRevisionDelta {
+  static const int maxInsertedBytes = 16 * 1024;
+  static const int maxEncodedLength = 28 * 1024;
+  static final RegExp _sha256Pattern = RegExp(r"^[0-9a-f]{64}$");
+
+  final String projectUuid;
+  final String baseRevisionId;
+  final String targetRevisionId;
+  final String baseContentSha256;
+  final String targetContentSha256;
+  final int baseLength;
+  final int targetLength;
+  final int prefixLength;
+  final int removedLength;
+  final Uint8List insertedBytes;
+
+  P2pRevisionDelta({
+    required String projectUuid,
+    required String baseRevisionId,
+    required String targetRevisionId,
+    required String baseContentSha256,
+    required String targetContentSha256,
+    required this.baseLength,
+    required this.targetLength,
+    required this.prefixLength,
+    required this.removedLength,
+    required List<int> insertedBytes,
+  }) : projectUuid = projectUuid.trim().toLowerCase(),
+       baseRevisionId = baseRevisionId.trim().toLowerCase(),
+       targetRevisionId = targetRevisionId.trim().toLowerCase(),
+       baseContentSha256 = baseContentSha256.trim().toLowerCase(),
+       targetContentSha256 = targetContentSha256.trim().toLowerCase(),
+       insertedBytes = Uint8List.fromList(insertedBytes) {
+    if (!P2pProjectStatus.isValidProjectUuid(this.projectUuid) ||
+        !_sha256Pattern.hasMatch(this.baseRevisionId) ||
+        !_sha256Pattern.hasMatch(this.targetRevisionId) ||
+        !_sha256Pattern.hasMatch(this.baseContentSha256) ||
+        !_sha256Pattern.hasMatch(this.targetContentSha256) ||
+        this.baseRevisionId == this.targetRevisionId ||
+        baseLength < 1 ||
+        targetLength < 1 ||
+        prefixLength < 0 ||
+        removedLength < 0 ||
+        prefixLength + removedLength > baseLength ||
+        this.insertedBytes.length > maxInsertedBytes ||
+        prefixLength +
+                this.insertedBytes.length +
+                (baseLength - prefixLength - removedLength) !=
+            targetLength) {
+      throw const FormatException("P2P revision delta 無效。");
+    }
+  }
+
+  static P2pRevisionDelta? tryCreate({
+    required P2pRevisionMetadata baseRevision,
+    required P2pRevisionMetadata targetRevision,
+    required List<int> baseBytes,
+    required List<int> targetBytes,
+  }) {
+    if (baseRevision.projectUuid != targetRevision.projectUuid ||
+        !targetRevision.parents.contains(baseRevision.revisionId) ||
+        baseBytes.isEmpty ||
+        targetBytes.isEmpty) {
+      return null;
+    }
+    var prefix = 0;
+    final sharedLength = baseBytes.length < targetBytes.length
+        ? baseBytes.length
+        : targetBytes.length;
+    while (prefix < sharedLength && baseBytes[prefix] == targetBytes[prefix]) {
+      prefix += 1;
+    }
+    var suffix = 0;
+    while (suffix < sharedLength - prefix &&
+        baseBytes[baseBytes.length - suffix - 1] ==
+            targetBytes[targetBytes.length - suffix - 1]) {
+      suffix += 1;
+    }
+    final inserted = targetBytes.sublist(prefix, targetBytes.length - suffix);
+    if (inserted.length > maxInsertedBytes) return null;
+    return P2pRevisionDelta(
+      projectUuid: targetRevision.projectUuid,
+      baseRevisionId: baseRevision.revisionId,
+      targetRevisionId: targetRevision.revisionId,
+      baseContentSha256: baseRevision.contentSha256,
+      targetContentSha256: targetRevision.contentSha256,
+      baseLength: baseBytes.length,
+      targetLength: targetBytes.length,
+      prefixLength: prefix,
+      removedLength: baseBytes.length - prefix - suffix,
+      insertedBytes: inserted,
+    );
+  }
+
+  factory P2pRevisionDelta.fromJson(Map<String, Object?> json) {
+    const expectedKeys = <String>{
+      "projectUuid",
+      "baseRevisionId",
+      "targetRevisionId",
+      "baseContentSha256",
+      "targetContentSha256",
+      "baseLength",
+      "targetLength",
+      "prefixLength",
+      "removedLength",
+      "inserted",
+    };
+    if (json.length != expectedKeys.length ||
+        !json.keys.every(expectedKeys.contains)) {
+      throw const FormatException("P2P revision delta 欄位集合無效。");
+    }
+    final projectUuid = json["projectUuid"];
+    final baseRevisionId = json["baseRevisionId"];
+    final targetRevisionId = json["targetRevisionId"];
+    final baseContentSha256 = json["baseContentSha256"];
+    final targetContentSha256 = json["targetContentSha256"];
+    final baseLength = json["baseLength"];
+    final targetLength = json["targetLength"];
+    final prefixLength = json["prefixLength"];
+    final removedLength = json["removedLength"];
+    final inserted = json["inserted"];
+    if (projectUuid is! String ||
+        baseRevisionId is! String ||
+        targetRevisionId is! String ||
+        baseContentSha256 is! String ||
+        targetContentSha256 is! String ||
+        baseLength is! int ||
+        targetLength is! int ||
+        prefixLength is! int ||
+        removedLength is! int ||
+        inserted is! String) {
+      throw const FormatException("P2P revision delta 欄位不完整。");
+    }
+    late final List<int> insertedBytes;
+    try {
+      insertedBytes = base64Decode(inserted);
+    } on FormatException {
+      throw const FormatException("P2P revision delta inserted bytes 無效。");
+    }
+    final delta = P2pRevisionDelta(
+      projectUuid: projectUuid,
+      baseRevisionId: baseRevisionId,
+      targetRevisionId: targetRevisionId,
+      baseContentSha256: baseContentSha256,
+      targetContentSha256: targetContentSha256,
+      baseLength: baseLength,
+      targetLength: targetLength,
+      prefixLength: prefixLength,
+      removedLength: removedLength,
+      insertedBytes: insertedBytes,
+    );
+    if (utf8.encode(jsonEncode(delta.toJson())).length > maxEncodedLength) {
+      throw const FormatException("P2P revision delta 超過大小限制。");
+    }
+    return delta;
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "projectUuid": projectUuid,
+    "baseRevisionId": baseRevisionId,
+    "targetRevisionId": targetRevisionId,
+    "baseContentSha256": baseContentSha256,
+    "targetContentSha256": targetContentSha256,
+    "baseLength": baseLength,
+    "targetLength": targetLength,
+    "prefixLength": prefixLength,
+    "removedLength": removedLength,
+    "inserted": base64Encode(insertedBytes),
+  };
+
+  List<int> applyTo(List<int> baseBytes) {
+    if (baseBytes.length != baseLength) {
+      throw const FormatException("P2P revision delta base 長度不符。");
+    }
+    final suffixStart = prefixLength + removedLength;
+    final result = <int>[
+      ...baseBytes.take(prefixLength),
+      ...insertedBytes,
+      ...baseBytes.skip(suffixStart),
+    ];
+    if (result.length != targetLength) {
+      throw const FormatException("P2P revision delta target 長度不符。");
+    }
+    return result;
+  }
+
+  bool matchesRevisions({
+    required P2pRevisionMetadata base,
+    required P2pRevisionMetadata target,
+  }) {
+    return base.projectUuid == projectUuid &&
+        target.projectUuid == projectUuid &&
+        base.revisionId == baseRevisionId &&
+        target.revisionId == targetRevisionId &&
+        base.contentSha256 == baseContentSha256 &&
+        target.contentSha256 == targetContentSha256 &&
+        target.parents.contains(base.revisionId);
+  }
+}
+
 class P2pRevisionSummary {
   static const int maxHeadCount = 16;
 
   final String projectUuid;
   final List<P2pRevisionMetadata> heads;
+  final Set<String> draftHeadIds;
+  final P2pRevisionDelta? delta;
 
   P2pRevisionSummary({
     required String projectUuid,
     required Iterable<P2pRevisionMetadata> heads,
+    Iterable<String> draftHeadIds = const <String>[],
+    this.delta,
   }) : projectUuid = projectUuid.trim().toLowerCase(),
        heads = List.unmodifiable(
          heads.toList()..sort(
            (first, second) => first.revisionId.compareTo(second.revisionId),
          ),
+       ),
+       draftHeadIds = UnmodifiableSetView(
+         SplayTreeSet<String>.of(
+           draftHeadIds.map((value) => value.trim().toLowerCase()),
+         ),
        ) {
+    final headIds = this.heads.map((head) => head.revisionId).toSet();
+    final deltaTarget = delta == null
+        ? null
+        : this.heads.cast<P2pRevisionMetadata?>().firstWhere(
+            (head) => head?.revisionId == delta!.targetRevisionId,
+            orElse: () => null,
+          );
     if (!P2pProjectStatus.isValidProjectUuid(this.projectUuid) ||
         this.heads.length > maxHeadCount ||
         !this.heads.every((head) => head.projectUuid == this.projectUuid) ||
-        this.heads.map((head) => head.revisionId).toSet().length !=
-            this.heads.length) {
+        headIds.length != this.heads.length ||
+        !headIds.containsAll(this.draftHeadIds) ||
+        (delta != null &&
+            (delta!.projectUuid != this.projectUuid ||
+                deltaTarget == null ||
+                deltaTarget.contentSha256 != delta!.targetContentSha256 ||
+                !deltaTarget.parents.contains(delta!.baseRevisionId)))) {
       throw const FormatException("P2P revision summary 無效。");
     }
   }
 
-  factory P2pRevisionSummary.fromGraph(P2pRevisionGraph graph) =>
-      P2pRevisionSummary(projectUuid: graph.projectUuid, heads: graph.heads);
+  factory P2pRevisionSummary.fromGraph(
+    P2pRevisionGraph graph, {
+    Iterable<String> draftHeadIds = const <String>[],
+    P2pRevisionDelta? delta,
+  }) => P2pRevisionSummary(
+    projectUuid: graph.projectUuid,
+    heads: graph.heads,
+    draftHeadIds: draftHeadIds,
+    delta: delta,
+  );
 
   factory P2pRevisionSummary.fromJson(Map<String, Object?> json) {
     final projectUuid = json["projectUuid"];
@@ -731,13 +967,42 @@ class P2pRevisionSummary {
       }
       metadata.add(P2pRevisionMetadata.fromJson(headJson));
     }
-    return P2pRevisionSummary(projectUuid: projectUuid, heads: metadata);
+    final draftIdsJson = json["draftHeadIds"];
+    final draftIds = <String>[];
+    if (draftIdsJson != null) {
+      if (draftIdsJson is! List ||
+          draftIdsJson.any((value) => value is! String)) {
+        throw const FormatException("P2P revision summary draft heads 無效。");
+      }
+      draftIds.addAll(draftIdsJson.cast<String>());
+    }
+    final deltaJson = json["delta"];
+    P2pRevisionDelta? delta;
+    if (deltaJson != null) {
+      if (deltaJson is! Map) {
+        throw const FormatException("P2P revision summary delta 無效。");
+      }
+      delta = P2pRevisionDelta.fromJson(
+        deltaJson.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    }
+    return P2pRevisionSummary(
+      projectUuid: projectUuid,
+      heads: metadata,
+      draftHeadIds: draftIds,
+      delta: delta,
+    );
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
     "projectUuid": projectUuid,
     "heads": heads.map((head) => head.toJson()).toList(growable: false),
+    if (draftHeadIds.isNotEmpty) "draftHeadIds": draftHeadIds.toList(),
+    if (delta != null) "delta": delta!.toJson(),
   };
+
+  bool isDraft(String revisionId) =>
+      draftHeadIds.contains(revisionId.trim().toLowerCase());
 
   P2pRevisionSummaryRelation compare(P2pRevisionSummary remote) {
     if (projectUuid != remote.projectUuid) {

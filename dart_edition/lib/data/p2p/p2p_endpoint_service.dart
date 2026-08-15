@@ -6,6 +6,7 @@ import "dart:typed_data";
 
 import "package:cryptography/cryptography.dart";
 
+import "../../domain/collaboration/collaboration_protocol.dart";
 import "../../domain/models/p2p_pairing_models.dart";
 import "../../domain/models/p2p_revision_models.dart";
 import "../../domain/models/p2p_resolution_models.dart";
@@ -86,6 +87,16 @@ class P2pInboundRevisionGraph {
   });
 }
 
+class P2pInboundCollaborationBatch {
+  final String remoteAddress;
+  final CollaborationSyncBatch batch;
+
+  const P2pInboundCollaborationBatch({
+    required this.remoteAddress,
+    required this.batch,
+  });
+}
+
 class P2pRevisionSummaryExchange {
   final P2pRevisionSummary summary;
   final int? remoteServicePort;
@@ -140,12 +151,15 @@ class P2pProbeException implements Exception {
 /// Revision summaries are available only after [installAuthenticatedSession]
 /// and are always wrapped in an authenticated encrypted frame.
 abstract class P2pEndpointService {
+  bool get hasActiveCollaborationStream;
+
   Stream<P2pInboundProbe> get inboundProbes;
   Stream<P2pInboundProjectOffer> get inboundProjectOffers;
   Stream<P2pInboundPairingChallenge> get inboundPairingChallenges;
   Stream<P2pInboundPairingConfirmation> get inboundPairingConfirmations;
   Stream<P2pInboundRevisionSummary> get inboundRevisionSummaries;
   Stream<P2pInboundRevisionGraph> get inboundRevisionGraphs;
+  Stream<P2pInboundCollaborationBatch> get inboundCollaborationBatches;
 
   void updateLocalProjectOffer(P2pProjectOffer offer);
 
@@ -160,6 +174,8 @@ abstract class P2pEndpointService {
   void updateLocalRevisionSummary(P2pRevisionSummary? summary);
 
   void updateLocalRevisionGraph(P2pRevisionGraph? graph);
+
+  void updateLocalCollaborationBatch(CollaborationSyncBatch? batch);
 
   void updateLocalResolutionAck(P2pResolutionAck? ack);
 
@@ -219,6 +235,17 @@ abstract class P2pEndpointService {
     Duration timeout = const Duration(seconds: 8),
   });
 
+  Future<CollaborationSyncBatch> negotiateCollaborationBatch(
+    P2pEndpoint endpoint,
+    CollaborationSyncBatch localBatch, {
+    Duration timeout = const Duration(seconds: 3),
+  });
+
+  Future<bool> openCollaborationStream(
+    P2pEndpoint endpoint, {
+    Duration timeout = const Duration(seconds: 5),
+  });
+
   Future<P2pSnapshotManifest?> negotiateSnapshotManifest(
     P2pEndpoint endpoint, {
     required String projectUuid,
@@ -274,6 +301,9 @@ class IoP2pEndpointService implements P2pEndpointService {
   final StreamController<P2pInboundRevisionGraph>
   _inboundRevisionGraphController =
       StreamController<P2pInboundRevisionGraph>.broadcast();
+  final StreamController<P2pInboundCollaborationBatch>
+  _inboundCollaborationBatchController =
+      StreamController<P2pInboundCollaborationBatch>.broadcast();
   final P2pAndroidProbeGateway _androidProbeGateway;
   P2pProjectOffer _localProjectOffer = const P2pProjectOffer.none();
   bool _disconnectOnNextExchange = false;
@@ -281,10 +311,13 @@ class IoP2pEndpointService implements P2pEndpointService {
   P2pPairingConfirmation? _localPairingConfirmation;
   P2pRevisionSummary? _localRevisionSummary;
   P2pRevisionGraph? _localRevisionGraph;
+  CollaborationSyncBatch? _localCollaborationBatch;
   P2pResolutionAck? _localResolutionAck;
   final Map<String, P2pRevisionGraphAssembler> _inboundGraphAssemblers =
       <String, P2pRevisionGraphAssembler>{};
   final Set<String> _completedInboundGraphTransfers = <String>{};
+  final Set<_P2pCollaborationConnection> _collaborationConnections =
+      <_P2pCollaborationConnection>{};
   Map<String, P2pSnapshotManifest> _localSnapshotManifests =
       const <String, P2pSnapshotManifest>{};
   P2pSnapshotSyncRequest? _localSnapshotSyncRequest;
@@ -296,6 +329,10 @@ class IoP2pEndpointService implements P2pEndpointService {
   IoP2pEndpointService({P2pAndroidProbeGateway? androidProbeGateway})
     : _androidProbeGateway =
           androidProbeGateway ?? MethodChannelP2pAndroidProbeGateway();
+
+  @override
+  bool get hasActiveCollaborationStream =>
+      _collaborationConnections.any((connection) => !connection.isClosed);
 
   @override
   Stream<P2pInboundProbe> get inboundProbes => _inboundProbeController.stream;
@@ -321,6 +358,10 @@ class IoP2pEndpointService implements P2pEndpointService {
       _inboundRevisionGraphController.stream;
 
   @override
+  Stream<P2pInboundCollaborationBatch> get inboundCollaborationBatches =>
+      _inboundCollaborationBatchController.stream;
+
+  @override
   void updateLocalProjectOffer(P2pProjectOffer offer) {
     _localProjectOffer = offer;
   }
@@ -342,11 +383,13 @@ class IoP2pEndpointService implements P2pEndpointService {
 
   @override
   void installAuthenticatedSession(P2pSecureSessionKeys? keys) {
+    _closeCollaborationConnections();
     _secureChannel?.destroy();
     _secureChannel = keys == null ? null : P2pSecureChannel(keys);
     _snapshotContentTransferEnabled = false;
     _snapshotChunkLoader = null;
     if (keys == null) _localSnapshotSyncRequest = null;
+    if (keys == null) _localCollaborationBatch = null;
     _inboundGraphAssemblers.clear();
     _completedInboundGraphTransfers.clear();
   }
@@ -366,6 +409,23 @@ class IoP2pEndpointService implements P2pEndpointService {
     if (graph == null ||
         (ack != null && (revision == null || !ack.matchesRevision(revision)))) {
       _localResolutionAck = null;
+    }
+  }
+
+  @override
+  void updateLocalCollaborationBatch(CollaborationSyncBatch? batch) {
+    final localProjectUuid = _localProjectOffer.projectUuid;
+    if (batch != null &&
+        (localProjectUuid == null || batch.projectUuid != localProjectUuid)) {
+      throw const FormatException(
+        "collaboration batch 與目前 P2P project session 不符。",
+      );
+    }
+    _localCollaborationBatch = batch;
+    if (batch != null) {
+      for (final connection in _collaborationConnections.toList()) {
+        unawaited(connection.send(batch));
+      }
     }
   }
 
@@ -805,6 +865,164 @@ class IoP2pEndpointService implements P2pEndpointService {
   }
 
   @override
+  Future<CollaborationSyncBatch> negotiateCollaborationBatch(
+    P2pEndpoint endpoint,
+    CollaborationSyncBatch localBatch, {
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final channel = _secureChannel;
+    if (channel == null) {
+      throw StateError("尚未建立 authenticated encrypted transport。");
+    }
+    final installedBatch = _localCollaborationBatch;
+    if (installedBatch == null ||
+        installedBatch.projectUuid != localBatch.projectUuid ||
+        localBatch.senderReplicaId != channel.localDeviceId) {
+      throw const FormatException("本機 collaboration batch 尚未安裝或 session 不符。");
+    }
+    final requestId = base64UrlEncode(
+      List<int>.generate(16, (_) => _secureRandom.nextInt(256)),
+    ).replaceAll("=", "");
+    final requestFrame = await channel.encryptJson(<String, Object?>{
+      "type": "collaborationBatchRequest",
+      "requestId": requestId,
+      "batch": localBatch.toJson(),
+    });
+    final response = await _exchangeLine(
+      endpoint,
+      requestLine: "$_secureFramePrefix${jsonEncode(requestFrame.toJson())}",
+      timeout: timeout,
+      maxResponseBytes: _maxSecureFrameBytes,
+    );
+    if (!response.startsWith(_secureFramePrefix)) {
+      throw const FormatException(
+        "對方未使用 authenticated encrypted transport 回應 collaboration batch。",
+      );
+    }
+    final responseFrame = P2pEncryptedFrame.fromJson(
+      _decodeJsonObject(response.substring(_secureFramePrefix.length)),
+    );
+    final clearResponse = await channel.decryptJson(responseFrame);
+    if (clearResponse.length != 3 ||
+        clearResponse["type"] != "collaborationBatchResponse" ||
+        clearResponse["requestId"] != requestId) {
+      throw const FormatException("collaboration batch response 與 request 不符。");
+    }
+    final remoteBatch = CollaborationSyncBatch.fromJson(
+      _stringKeyedEncryptedPayload(
+        clearResponse["batch"],
+        "collaboration batch",
+      ),
+    );
+    if (remoteBatch.projectUuid != localBatch.projectUuid ||
+        remoteBatch.senderReplicaId != channel.remoteDeviceId) {
+      throw const FormatException("遠端 collaboration batch 與安全 session 不符。");
+    }
+    return remoteBatch.withObservedIpAddress(endpoint.host);
+  }
+
+  @override
+  Future<bool> openCollaborationStream(
+    P2pEndpoint endpoint, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (_androidProbeGateway.isSupported) {
+      // The current Android MethodChannel owns a request/response socket. It
+      // cannot safely transfer a live socket handle to Dart, so Android keeps
+      // the encrypted bounded-batch fallback until the native stream bridge
+      // is added.
+      return false;
+    }
+    if (hasActiveCollaborationStream) return true;
+    final channel = _secureChannel;
+    final localBatch = _localCollaborationBatch;
+    if (channel == null || localBatch == null) return false;
+    if (localBatch.senderReplicaId != channel.localDeviceId) {
+      throw const FormatException("collaboration stream local replica 不符。");
+    }
+    Socket? socket;
+    _P2pSocketLineReader? reader;
+    try {
+      socket = await Socket.connect(
+        endpoint.host,
+        endpoint.port,
+      ).timeout(timeout);
+      socket.setOption(SocketOption.tcpNoDelay, true);
+      reader = _P2pSocketLineReader(socket);
+      final requestId = base64UrlEncode(
+        List<int>.generate(16, (_) => _secureRandom.nextInt(256)),
+      ).replaceAll("=", "");
+      final requestFrame = await channel.encryptJson(<String, Object?>{
+        "type": "collaborationStreamOpen",
+        "requestId": requestId,
+        "batch": localBatch.toJson(),
+      });
+      socket.add(
+        utf8.encode(
+          "$_secureFramePrefix${jsonEncode(requestFrame.toJson())}\n",
+        ),
+      );
+      await socket.flush();
+      final response = await reader.readLine(
+        timeout: timeout,
+        maxBytes: _maxSecureFrameBytes,
+      );
+      if (!response.startsWith(_secureFramePrefix)) {
+        throw const FormatException("collaboration stream 未使用安全 frame 回應。");
+      }
+      final responseFrame = P2pEncryptedFrame.fromJson(
+        _decodeJsonObject(response.substring(_secureFramePrefix.length)),
+      );
+      final clearResponse = await channel.decryptJson(responseFrame);
+      if (clearResponse.length != 3 ||
+          clearResponse["type"] != "collaborationStreamAccepted" ||
+          clearResponse["requestId"] != requestId) {
+        throw const FormatException("collaboration stream accept frame 無效。");
+      }
+      final remoteBatch = _validatedCollaborationBatch(
+        clearResponse["batch"],
+        channel: channel,
+        projectUuid: localBatch.projectUuid,
+        observedIpAddress: endpoint.host,
+      );
+      _inboundCollaborationBatchController.add(
+        P2pInboundCollaborationBatch(
+          remoteAddress: endpoint.host,
+          batch: remoteBatch,
+        ),
+      );
+      final connection = _P2pCollaborationConnection(
+        socket: socket,
+        reader: reader,
+        channel: channel,
+        secureFramePrefix: _secureFramePrefix,
+        maximumFrameBytes: _maxSecureFrameBytes,
+        remoteAddress: endpoint.host,
+        projectUuid: localBatch.projectUuid,
+        onBatch: (batch) {
+          _inboundCollaborationBatchController.add(
+            P2pInboundCollaborationBatch(
+              remoteAddress: endpoint.host,
+              batch: batch,
+            ),
+          );
+        },
+        onClosed: (closed) => _collaborationConnections.remove(closed),
+      );
+      _collaborationConnections.add(connection);
+      socket = null;
+      reader = null;
+      unawaited(connection.run());
+      return true;
+    } on Exception {
+      return false;
+    } finally {
+      await reader?.cancel();
+      socket?.destroy();
+    }
+  }
+
+  @override
   Future<P2pSnapshotManifest?> negotiateSnapshotManifest(
     P2pEndpoint endpoint, {
     required String projectUuid,
@@ -1153,11 +1371,14 @@ class IoP2pEndpointService implements P2pEndpointService {
 
   Future<void> _handleProbe(Socket socket) async {
     var sentCompatibleResponse = false;
+    var collaborationConnectionOwnsSocket = false;
     var isCompatibilityProbe = false;
     var respondedWithDisconnect = false;
     String? remoteAddress;
     _P2pSocketLineReader? reader;
     P2pSecureChannel? snapshotChunkStreamChannel;
+    P2pSecureChannel? collaborationStreamChannel;
+    String? collaborationStreamProjectUuid;
     try {
       socket.setOption(SocketOption.tcpNoDelay, true);
       final peerAddress = socket.remoteAddress;
@@ -1181,6 +1402,7 @@ class IoP2pEndpointService implements P2pEndpointService {
       int? remoteServicePort;
       P2pRevisionGraph? remoteRevisionGraph;
       String? remoteRevisionGraphTransferId;
+      CollaborationSyncBatch? remoteCollaborationBatch;
       late final String response;
       if (request == _probeRequest.trim()) {
         isCompatibilityProbe = true;
@@ -1230,7 +1452,29 @@ class IoP2pEndpointService implements P2pEndpointService {
           return;
         }
         final type = clearRequest["type"];
-        if (type == "revisionSummaryRequest") {
+        if (type == "collaborationStreamOpen") {
+          if (clearRequest.length != 3) return;
+          final localBatch = _localCollaborationBatch;
+          if (localBatch == null ||
+              localBatch.senderReplicaId != channel.localDeviceId) {
+            return;
+          }
+          remoteCollaborationBatch = _validatedCollaborationBatch(
+            clearRequest["batch"],
+            channel: channel,
+            projectUuid: localBatch.projectUuid,
+            observedIpAddress: remoteAddress,
+          );
+          final responseFrame = await channel.encryptJson(<String, Object?>{
+            "type": "collaborationStreamAccepted",
+            "requestId": requestId,
+            "batch": localBatch.toJson(),
+          });
+          response =
+              "$_secureFramePrefix${jsonEncode(responseFrame.toJson())}\n";
+          collaborationStreamChannel = channel;
+          collaborationStreamProjectUuid = localBatch.projectUuid;
+        } else if (type == "revisionSummaryRequest") {
           final localSummary = _localRevisionSummary;
           if (localSummary == null) return;
           remoteRevisionSummary = _revisionSummaryFromEncryptedPayload(
@@ -1321,6 +1565,33 @@ class IoP2pEndpointService implements P2pEndpointService {
           });
           response =
               "$_secureFramePrefix${jsonEncode(responseFrame.toJson())}\n";
+        } else if (type == "collaborationBatchRequest") {
+          if (clearRequest.length != 3) return;
+          final localBatch = _localCollaborationBatch;
+          if (localBatch == null ||
+              localBatch.senderReplicaId != channel.localDeviceId) {
+            return;
+          }
+          remoteCollaborationBatch = CollaborationSyncBatch.fromJson(
+            _stringKeyedEncryptedPayload(
+              clearRequest["batch"],
+              "collaboration batch",
+            ),
+          );
+          if (remoteCollaborationBatch.projectUuid != localBatch.projectUuid ||
+              remoteCollaborationBatch.senderReplicaId !=
+                  channel.remoteDeviceId) {
+            return;
+          }
+          remoteCollaborationBatch = remoteCollaborationBatch
+              .withObservedIpAddress(remoteAddress);
+          final responseFrame = await channel.encryptJson(<String, Object?>{
+            "type": "collaborationBatchResponse",
+            "requestId": requestId,
+            "batch": localBatch.toJson(),
+          });
+          response =
+              "$_secureFramePrefix${jsonEncode(responseFrame.toJson())}\n";
         } else if (type == "snapshotChunkRequest") {
           final chunkResponse = await _buildSnapshotChunkResponse(
             channel: channel,
@@ -1345,6 +1616,38 @@ class IoP2pEndpointService implements P2pEndpointService {
           reader: reader,
           channel: channel,
         );
+      }
+      if (collaborationStreamChannel case final channel?) {
+        if (remoteCollaborationBatch case final initialBatch?) {
+          _inboundCollaborationBatchController.add(
+            P2pInboundCollaborationBatch(
+              remoteAddress: remoteAddress,
+              batch: initialBatch,
+            ),
+          );
+          remoteCollaborationBatch = null;
+        }
+        final connection = _P2pCollaborationConnection(
+          socket: socket,
+          reader: reader,
+          channel: channel,
+          secureFramePrefix: _secureFramePrefix,
+          maximumFrameBytes: _maxSecureFrameBytes,
+          remoteAddress: remoteAddress,
+          projectUuid: collaborationStreamProjectUuid!,
+          onBatch: (batch) {
+            _inboundCollaborationBatchController.add(
+              P2pInboundCollaborationBatch(
+                remoteAddress: remoteAddress!,
+                batch: batch,
+              ),
+            );
+          },
+          onClosed: (closed) => _collaborationConnections.remove(closed),
+        );
+        _collaborationConnections.add(connection);
+        collaborationConnectionOwnsSocket = true;
+        await connection.run();
       }
       if (isCompatibilityProbe) {
         _inboundProbeController.add(
@@ -1396,6 +1699,14 @@ class IoP2pEndpointService implements P2pEndpointService {
           ),
         );
       }
+      if (remoteCollaborationBatch != null) {
+        _inboundCollaborationBatchController.add(
+          P2pInboundCollaborationBatch(
+            remoteAddress: remoteAddress,
+            batch: remoteCollaborationBatch,
+          ),
+        );
+      }
     } on SecretBoxAuthenticationError {
       // Authentication failures are intentionally indistinguishable from an
       // unknown client and receive no response.
@@ -1404,11 +1715,13 @@ class IoP2pEndpointService implements P2pEndpointService {
     } on Exception {
       // Unknown, oversized, or stalled clients receive no information.
     } finally {
-      await reader?.cancel();
-      if (sentCompatibleResponse) {
-        await _closeGracefully(socket);
-      } else {
-        socket.destroy();
+      if (!collaborationConnectionOwnsSocket) {
+        await reader?.cancel();
+        if (sentCompatibleResponse) {
+          await _closeGracefully(socket);
+        } else {
+          socket.destroy();
+        }
       }
     }
   }
@@ -1561,6 +1874,24 @@ class IoP2pEndpointService implements P2pEndpointService {
       mapped[entry.key as String] = entry.value;
     }
     return P2pRevisionSummary.fromJson(mapped);
+  }
+
+  CollaborationSyncBatch _validatedCollaborationBatch(
+    Object? value, {
+    required P2pSecureChannel channel,
+    required String projectUuid,
+    required String observedIpAddress,
+  }) {
+    final batch = CollaborationSyncBatch.fromJson(
+      _stringKeyedEncryptedPayload(value, "collaboration batch"),
+    );
+    if (batch.projectUuid != projectUuid ||
+        batch.senderReplicaId != channel.remoteDeviceId) {
+      throw const FormatException(
+        "collaboration batch 與 authenticated project session 不符。",
+      );
+    }
+    return batch.withObservedIpAddress(observedIpAddress);
   }
 
   P2pSnapshotManifest _snapshotManifestFromEncryptedPayload(Object? value) {
@@ -1741,6 +2072,14 @@ class IoP2pEndpointService implements P2pEndpointService {
     return ack;
   }
 
+  void _closeCollaborationConnections() {
+    final connections = _collaborationConnections.toList(growable: false);
+    _collaborationConnections.clear();
+    for (final connection in connections) {
+      connection.close();
+    }
+  }
+
   @override
   Future<void> dispose() async {
     await stop();
@@ -1750,6 +2089,126 @@ class IoP2pEndpointService implements P2pEndpointService {
     await _inboundPairingConfirmationController.close();
     await _inboundRevisionSummaryController.close();
     await _inboundRevisionGraphController.close();
+    await _inboundCollaborationBatchController.close();
+  }
+}
+
+class _P2pCollaborationConnection {
+  final Socket socket;
+  final _P2pSocketLineReader reader;
+  final P2pSecureChannel channel;
+  final String secureFramePrefix;
+  final int maximumFrameBytes;
+  final String remoteAddress;
+  final String projectUuid;
+  final void Function(CollaborationSyncBatch batch) onBatch;
+  final void Function(_P2pCollaborationConnection connection) onClosed;
+  Future<void> _writeTail = Future<void>.value();
+  bool _closed = false;
+
+  _P2pCollaborationConnection({
+    required this.socket,
+    required this.reader,
+    required this.channel,
+    required this.secureFramePrefix,
+    required this.maximumFrameBytes,
+    required this.remoteAddress,
+    required this.projectUuid,
+    required this.onBatch,
+    required this.onClosed,
+  });
+
+  bool get isClosed => _closed;
+
+  Future<void> send(CollaborationSyncBatch batch) {
+    if (_closed || batch.projectUuid != projectUuid) {
+      return Future<void>.value();
+    }
+    final completer = Completer<void>();
+    _writeTail = _writeTail.then((_) async {
+      if (_closed) {
+        completer.complete();
+        return;
+      }
+      try {
+        final frame = await channel.encryptJson(<String, Object?>{
+          "type": "collaborationBatchPush",
+          "batch": batch.toJson(),
+        });
+        if (_closed) {
+          completer.complete();
+          return;
+        }
+        socket.add(
+          utf8.encode("$secureFramePrefix${jsonEncode(frame.toJson())}\n"),
+        );
+        await socket.flush();
+        completer.complete();
+      } on Exception {
+        if (!completer.isCompleted) completer.complete();
+        close();
+      }
+    });
+    return completer.future;
+  }
+
+  Future<void> run() async {
+    try {
+      while (!_closed) {
+        final line = await reader.readLine(
+          timeout: const Duration(seconds: 10),
+          maxBytes: maximumFrameBytes,
+        );
+        if (!line.startsWith(secureFramePrefix)) {
+          throw const FormatException("collaboration stream frame prefix 無效。");
+        }
+        final frame = P2pEncryptedFrame.fromJson(
+          _decodeStringKeyedJson(line.substring(secureFramePrefix.length)),
+        );
+        final clear = await channel.decryptJson(frame);
+        if (clear.length != 2 || clear["type"] != "collaborationBatchPush") {
+          throw const FormatException("collaboration stream push schema 無效。");
+        }
+        final batch = CollaborationSyncBatch.fromJson(
+          _jsonMap(clear["batch"], "collaboration stream batch"),
+        );
+        if (batch.projectUuid != projectUuid ||
+            batch.senderReplicaId != channel.remoteDeviceId) {
+          throw const FormatException("collaboration stream batch session 不符。");
+        }
+        onBatch(batch.withObservedIpAddress(remoteAddress));
+      }
+    } on Exception {
+      // Disconnect, timeout, authentication failure, and malformed frames all
+      // terminate this stream. The coordinator may establish a fresh stream.
+    } finally {
+      await reader.cancel();
+      close();
+    }
+  }
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    socket.destroy();
+    onClosed(this);
+  }
+
+  static Map<String, Object?> _decodeStringKeyedJson(String value) {
+    final decoded = jsonDecode(value);
+    return _jsonMap(decoded, "collaboration encrypted frame");
+  }
+
+  static Map<String, Object?> _jsonMap(Object? value, String label) {
+    if (value is! Map) throw FormatException("$label 必須是 JSON object。");
+    final result = <String, Object?>{};
+    for (final entry in value.entries) {
+      if (entry.key is! String) {
+        throw FormatException("$label key 無效。");
+      }
+      result[entry.key as String] = entry.value;
+    }
+    return result;
   }
 }
 

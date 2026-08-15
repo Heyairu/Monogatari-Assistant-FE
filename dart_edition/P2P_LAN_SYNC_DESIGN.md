@@ -1,10 +1,10 @@
 # 物語 Assistant：內網 P2P 同步設計
 
-> 文件狀態：已進入實作；端點探測、即時檔案協商、session lifecycle、裝置身分配對、加密 revision summary／snapshot manifest、新裝置 bootstrap 共識規劃、production encrypted chunk／ACK gateway（含同 TCP 批次交換）、本機 immutable snapshot store，以及可跨 App 重啟續傳的 quarantine coordinator 完成  
+> 文件狀態：已進入實作；端點探測、即時檔案協商、session lifecycle、裝置身分配對、加密 revision summary／delta／snapshot manifest、新裝置 bootstrap 共識規劃、production encrypted chunk／ACK gateway（含同 TCP 批次交換）、本機 immutable draft/persisted revision store、可跨 App 重啟續傳的 quarantine coordinator，以及近即時接收套用流程完成
 > 適用情境：同一作者的 2–5 台裝置在同一個可信任 LAN 內同步作品，不想維運 NAS、Gitea 或常駐 Sync Hub。  
 > 相關方案：[Git 模式](GIT_BASED_SYNC_DESIGN.md)、[中樞模式](INTRANET_SYNC_DESIGN.md)
 
-> 已確認方向：採用本文件的 P2P 方案。目前已實作 WelcomeView 端點 UI、同步前置檢查、相容性探測、簽章配對確認、signed ephemeral X25519 authenticated encrypted transport、加密 revision summary／snapshot manifest 交換、新裝置 bootstrap 共識規劃、production encrypted chunk／ACK gateway、immutable outbound snapshot store、本機 quarantine 接收／續傳協調，以及欄位級三方合併／衝突 Dialog 基礎。網路 chunk 已可在 authenticated project session 中傳輸；驗證後 snapshot 尚未接到目前 ProjectData／使用者檔案，因此不會自動覆寫作品。
+> 已確認方向：採用本文件的 P2P 方案。目前已實作 WelcomeView 端點 UI、同步前置檢查、相容性探測、簽章配對確認、signed ephemeral X25519 authenticated encrypted transport、加密 revision summary／delta／snapshot manifest 交換、新裝置 bootstrap 共識規劃、production encrypted chunk／ACK gateway、immutable outbound snapshot store、本機 quarantine 接收／續傳協調，以及欄位級三方合併／衝突 Dialog。驗證後的遠端 draft 在本機無自行修改且取得該安全 session 一次性授權後，只套用到 ProjectData/編輯器；不直接寫入使用者 `.mnproj`。
 
 ### 目前實作邊界
 
@@ -16,6 +16,7 @@
 - 已實作：`允許單端確認配對碼` 預設開啟且可於設定關閉。能力位元包含在 signed challenge 中；只有兩台裝置都宣告開啟時，任一端人工確認後，另一端才會驗證同一 transcript 的簽章、加入 allowlist 並自動回簽。任一端關閉時自動退回雙端各自確認。
 - 已實作：每輪 signed challenge 綁定一把短期 X25519 public key；雙端 confirmation 與 allowlist 驗證通過後，以 X25519 shared secret + HKDF-SHA256 導出方向分離的 session keys，再以 ChaCha20-Poly1305、AAD、單調 sequence number 與 request ID 保護訊息。session key 只存在記憶體，重新配對／斷線／換檔／停止服務時銷毀。
 - 已實作：revision summary 僅能在上述 authenticated encrypted transport 內交換；未安裝 session、session ID／sender 不符、密文竄改、重放 sequence、request ID 不符或 project UUID 不同時都拒絕。wire frame 有 64 KiB 上限，明文 payload 另限 40 KiB；沒有明文 fallback。
+- 已實作：ProjectData 停止變更 1100ms 後，以不更新最後儲存時間的序列化結果建立 app-private immutable draft revision。短小編輯會附帶最多 16 KiB inserted bytes、且綁定 base/target revision ID、content hash 與長度的 prefix/suffix delta；較大差異省略 delta，改走既有 manifest/chunk 下載。delta 重建後仍須通過 SHA-256、嚴格 UTF-8、XML、Project UUID 與 format version 驗證。
 - 已實作：每次成功保存 revision 時建立 metadata-only snapshot manifest，內容只有 project/revision/hash、UTF-8 byte length、format version，以及固定 24 KiB chunk 規格。雙方目前 head 的 manifest 會隨 encrypted revision summary request/response 雙向交換，因此 Android → Windows 不能反向建連時仍可在同一成功方向取得；歷史 revision 另有 encrypted manifest request。manifest 必須與 summary head 完全相符，且沒有 XML、檔案路徑或 chunk bytes。
 - 已實作：transport-agnostic 新裝置 bootstrap 共識規劃器。輸入必須包含加入裝置 ID、完整原始 trusted peer roster，以及每台 peer 經 authenticated session 取得的 summary／manifest observation。只有加入裝置尚未在 roster、原始 peer 至少兩台、每台皆可驗證、皆只有一個 head，且完整 revision metadata 與 manifest 完全一致時才產生 `ready`；來源依 device ID 決定性選擇。缺少／離線／manifest 不可驗證回覆為 `sourceUnavailable`，多 head 或任何 metadata 分歧為 `conflict`，不採多數決。規劃器採 sealed decision、roster 上限 64，且不含網路、下載、UI 或檔案寫入。
 - 已實作：bounded snapshot chunk domain model 與本機 quarantine session。chunk 可亂序抵達與相同內容重送；不同內容的重複 index、大小／manifest 不符、缺塊、SHA-256 不符、非嚴格 UTF-8、DOCTYPE、Project UUID 或 format version 不符都不會產生可套用結果。每個 transfer 在 app-private support directory 保存嚴格 manifest metadata；每個已提交 chunk 另有 index、長度、SHA-256 與本機 commit time receipt，App 重啟只恢復 chunk／receipt 同時存在且 hash 相符的項目。預設最多保留 7 天、4 個 partial transfers 與 128 MiB chunk payload；開啟目標 transfer 前會預留完整 manifest 容量，並依最近活動時間淘汰舊資料。明確取消、永久失敗、格式驗證失敗或成功產生 immutable 記憶體結果時會刪除隔離檔案；單純 provider／App dispose 則保留合規 partial transfer 供下次續傳，且不會寫入目前專案。
@@ -23,9 +24,10 @@
 - 已實作：transport-agnostic download coordinator 依 chunk index 順序請求、對暫時性錯誤做最多三次 bounded retry，同一生命週期或重新建立 coordinator 後都只要求缺少 chunk；永久性協定錯誤、格式錯誤與使用者取消會清空 quarantine，飛行中的晚到回應不會寫入。生產 Riverpod 已綁定 session-aware gateway；gateway 只接受 notifier 在 authenticated project session 建立後發出的 capability，並在回應前後檢查 generation、endpoint 與 project UUID。
 - 已實作：production authenticated endpoint adapter 與 encrypted `snapshotChunkRequest`／`snapshotChunkResponse`。request 綁定完整 manifest 與 chunk index；response ACK 綁定 project UUID、revision ID、content SHA-256 與 index，且 clear payload／nested model 都拒絕額外欄位。只有 secure session、雙端顯式 content gate、app-private immutable content loader 與完全一致的本機 manifest 同時成立才回傳 chunk；換 session、換檔、取消配對、peer 斷線、停止服務或 provider dispose 會同時撤銷 capability 並關閉 gate，晚到回應會丟棄。每條 TCP 採 lockstep request/response，最多交換 32 個固定 24 KiB chunk，line reader 會保留 newline 後已讀入的 bytes；Android 原生 `Network.bindSocket()` 也在同一條 Wi-Fi-bound socket 完成整批，避免逐 chunk 重連造成頻繁 timeout。跨 batch 視窗預設從 8 個 chunk 開始，連續兩個完整成功批次後倍增至上限 32；TCP 已建立後的 response timeout／socket failure 會將視窗減半至下限 1，connect 階段失敗則保留視窗，避免把不可達誤判為接收端壓力。loopback 測試已涵蓋 wire → coordinator → quarantine → XML 驗證。
 - 已實作：成功手動儲存、另存新檔或自動儲存後，以實際寫入的 XML bytes 建立 content SHA-256、不可變 revision metadata、version vector 與本機 revision DAG，並持久化到專案 UUID 專屬 metadata key。相同內容重複儲存不建立重複 revision；一般儲存不會把多個 concurrent heads 隱式視為已解決。
+- 已實作：接收端沒有本機自行修改時，第一次先詢問是否允許該 authenticated session 自動套用；同意後不逐版顯示覆蓋 Dialog。遠端 draft 僅更新記憶體工作副本並維持可手動儲存狀態；本機一旦自行修改便先建立本機 draft branch，使 DAG 成為 concurrent，不直接覆蓋。手動儲存會把相同 draft head 標成 persisted，或以實際寫入 bytes 建立其 persisted child。
 - 已實作：Map/Table 不同 key 聯集、同 key 逐欄三方比較、群組預設與欄位覆寫的衝突 Dialog 元件與單元/widget 測試。
-- 尚未實作：自適應視窗的真機 telemetry／參數調校、實際 ProjectData adapter、遠端原子套用、bootstrap roster 蒐集／provider 與 `joiningReplica` UI 接線／下載套用，以及以正式外部安全審查或 pinned mutual TLS／成熟 Noise 實作取代或核准目前的 application-layer handshake。
-- 安全限制：project offer 與 pairing frame 仍是 bounded pre-auth 訊息；offer 會交換檔名與 UUID，但不傳 revision hash、XML 或正文。revision summary、snapshot manifest 與 chunk 已進入 authenticated encrypted transport；chunk 只落入 quarantine，不直接寫使用者文件。這個 handshake composition 使用成熟 primitives，但仍未完成獨立外部安全審查；正式發佈前應完成審查或替換傳輸層。
+- 尚未實作：自適應視窗的真機 telemetry／參數調校、bootstrap roster 蒐集／provider 與 `joiningReplica` UI 接線，以及以正式外部安全審查或 pinned mutual TLS／成熟 Noise 實作取代或核准目前的 application-layer handshake。
+- 安全限制：project offer 與 pairing frame 仍是 bounded pre-auth 訊息；offer 會交換檔名與 UUID，但不傳 revision hash、XML 或正文。revision summary、delta、snapshot manifest 與 chunk 已進入 authenticated encrypted transport；chunk 只落入 quarantine，draft 只落入 app-private revision store，不直接寫使用者文件。這個 handshake composition 使用成熟 primitives，但仍未完成獨立外部安全審查；正式發佈前應完成審查或替換傳輸層。
 
 ## 1. 結論與取捨
 
