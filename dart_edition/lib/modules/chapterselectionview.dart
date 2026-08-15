@@ -1,27 +1,20 @@
-/*
- * ものがたり·アシスタント - Monogatari Assistant
- * Copyright (c) 2025 Heyairu（部屋伊琉）
+/************************************************************
+ * 
+ * Copyright 2025-2026 Heyairu（部屋伊琉）
  *
- * Licensed under the Business Source License 1.1 (Modified).
- * You may not use this file except in compliance with the License.
- * Change Date: 2030-11-04 05:14 a.m. (UTC+8)
- * Change License: Apache License 2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Commercial use allowed under conditions described in Section 1;
- * Competing products (≥3 overlapping modules or similar UI structure)
- * and repackaging without permission are prohibited.
- */
-
-//  Ported from the original SwiftUI ChapterSelection page.
-//  Created by 部屋いる on 2025/10/1.
-//  Refactored on 2025/10/2 based on Swift implementation
-//  Updated on 2025/10/3 - Unified drag & drop behavior:
-//    - Within List: Use default ReorderableListView drag to reorder
-//    - Outside List: Long press drag to move chapter to another segment
-//  Updated on 2025/10/3 - Auto scroll when dragging:
-//    - Auto scroll page when dragging near top/bottom edges
-//    - Auto scroll list when dragging near list top/bottom edges
-//
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ ************************************************************/
 
 import "package:flutter/material.dart";
 import "dart:async";

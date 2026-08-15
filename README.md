@@ -159,6 +159,10 @@ dependencies:
 
 ## 授權與致謝
 
-本專案採用 [Business Source License 1.1](LICENSE.md)。
+本專案在 Build 919 後由 `BSL 1.1` 改採為 [Apache License 2.0](LICENSE.md)。
+
+Source code is licensed under the Apache License 2.0. See [LICENSE](LICENSE.md) and [TRADEMARKS.md](TRADEMARKS.md) for details.
+
+Monogatari Assistant™ and its logo are trademarks of Heyairu（部屋伊琉）.
 
 Logo 靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori。

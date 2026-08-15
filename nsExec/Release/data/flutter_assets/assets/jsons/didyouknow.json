@@ -1,5 +1,6 @@
 {
 	"items": [
+		{"content": "所以也請大家抱持著這種心情，輕鬆地加入輕音部吧！","source": "《K-ON!》平沢唯"},
 		{"content": "咦？弦是需要換的嗎？","source": "《K-ON!》平沢唯"},
 		{"content": "那時候的我，妳不用擔心唷！\n因為我馬上就會找到的，我也能做到的事、能讓我熱忠的事……","source": "《K-ON!》平沢唯"},
 		{"content": "因為梓喵就是梓喵阿，小律就是小律，小澪就是小澪，小紬就是小紬阿。","source": "《K-ON!!》平沢唯"},
@@ -13,29 +14,37 @@
 		{"content": "能跟大家一起演奏，我非常幸福。","source": "《K-ON!!》中野梓"},
 		{"content": "請你們不要畢業……不用再整理社辦了……一直喝茶我也不會生氣……你們不要畢業啦……","source": "《K-ON!!》中野梓"},
 		{"content": "喝杯茶吧？","source": "《K-ON!!》琴吹紬"},
+		{"content": "沒有人能代替小律！","source": "《K-ON!!》琴吹紬"},
 		{"content": "London Bridge, Thames River, London Tower & London Eye!","source": "《映画 けいおん！》〈ごはんはおかず〉"},
 		{"content": "唯在整部K-ON總共喊了224次梓喵。","source": "k_on_htt_concert on Threads"},
 		{"content": "澪醬在粉絲俱樂部茶會上朗誦的詩詞，其實是歌曲ときめきシュガー的歌詞。","source": "k_on_htt_concert on Threads"},
 		{"content": "〈No, Thank You!〉的Thank正是放課後TeaTime五位成員名字的首字母。","source": "k_on_htt_concert on Threads"},
 
-		{"content": "17歲，3月，我來到了東京，因為我不想輸，因為我沒有錯！","source": "《GBC》井芹仁菜"},
+		{"content": "我要揍死你們這群死菸鬼！","source": "《ヤニねこ》"},
+		{"content": "在別人頭上亂貼什麼東西，死貓！","source": "《ヤニねこ》"},
+		{"content": "媽的，死獸人，院內禁菸啦！","source": "《ヤニねこ》"},
+		{"content": "再來就是AST指數過高，以及跟GPA成反比，完全就是打混學生會有的特徵呢。","source": "《ヤニねこ》"},
+		{"content": "我好像做了奇怪的夢喵……夢到房東你變成了半人馬。","source": "《ヤニねこ》佐藤ヤニ子"},
 
+		{"content": "17歲，3月，我來到了東京，因為我不想輸，因為我沒有錯！","source": "《GBC》井芹仁菜"},
 		{"content": "為什麼要演奏春日影？！！","source": "《MyGo!!!!!》長崎爽世"},
 		{"content": "我愛慕虛榮啦！","source": "《MyGo!!!!!》千早愛音"},
 		{"content": "你這個人……滿腦子都只想到自己呢……","source": "《MyGo!!!!!》豐川祥子"},
-
+		{"content": "夢はパワー！","source": "《YUME∞MITA》仲町阿拉蕾"},
+		{"content": "キラキラドキドキしてる！","source": "《BanG Dream!》戶山香澄"},
+		{"content": "對方是女孩子就完全沒問題！","source": "《戀愛中的小行星》鈴矢萌"},
+		{"content": "愛麗絲，從今天起我就是妳的狗。","source": "《Hello!!黃金拼圖》大宮忍"},
 		{"content": "欸嘿啾咪～","source": "《緋染天空》茅森月歌"},
 
-		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "Monogatari Assistant"},
-		{"content": "外觀可以在設定頁面修改。","source": "Monogatari Assistant"},
-		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "Monogatari Assistant"},
-		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "Monogatari Assistant"},
-		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "Monogatari Assistant"},
-		{"content": "平沢憂並不會幫妳寫稿。\n（廢話，你又不是唯）","source": "Monogatari Assistant"},
-		{"content": 
-			"每種語言姓名生成器的結果高達12000個，日式更高達14400個。\n（然後生成出「琴吹紬」或「田井中律」的概率並非為0就是了，大概1/14400）\n（如果你不知道她們是誰，重抽就對了）\n（如果你知道她們是誰，請跟我重複一遍輕音少女可愛，然後重抽）",
-			"source": "Monogatari Assistant"
-		},
+		{"content": "「大綱調整」是參考「劇本中心式」的「箱書」結構。","source": "MonoAshi"},
+		{"content": "外觀可以在設定頁面修改。","source": "MonoAshi"},
+		{"content": "匯出的Markdown檔並不能重新匯入物語Assistant。","source": "MonoAshi"},
+		{"content": "AppBar的鍵盤圖示可以叫出標點符號選單。","source": "MonoAshi"},
+		{"content": "搜尋功能支援正則表達式，可以多加善用。","source": "MonoAshi"},
+		{"content": "Beta 8 介面重大改變！","source": "MonoAshi"},
+		{"content": "文字 Palettes 參考了蔡淇華的文字調色盤原理，採用 MonoAshi Pastel* Scheme(TM)打造。","source": "MonoAshi"},
+		{"content": "同步功能採用了P2P架構。","source": "MonoAshi"},
+		{"content": "平沢憂並不會幫妳寫稿。\n（畢竟你不是小唯）","source": "MonoAshi 關心您"},
 		{"content": "我恨蛸壺屋。","source": "Heyairu"},
 
 		{"content": "Never gonna give you up,\nNever gonna let you down,\nNever gonna run around and desert you.","source":"Rick Astley"},
@@ -45,6 +54,9 @@
 		{"content": "實驗是檢驗真理的唯一試金石。","source":"胡適（1891-1962）"},
 		{"content": "生於憂患，死於空難","source":"徐志摩（1897-1931）並沒有說過這句話"},
 		{"content": "悄悄的我走了，正如我悄悄的來；我揮一揮衣袖，不帶走一片雲彩。","source":"徐志摩（1897-1931）"},
+		{"content": "Eureka!","source":"阿基米德（287-212 BC）"},
+		{"content": "不要碰我的圓！","source":"阿基米德（287-212 BC）"},
+		{"content": "給我開槓桿，我可以賠掉整個地球","source":"阿基米德（287-212 BC）並沒有說過這句話"},
 
 		{"content": "忠就是真誠。勤就是勤勞奮進。\n宏就是包容寬大。毅就是堅忍卓絕。","source":"板橋高中"},
 		{"content": "看　古今中外　有志者畢竟成功。","source":"板橋高中"},

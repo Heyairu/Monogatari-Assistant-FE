@@ -1,132 +1,202 @@
-**Business Source License 1.1 (Modified)**
 
-Licensor: Heyairu（部屋伊琉）
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
 
-Licensed Work: Monogatari Assistant
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
-The Licensed Work is (c) 2025 Heyairu（部屋伊琉）
+   1. Definitions.
 
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
 
-Change Date: 2030-11-04 05:14 a.m. (UTC+8) (Around five years after initial release)
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
 
-Change License: Apache License, Version 2.0
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
 
-[https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
 
----
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
 
-### 1. License Grant
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
 
-The Licensor hereby grants you the right to copy, modify, create derivative
-works, redistribute, and make use of the Licensed Work, subject to the
-conditions set forth below.
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
 
-You may make use of the Licensed Work for **non-commercial purposes**,
-including personal, academic, or internal evaluation usage.
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
 
-Commercial use of the Licensed Work is permitted **only if it does not**
-(a) create or distribute a product or service that competes directly with the
-Licensed Work or any substantially similar functionality developed by the
-Licensor; or
-(b) redistribute, repackage, or publicly upload the Licensed Work or any
-substantial part thereof in its original or minimally modified form,
-including but not limited to publishing binaries, installers, or repositories
-for public access without prior written permission from the Licensor.
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
 
-Any other commercial use of the Licensed Work, including selling, offering as
-a hosted service, or embedding in proprietary systems, requires a separate
-commercial license agreement from the Licensor.
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
 
----
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
 
-### 1.1 Definition of Competing Products
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
 
-For the purpose of this License, a *competing product or service* is defined
-as any software, application, or tool that provides functionality that
-**substantially overlaps** with the Licensed Work, including but not limited
-to tools of the same category or intended use, **with at least three (3)**
-modules, components, or major features functionally identical or equivalent
-to those in the Licensed Work or in any other software developed by the
-Licensor.
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
 
-Substantial overlap may also be determined by **high similarity in user
-interface structure**, user interaction flow, or visual layout that causes
-the end-user experience to be materially indistinguishable from that of the
-Licensed Work.
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
 
----
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
 
-### 1.2 Revocation and Reinstatement of License
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
 
-If the Licensor determines, in good faith and based on reasonable evidence,
-that any individual or entity has used the Licensed Work to create, distribute,
-or commercially exploit a product or service that qualifies as a competing
-work as defined in Section 1.1, or has otherwise breached the conditions of
-this License (including unauthorized repackaging or public redistribution),
-the Licensor may, upon written notice, **revoke the rights granted to that
-party under this License**.
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
 
-Upon revocation, the offending party must immediately cease all use,
-distribution, and public availability of the Licensed Work and any derivative
-thereof until explicit written reinstatement from the Licensor.
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
 
-In cases where evidence of a potential breach or competitive activity is
-inconclusive, the Licensor reserves the right to **temporarily suspend the
-license** for further review.
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
 
-The Licensor’s good-faith determination under this section shall be final and
-binding for the purpose of license enforcement.
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
 
-#### Reinstatement Clause
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
 
-A party whose license has been revoked under this section may, within
-**thirty (30) days** of receiving notice of revocation, submit a written
-statement and evidence of corrective action demonstrating compliance with
-the License terms. The Licensor may, at its sole discretion, reinstate the
-license upon satisfactory review of the corrective measures.
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
 
-Failure to remedy or respond within the specified period will result in the
-revocation becoming **permanent**.
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
 
----
+   END OF TERMS AND CONDITIONS
 
-### 2. Change License
+   APPENDIX: How to apply the Apache License to your work.
 
-On the Change Date specified above, the License will automatically change
-to the Change License (Apache License 2.0), and thereafter you may use the
-Licensed Work under the terms of that license.
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
 
----
+   Copyright 2025-2026 Heyairu.(部屋伊琉)
 
-### 3. Notices
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
-You must include a copy of this License with any copies of the Licensed Work
-you distribute. You must retain all copyright, trademark, and attribution
-notices that appear in the Licensed Work.
+       http://www.apache.org/licenses/LICENSE-2.0
 
----
-
-### 4. Disclaimer
-
-THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTIES OR CONDITIONS OF
-ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY
-IMPLIED WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY,
-OR FITNESS FOR A PARTICULAR PURPOSE. YOU ARE SOLELY RESPONSIBLE FOR
-DETERMINING THE APPROPRIATENESS OF USING OR REDISTRIBUTING THE LICENSED WORK
-AND ASSUME ANY RISKS ASSOCIATED WITH YOUR EXERCISE OF PERMISSIONS UNDER THIS
-LICENSE.
-
----
-
-### Additional Attribution
-
-Logo Font used: なつめもじ、CEF Fonts CJK Mono
-
-Free download:
-
-[https://apricot.ciao.jp/site3.html](https://apricot.ciao.jp/site3.html)
-
-[https://github.com/Partyb0ssishere/cef-fonts-cjk](https://github.com/Partyb0ssishere/cef-fonts-cjk)
-
-These fonts are subject to their own licenses. Please refer to the provided
-links for terms of use.
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
