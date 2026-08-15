@@ -1,11 +1,14 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <utility>
 
 #include "flutter/generated_plugin_registrant.h"
+#include <flutter/standard_method_codec.h>
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project,
+                             std::vector<std::string> launch_arguments)
+    : project_(project), launch_arguments_(std::move(launch_arguments)) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -25,6 +28,27 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  project_file_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.heyairu.monogatari_assistant/file",
+          &flutter::StandardMethodCodec::GetInstance());
+  project_file_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "takePendingProjectFiles") {
+          result->NotImplemented();
+          return;
+        }
+
+        flutter::EncodableList paths;
+        for (const auto& argument : launch_arguments_) {
+          paths.emplace_back(argument);
+        }
+        launch_arguments_.clear();
+        result->Success(flutter::EncodableValue(paths));
+      });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +64,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  project_file_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

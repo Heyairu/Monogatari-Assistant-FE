@@ -3,6 +3,26 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
   private let fileChannelName = "com.heyairu.monogatari_assistant/file"
+  private static weak var activeWindow: MainFlutterWindow?
+  private static var pendingProjectPaths: [String] = []
+  private static var dartIsReadyForProjectFiles = false
+  private var fileChannel: FlutterMethodChannel?
+
+  static func openProjectFiles(_ paths: [String]) {
+    let projectPaths = paths.filter {
+      URL(fileURLWithPath: $0).pathExtension.lowercased() == "mnproj"
+    }
+    guard !projectPaths.isEmpty else {
+      return
+    }
+
+    guard dartIsReadyForProjectFiles, let activeWindow else {
+      pendingProjectPaths.append(contentsOf: projectPaths)
+      return
+    }
+
+    activeWindow.sendProjectFilesToDart(projectPaths)
+  }
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -12,6 +32,7 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     setupFileChannel(with: flutterViewController)
+    MainFlutterWindow.activeWindow = self
 
     super.awakeFromNib()
   }
@@ -21,6 +42,7 @@ class MainFlutterWindow: NSWindow {
       name: fileChannelName,
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
+    fileChannel = channel
 
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self = self else {
@@ -29,6 +51,12 @@ class MainFlutterWindow: NSWindow {
       }
 
       switch call.method {
+      case "takePendingProjectFiles":
+        MainFlutterWindow.dartIsReadyForProjectFiles = true
+        let pendingPaths = MainFlutterWindow.pendingProjectPaths
+        MainFlutterWindow.pendingProjectPaths.removeAll()
+        result(pendingPaths)
+
       case "createSecurityScopedBookmark":
         guard
           let args = call.arguments as? [String: Any],
@@ -66,6 +94,16 @@ class MainFlutterWindow: NSWindow {
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+  }
+
+  private func sendProjectFilesToDart(_ paths: [String]) {
+    guard let fileChannel else {
+      MainFlutterWindow.pendingProjectPaths.append(contentsOf: paths)
+      return
+    }
+    for path in paths {
+      fileChannel.invokeMethod("openProjectFile", arguments: path)
     }
   }
 

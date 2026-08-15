@@ -51,6 +51,7 @@ import "utils/text_change_debouncer.dart";
 import "utils/text_position_index.dart";
 import "services/word_count_service.dart";
 import "services/project_io_session_coordinator.dart";
+import "services/desktop_project_launch.dart";
 
 import "modules/baseinfoview.dart" as BaseInfoModule;
 import "modules/chapterselectionview.dart" as ChapterModule;
@@ -106,6 +107,7 @@ class _ProjectIoBusyIndicator extends ConsumerWidget {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DesktopProjectLaunch.initialize();
   if (_isDesktopPlatform) {
     await _DesktopSplashWindowController.prepare();
   }
@@ -785,6 +787,11 @@ class _ContentViewState extends ConsumerState<ContentView>
     _bootstrapEditorSelectionFromProviderState();
     _configureAutoSaveTimer(_settingsState);
     _configureAutoBackupTimer(_settingsState);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        DesktopProjectLaunch.bind(_openProjectFromDesktop);
+      }
+    });
 
     // 監聽文字變化
     textController.addListener(() {
@@ -1091,6 +1098,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   @override
   void dispose() {
+    DesktopProjectLaunch.unbind();
     WidgetsBinding.instance.removeObserver(this);
     CharacterDraftSessionCoordinator.instance.flushAndClose(
       _projectSessionVersion,
@@ -3554,7 +3562,33 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
   }
 
-  Future<void> _openRecentProject(RecentProjectEntry entry) async {
+  Future<void> _openProjectFromDesktop(String filePath) async {
+    final normalizedPath = filePath.trim();
+    if (normalizedPath.isEmpty) {
+      return;
+    }
+    final parts = normalizedPath.split(RegExp(r"[/\\]"));
+    final fileName = parts.isEmpty || parts.last.isEmpty
+        ? "未命名.mnproj"
+        : parts.last;
+    final accessToken = await FileService.createPersistentAccessToken(
+      normalizedPath,
+    );
+    await _openRecentProject(
+      RecentProjectEntry(
+        fileName: fileName,
+        filePath: normalizedPath,
+        uri: accessToken,
+        lastOpenedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      ),
+      launchedExternally: true,
+    );
+  }
+
+  Future<void> _openRecentProject(
+    RecentProjectEntry entry, {
+    bool launchedExternally = false,
+  }) async {
     if (!entry.canReopen || entry.filePath == null) {
       _showError("此最近檔案沒有可用的本機路徑，請改用一般「開啟檔案」。");
       return;
@@ -3563,8 +3597,10 @@ class _ContentViewState extends ConsumerState<ContentView>
     if (_hasUnsavedChanges()) {
       final shouldProceed = await ProjectManager.showSaveConfirmDialog(
         context,
-        title: "開啟最近專案",
-        message: "您有未儲存的變更，是否要在開啟最近專案前儲存？",
+        title: launchedExternally ? "開啟專案" : "開啟最近專案",
+        message: launchedExternally
+            ? "您有未儲存的變更，是否要在開啟新專案前儲存？"
+            : "您有未儲存的變更，是否要在開啟最近專案前儲存？",
         onDontShowAgainChanged: (_) async {},
         onSave: _saveProject,
       );
@@ -3578,7 +3614,9 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
 
     _isProjectSwitching = true;
-    final switchSession = _projectIoCoordinator.beginSession("switch:recent");
+    final switchSession = _projectIoCoordinator.beginSession(
+      launchedExternally ? "switch:external" : "switch:recent",
+    );
     _projectIoSession = switchSession;
     try {
       final runResult = await _projectIoCoordinator.run(
@@ -3672,8 +3710,8 @@ class _ContentViewState extends ConsumerState<ContentView>
     } catch (e) {
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         final message = e.toString();
-        _showError("開啟最近專案失敗：$message");
-        if (message.contains("檔案不存在")) {
+        _showError("${launchedExternally ? "開啟專案" : "開啟最近專案"}失敗：$message");
+        if (!launchedExternally && message.contains("檔案不存在")) {
           unawaited(
             ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
           );
