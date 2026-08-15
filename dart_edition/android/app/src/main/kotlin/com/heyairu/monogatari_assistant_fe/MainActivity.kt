@@ -9,9 +9,13 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.os.StatFs
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,6 +31,7 @@ import kotlin.concurrent.thread
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.heyairu.monogatari_assistant/file"
     private val P2P_CHANNEL = "com.heyairu.monogatari_assistant/p2p"
+    private val BACKGROUND_EXECUTION_CHANNEL = "com.heyairu.monogatari_assistant/background_execution"
     private val SELECT_BACKUP_DIRECTORY_REQUEST = 4101
     private val LOCAL_NETWORK_PERMISSION_REQUEST = 4102
     private val SAVE_PROJECT_FILE_REQUEST = 4103
@@ -37,6 +42,105 @@ class MainActivity : FlutterActivity() {
     private var pendingLocalNetworkPermissionResult: MethodChannel.Result? = null
     private var pendingProjectSaveResult: MethodChannel.Result? = null
     private var pendingProjectSaveContent: String? = null
+    private val pendingExternalProjectUris = mutableListOf<String>()
+    private var projectFileChannel: MethodChannel? = null
+    private var dartIsReadyForProjectFiles = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enqueueExternalProjectIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        enqueueExternalProjectIntent(intent)
+    }
+
+    private fun enqueueExternalProjectIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        if (uri.scheme != "content" && uri.scheme != "file") return
+
+        val uriString = uri.toString()
+        val channel = projectFileChannel
+        if (dartIsReadyForProjectFiles && channel != null) {
+            channel.invokeMethod("openProjectFile", uriString)
+        } else {
+            pendingExternalProjectUris.add(uriString)
+        }
+    }
+
+    private fun openExternalProjectUri(uriString: String): Map<String, String> {
+        val uri = Uri.parse(uriString)
+        val isFileUri = uri.scheme == "file"
+        val name = if (isFileUri) {
+            File(uri.path ?: "").name
+        } else {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            } ?: uri.lastPathSegment
+        } ?: "未命名.mnproj"
+        val content = if (isFileUri) {
+            File(uri.path ?: "").readText(Charsets.UTF_8)
+        } else {
+            contentResolver.openInputStream(uri)?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            } ?: throw IOException("Document provider returned no input stream")
+        }
+        val grantedFlags = intent?.flags?.and(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        ) ?: 0
+        if (grantedFlags != 0) {
+            try {
+                contentResolver.takePersistableUriPermission(uri, grantedFlags)
+            } catch (_: SecurityException) {
+                // Some providers deliberately grant one-time access only.
+            }
+        }
+        return mapOf("name" to name, "uri" to uriString, "content" to content)
+    }
+
+    private fun isBatteryOptimizationExempt(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun requestBatteryOptimizationExemption(result: MethodChannel.Result) {
+        if (isBatteryOptimizationExempt()) {
+            result.success(null)
+            return
+        }
+
+        try {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+            // Android displays and owns this consent prompt. The Dart side
+            // rechecks the state when the app resumes rather than treating the
+            // launch of the prompt as a grant.
+            result.success(null)
+        } catch (error: Exception) {
+            result.error(
+                "BACKGROUND_PERMISSION_ERROR",
+                "Failed to request background execution permission: ${error.message}",
+                null
+            )
+        }
+    }
 
     private fun saveProjectFile(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         val fileName = call.argument<String>("fileName")?.trim()
@@ -717,6 +821,13 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BACKGROUND_EXECUTION_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isBatteryOptimizationExempt" -> result.success(isBatteryOptimizationExempt())
+                "requestBatteryOptimizationExemption" -> requestBatteryOptimizationExemption(result)
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, P2P_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "ensureLocalNetworkPermission" -> ensureLocalNetworkPermission(result)
@@ -726,8 +837,26 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        projectFileChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        projectFileChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "takePendingProjectFiles" -> {
+                    dartIsReadyForProjectFiles = true
+                    result.success(pendingExternalProjectUris.toList())
+                    pendingExternalProjectUris.clear()
+                }
+                "openExternalProjectUri" -> {
+                    val uriString = call.argument<String>("uri")
+                    if (uriString.isNullOrBlank()) {
+                        result.error("INVALID_ARGS", "Project URI cannot be null or blank", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        result.success(openExternalProjectUri(uriString))
+                    } catch (e: Exception) {
+                        result.error("OPEN_PROJECT_ERROR", "Failed to read project file: ${e.message}", null)
+                    }
+                }
                 "writeToUri" -> {
                     val uriString = call.argument<String>("uri")
                     val content = call.argument<String>("content")

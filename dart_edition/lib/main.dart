@@ -121,6 +121,9 @@ bool get _isDesktopPlatform =>
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.macOS);
 
+bool get _isAndroidPlatform =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
 class _DesktopSplashWindowController {
   static const Size splashSize = Size(540, 360);
   static Size? _mainWindowSize;
@@ -444,6 +447,8 @@ class _ContentViewState extends ConsumerState<ContentView>
   int _projectSessionVersion = 0;
   String? _requestedCharacterId;
   int _characterSelectionRequestId = 0;
+  bool _isExitConfirmationInProgress = false;
+  bool _isDesktopWindowClosing = false;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
   final WordCountService _wordCountService = WordCountService.instance;
@@ -1542,11 +1547,20 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   @override
   void onWindowClose() async {
-    // 處理視窗關閉事件
-    final shouldClose = await _handleExit();
-    if (shouldClose) {
-      await windowManager.destroy();
-    }
+    // Ignore duplicate close messages while a confirmation dialog is open or
+    // after the user has already approved the close. This is especially
+    // important during startup, where Windows can deliver close messages
+    // before the first dialog animation finishes.
+    if (_isExitConfirmationInProgress || _isDesktopWindowClosing) return;
+
+    final shouldClose = await _requestExit();
+    if (!shouldClose) return;
+
+    _isDesktopWindowClosing = true;
+    // Let the native window close normally instead of force-destroying the
+    // Flutter view while it may still be handling a platform message.
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
   }
 
   @override
@@ -1689,9 +1703,15 @@ class _ContentViewState extends ConsumerState<ContentView>
           onPopInvokedWithResult: (bool didPop, dynamic result) async {
             if (didPop) return;
 
-            final shouldPop = await _handleExit();
-            if (shouldPop && context.mounted) {
-              Navigator.of(context).pop();
+            final shouldPop = await _requestExit();
+            if (!shouldPop || !context.mounted) return;
+
+            if (_isAndroidPlatform) {
+              // Popping the Flutter route leaves the Android Activity in its
+              // task. Ask the platform to finish it so Back exits directly.
+              await SystemNavigator.pop();
+            } else {
+              Navigator.of(context).maybePop();
             }
           },
           child: Scaffold(
@@ -3348,6 +3368,17 @@ class _ContentViewState extends ConsumerState<ContentView>
     );
   }
 
+  Future<bool> _requestExit() async {
+    if (_isExitConfirmationInProgress) return false;
+
+    _isExitConfirmationInProgress = true;
+    try {
+      return await _handleExit();
+    } finally {
+      _isExitConfirmationInProgress = false;
+    }
+  }
+
   // 檔案操作方法
   void _resetProjectSessionUiState() {
     _hasUnpersistedRemoteDraft = false;
@@ -3567,6 +3598,13 @@ class _ContentViewState extends ConsumerState<ContentView>
     if (normalizedPath.isEmpty) {
       return;
     }
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        (normalizedPath.startsWith("content://") ||
+            normalizedPath.startsWith("file://"))) {
+      await _openProjectFromAndroidUri(normalizedPath);
+      return;
+    }
     final parts = normalizedPath.split(RegExp(r"[/\\]"));
     final fileName = parts.isEmpty || parts.last.isEmpty
         ? "未命名.mnproj"
@@ -3585,11 +3623,27 @@ class _ContentViewState extends ConsumerState<ContentView>
     );
   }
 
+  Future<void> _openProjectFromAndroidUri(String uri) async {
+    await _openRecentProject(
+      RecentProjectEntry(
+        fileName: "外部專案.mnproj",
+        uri: uri,
+        lastOpenedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      ),
+      launchedExternally: true,
+      projectFileLoader: (controller) =>
+          controller.openProjectFromExternalUri(uri),
+    );
+  }
+
   Future<void> _openRecentProject(
     RecentProjectEntry entry, {
     bool launchedExternally = false,
+    Future<ProjectFile> Function(ProjectIoController controller)?
+    projectFileLoader,
   }) async {
-    if (!entry.canReopen || entry.filePath == null) {
+    if (projectFileLoader == null &&
+        (!entry.canReopen || entry.filePath == null)) {
       _showError("此最近檔案沒有可用的本機路徑，請改用一般「開啟檔案」。");
       return;
     }
@@ -3623,10 +3677,12 @@ class _ContentViewState extends ConsumerState<ContentView>
         switchSession,
         () async {
           final controller = ref.read(projectIoControllerProvider.notifier);
-          final projectFile = await controller.openProjectFromPath(
-            entry.filePath!,
-            accessToken: entry.uri,
-          );
+          final projectFile = projectFileLoader != null
+              ? await projectFileLoader(controller)
+              : await controller.openProjectFromPath(
+                  entry.filePath!,
+                  accessToken: entry.uri,
+                );
           return controller.loadProject(projectFile);
         },
       );
@@ -3711,7 +3767,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       if (mounted && _projectIoCoordinator.isCurrent(switchSession)) {
         final message = e.toString();
         _showError("${launchedExternally ? "開啟專案" : "開啟最近專案"}失敗：$message");
-        if (!launchedExternally && message.contains("檔案不存在")) {
+        if (projectFileLoader == null &&
+            !launchedExternally &&
+            message.contains("檔案不存在")) {
           unawaited(
             ref.read(settingsStateProvider.notifier).removeRecentProject(entry),
           );

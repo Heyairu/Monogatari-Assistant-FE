@@ -7,9 +7,8 @@ import "package:flutter/services.dart";
 
 /// Delivers `.mnproj` paths supplied while a desktop app is being opened.
 ///
-/// Desktop runners hold paths until Dart asks for them. macOS additionally
-/// delivers Finder open-document events after startup. The queue keeps either
-/// source safe until the editor has finished initializing.
+/// Native runners hold startup files until Dart asks for them. macOS and
+/// Android additionally deliver open-document events after startup.
 class DesktopProjectLaunch {
   DesktopProjectLaunch._();
 
@@ -21,7 +20,11 @@ class DesktopProjectLaunch {
   static bool _initialized = false;
 
   static bool get _isSupportedDesktopPlatform =>
-      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+      !kIsWeb &&
+      (Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS ||
+          Platform.isAndroid);
 
   /// Starts receiving native open-document events and captures startup args.
   static Future<void> initialize() async {
@@ -30,8 +33,8 @@ class DesktopProjectLaunch {
     }
     _initialized = true;
 
-    if (Platform.isWindows || Platform.isMacOS) {
-      if (Platform.isMacOS) {
+    if (Platform.isWindows || Platform.isMacOS || Platform.isAndroid) {
+      if (Platform.isMacOS || Platform.isAndroid) {
         _channel.setMethodCallHandler((call) async {
           if (call.method != "openProjectFile") {
             throw MissingPluginException("Unsupported method: ${call.method}");
@@ -78,7 +81,9 @@ class DesktopProjectLaunch {
   }
 
   static bool _isProjectPath(String path) =>
-      path.toLowerCase().endsWith(".mnproj");
+      path.toLowerCase().endsWith(".mnproj") ||
+      (Platform.isAndroid &&
+          (path.startsWith("content://") || path.startsWith("file://")));
 
   static void _drain() {
     final handler = _onProjectRequested;

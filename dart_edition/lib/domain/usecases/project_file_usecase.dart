@@ -25,6 +25,10 @@ class ProjectFileUseCase {
     );
   }
 
+  Future<ProjectFile> openProjectFromExternalUri(String uri) {
+    return fileRepository.openProjectFromExternalUri(uri);
+  }
+
   Future<ProjectFile> saveProject(ProjectFile projectFile) {
     return fileRepository.saveProject(projectFile);
   }

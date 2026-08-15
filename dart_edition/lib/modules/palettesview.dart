@@ -263,19 +263,21 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     }
     final String? savedPath = await FilePicker.platform.saveFile(
       dialogTitle: "匯出文字色票",
-      fileName: "Palettes.json",
+      fileName: "Palettes.yaml",
       type: FileType.custom,
-      allowedExtensions: const <String>["json"],
+      allowedExtensions: const <String>["yaml", "yml"],
     );
     if (!mounted || savedPath == null) {
       return;
     }
 
-    final String resolvedPath = savedPath.toLowerCase().endsWith(".json")
+    final String resolvedPath =
+        savedPath.toLowerCase().endsWith(".yaml") ||
+            savedPath.toLowerCase().endsWith(".yml")
         ? savedPath
-        : "$savedPath.json";
+        : "$savedPath.yaml";
     try {
-      final String content = PaletteDataCodec.encode(
+      final String content = PaletteYamlCodec.encode(
         ref.read(paletteStateProvider),
       );
       await File(resolvedPath).writeAsString(content, flush: true);
@@ -310,7 +312,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       dialogTitle: "匯入文字色票",
       type: FileType.custom,
-      allowedExtensions: const <String>["json"],
+      allowedExtensions: const <String>["yaml", "yml"],
       withData: true,
     );
     if (result == null || result.files.isEmpty) {
@@ -329,7 +331,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
         throw const FormatException("檔案沒有內容");
       }
 
-      final PaletteDecodeResult decoded = PaletteDataCodec.decode(raw);
+      final PaletteDecodeResult decoded = PaletteYamlCodec.decode(raw);
       final PaletteImportMergeResult merged = _notifier.mergeImportedData(
         decoded.data,
       );

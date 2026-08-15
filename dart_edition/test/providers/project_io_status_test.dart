@@ -276,6 +276,11 @@ class _BlockingFileRepository implements FileRepository {
   }
 
   @override
+  Future<ProjectFile> openProjectFromExternalUri(String uri) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<ProjectFile> saveProject(ProjectFile projectFile) {
     if (!saveStarted.isCompleted) {
       saveStarted.complete(projectFile);

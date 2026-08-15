@@ -23,6 +23,11 @@ class DefaultFileRepository implements FileRepository {
   }
 
   @override
+  Future<ProjectFile> openProjectFromExternalUri(String uri) {
+    return FileService.openProjectFromExternalUri(uri);
+  }
+
+  @override
   Future<ProjectFile> saveProject(ProjectFile projectFile) {
     return FileService.saveProject(projectFile);
   }

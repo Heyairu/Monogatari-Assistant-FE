@@ -256,6 +256,32 @@ class _SystemBridge {
     }
   }
 
+  /// Reads a project delivered by Android through an ACTION_VIEW URI.
+  static Future<({String name, String uri, String content})?>
+  openExternalProjectUri(String uri) async {
+    if (!Platform.isAndroid || uri.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final rawResult = await platform.invokeMethod<dynamic>(
+        "openExternalProjectUri",
+        {"uri": uri.trim()},
+      );
+      if (rawResult is! Map) {
+        return null;
+      }
+      final rawName = rawResult["name"];
+      final rawUri = rawResult["uri"];
+      final rawContent = rawResult["content"];
+      if (rawName is! String || rawUri is! String || rawContent is! String) {
+        return null;
+      }
+      return (name: rawName, uri: rawUri, content: rawContent);
+    } on PlatformException catch (e) {
+      throw FileException("無法開啟外部專案檔案: ${e.message ?? e.code}");
+    }
+  }
+
   /// 選擇專案檔案並讀取內容 (因為 FilePicker 在某些平台直接給 bytes)
   static Future<({String name, String? path, String? uri, String content})?>
   pickProjectFile() async {
@@ -2156,6 +2182,29 @@ class FileService {
       }
 
       throw FileException("開啟最近檔案失敗: ${e.toString()}");
+    }
+  }
+
+  /// 開啟 Android 檔案管理器以 ACTION_VIEW 交付的 SAF URI。
+  static Future<ProjectFile> openProjectFromExternalUri(String uri) async {
+    try {
+      final opened = await _SystemBridge.openExternalProjectUri(uri);
+      if (opened == null) {
+        throw FileException("無法讀取外部專案檔案");
+      }
+      return ProjectFile(
+        fileName: opened.name.trim().isEmpty
+            ? "$defaultFileName$projectExtension"
+            : opened.name.trim(),
+        filePath: null,
+        uri: opened.uri,
+        content: opened.content,
+      );
+    } catch (e) {
+      if (e is FileException) {
+        rethrow;
+      }
+      throw FileException("開啟外部專案檔案失敗: $e");
     }
   }
 

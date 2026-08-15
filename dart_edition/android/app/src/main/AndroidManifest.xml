@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Lets the user approve background operation outside Doze/battery
+         optimization from the in-app Settings page. This is not granted until
+         the user accepts Android's system prompt. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Android 16 Local Network Protection opt-in uses this temporary
          permission. Apps targeting Android 17 must migrate to
          ACCESS_LOCAL_NETWORK instead. -->
@@ -33,6 +37,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content" android:mimeType="application/x-monogatari-assistant-project"/>
+                <data android:scheme="content" android:mimeType="application/xml"/>
+                <data android:scheme="content" android:mimeType="text/xml"/>
+                <data android:scheme="content" android:mimeType="application/octet-stream"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="file" android:pathPattern=".*\.mnproj"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

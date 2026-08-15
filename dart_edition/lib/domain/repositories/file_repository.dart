@@ -8,6 +8,7 @@ abstract class FileRepository {
     String filePath, {
     String? accessToken,
   });
+  Future<ProjectFile> openProjectFromExternalUri(String uri);
   Future<ProjectFile> saveProject(ProjectFile projectFile);
   Future<ProjectFile> saveProjectToKnownLocation(ProjectFile projectFile);
   Future<ProjectFile> saveProjectAs(ProjectFile projectFile);

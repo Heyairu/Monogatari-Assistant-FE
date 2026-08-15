@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Monogatari Assistant
+Comment=Structured writing assistant
+Exec=monogatari_assistant %f
+Terminal=false
+Categories=Office;WordProcessor;
+MimeType=application/x-monogatari-assistant-project;
+StartupWMClass=com.heyairu.monogatari_assistant

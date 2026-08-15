@@ -13,6 +13,7 @@
  */
 
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/file.dart" show AutoBackupDirectoryInfo;
 import "../bin/ui_library.dart";
@@ -20,6 +21,7 @@ import "../bin/settings_manager.dart";
 import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/p2p_sync_providers.dart";
+import "../services/android_background_execution.dart";
 
 class SettingView extends ConsumerStatefulWidget {
   const SettingView({super.key});
@@ -28,13 +30,66 @@ class SettingView extends ConsumerStatefulWidget {
   ConsumerState<SettingView> createState() => _SettingViewState();
 }
 
-class _SettingViewState extends ConsumerState<SettingView> {
+class _SettingViewState extends ConsumerState<SettingView>
+    with WidgetsBindingObserver {
   late Future<AutoBackupDirectoryInfo> _autoBackupDirectoryInfoFuture;
+  bool _isBatteryOptimizationExempt = false;
+  bool _isLoadingBackgroundPermission = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _autoBackupDirectoryInfoFuture = _loadAutoBackupDirectoryInfo();
+    _refreshBackgroundExecutionPermission();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshBackgroundExecutionPermission();
+    }
+  }
+
+  Future<void> _refreshBackgroundExecutionPermission() async {
+    if (!AndroidBackgroundExecution.isSupported) return;
+    try {
+      final isExempt =
+          await AndroidBackgroundExecution.isBatteryOptimizationExempt();
+      if (mounted) {
+        setState(() => _isBatteryOptimizationExempt = isExempt);
+      }
+    } on PlatformException {
+      // The action button will provide a user-visible error if the platform
+      // cannot service the request.
+    }
+  }
+
+  Future<void> _requestBackgroundExecutionPermission() async {
+    if (_isLoadingBackgroundPermission) return;
+    setState(() => _isLoadingBackgroundPermission = true);
+    try {
+      await AndroidBackgroundExecution.requestBatteryOptimizationExemption();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("請在系統提示中允許不受電池最佳化限制。")));
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message ?? "無法開啟背景執行權限。")));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingBackgroundPermission = false);
+      }
+    }
   }
 
   Future<AutoBackupDirectoryInfo> _loadAutoBackupDirectoryInfo() {
@@ -177,6 +232,7 @@ class _SettingViewState extends ConsumerState<SettingView> {
                     const SizedBox(height: 16),
                     _buildAutoBackupSetting(),
                     const SizedBox(height: 8),
+                    _buildAndroidBackgroundExecutionSetting(),
                     _buildPlaceholderSetting("語言設定", Icons.language),
                     _buildP2pSyncSetting(),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
@@ -220,6 +276,41 @@ class _SettingViewState extends ConsumerState<SettingView> {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildAndroidBackgroundExecutionSetting() {
+    if (!AndroidBackgroundExecution.isSupported) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          _isBatteryOptimizationExempt
+              ? Icons.battery_full_outlined
+              : Icons.battery_saver_outlined,
+        ),
+        title: const Text("允許背景常駐"),
+        subtitle: Text(
+          _isBatteryOptimizationExempt ? "已允許不受電池最佳化限制" : "讓已啟用的背景工作較不易被系統暫停",
+        ),
+        trailing: FilledButton(
+          onPressed:
+              _isBatteryOptimizationExempt || _isLoadingBackgroundPermission
+              ? null
+              : _requestBackgroundExecutionPermission,
+          child: _isLoadingBackgroundPermission
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_isBatteryOptimizationExempt ? "已允許" : "允許"),
+        ),
+      ),
     );
   }
 

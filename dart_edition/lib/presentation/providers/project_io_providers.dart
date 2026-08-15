@@ -207,6 +207,26 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
     }
   }
 
+  Future<ProjectFile> openProjectFromExternalUri(String uri) async {
+    state = const AsyncData(
+      ProjectIoStatus(
+        operation: ProjectIoOperation.openProject,
+        isOpeningProject: true,
+      ),
+    );
+    try {
+      final useCase = ref.read(projectFileUseCaseProvider);
+      final projectFile = await useCase.openProjectFromExternalUri(uri);
+      state = const AsyncData(
+        ProjectIoStatus(operation: ProjectIoOperation.openProject),
+      );
+      return projectFile;
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
+
   Future<ProjectData> loadProjectData(ProjectFile projectFile) async {
     final result = await loadProject(projectFile);
     return result.data;

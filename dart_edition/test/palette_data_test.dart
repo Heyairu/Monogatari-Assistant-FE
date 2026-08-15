@@ -105,6 +105,38 @@ void main() {
     });
   });
 
+  group("PaletteYamlCodec", () {
+    test("exports every slot, including empty slots, and round trips data", () {
+      const PaletteEntry entry = PaletteEntry(
+        id: "entry-1",
+        text: "焦灼",
+        createdAt: "2026-08-08T12:00:00.000Z",
+        updatedAt: "2026-08-08T12:00:00.000Z",
+      );
+      final PaletteStateData source = immutablePaletteState(
+        slotEntryIds: <String, List<String>>{
+          "h000-s100-v020": <String>[entry.id],
+        },
+        entryIndex: <String, PaletteEntry>{entry.id: entry},
+      );
+
+      final String encoded = PaletteYamlCodec.encode(source);
+      final PaletteDecodeResult decoded = PaletteYamlCodec.decode(encoded);
+
+      expect(encoded, startsWith("version: 1"));
+      expect(encoded, contains('  "h000-s100-v020":'));
+      expect(encoded, contains('    - "焦灼"'));
+      expect(encoded, contains('  "h018-s100-v020": []'));
+      expect(encoded, contains('  "gray-v100": []'));
+      expect(encoded, isNot(contains("entry-1")));
+      expect(encoded, isNot(contains("palette-entry")));
+      final String importedId =
+          decoded.data.slotEntryIds["h000-s100-v020"]!.single;
+      expect(decoded.data.entryIndex[importedId]?.text, "焦灼");
+      expect(decoded.warnings, isEmpty);
+    });
+  });
+
   group("Palette term validation", () {
     test("rejects blank and overlong entries", () {
       expect(validatePaletteTerm("   "), isNotNull);

@@ -2,6 +2,7 @@ import "dart:convert";
 
 import "package:characters/characters.dart";
 import "package:flutter/foundation.dart";
+import "package:yaml/yaml.dart";
 
 const int paletteDataVersion = 1;
 const int paletteTermMaxLength = 80;
@@ -384,6 +385,140 @@ abstract final class PaletteDataCodec {
       return raw;
     }
     return fallback;
+  }
+}
+
+/// YAML codec used by the palette import/export UI.
+///
+/// The storage codec remains JSON so existing local palette files are not
+/// migrated as a side effect of exporting or importing a palette.
+abstract final class PaletteYamlCodec {
+  static PaletteDecodeResult decode(String raw, {DateTime? now}) {
+    final dynamic decoded = _yamlToJsonCompatible(loadYaml(raw));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException("Palettes.yaml 不是合法物件格式");
+    }
+
+    final dynamic rawVersion = decoded["version"];
+    if (rawVersion is! int) {
+      throw const FormatException("Palettes.yaml 缺少有效的 version");
+    }
+    if (rawVersion > paletteDataVersion) {
+      throw FormatException(
+        "Palettes.yaml 版本 $rawVersion 高於目前支援版本 $paletteDataVersion",
+      );
+    }
+    if (rawVersion < 1) {
+      throw FormatException("不支援的 Palettes.yaml 版本：$rawVersion");
+    }
+
+    final dynamic rawSlots = decoded["slots"];
+    if (rawSlots is! Map<String, dynamic>) {
+      throw const FormatException("Palettes.yaml 的 slots 必須是物件");
+    }
+
+    final List<String> warnings = <String>[];
+    final String timestamp = (now ?? DateTime.now()).toUtc().toIso8601String();
+    final Map<String, List<String>> slotEntryIds = <String, List<String>>{};
+    final Map<String, PaletteEntry> entryIndex = <String, PaletteEntry>{};
+
+    for (final PaletteSlotDefinition slot in allPaletteSlots) {
+      final dynamic rawTerms = rawSlots[slot.id];
+      if (rawTerms == null) {
+        continue;
+      }
+      if (rawTerms is! List<dynamic>) {
+        warnings.add("忽略非陣列的 slot：${slot.id}");
+        continue;
+      }
+
+      final List<String> ids = <String>[];
+      for (var index = 0; index < rawTerms.length; index++) {
+        final dynamic rawTerm = rawTerms[index];
+        if (rawTerm is! String) {
+          warnings.add("忽略 ${slot.id} 中非文字的詞條");
+          continue;
+        }
+        final String term = rawTerm.trim();
+        final String? validationError = validatePaletteTerm(term);
+        if (validationError != null) {
+          warnings.add("忽略 ${slot.id} 中無效的詞條：$validationError");
+          continue;
+        }
+        final String id = "yaml-${slot.id}-$index";
+        ids.add(id);
+        entryIndex[id] = PaletteEntry(
+          id: id,
+          text: term,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        );
+      }
+      if (ids.isNotEmpty) {
+        slotEntryIds[slot.id] = ids;
+      }
+    }
+    for (final String rawSlotId in rawSlots.keys) {
+      if (!paletteSlotById.containsKey(rawSlotId)) {
+        warnings.add("忽略未知的 slot：$rawSlotId");
+      }
+    }
+
+    return PaletteDecodeResult(
+      data: immutablePaletteState(
+        slotEntryIds: slotEntryIds,
+        entryIndex: entryIndex,
+      ),
+      warnings: List<String>.unmodifiable(warnings),
+    );
+  }
+
+  static String encode(PaletteStateData data) {
+    final StringBuffer output = StringBuffer()
+      ..writeln("version: $paletteDataVersion")
+      ..writeln("slots:");
+
+    for (final PaletteSlotDefinition slot in allPaletteSlots) {
+      final List<String> terms = _validTerms(data, slot.id);
+      output.write("  ${_yamlString(slot.id)}:");
+      if (terms.isEmpty) {
+        output.writeln(" []");
+        continue;
+      }
+      output.writeln();
+      for (final String term in terms) {
+        output.writeln("    - ${_yamlString(term)}");
+      }
+    }
+    return output.toString();
+  }
+
+  static List<String> _validTerms(PaletteStateData data, String slotId) {
+    return <String>[
+      for (final String id in data.slotEntryIds[slotId] ?? const <String>[])
+        if (data.entryIndex[id] case final PaletteEntry entry) entry.text,
+    ];
+  }
+
+  static String _yamlString(String value) => jsonEncode(value);
+
+  static dynamic _yamlToJsonCompatible(dynamic value) {
+    if (value is YamlMap) {
+      final Map<String, dynamic> result = <String, dynamic>{};
+      for (final MapEntry<dynamic, dynamic> entry in value.entries) {
+        if (entry.key is! String) {
+          throw const FormatException("Palettes.yaml 的物件鍵必須是文字");
+        }
+        result[entry.key as String] = _yamlToJsonCompatible(entry.value);
+      }
+      return result;
+    }
+    if (value is YamlList) {
+      return <dynamic>[
+        for (final dynamic item in value) _yamlToJsonCompatible(item),
+      ];
+    }
+    return value;
   }
 }
 
