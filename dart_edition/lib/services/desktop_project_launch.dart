@@ -1,5 +1,6 @@
 import "dart:async";
 import "dart:collection";
+import "dart:convert";
 import "dart:io";
 
 import "package:flutter/foundation.dart";
@@ -12,6 +13,7 @@ import "package:flutter/services.dart";
 class DesktopProjectLaunch {
   DesktopProjectLaunch._();
 
+  static const _projectPayloadPrefix = "MNPROJ_PAYLOAD::";
   static const _channel = MethodChannel(
     "com.heyairu.monogatari_assistant/file",
   );
@@ -39,20 +41,15 @@ class DesktopProjectLaunch {
           if (call.method != "openProjectFile") {
             throw MissingPluginException("Unsupported method: ${call.method}");
           }
-          final rawPath = call.arguments;
-          if (rawPath is String) {
-            _enqueue(rawPath);
-          }
+          _enqueueNativeArgument(call.arguments);
         });
       }
 
       final pending = await _channel.invokeMethod<List<dynamic>>(
         "takePendingProjectFiles",
       );
-      for (final rawPath in pending ?? const <dynamic>[]) {
-        if (rawPath is String) {
-          _enqueue(rawPath);
-        }
+      for (final rawProjectFile in pending ?? const <dynamic>[]) {
+        _enqueueNativeArgument(rawProjectFile);
       }
     }
 
@@ -66,6 +63,13 @@ class DesktopProjectLaunch {
   /// Connects the initialized editor to queued and future open requests.
   static void bind(FutureOr<void> Function(String path) onProjectRequested) {
     _onProjectRequested = onProjectRequested;
+    if (_initialized && Platform.isMacOS) {
+      unawaited(
+        _channel
+            .invokeMethod<void>("flushPendingProjectFiles")
+            .catchError((Object error) {}),
+      );
+    }
     _drain();
   }
 
@@ -80,8 +84,38 @@ class DesktopProjectLaunch {
     _drain();
   }
 
+  static void _enqueueNativeArgument(Object? argument) {
+    if (argument is String) {
+      _enqueue(argument);
+      return;
+    }
+    if (argument is! Map) {
+      return;
+    }
+
+    final bookmark = argument["bookmark"];
+    final path = argument["path"];
+    final content = argument["content"];
+    final name = argument["name"];
+    if (content is String && content.isNotEmpty) {
+      _enqueue(
+        "$_projectPayloadPrefix${jsonEncode({"name": name is String ? name : null, "path": path is String ? path : null, "bookmark": bookmark is String ? bookmark.trim() : null, "content": content})}",
+      );
+      return;
+    }
+    if (bookmark is String && bookmark.trim().isNotEmpty) {
+      _enqueue('BKMK::${bookmark.trim()}::PATH::${path is String ? path : ""}');
+      return;
+    }
+    if (path is String) {
+      _enqueue(path);
+    }
+  }
+
   static bool _isProjectPath(String path) =>
       path.toLowerCase().endsWith(".mnproj") ||
+      path.startsWith('BKMK::') ||
+      path.startsWith(_projectPayloadPrefix) ||
       (Platform.isAndroid &&
           (path.startsWith("content://") || path.startsWith("file://")));
 

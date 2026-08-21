@@ -2189,6 +2189,33 @@ class FileService {
     }
   }
 
+  /// 透過 macOS security-scoped bookmark 開啟專案檔案。
+  static Future<ProjectFile> openProjectFromSecurityScopedBookmark(
+    String bookmark,
+  ) async {
+    try {
+      final opened = await _SystemBridge.openProjectFromSecurityScopedBookmark(
+        bookmark,
+      );
+      if (opened == null) {
+        throw FileException("無法讀取外部專案檔案");
+      }
+      return ProjectFile(
+        fileName: opened.name.trim().isEmpty
+            ? "$defaultFileName$projectExtension"
+            : opened.name.trim(),
+        filePath: opened.path,
+        uri: opened.uri,
+        content: opened.content,
+      );
+    } catch (e) {
+      if (e is FileException) {
+        rethrow;
+      }
+      throw FileException("開啟外部專案檔案失敗: $e");
+    }
+  }
+
   /// 開啟 Android 檔案管理器以 ACTION_VIEW 交付的 SAF URI。
   static Future<ProjectFile> openProjectFromExternalUri(String uri) async {
     try {

@@ -1,27 +1,93 @@
 import Cocoa
 import FlutterMacOS
 
+// DropView: capture file drag-and-drop and forward file paths to MainFlutterWindow
+class DropView: NSView {
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    registerForDraggedTypes([.fileURL])
+    wantsLayer = true
+    layer?.backgroundColor = NSColor.clear.cgColor
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    registerForDraggedTypes([.fileURL])
+    wantsLayer = true
+    layer?.backgroundColor = NSColor.clear.cgColor
+  }
+
+  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    return .copy
+  }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    let pasteboard = sender.draggingPasteboard
+    guard let items = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [NSURL] else {
+      NSLog("DropView: no file URLs in pasteboard")
+      return false
+    }
+
+    let paths = items.compactMap { $0.path }
+    NSLog("DropView.performDragOperation received paths: \(paths)")
+    if !paths.isEmpty {
+      MainFlutterWindow.openProjectFiles(paths)
+      return true
+    }
+    return false
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let fileChannelName = "com.heyairu.monogatari_assistant/file"
   private static weak var activeWindow: MainFlutterWindow?
-  private static var pendingProjectPaths: [String] = []
+  private static var pendingProjectFilePayloads: [[String: String]] = []
   private static var dartIsReadyForProjectFiles = false
   private var fileChannel: FlutterMethodChannel?
 
   static func openProjectFiles(_ paths: [String]) {
+    NSLog("MainFlutterWindow.openProjectFiles called with \(paths)")
     let projectPaths = paths.filter {
       URL(fileURLWithPath: $0).pathExtension.lowercased() == "mnproj"
     }
+    NSLog("Filtered projectPaths: \(projectPaths)")
     guard !projectPaths.isEmpty else {
+      NSLog("No projectPaths to open")
       return
     }
 
+    let payloads = projectPaths.map { projectFilePayload(forPath: $0) }
     guard dartIsReadyForProjectFiles, let activeWindow else {
-      pendingProjectPaths.append(contentsOf: projectPaths)
+      pendingProjectFilePayloads.append(contentsOf: payloads)
       return
     }
 
-    activeWindow.sendProjectFilesToDart(projectPaths)
+    activeWindow.sendProjectFilesToDart(payloads)
+  }
+
+  private static func projectFilePayload(forPath path: String) -> [String: String] {
+    var payload = ["path": path]
+    let url = URL(fileURLWithPath: path)
+    payload["name"] = url.lastPathComponent
+
+    do {
+      let content = try String(contentsOf: url, encoding: .utf8)
+      payload["content"] = content
+    } catch {
+      NSLog("Could not read project file content immediately for \(path): \(error)")
+    }
+
+    do {
+      let bookmarkData = try url.bookmarkData(
+        options: [.withSecurityScope],
+        includingResourceValuesForKeys: nil,
+        relativeTo: nil
+      )
+      payload["bookmark"] = bookmarkData.base64EncodedString()
+    } catch {
+      NSLog("Could not create security-scoped bookmark for project file \(path): \(error)")
+    }
+    return payload
   }
 
   override func awakeFromNib() {
@@ -29,6 +95,10 @@ class MainFlutterWindow: NSWindow {
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
+    // Overlay a transparent DropView to capture file drag-and-drop onto the window
+    let dropView = DropView(frame: flutterViewController.view.bounds)
+    dropView.autoresizingMask = [.width, .height] as NSView.AutoresizingMask
+    flutterViewController.view.addSubview(dropView)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     setupFileChannel(with: flutterViewController)
@@ -44,6 +114,8 @@ class MainFlutterWindow: NSWindow {
     )
     fileChannel = channel
 
+    NSLog("File channel set up: \(fileChannelName)")
+
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self = self else {
         result(FlutterError(code: "WINDOW_DEALLOCATED", message: "Window was released", details: nil))
@@ -53,9 +125,18 @@ class MainFlutterWindow: NSWindow {
       switch call.method {
       case "takePendingProjectFiles":
         MainFlutterWindow.dartIsReadyForProjectFiles = true
-        let pendingPaths = MainFlutterWindow.pendingProjectPaths
-        MainFlutterWindow.pendingProjectPaths.removeAll()
-        result(pendingPaths)
+        let pendingPayloads = MainFlutterWindow.pendingProjectFilePayloads
+        MainFlutterWindow.pendingProjectFilePayloads.removeAll()
+        result(pendingPayloads)
+
+      case "flushPendingProjectFiles":
+        MainFlutterWindow.dartIsReadyForProjectFiles = true
+        let pendingPayloads = MainFlutterWindow.pendingProjectFilePayloads
+        MainFlutterWindow.pendingProjectFilePayloads.removeAll()
+        if !pendingPayloads.isEmpty {
+          self.sendProjectFilesToDart(pendingPayloads)
+        }
+        result(nil)
 
       case "createSecurityScopedBookmark":
         guard
@@ -97,13 +178,15 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
-  private func sendProjectFilesToDart(_ paths: [String]) {
+  private func sendProjectFilesToDart(_ payloads: [[String: String]]) {
     guard let fileChannel else {
-      MainFlutterWindow.pendingProjectPaths.append(contentsOf: paths)
+      MainFlutterWindow.pendingProjectFilePayloads.append(contentsOf: payloads)
+      NSLog("fileChannel nil, queued project file payloads: \(payloads)")
       return
     }
-    for path in paths {
-      fileChannel.invokeMethod("openProjectFile", arguments: path)
+    for payload in payloads {
+      NSLog("Invoking openProjectFile with payload: \(payload)")
+      fileChannel.invokeMethod("openProjectFile", arguments: payload)
     }
   }
 

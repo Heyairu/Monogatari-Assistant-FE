@@ -43,11 +43,33 @@
 			</array>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>com.heyairu.monogatari-assistant.project</string>
+				<string>public.xml</string>
 				<string>public.data</string>
-				<string>public.content</string>
 			</array>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.heyairu.monogatari-assistant.project</string>
+			<key>UTTypeDescription</key>
+			<string>Monogatari Assistant Project</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mnproj</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

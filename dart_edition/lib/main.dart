@@ -18,6 +18,7 @@
 
 import "dart:math";
 import "dart:async"; // Added for Timer
+import "dart:convert";
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
@@ -218,9 +219,7 @@ class _MainAppState extends ConsumerState<MainApp> {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF6750A4),
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
         ),
         home: const AppSplash(),
       );
@@ -3600,6 +3599,84 @@ class _ContentViewState extends ConsumerState<ContentView>
   Future<void> _openProjectFromDesktop(String filePath) async {
     final normalizedPath = filePath.trim();
     if (normalizedPath.isEmpty) {
+      return;
+    }
+
+    const projectPayloadPrefix = "MNPROJ_PAYLOAD::";
+    if (normalizedPath.startsWith(projectPayloadPrefix)) {
+      try {
+        final decoded = jsonDecode(
+          normalizedPath.substring(projectPayloadPrefix.length),
+        );
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException("Invalid project payload");
+        }
+        final rawContent = decoded["content"];
+        if (rawContent is! String || rawContent.isEmpty) {
+          throw const FormatException("Project payload has no content");
+        }
+        final rawPath = decoded["path"];
+        final rawName = decoded["name"];
+        final rawBookmark = decoded["bookmark"];
+        final path = rawPath is String && rawPath.trim().isNotEmpty
+            ? rawPath.trim()
+            : null;
+        final bookmark = rawBookmark is String && rawBookmark.trim().isNotEmpty
+            ? rawBookmark.trim()
+            : null;
+        final fileName = rawName is String && rawName.trim().isNotEmpty
+            ? rawName.trim()
+            : (path == null ? "未命名.mnproj" : path.split(RegExp(r"[/\\]")).last);
+
+        await _openRecentProject(
+          RecentProjectEntry(
+            fileName: fileName,
+            filePath: path,
+            uri: bookmark,
+            lastOpenedAtMillis: DateTime.now().millisecondsSinceEpoch,
+          ),
+          launchedExternally: true,
+          projectFileLoader: (_) async => ProjectFile(
+            fileName: fileName,
+            filePath: path,
+            uri: bookmark,
+            content: rawContent,
+          ),
+        );
+      } catch (e) {
+        _showError("開啟專案失敗：${e.toString()}");
+      }
+      return;
+    }
+
+    // Bookmark payload from native: BKMK::<base64Bookmark>::PATH::<originalPath>
+    if (normalizedPath.startsWith('BKMK::')) {
+      try {
+        final marker = 'BKMK::';
+        final sep = '::PATH::';
+        final rest = normalizedPath.substring(marker.length);
+        final idx = rest.indexOf(sep);
+        final bookmark = idx >= 0 ? rest.substring(0, idx) : rest;
+        final origPath = idx >= 0 ? rest.substring(idx + sep.length) : '';
+        final parts = origPath.split(RegExp(r"[/\\]"));
+        final fileName = parts.isEmpty || parts.last.isEmpty
+            ? "未命名.mnproj"
+            : parts.last;
+
+        await _openRecentProject(
+          RecentProjectEntry(
+            fileName: fileName,
+            filePath: origPath.isNotEmpty ? origPath : null,
+            uri: bookmark,
+            lastOpenedAtMillis: DateTime.now().millisecondsSinceEpoch,
+          ),
+          launchedExternally: true,
+          projectFileLoader: (_) =>
+              FileService.openProjectFromSecurityScopedBookmark(bookmark),
+        );
+      } catch (e) {
+        _showError("開啟專案失敗：${e.toString()}");
+      }
       return;
     }
     if (!kIsWeb &&
