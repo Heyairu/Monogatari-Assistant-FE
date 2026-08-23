@@ -8,6 +8,8 @@ set(BINARY_NAME "monogatari_assistant")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.heyairu.monogatari_assistant")
+set(APPLICATION_ICON_FILE
+  "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${APPLICATION_ID}.png")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -101,6 +103,9 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${APPLICATION_ID}.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications" COMPONENT Runtime)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${APPLICATION_ID}.xml"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/mime/packages" COMPONENT Runtime)
+install(FILES "${APPLICATION_ICON_FILE}"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/512x512/apps"
+  RENAME "${APPLICATION_ID}.png" COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)

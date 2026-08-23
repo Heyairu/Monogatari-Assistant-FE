@@ -110,9 +110,9 @@ class _ProjectIoBusyIndicator extends ConsumerWidget {
   }
 }
 
-void main() async {
+void main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DesktopProjectLaunch.initialize();
+  await DesktopProjectLaunch.initialize(startupArguments: arguments);
   if (_isDesktopPlatform) {
     await _DesktopSplashWindowController.prepare();
   }
@@ -441,6 +441,38 @@ class ContentView extends ConsumerStatefulWidget {
   ConsumerState<ContentView> createState() => _ContentViewState();
 }
 
+/// Keeps the last fully laid-out body at fixed logical constraints while the
+/// native window is being resized. [FittedBox] scales only the composited
+/// result, preventing large editable paragraphs and all inactive project pages
+/// from being laid out again for every intermediate window size.
+class _WindowResizeViewport extends StatelessWidget {
+  const _WindowResizeViewport({
+    super.key,
+    required this.contentSize,
+    required this.child,
+  });
+
+  final Size contentSize;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.fill,
+          alignment: Alignment.topLeft,
+          child: SizedBox.fromSize(
+            key: const Key("window-resize-stable-content"),
+            size: contentSize,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ContentViewState extends ConsumerState<ContentView>
     with WindowListener, WidgetsBindingObserver {
   // 狀態變數
@@ -452,7 +484,13 @@ class _ContentViewState extends ConsumerState<ContentView>
   int _characterSelectionRequestId = 0;
   bool _isExitConfirmationInProgress = false;
   bool _isDesktopWindowClosing = false;
+  bool _isWindowResizeInProgress = false;
+  Timer? _windowResizeEndTimer;
+  Widget? _stableResizeBody;
+  Size? _stableResizeBodySize;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
+
+  static const Duration _windowResizeSettleDelay = Duration(milliseconds: 80);
 
   final WordCountService _wordCountService = WordCountService.instance;
 
@@ -1105,6 +1143,13 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   @override
+  void didChangeMetrics() {
+    if (_isDesktopPlatform) {
+      _markWindowResizeInProgress();
+    }
+  }
+
+  @override
   void dispose() {
     DesktopProjectLaunch.unbind();
     WidgetsBinding.instance.removeObserver(this);
@@ -1119,6 +1164,10 @@ class _ContentViewState extends ConsumerState<ContentView>
     _autoSaveTimer = null;
     _autoBackupTimer?.cancel();
     _autoBackupTimer = null;
+    _windowResizeEndTimer?.cancel();
+    _windowResizeEndTimer = null;
+    _stableResizeBody = null;
+    _stableResizeBodySize = null;
     _wordCountService.removeListener(_handleWordCountServiceChanged);
     _closeProviderSubscriptions();
     WidgetsBinding.instance.focusManager.removeListener(_onFocusChange);
@@ -1589,7 +1638,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   void onWindowRestore() {}
 
   @override
-  void onWindowResize() {}
+  void onWindowResize() => _markWindowResizeInProgress();
 
   @override
   void onWindowMove() {}
@@ -1608,6 +1657,59 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   @override
   void onWindowUndocked() {}
+
+  void _markWindowResizeInProgress() {
+    if (!mounted || !_isDesktopPlatform) return;
+
+    _isWindowResizeInProgress = true;
+    _windowResizeEndTimer?.cancel();
+    _windowResizeEndTimer = Timer(_windowResizeSettleDelay, () {
+      if (!mounted) return;
+      setState(() {
+        _isWindowResizeInProgress = false;
+        // The next build performs one real layout at the final window size.
+        _stableResizeBody = null;
+        _stableResizeBodySize = null;
+      });
+    });
+  }
+
+  Widget _buildResizeStabilizedBody({
+    required BoxConstraints constraints,
+    required double fontSize,
+    required WordCountMode wordCountMode,
+    required bool hasUnsavedChanges,
+    required DateTime? lastSavedTime,
+  }) {
+    final currentSize = constraints.biggest;
+    final canReuseStableBody =
+        _isWindowResizeInProgress &&
+        _stableResizeBody != null &&
+        _stableResizeBodySize != null;
+
+    if (!canReuseStableBody) {
+      _stableResizeBody = constraints.maxWidth < 800
+          ? _buildMobileLayout(
+              fontSize: fontSize,
+              wordCountMode: wordCountMode,
+              hasUnsavedChanges: hasUnsavedChanges,
+              lastSavedTime: lastSavedTime,
+            )
+          : _buildDesktopLayout(
+              fontSize: fontSize,
+              wordCountMode: wordCountMode,
+              hasUnsavedChanges: hasUnsavedChanges,
+              lastSavedTime: lastSavedTime,
+            );
+      _stableResizeBodySize = currentSize;
+    }
+
+    return _WindowResizeViewport(
+      key: const Key("window-resize-stable-viewport"),
+      contentSize: _stableResizeBodySize!,
+      child: _stableResizeBody!,
+    );
+  }
 
   // MARK: 主體建構方法
   @override
@@ -1733,24 +1835,13 @@ class _ContentViewState extends ConsumerState<ContentView>
               behavior: HitTestBehavior.translucent,
               onTap: _clearEditableFocus,
               child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // 響應式佈局：根據螢幕寬度決定使用堆疊還是分割佈局
-                  if (constraints.maxWidth < 800) {
-                    return _buildMobileLayout(
-                      fontSize: fontSize,
-                      wordCountMode: wordCountMode,
-                      hasUnsavedChanges: hasUnsavedChanges,
-                      lastSavedTime: lastSavedTime,
-                    );
-                  } else {
-                    return _buildDesktopLayout(
-                      fontSize: fontSize,
-                      wordCountMode: wordCountMode,
-                      hasUnsavedChanges: hasUnsavedChanges,
-                      lastSavedTime: lastSavedTime,
-                    );
-                  }
-                },
+                builder: (context, constraints) => _buildResizeStabilizedBody(
+                  constraints: constraints,
+                  fontSize: fontSize,
+                  wordCountMode: wordCountMode,
+                  hasUnsavedChanges: hasUnsavedChanges,
+                  lastSavedTime: lastSavedTime,
+                ),
               ),
             ),
           ),

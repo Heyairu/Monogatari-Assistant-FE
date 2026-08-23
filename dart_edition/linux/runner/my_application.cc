@@ -14,6 +14,49 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static constexpr char kApplicationName[] = "MonoAshi";
+
+// Returns the icon installed beside the relocatable Linux bundle executable.
+static gchar* get_application_icon_path() {
+  g_autoptr(GError) error = nullptr;
+  g_autofree gchar* executable_path =
+      g_file_read_link("/proc/self/exe", &error);
+  if (executable_path == nullptr) {
+    if (error != nullptr) {
+      g_warning("Failed to resolve executable path: %s", error->message);
+    }
+    return nullptr;
+  }
+
+  g_autofree gchar* executable_directory = g_path_get_dirname(executable_path);
+  g_autofree gchar* bundle_icon =
+      g_build_filename(executable_directory, "share", "icons", "hicolor",
+                       "512x512", "apps", APPLICATION_ID ".png", nullptr);
+  if (g_file_test(bundle_icon, G_FILE_TEST_IS_REGULAR)) {
+    return g_strdup(bundle_icon);
+  }
+
+  // AppImage/AppDir uses the FHS-style usr/bin + usr/share layout.
+  return g_build_filename(executable_directory, "..", "share", "icons",
+                          "hicolor", "512x512", "apps",
+                          APPLICATION_ID ".png", nullptr);
+}
+
+static void set_application_window_icon(GtkWindow* window) {
+  g_autofree gchar* icon_path = get_application_icon_path();
+  if (icon_path == nullptr || !g_file_test(icon_path, G_FILE_TEST_IS_REGULAR)) {
+    gtk_window_set_icon_name(window, APPLICATION_ID);
+    return;
+  }
+
+  g_autoptr(GError) error = nullptr;
+  if (!gtk_window_set_icon_from_file(window, icon_path, &error)) {
+    g_warning("Failed to load application icon from %s: %s", icon_path,
+              error->message);
+    gtk_window_set_icon_name(window, APPLICATION_ID);
+  }
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView *view)
 {
@@ -23,8 +66,11 @@ static void first_frame_cb(MyApplication* self, FlView *view)
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  gdk_set_program_class(APPLICATION_ID);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  gtk_window_set_title(window, kApplicationName);
+  set_application_window_icon(window);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -46,11 +92,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "dart_edition");
+    gtk_header_bar_set_title(header_bar, kApplicationName);
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "dart_edition");
+    gtk_window_set_title(window, kApplicationName);
   }
 
   gtk_window_set_default_size(window, 1280, 720);
@@ -136,6 +182,7 @@ MyApplication* my_application_new() {
   // corresponding .desktop file. This ensures better integration by allowing
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
+  g_set_application_name(kApplicationName);
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID,

@@ -29,7 +29,9 @@ class DesktopProjectLaunch {
           Platform.isAndroid);
 
   /// Starts receiving native open-document events and captures startup args.
-  static Future<void> initialize() async {
+  static Future<void> initialize({
+    Iterable<String> startupArguments = const <String>[],
+  }) async {
     if (_initialized || !_isSupportedDesktopPlatform) {
       return;
     }
@@ -54,7 +56,10 @@ class DesktopProjectLaunch {
     }
 
     if (Platform.isLinux) {
-      for (final argument in Platform.executableArguments) {
+      // The Linux runner supplies these through
+      // fl_dart_project_set_dart_entrypoint_arguments. They are arguments to
+      // main(), not Dart VM arguments exposed by Platform.executableArguments.
+      for (final argument in startupArguments) {
         _enqueue(argument);
       }
     }
@@ -76,12 +81,36 @@ class DesktopProjectLaunch {
   static void unbind() => _onProjectRequested = null;
 
   static void _enqueue(String candidate) {
-    final path = candidate.trim();
+    final path = normalizeProjectArgument(candidate);
     if (!_isProjectPath(path)) {
       return;
     }
     _pendingPaths.add(path);
     _drain();
+  }
+
+  /// Converts a file-manager launch argument into a path understood by the
+  /// project I/O layer.
+  ///
+  /// Linux file managers can pass a dropped file as a percent-encoded
+  /// `file://` URI instead of a native path. Passing that URI to [File] makes
+  /// it look for a literal `file:` directory, so decode it before enqueueing.
+  @visibleForTesting
+  static String normalizeProjectArgument(String candidate) {
+    final argument = candidate.trim();
+    final uri = Uri.tryParse(argument);
+    if (uri == null || uri.scheme.toLowerCase() != "file") {
+      return argument;
+    }
+
+    try {
+      return uri.toFilePath(windows: Platform.isWindows);
+    } on FormatException {
+      // Keep the original argument. It will be rejected by _isProjectPath or
+      // reported by the normal project-open error path instead of crashing at
+      // application startup.
+      return argument;
+    }
   }
 
   static void _enqueueNativeArgument(Object? argument) {

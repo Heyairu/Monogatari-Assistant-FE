@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+app_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+app_bin_dir="$app_dir/usr/bin"
+
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+  export LD_LIBRARY_PATH="$app_bin_dir/lib:$app_dir/usr/lib:$LD_LIBRARY_PATH"
+else
+  export LD_LIBRARY_PATH="$app_bin_dir/lib:$app_dir/usr/lib"
+fi
+
+cd "$app_bin_dir"
+exec "$app_bin_dir/monogatari_assistant" "$@"
