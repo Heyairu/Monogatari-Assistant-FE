@@ -1,0 +1,15 @@
+[package]
+name = "rhodanthe-analyzers"
+version = "0.1.0"
+description = "Text analyzers for MonoAshi Rhodanthe"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "rhodanthe_analyzers"
+path = "src/lib.rs"
+
+[dependencies]
+regex = "=1.13.1"
+rhodanthe-core = { path = "../rhodanthe-core" }

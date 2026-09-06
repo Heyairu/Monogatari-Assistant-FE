@@ -33,7 +33,7 @@ final class CollaborationDocument {
   final Map<String, CollaborativeText> _texts;
   final Set<String> _chapterIds;
   final Set<String> _projectTextIds;
-  final Map<OperationId, CollaborationOperation> _operations;
+  final _PersistentOperationLog _operations;
   final Map<String, int> _contiguousSequences;
   final Map<String, Set<int>> _pendingSequences;
   final TypedProjectOperationLog projectOperationLog;
@@ -45,7 +45,7 @@ final class CollaborationDocument {
     required Map<String, CollaborativeText> texts,
     required Set<String> chapterIds,
     required Set<String> projectTextIds,
-    required Map<OperationId, CollaborationOperation> operations,
+    required _PersistentOperationLog operations,
     required Map<String, int> contiguousSequences,
     required Map<String, Set<int>> pendingSequences,
     required this.projectOperationLog,
@@ -83,7 +83,7 @@ final class CollaborationDocument {
       },
       chapterIds: chapterTexts.keys.toSet(),
       projectTextIds: projectTexts.keys.toSet(),
-      operations: <OperationId, CollaborationOperation>{},
+      operations: _PersistentOperationLog.empty(),
       contiguousSequences: <String, int>{},
       pendingSequences: <String, Set<int>>{},
       projectOperationLog: TypedProjectOperationLog.empty(),
@@ -155,6 +155,16 @@ final class CollaborationDocument {
   CollaborativeText? chapter(String chapterId) =>
       _chapterIds.contains(chapterId) ? _texts[chapterId] : null;
 
+  int get operationCount => _operations.length;
+
+  int get atomCount =>
+      _texts.values.fold(0, (total, document) => total + document.atomCount);
+
+  int get tombstoneCount => _texts.values.fold(
+    0,
+    (total, document) => total + document.tombstoneCount,
+  );
+
   CollaborationDocument ensureChapter({
     required String chapterId,
     String initialText = "",
@@ -205,20 +215,28 @@ final class CollaborationDocument {
   CollaborationDocument createLocalTextEdit({
     required String documentId,
     required String nextText,
+  }) => createLocalTextDelta(
+    documentId: documentId,
+    delta: CollaborativeTextDelta.between(
+      _texts[documentId]?.text ?? "",
+      nextText,
+    ),
+  );
+
+  CollaborationDocument createLocalTextDelta({
+    required String documentId,
+    required CollaborativeTextDelta delta,
   }) {
     final current = _texts[documentId];
     if (current == null) {
       throw StateError("文字 $documentId 尚未建立 CRDT document。");
     }
-    final edit = current.createLocalEdit(nextText: nextText, clock: _clock);
+    final edit = current.createLocalDelta(delta: delta, clock: _clock);
     if (edit.operations.isEmpty) return this;
     var next = _copy(
       texts: <String, CollaborativeText>{..._texts, documentId: edit.document},
     );
-    for (final operation in edit.operations) {
-      next = next._recordApplied(operation);
-    }
-    return next;
+    return next._recordAppliedAll(edit.operations);
   }
 
   CollaborationDocument createLocalProjectOperation(
@@ -237,66 +255,61 @@ final class CollaborationDocument {
     if (batch.projectUuid != projectUuid) {
       throw const FormatException("collaboration batch project UUID 不一致。");
     }
-    var next = this;
     final changedTextDocumentIds = <String>{};
     final appliedProjectOperations = <ProjectDataRecordOperation>[];
+    final acceptedOperations = <CollaborationOperation>[];
+    final acceptedIds = <OperationId>{};
+    final textOperations = <String, List<CollaborationOperation>>{};
     for (final operation in batch.operations) {
-      if (next._hasSeen(operation.id)) continue;
-      next._clock.observe(operation);
+      if (_hasSeen(operation.id) || !acceptedIds.add(operation.id)) continue;
+      _clock.observe(operation);
+      acceptedOperations.add(operation);
       switch (operation) {
         case final TextInsertOperation insert:
-          final document =
-              next._texts[insert.textDocumentId] ??
-              CollaborativeText.seeded(
-                documentId: insert.textDocumentId,
-                text: "",
-              );
-          final updated = document.apply(insert);
-          final isProjectText = insert.textDocumentId.startsWith(
-            CollaborationSchema.projectTextDocumentPrefix,
-          );
-          next = next._copy(
-            texts: <String, CollaborativeText>{
-              ...next._texts,
-              insert.textDocumentId: updated,
-            },
-            chapterIds: isProjectText
-                ? null
-                : <String>{...next._chapterIds, insert.textDocumentId},
-            projectTextIds: isProjectText
-                ? <String>{...next._projectTextIds, insert.textDocumentId}
-                : null,
-          );
+          textOperations
+              .putIfAbsent(
+                insert.textDocumentId,
+                () => <CollaborationOperation>[],
+              )
+              .add(insert);
           changedTextDocumentIds.add(insert.textDocumentId);
         case final TextDeleteOperation delete:
-          final document =
-              next._texts[delete.textDocumentId] ??
-              CollaborativeText.seeded(
-                documentId: delete.textDocumentId,
-                text: "",
-              );
-          final updated = document.apply(delete);
-          final isProjectText = delete.textDocumentId.startsWith(
-            CollaborationSchema.projectTextDocumentPrefix,
-          );
-          next = next._copy(
-            texts: <String, CollaborativeText>{
-              ...next._texts,
-              delete.textDocumentId: updated,
-            },
-            chapterIds: isProjectText
-                ? null
-                : <String>{...next._chapterIds, delete.textDocumentId},
-            projectTextIds: isProjectText
-                ? <String>{...next._projectTextIds, delete.textDocumentId}
-                : null,
-          );
+          textOperations
+              .putIfAbsent(
+                delete.textDocumentId,
+                () => <CollaborationOperation>[],
+              )
+              .add(delete);
           changedTextDocumentIds.add(delete.textDocumentId);
         case final ProjectDataRecordOperation projectOperation:
           appliedProjectOperations.add(projectOperation);
       }
-      next = next._recordApplied(operation);
     }
+    if (acceptedOperations.isEmpty) {
+      return CollaborationApplyResult(document: this);
+    }
+    final nextTexts = <String, CollaborativeText>{..._texts};
+    var nextChapterIds = _chapterIds;
+    var nextProjectTextIds = _projectTextIds;
+    for (final entry in textOperations.entries) {
+      final document =
+          nextTexts[entry.key] ??
+          CollaborativeText.seeded(documentId: entry.key, text: "");
+      nextTexts[entry.key] = document.applyAll(entry.value);
+      final isProjectText = entry.key.startsWith(
+        CollaborationSchema.projectTextDocumentPrefix,
+      );
+      if (isProjectText && !nextProjectTextIds.contains(entry.key)) {
+        nextProjectTextIds = <String>{...nextProjectTextIds, entry.key};
+      } else if (!isProjectText && !nextChapterIds.contains(entry.key)) {
+        nextChapterIds = <String>{...nextChapterIds, entry.key};
+      }
+    }
+    final next = _copy(
+      texts: nextTexts,
+      chapterIds: nextChapterIds,
+      projectTextIds: nextProjectTextIds,
+    )._recordAppliedAll(acceptedOperations);
     return CollaborationApplyResult(
       document: next,
       changedTextDocumentIds: changedTextDocumentIds,
@@ -307,21 +320,7 @@ final class CollaborationDocument {
   List<CollaborationOperation> operationsAfter(
     Map<String, int> remoteAcknowledgedSequences, {
     int limit = CollaborationSchema.maximumOperationsPerBatch,
-  }) {
-    final pending =
-        _operations.values
-            .where((operation) {
-              final acknowledged =
-                  remoteAcknowledgedSequences[operation.id.replicaId] ?? 0;
-              return operation.id.sequence > acknowledged;
-            })
-            .toList(growable: false)
-          ..sort((left, right) {
-            final byLamport = left.lamport.compareTo(right.lamport);
-            return byLamport != 0 ? byLamport : left.id.compareTo(right.id);
-          });
-    return List<CollaborationOperation>.unmodifiable(pending.take(limit));
-  }
+  }) => _operations.after(remoteAcknowledgedSequences, limit: limit);
 
   CollaborationSyncBatch buildBatch({
     required Map<String, int> remoteAcknowledgedSequences,
@@ -337,19 +336,28 @@ final class CollaborationDocument {
   }
 
   CollaborationDocument _recordApplied(CollaborationOperation operation) {
-    if (_operations.containsKey(operation.id)) return this;
+    if (_hasSeen(operation.id)) return this;
+    return _recordAppliedAll(<CollaborationOperation>[operation]);
+  }
+
+  CollaborationDocument _recordAppliedAll(
+    Iterable<CollaborationOperation> operations,
+  ) {
+    final additions = operations.toList(growable: false);
+    if (additions.isEmpty) return this;
     var log = projectOperationLog;
-    if (operation is ProjectDataRecordOperation) {
-      log = log.apply(operation);
+    for (final operation in additions) {
+      if (operation is ProjectDataRecordOperation) {
+        log = log.apply(operation);
+      }
     }
     final next = _copy(
-      operations: <OperationId, CollaborationOperation>{
-        ..._operations,
-        operation.id: operation,
-      },
+      operations: _operations.append(additions),
       projectOperationLog: log,
     );
-    next._observeSequence(operation.id);
+    for (final operation in additions) {
+      next._observeSequence(operation.id);
+    }
     return next;
   }
 
@@ -359,8 +367,7 @@ final class CollaborationDocument {
         (_pendingSequences[operationId.replicaId]?.contains(
               operationId.sequence,
             ) ??
-            false) ||
-        _operations.containsKey(operationId);
+            false);
   }
 
   void _observeSequence(OperationId operationId) {
@@ -380,19 +387,17 @@ final class CollaborationDocument {
     Map<String, CollaborativeText>? texts,
     Set<String>? chapterIds,
     Set<String>? projectTextIds,
-    Map<OperationId, CollaborationOperation>? operations,
+    _PersistentOperationLog? operations,
     TypedProjectOperationLog? projectOperationLog,
   }) {
     return CollaborationDocument._(
       projectUuid: projectUuid,
       replicaId: replicaId,
       clock: _clock,
-      texts: texts ?? Map<String, CollaborativeText>.from(_texts),
-      chapterIds: chapterIds ?? Set<String>.from(_chapterIds),
-      projectTextIds: projectTextIds ?? Set<String>.from(_projectTextIds),
-      operations:
-          operations ??
-          Map<OperationId, CollaborationOperation>.from(_operations),
+      texts: texts ?? _texts,
+      chapterIds: chapterIds ?? _chapterIds,
+      projectTextIds: projectTextIds ?? _projectTextIds,
+      operations: operations ?? _operations,
       contiguousSequences: Map<String, int>.from(_contiguousSequences),
       pendingSequences: _pendingSequences.map(
         (replica, values) => MapEntry(replica, Set<int>.from(values)),
@@ -400,6 +405,152 @@ final class CollaborationDocument {
       projectOperationLog: projectOperationLog ?? this.projectOperationLog,
     );
   }
+}
+
+/// Append-only persistent chunks keep document snapshots immutable without
+/// copying the complete operation map for every keystroke.
+final class _PersistentOperationLog {
+  final _PersistentOperationLog? previous;
+  final List<CollaborationOperation> tail;
+  final int length;
+  final _OperationIndex _index;
+
+  _PersistentOperationLog.empty()
+    : previous = null,
+      tail = const <CollaborationOperation>[],
+      length = 0,
+      _index = _OperationIndex();
+
+  _PersistentOperationLog._(this.previous, List<CollaborationOperation> tail)
+    : tail = List<CollaborationOperation>.unmodifiable(tail),
+      length = previous!.length + tail.length,
+      _index = previous._index {
+    _index.addAll(tail, firstOrdinal: previous!.length + 1);
+  }
+
+  _PersistentOperationLog append(List<CollaborationOperation> operations) =>
+      operations.isEmpty ? this : _PersistentOperationLog._(this, operations);
+
+  List<CollaborationOperation> after(
+    Map<String, int> acknowledgedSequences, {
+    required int limit,
+  }) =>
+      _index.after(acknowledgedSequences, maximumOrdinal: length, limit: limit);
+}
+
+final class _IndexedOperation {
+  final CollaborationOperation operation;
+  final int ordinal;
+
+  const _IndexedOperation(this.operation, this.ordinal);
+}
+
+final class _OperationCursor {
+  final List<_IndexedOperation> operations;
+  int index;
+  final int maximumOrdinal;
+
+  _OperationCursor({
+    required this.operations,
+    required this.index,
+    required this.maximumOrdinal,
+  });
+
+  CollaborationOperation? get current {
+    while (index < operations.length &&
+        operations[index].ordinal > maximumOrdinal) {
+      index += 1;
+    }
+    return index < operations.length ? operations[index].operation : null;
+  }
+
+  void advance() {
+    index += 1;
+  }
+}
+
+final class _OperationIndex {
+  final Map<String, List<_IndexedOperation>> _byReplica =
+      <String, List<_IndexedOperation>>{};
+
+  void addAll(
+    List<CollaborationOperation> operations, {
+    required int firstOrdinal,
+  }) {
+    for (var index = 0; index < operations.length; index += 1) {
+      final operation = operations[index];
+      final replicaOperations = _byReplica.putIfAbsent(
+        operation.id.replicaId,
+        () => <_IndexedOperation>[],
+      );
+      final insertionIndex = _lowerOperationSequence(
+        replicaOperations,
+        operation.id.sequence,
+      );
+      replicaOperations.insert(
+        insertionIndex,
+        _IndexedOperation(operation, firstOrdinal + index),
+      );
+    }
+  }
+
+  List<CollaborationOperation> after(
+    Map<String, int> acknowledgedSequences, {
+    required int maximumOrdinal,
+    required int limit,
+  }) {
+    final cursors = <_OperationCursor>[];
+    for (final entry in _byReplica.entries) {
+      final acknowledged = acknowledgedSequences[entry.key] ?? 0;
+      final cursor = _OperationCursor(
+        operations: entry.value,
+        index: _lowerOperationSequence(entry.value, acknowledged + 1),
+        maximumOrdinal: maximumOrdinal,
+      );
+      if (cursor.current != null) cursors.add(cursor);
+    }
+
+    final pending = <CollaborationOperation>[];
+    while (pending.length < limit) {
+      _OperationCursor? selected;
+      CollaborationOperation? selectedOperation;
+      for (final cursor in cursors) {
+        final operation = cursor.current;
+        if (operation == null) continue;
+        if (selectedOperation == null ||
+            _compareOperations(operation, selectedOperation) < 0) {
+          selected = cursor;
+          selectedOperation = operation;
+        }
+      }
+      if (selected == null || selectedOperation == null) break;
+      pending.add(selectedOperation);
+      selected.advance();
+    }
+    return List<CollaborationOperation>.unmodifiable(pending);
+  }
+}
+
+int _lowerOperationSequence(List<_IndexedOperation> values, int sequence) {
+  var low = 0;
+  var high = values.length;
+  while (low < high) {
+    final middle = low + ((high - low) >> 1);
+    if (values[middle].operation.id.sequence < sequence) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+int _compareOperations(
+  CollaborationOperation left,
+  CollaborationOperation right,
+) {
+  final byLamport = left.lamport.compareTo(right.lamport);
+  return byLamport != 0 ? byLamport : left.id.compareTo(right.id);
 }
 
 CollaborationDocument _appendReplayableText(

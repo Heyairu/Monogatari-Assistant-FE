@@ -20,6 +20,9 @@ import "package:flutter/material.dart";
 import 'dart:async';
 
 import "ui_library.dart";
+import "../infrastructure/rhodanthe/rhodanthe_protocol.dart";
+import "../infrastructure/rhodanthe/rhodanthe_text_span_adapter.dart";
+import "../infrastructure/rhodanthe/rhodanthe_theme.dart";
 import "../utils/cancellable_compute.dart";
 
 // Global normalization cache for character normalization
@@ -71,6 +74,17 @@ class HighlightTextEditingController extends CodeController {
   /// an A -> B -> A edit sequence cannot make stale work look current.
   int get textRevision => _textRevision;
 
+  static const RhodantheTextSpanAdapter _rhodantheAdapter =
+      RhodantheTextSpanAdapter();
+  RhodantheVersionedRenderPlan? _rhodantheRenderPlan;
+  RhodantheSpanBuildFailure? _rhodantheFailure;
+  List<RhodantheSpanMetadata> _rhodantheMetadata =
+      const <RhodantheSpanMetadata>[];
+
+  RhodantheVersionedRenderPlan? get rhodantheRenderPlan => _rhodantheRenderPlan;
+  RhodantheSpanBuildFailure? get rhodantheFailure => _rhodantheFailure;
+  List<RhodantheSpanMetadata> get rhodantheMetadata => _rhodantheMetadata;
+
   @override
   void dispose() {
     cancelFindAllMatches(this);
@@ -88,6 +102,9 @@ class HighlightTextEditingController extends CodeController {
     final bool textChanged = newValue.text != text;
     if (textChanged) {
       _textRevision++;
+      _rhodantheRenderPlan = null;
+      _rhodantheFailure = null;
+      _rhodantheMetadata = const <RhodantheSpanMetadata>[];
       // Text edits make existing highlight ranges stale. Drop them before
       // CodeField asks for a new span so typing does not rebuild old indices.
       if (hasHighlights || currentMatchIndex != -1) {
@@ -159,6 +176,24 @@ class HighlightTextEditingController extends CodeController {
     TextStyle? style,
     bool? withComposing,
   }) {
+    final rhodanthePlan = _rhodantheRenderPlan;
+    if (rhodanthePlan != null) {
+      final result = _rhodantheAdapter.build(
+        text: text,
+        currentRevision: _textRevision,
+        renderPlan: rhodanthePlan,
+        theme: RhodantheTheme.resolve(context),
+        baseStyle: style,
+        composing: value.composing,
+        withComposing: withComposing ?? true,
+      );
+      _rhodantheFailure = result.failure;
+      if (result.applied) {
+        _rhodantheMetadata = result.metadata;
+        return result.span;
+      }
+    }
+
     // Highlighter strategy:
     // 1) split text by all highlight boundaries,
     // 2) apply a single color per segment by priority:
@@ -257,6 +292,39 @@ class HighlightTextEditingController extends CodeController {
     _cachedSpanStyle = null;
     _cachedSpanRevision = null;
     _cachedSpan = null;
+  }
+
+  /// Publishes a native plan only when it still belongs to this text snapshot.
+  bool publishRhodantheRenderPlan(RhodantheVersionedRenderPlan renderPlan) {
+    if (renderPlan.revision != _textRevision ||
+        renderPlan.plan.textLenUtf16 != text.length) {
+      return false;
+    }
+    _rhodantheRenderPlan = renderPlan;
+    _rhodantheFailure = null;
+    _rhodantheMetadata = const <RhodantheSpanMetadata>[];
+    _invalidateSpanCache();
+    notifyListeners();
+    return true;
+  }
+
+  void clearRhodantheRenderPlan({bool notify = true}) {
+    if (_rhodantheRenderPlan == null && _rhodantheFailure == null) return;
+    _rhodantheRenderPlan = null;
+    _rhodantheFailure = null;
+    _rhodantheMetadata = const <RhodantheSpanMetadata>[];
+    _invalidateSpanCache();
+    if (notify) notifyListeners();
+  }
+
+  RhodantheSpanMetadata? rhodantheMetadataAt(int utf16Offset) {
+    for (final metadata in _rhodantheMetadata) {
+      if (metadata.range.start <= utf16Offset &&
+          utf16Offset < metadata.range.end) {
+        return metadata;
+      }
+    }
+    return null;
   }
 
   TextStyle _withColor(TextStyle? style, Color color) {

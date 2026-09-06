@@ -57,6 +57,28 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Build Rhodanthe when a Rust toolchain is available. A missing toolchain keeps
+# the existing Dart fallback usable for contributor builds.
+option(RHODANTHE_NATIVE "Build and package the Rhodanthe Rust bridge" ON)
+set(RHODANTHE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml")
+set(RHODANTHE_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/release/rhodanthe_bridge.dll")
+if(RHODANTHE_NATIVE)
+  find_program(CARGO_EXECUTABLE NAMES cargo cargo.exe
+    HINTS "$ENV{USERPROFILE}/.cargo/bin")
+  if(CARGO_EXECUTABLE)
+    add_custom_target(rhodanthe_native ALL
+      COMMAND "${CARGO_EXECUTABLE}" build --release -p rhodanthe-bridge
+        --manifest-path "${RHODANTHE_MANIFEST}"
+      BYPRODUCTS "${RHODANTHE_LIBRARY}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../rust"
+      COMMENT "Building MonoAshi Rhodanthe native bridge"
+      VERBATIM)
+    add_dependencies(${BINARY_NAME} rhodanthe_native)
+  else()
+    message(WARNING "Cargo was not found; Rhodanthe will use the Dart fallback")
+  endif()
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -80,6 +102,12 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
+
+if(TARGET rhodanthe_native)
+  install(FILES "${RHODANTHE_LIBRARY}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
 
 if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"

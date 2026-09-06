@@ -1,0 +1,18 @@
+[package]
+name = "rhodanthe-bridge"
+version = "0.1.0"
+description = "Stable C ABI and JSON protocol for MonoAshi Rhodanthe"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "rhodanthe_bridge"
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+rhodanthe-analyzers = { path = "../rhodanthe-analyzers" }
+rhodanthe-core = { path = "../rhodanthe-core" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"

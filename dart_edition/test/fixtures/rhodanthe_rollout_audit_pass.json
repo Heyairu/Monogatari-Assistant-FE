@@ -1,0 +1,22 @@
+{
+  "buildId": "fixture-build",
+  "version": 2,
+  "retainedSamples": 100,
+  "maxEvidenceAgeSeconds": 604800,
+  "policy": {
+    "shadowSamplesRequired": 100,
+    "canarySamplesRequired": 500,
+    "p95BudgetMicros": 75000
+  },
+  "modes": {
+    "shadow": {
+      "currentMode": "shadow",
+      "recommendedMode": "searchCanary",
+      "reason": "eligible",
+      "completedSamples": 100,
+      "failures": 0,
+      "mismatches": 0,
+      "p95Micros": 32000
+    }
+  }
+}

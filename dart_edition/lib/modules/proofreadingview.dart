@@ -32,6 +32,14 @@ import "package:shared_preferences/shared_preferences.dart";
 
 enum _PunctuationProfile { zhTw, zhHk, zhHans, jp, kr, enOther }
 
+typedef RhodantheProofreadingCallback =
+    void Function({
+      required List<TextSelection> fillerMatches,
+      required List<TextSelection> diagnosticMatches,
+      required List<String> fillerWords,
+      required int dictionaryRevision,
+    });
+
 String _punctuationProfileCode(_PunctuationProfile profile) {
   switch (profile) {
     case _PunctuationProfile.zhTw:
@@ -55,11 +63,13 @@ class ProofReadingView extends ConsumerStatefulWidget {
     required this.textController,
     required this.chapterSwitchVersion,
     this.onRequestFocusEditor,
+    this.onRhodantheAnnotationsChanged,
   });
 
   final TextEditingController textController;
   final int chapterSwitchVersion;
   final VoidCallback? onRequestFocusEditor;
+  final RhodantheProofreadingCallback? onRhodantheAnnotationsChanged;
 
   @override
   ConsumerState<ProofReadingView> createState() => _ProofReadingViewState();
@@ -506,15 +516,15 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
 
   Duration _proofreadingDebounceForTextLength(int textLength) {
     if (textLength < _smallProofreadingTextLength) {
-      return const Duration(milliseconds: 100);
+      return const Duration(milliseconds: 50);
     }
     if (textLength < _mediumProofreadingTextLength) {
-      return const Duration(milliseconds: 300);
+      return const Duration(milliseconds: 150);
     }
     if (textLength < _largeProofreadingTextLength) {
-      return const Duration(milliseconds: 500);
+      return const Duration(milliseconds: 250);
     }
-    return const Duration(seconds: 1);
+    return const Duration(milliseconds: 500);
   }
 
   Future<void> _loadFillerWords() async {
@@ -783,14 +793,25 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         _latestAppliedProofreadingRevision = result.revision;
         final TextPositionIndex textIndex = TextPositionIndex(request.text);
 
-        _syncPunctuationHighlights(
+        final diagnosticMatches = _syncPunctuationHighlights(
           request.text,
           symbolIssues: result.symbolIssues,
           sameTypeQuoteIssues: result.sameTypeQuoteIssues,
           lineEndingIssues: result.lineEndingIssues,
           punctuationResult: result.punctuationResult,
         );
-        _syncFillerWordHighlights(request.text, result.fillerWordAnalysis);
+        final fillerMatches = _syncFillerWordHighlights(
+          request.text,
+          result.fillerWordAnalysis,
+        );
+        widget.onRhodantheAnnotationsChanged?.call(
+          fillerMatches: fillerMatches,
+          diagnosticMatches: diagnosticMatches,
+          fillerWords: _enableFillerWordCheck
+              ? List<String>.unmodifiable(_fillerWords)
+              : const <String>[],
+          dictionaryRevision: _fillerWordsRevision,
+        );
 
         setState(() {
           _pairIssues = result.pairIssues;
@@ -840,10 +861,13 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     );
   }
 
-  void _syncFillerWordHighlights(String text, _FillerWordAnalysis analysis) {
+  List<TextSelection> _syncFillerWordHighlights(
+    String text,
+    _FillerWordAnalysis analysis,
+  ) {
     final TextEditingController controller = widget.textController;
     if (controller is! HighlightTextEditingController) {
-      return;
+      return const <TextSelection>[];
     }
 
     final List<TextSelection> matches = <TextSelection>[];
@@ -863,15 +887,16 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             matches: matches,
             color: Colors.teal,
           );
-          return;
+          return matches;
         }
       }
     }
 
     controller.updateFillerHighlights(matches: matches, color: Colors.teal);
+    return matches;
   }
 
-  void _syncPunctuationHighlights(
+  List<TextSelection> _syncPunctuationHighlights(
     String text, {
     required List<_ConsecutiveSymbolIssue> symbolIssues,
     required List<_SameTypeQuoteIssue> sameTypeQuoteIssues,
@@ -880,7 +905,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
   }) {
     final TextEditingController controller = widget.textController;
     if (controller is! HighlightTextEditingController) {
-      return;
+      return const <TextSelection>[];
     }
 
     final List<TextSelection> matches = <TextSelection>[];
@@ -905,7 +930,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             matches: matches,
             color: Colors.green,
           );
-          return;
+          return matches;
         }
       }
     }
@@ -916,7 +941,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           matches: matches,
           color: Colors.green,
         );
-        return;
+        return matches;
       }
     }
 
@@ -926,7 +951,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           matches: matches,
           color: Colors.green,
         );
-        return;
+        return matches;
       }
     }
 
@@ -936,7 +961,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           matches: matches,
           color: Colors.green,
         );
-        return;
+        return matches;
       }
     }
 
@@ -944,6 +969,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       matches: matches,
       color: Colors.green,
     );
+    return matches;
   }
 
   void _applyPunctuationNormalization() {

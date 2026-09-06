@@ -37,9 +37,16 @@ import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
 import "data/p2p/p2p_snapshot_quarantine.dart";
+import "domain/collaboration/collaborative_text.dart";
 import "domain/models/p2p_sync_models.dart";
 import "domain/models/p2p_revision_models.dart";
 import "domain/models/p2p_snapshot_models.dart";
+import "infrastructure/rhodanthe/rhodanthe_editor_session.dart";
+import "infrastructure/rhodanthe/rhodanthe_annotations.dart";
+import "infrastructure/rhodanthe/rhodanthe_protocol.dart";
+import "infrastructure/rhodanthe/rhodanthe_rollout_cohort.dart";
+import "infrastructure/rhodanthe/rhodanthe_rollout_guard.dart";
+import "infrastructure/rhodanthe/rhodanthe_rollout_store.dart";
 import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
@@ -490,7 +497,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   Size? _stableResizeBodySize;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
 
-  static const Duration _windowResizeSettleDelay = Duration(milliseconds: 80);
+  static const Duration _windowResizeSettleDelay = Duration(milliseconds: 40);
 
   final WordCountService _wordCountService = WordCountService.instance;
 
@@ -504,6 +511,15 @@ class _ContentViewState extends ConsumerState<ContentView>
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
   String _lastObservedEditorText = "";
+  RhodantheEditorSession? _rhodantheSession;
+  final RhodantheRolloutEvidenceController _rhodantheRolloutEvidence =
+      RhodantheRolloutEvidenceController();
+  final RhodantheRolloutNoticeTracker _rhodantheRolloutNotices =
+      RhodantheRolloutNoticeTracker();
+  int _rhodantheQueryRevision = 0;
+  RhodantheFillerRequest? _rhodantheFillerRequest;
+  List<RhodantheExternalAnnotation> _rhodantheDiagnostics =
+      const <RhodantheExternalAnnotation>[];
 
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
@@ -796,6 +812,199 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
   }
 
+  Future<void> _initializeRhodanthe() async {
+    try {
+      final restored = await _rhodantheRolloutEvidence.load();
+      if (restored) {
+        debugPrint(
+          "Rhodanthe rollout evidence restored: "
+          "${_rhodantheRolloutEvidence.auditSummary()}",
+        );
+      }
+    } catch (error) {
+      debugPrint("Rhodanthe evidence restore failed: $error");
+    }
+    RhodantheRolloutMode effectiveMode = configuredRhodantheRolloutMode;
+    if (!hasConfiguredRhodantheModeOverride) {
+      try {
+        final cohort = await RhodantheRolloutCohortController().resolve(
+          stage: configuredRhodantheReleaseStage,
+        );
+        effectiveMode = cohort.effectiveMode;
+        debugPrint("Rhodanthe rollout cohort: ${jsonEncode(cohort.toJson())}");
+      } catch (error) {
+        effectiveMode = RhodantheRolloutMode.disabled;
+        debugPrint("Rhodanthe cohort resolution failed; disabled: $error");
+      }
+    }
+    final session = await RhodantheEditorSession.start(
+      mode: effectiveMode,
+      onPlan: (renderPlan) {
+        if (!mounted) return;
+        textController.publishRhodantheRenderPlan(renderPlan);
+      },
+      onShadowReport: (report) {
+        if (!report.isExactMatch) {
+          debugPrint(
+            "Rhodanthe shadow mismatch at revision ${report.revision}: "
+            "Dart=${report.dartRanges.length}, "
+            "Rust=${report.nativeRanges.length}",
+          );
+        }
+      },
+      onFailure: (failure) {
+        debugPrint("Rhodanthe fallback: ${failure.code}: ${failure.message}");
+      },
+      onHealthChanged: (health) {
+        if (!mounted) return;
+        if (health.status == RhodantheSessionStatus.circuitOpen ||
+            health.status == RhodantheSessionStatus.degraded) {
+          textController.clearRhodantheRenderPlan();
+        }
+      },
+      onObservation: (observation) {
+        _rhodantheRolloutEvidence.record(observation);
+        final decision = _rhodantheRolloutEvidence.evaluate(observation.mode);
+        final notice = _rhodantheRolloutNotices.observe(decision);
+        if (notice == null) return;
+        if (notice.kind == RhodantheRolloutNoticeKind.progress) {
+          debugPrint(
+            "Rhodanthe rollout progress: "
+            "mode=${decision.currentMode.name}, "
+            "progress=${notice.progressPercent}%, "
+            "samples=${decision.completedSamples}/${decision.requiredSamples}",
+          );
+          return;
+        }
+        final action = switch (notice.kind) {
+          RhodantheRolloutNoticeKind.rollback => "rollback",
+          RhodantheRolloutNoticeKind.defaultOnReady => "default-on readiness",
+          RhodantheRolloutNoticeKind.promotion => "promotion",
+          RhodantheRolloutNoticeKind.progress => "progress",
+        };
+        debugPrint(
+          "Rhodanthe $action recommendation: "
+          "${decision.recommendedMode.name}, reason=${decision.reason.name}, "
+          "samples=${decision.completedSamples}/${decision.requiredSamples}, "
+          "p95=${decision.p95Micros}us",
+        );
+        debugPrint(
+          "Rhodanthe rollout audit: "
+          "${_rhodantheRolloutEvidence.auditSummary()}",
+        );
+      },
+    );
+    if (!mounted) {
+      await session?.dispose();
+      return;
+    }
+    _rhodantheSession = session;
+    await _synchronizeRhodantheDocument();
+  }
+
+  Future<void> _synchronizeRhodantheDocument() async {
+    final session = _rhodantheSession;
+    final chapterId = selectedChapID;
+    if (session == null || chapterId == null) return;
+    try {
+      await session.synchronizeDocument(
+        documentId: chapterId,
+        revision: textController.textRevision,
+        text: textController.text,
+      );
+    } catch (_) {
+      // The session reports the structured failure and remains off the input path.
+    }
+  }
+
+  Future<void> _analyzeRhodantheSearch(
+    String query,
+    FindReplaceOptions options,
+    List<TextSelection> dartMatches,
+    int currentIndex,
+  ) async {
+    final session = _rhodantheSession;
+    if (session == null || query.isEmpty) return;
+    await _synchronizeRhodantheDocument();
+    await session.analyze(
+      search: RhodantheSearchRequest(
+        query: query,
+        queryRevision: ++_rhodantheQueryRevision,
+        activeMatchIndex: currentIndex >= 0 ? currentIndex : null,
+        maxResults: HighlightTextEditingController.maxSearchResults,
+        options: RhodantheSearchOptions(
+          matchCase: options.matchCase,
+          wholeWord: options.wholeWord,
+          useRegexp: options.useRegexp,
+          matchWidth: options.matchWidth,
+          ignorePunctuation: options.ignorePunctuation,
+          ignoreWhitespace: options.ignoreWhitespace,
+        ),
+      ),
+      filler: session.mode == RhodantheRolloutMode.full
+          ? _rhodantheFillerRequest
+          : null,
+      externalAnnotations: session.mode == RhodantheRolloutMode.full
+          ? <RhodantheExternalAnnotation>[..._rhodantheDiagnostics]
+          : const <RhodantheExternalAnnotation>[],
+      dartSearchRanges: <RhodantheRange>[
+        for (final match in dartMatches) RhodantheRange(match.start, match.end),
+      ],
+    );
+  }
+
+  void _handleRhodantheProofreading({
+    required List<TextSelection> fillerMatches,
+    required List<TextSelection> diagnosticMatches,
+    required List<String> fillerWords,
+    required int dictionaryRevision,
+  }) {
+    final session = _rhodantheSession;
+    if (session == null || session.mode != RhodantheRolloutMode.full) return;
+    _rhodantheFillerRequest = fillerWords.isEmpty
+        ? null
+        : RhodantheFillerRequest(
+            dictionaryRevision: dictionaryRevision,
+            words: fillerWords,
+          );
+    _rhodantheDiagnostics = <RhodantheExternalAnnotation>[
+      for (var index = 0; index < diagnosticMatches.length; index++)
+        RhodantheDiagnostic(
+          diagnosticId: "proofreading:$dictionaryRevision:$index",
+          range: RhodantheRange(
+            diagnosticMatches[index].start,
+            diagnosticMatches[index].end,
+          ),
+        ).toAnnotation(sourceOrder: index),
+    ];
+
+    final query = findController.text;
+    if (showFindReplaceWindow && query.isNotEmpty) {
+      unawaited(
+        _analyzeRhodantheSearch(
+          query,
+          findReplaceOptions,
+          _searchMatches,
+          _currentMatchIndex,
+        ),
+      );
+      return;
+    }
+    unawaited(_analyzeRhodantheProofreadingLayers());
+  }
+
+  Future<void> _analyzeRhodantheProofreadingLayers() async {
+    final session = _rhodantheSession;
+    if (session == null || session.mode != RhodantheRolloutMode.full) return;
+    await _synchronizeRhodantheDocument();
+    await session.analyze(
+      filler: _rhodantheFillerRequest,
+      externalAnnotations: <RhodantheExternalAnnotation>[
+        ..._rhodantheDiagnostics,
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -831,6 +1040,7 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
 
     _bootstrapEditorSelectionFromProviderState();
+    unawaited(_initializeRhodanthe());
     _configureAutoSaveTimer(_settingsState);
     _configureAutoBackupTimer(_settingsState);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -857,18 +1067,24 @@ class _ContentViewState extends ConsumerState<ContentView>
 
       // 將輸入事件轉交 coordinator，UI listener 僅保留畫面刷新職責。
       if (textChanged) {
+        _rhodantheDiagnostics = const <RhodantheExternalAnnotation>[];
+        final delta = CollaborativeTextDelta.between(
+          _lastObservedEditorText,
+          currentText,
+        );
         cancelFindAllMatches(textController);
         if (chapterId != null) {
           ref
               .read(collaborationProvider.notifier)
               .recordLocalTextEdit(
                 chapterId: chapterId,
-                nextText: currentText,
+                delta: delta,
                 anchorOffset: normalizedOffset,
                 focusOffset: focusOffset,
               );
         }
         _lastObservedEditorText = currentText;
+        unawaited(_synchronizeRhodantheDocument());
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         _editorCoordinatorNotifier.markAsModified();
 
@@ -979,6 +1195,7 @@ class _ContentViewState extends ConsumerState<ContentView>
             composing: TextRange.empty,
           );
           _lastObservedEditorText = next;
+          unawaited(_synchronizeRhodantheDocument());
           if (selectionRebase != null &&
               selectionRebase.documentId == selectedChapID &&
               selectionRebase.expectedText == next) {
@@ -1178,6 +1395,10 @@ class _ContentViewState extends ConsumerState<ContentView>
       windowManager.removeListener(this);
     }
     _textChangeDebouncer.cancelAll();
+    final rhodantheSession = _rhodantheSession;
+    _rhodantheSession = null;
+    unawaited(rhodantheSession?.dispose() ?? Future<void>.value());
+    unawaited(_rhodantheRolloutEvidence.dispose());
     textController.dispose();
     findController.dispose();
     replaceController.dispose();
@@ -2204,6 +2425,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                   },
                   forward: true,
                 );
+                await _analyzeRhodantheSearch(
+                  findText,
+                  options,
+                  _searchMatches,
+                  _currentMatchIndex,
+                );
               },
               onFindPrevious: (findText, replaceText, options) async {
                 await performFind(
@@ -2220,6 +2447,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                     });
                   },
                   forward: false,
+                );
+                await _analyzeRhodantheSearch(
+                  findText,
+                  options,
+                  _searchMatches,
+                  _currentMatchIndex,
                 );
               },
               onReplace: (findText, replaceText, options) async {
@@ -2245,6 +2478,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                     });
                   },
                 );
+                await _analyzeRhodantheSearch(
+                  findText,
+                  options,
+                  _searchMatches,
+                  _currentMatchIndex,
+                );
               },
               onReplaceAll: (findText, replaceText, options) async {
                 await performReplaceAll(
@@ -2265,6 +2504,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                       _textChangeDebouncer.onTextChanged(newText);
                     });
                   },
+                );
+                await _analyzeRhodantheSearch(
+                  findText,
+                  options,
+                  _searchMatches,
+                  _currentMatchIndex,
                 );
               },
               onSearchChanged: (findText, options) async {
@@ -2306,6 +2551,14 @@ class _ContentViewState extends ConsumerState<ContentView>
                         );
                       }
                     });
+                    unawaited(
+                      _analyzeRhodantheSearch(
+                        findText,
+                        options,
+                        _searchMatches,
+                        _currentMatchIndex,
+                      ),
+                    );
                   }
                 } else {
                   cancelFindAllMatches(textController);
@@ -2313,6 +2566,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                     _searchMatches = [];
                     _currentMatchIndex = -1;
                     textController.clearAllHighlights();
+                    textController.clearRhodantheRenderPlan(notify: false);
                   });
                 }
               },
@@ -2325,6 +2579,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                   _searchMatches = [];
                   _currentMatchIndex = -1;
                   textController.clearAllHighlights();
+                  textController.clearRhodantheRenderPlan(notify: false);
                   // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                 });
               },
@@ -2933,6 +3188,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       textController: textController,
       chapterSwitchVersion: _proofreadingChapterSwitchVersion,
       onRequestFocusEditor: _focusEditorForProofreading,
+      onRhodantheAnnotationsChanged: _handleRhodantheProofreading,
     );
   }
 

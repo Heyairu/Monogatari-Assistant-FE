@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/application/collaboration/project_collaborative_text_codec.dart";
+import "package:monogatari_assistant/domain/collaboration/collaborative_text.dart";
 import "package:monogatari_assistant/modules/characterview.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
@@ -65,7 +66,7 @@ void main() {
         "name",
       );
       expect(recorder.edits[secondDocumentId], isNull);
-      expect(recorder.edits[firstDocumentId], "First Character");
+      expect(recorder.edits[firstDocumentId], isNull);
       expect(
         container.read(characterDataProvider)["character-2"]?.displayName,
         "Second Character",
@@ -75,7 +76,8 @@ void main() {
 }
 
 final class _RecordingCollaborationNotifier extends CollaborationNotifier {
-  final Map<String, String> edits = <String, String>{};
+  final Map<String, CollaborativeTextDelta> edits =
+      <String, CollaborativeTextDelta>{};
 
   @override
   CollaborationState build() => const CollaborationState();
@@ -83,11 +85,11 @@ final class _RecordingCollaborationNotifier extends CollaborationNotifier {
   @override
   void recordLocalProjectTextEdit({
     required String documentId,
-    required String nextText,
+    required CollaborativeTextDelta delta,
     required int anchorOffset,
     required int focusOffset,
   }) {
-    edits[documentId] = nextText;
+    edits[documentId] = delta;
   }
 }
 

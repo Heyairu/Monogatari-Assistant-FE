@@ -1,6 +1,8 @@
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:monogatari_assistant/domain/collaboration/collaboration_document.dart";
+import "package:monogatari_assistant/domain/collaboration/collaborative_text.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 import "package:monogatari_assistant/presentation/widgets/remote_text_cursor_overlay.dart";
 
@@ -176,4 +178,110 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    "moving a project text cursor does not edit CRDT or emit document state",
+    (tester) async {
+      const documentId = "projectText:worldNode:world-1:note";
+      final notifier = _CursorOnlyCollaborationNotifier(documentId);
+      final container = ProviderContainer(
+        overrides: [collaborationProvider.overrideWith(() => notifier)],
+      );
+      addTearDown(container.dispose);
+      var emissions = 0;
+      final subscription = container.listen<CollaborationState>(
+        collaborationProvider,
+        (_, _) => emissions += 1,
+      );
+      addTearDown(subscription.close);
+      final controller = TextEditingController(text: "abcdef");
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ProviderScope(
+            overrides: [
+              projectTextRemoteCursorsProvider(
+                documentId,
+              ).overrideWithValue(const <RemoteProjectTextCursorState>[]),
+              collaborativeTextValueProvider(
+                documentId,
+              ).overrideWithValue("abcdef"),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: CollaborativeProjectTextFieldRegion(
+                  fieldId: documentId,
+                  crdtDocumentId: documentId,
+                  controller: controller,
+                  focusNode: focusNode,
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      focusNode.requestFocus();
+      await tester.pump();
+      emissions = 0;
+      notifier.cursorUpdates = 0;
+
+      for (var index = 0; index < 1000; index += 1) {
+        controller.selection = TextSelection.collapsed(
+          offset: index.isEven ? 1 : 2,
+        );
+      }
+
+      expect(notifier.editCount, 0);
+      expect(notifier.cursorUpdates, 1000);
+      expect(emissions, 0);
+    },
+  );
+}
+
+final class _CursorOnlyCollaborationNotifier extends CollaborationNotifier {
+  final String documentId;
+  var editCount = 0;
+  var cursorUpdates = 0;
+
+  _CursorOnlyCollaborationNotifier(this.documentId);
+
+  @override
+  CollaborationState build() => CollaborationState(
+    document: CollaborationDocument.seeded(
+      projectUuid: "11111111-1111-4111-8111-111111111111",
+      replicaId: "local",
+      chapterTexts: const <String, String>{},
+      projectTexts: <String, String>{documentId: "abcdef"},
+    ),
+  );
+
+  @override
+  void recordLocalProjectTextEdit({
+    required String documentId,
+    required CollaborativeTextDelta delta,
+    required int anchorOffset,
+    required int focusOffset,
+  }) {
+    editCount += 1;
+  }
+
+  @override
+  void updateLocalProjectTextCursor({
+    required String documentId,
+    required int anchorOffset,
+    required int focusOffset,
+  }) {
+    cursorUpdates += 1;
+  }
+
+  @override
+  void clearLocalProjectTextCursor(String documentId) {}
 }

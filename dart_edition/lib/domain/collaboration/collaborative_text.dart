@@ -44,6 +44,64 @@ final class CollaborativeTextEdit {
   });
 }
 
+/// One contiguous replacement against a known text revision.
+///
+/// Offsets use Dart/Flutter UTF-16 code units. [between] only scans the common
+/// prefix and suffix; it does not materialize either complete string as a
+/// grapheme list. [baseTextLength] prevents applying a UI delta to a different
+/// length revision by accident.
+final class CollaborativeTextDelta {
+  final int baseTextLength;
+  final int startOffset;
+  final int endOffset;
+  final String replacementText;
+
+  const CollaborativeTextDelta({
+    required this.baseTextLength,
+    required this.startOffset,
+    required this.endOffset,
+    required this.replacementText,
+  }) : assert(baseTextLength >= 0),
+       assert(startOffset >= 0),
+       assert(endOffset >= startOffset),
+       assert(endOffset <= baseTextLength);
+
+  factory CollaborativeTextDelta.between(String previous, String next) {
+    if (previous == next) {
+      return CollaborativeTextDelta(
+        baseTextLength: previous.length,
+        startOffset: 0,
+        endOffset: 0,
+        replacementText: "",
+      );
+    }
+    var prefixLength = 0;
+    final sharedLength = previous.length < next.length
+        ? previous.length
+        : next.length;
+    while (prefixLength < sharedLength &&
+        previous.codeUnitAt(prefixLength) == next.codeUnitAt(prefixLength)) {
+      prefixLength += 1;
+    }
+
+    var suffixLength = 0;
+    while (suffixLength < previous.length - prefixLength &&
+        suffixLength < next.length - prefixLength &&
+        previous.codeUnitAt(previous.length - 1 - suffixLength) ==
+            next.codeUnitAt(next.length - 1 - suffixLength)) {
+      suffixLength += 1;
+    }
+    return CollaborativeTextDelta(
+      baseTextLength: previous.length,
+      startOffset: prefixLength,
+      endOffset: previous.length - suffixLength,
+      replacementText: next.substring(prefixLength, next.length - suffixLength),
+    );
+  }
+
+  bool get isNoop => startOffset == endOffset && replacementText.isEmpty;
+}
+
 /// Replicated growable array (RGA) for one independently addressed text field.
 ///
 /// Inserts are chained below a stable atom and concurrent siblings are sorted
@@ -55,15 +113,19 @@ final class CollaborativeText {
   final Map<TextAtomId, TextAtom> _atoms;
   final Set<TextAtomId> _tombstones;
   final Map<TextAtomId, TextAtom> _pendingAtoms;
+  _CollaborativeTextView? _cachedView;
+  int _fullViewBuildCount = 0;
 
   CollaborativeText._({
     required this.documentId,
     required Map<TextAtomId, TextAtom> atoms,
     required Set<TextAtomId> tombstones,
     required Map<TextAtomId, TextAtom> pendingAtoms,
+    _CollaborativeTextView? cachedView,
   }) : _atoms = atoms,
        _tombstones = tombstones,
-       _pendingAtoms = pendingAtoms;
+       _pendingAtoms = pendingAtoms,
+       _cachedView = cachedView;
 
   factory CollaborativeText.seeded({
     required String documentId,
@@ -100,60 +162,95 @@ final class CollaborativeText {
   int get tombstoneCount => _tombstones.length;
   int get pendingAtomCount => _pendingAtoms.length;
 
-  String get text {
-    final buffer = StringBuffer();
-    for (final atom in _orderedAtoms()) {
-      if (!_tombstones.contains(atom.id)) buffer.write(atom.value);
-    }
-    return buffer.toString();
+  /// Number of full RGA tree materializations performed by this version.
+  /// Useful for performance regression tests and runtime diagnostics.
+  int get fullViewBuildCount => _fullViewBuildCount;
+
+  _CollaborativeTextView get _view {
+    final cached = _cachedView;
+    if (cached != null) return cached;
+    _fullViewBuildCount += 1;
+    return _cachedView = _buildView();
   }
 
-  List<TextAtomId> get visibleAtomIds => List<TextAtomId>.unmodifiable(
-    _orderedAtoms()
-        .where((atom) => !_tombstones.contains(atom.id))
-        .map((atom) => atom.id),
-  );
+  String get text => _view.text;
+
+  List<TextAtomId> get visibleAtomIds =>
+      UnmodifiableListView<TextAtomId>(_view.visibleAtomIds);
 
   CollaborativeText apply(CollaborationOperation operation) {
-    if (operation.textDocumentId != documentId) return this;
-    final next = copy();
-    switch (operation) {
-      case final TextInsertOperation insert:
-        next._applyInsert(insert);
-      case final TextDeleteOperation delete:
-        next._tombstones.addAll(delete.atomIds);
-      case ProjectDataRecordOperation():
-        break;
+    return applyAll(<CollaborationOperation>[operation]);
+  }
+
+  /// Applies a batch directly to the notifier-owned CRDT engine.
+  CollaborativeText applyAll(Iterable<CollaborationOperation> operations) {
+    var applied = false;
+    for (final operation in operations) {
+      if (operation.textDocumentId != documentId) continue;
+      applied = true;
+      switch (operation) {
+        case final TextInsertOperation insert:
+          _applyInsert(insert);
+        case final TextDeleteOperation delete:
+          _tombstones.addAll(delete.atomIds);
+        case ProjectDataRecordOperation():
+          break;
+      }
     }
-    return next;
+    if (applied) _cachedView = null;
+    return this;
   }
 
   CollaborativeTextEdit createLocalEdit({
     required String nextText,
     required ReplicaClock clock,
+  }) => createLocalDelta(
+    delta: CollaborativeTextDelta.between(text, nextText),
+    clock: clock,
+  );
+
+  CollaborativeTextEdit createLocalDelta({
+    required CollaborativeTextDelta delta,
+    required ReplicaClock clock,
   }) {
-    final currentGraphemes = text.characters.toList(growable: false);
-    final nextGraphemes = nextText.characters.toList(growable: false);
-    var prefixLength = 0;
-    while (prefixLength < currentGraphemes.length &&
-        prefixLength < nextGraphemes.length &&
-        currentGraphemes[prefixLength] == nextGraphemes[prefixLength]) {
-      prefixLength += 1;
+    final view = _view;
+    if (delta.baseTextLength != view.text.length) {
+      throw StateError(
+        "CRDT text delta revision mismatch: "
+        "${delta.baseTextLength} != ${view.text.length}",
+      );
+    }
+    if (delta.startOffset < 0 ||
+        delta.endOffset < delta.startOffset ||
+        delta.endOffset > view.text.length) {
+      throw RangeError.range(
+        delta.endOffset,
+        delta.startOffset,
+        view.text.length,
+        "delta.endOffset",
+      );
     }
 
-    var suffixLength = 0;
-    while (suffixLength < currentGraphemes.length - prefixLength &&
-        suffixLength < nextGraphemes.length - prefixLength &&
-        currentGraphemes[currentGraphemes.length - 1 - suffixLength] ==
-            nextGraphemes[nextGraphemes.length - 1 - suffixLength]) {
-      suffixLength += 1;
+    final startAtomIndex =
+        _upperBound(view.visibleUtf16Offsets, delta.startOffset) - 1;
+    final endAtomIndex = _lowerBound(view.visibleUtf16Offsets, delta.endOffset);
+    final safeStart = view.visibleUtf16Offsets[startAtomIndex];
+    final safeEnd = view.visibleUtf16Offsets[endAtomIndex];
+    final insertedText = StringBuffer()
+      ..write(view.text.substring(safeStart, delta.startOffset))
+      ..write(delta.replacementText)
+      ..write(view.text.substring(delta.endOffset, safeEnd));
+    final normalizedInsertedText = insertedText.toString();
+    if (view.text.substring(safeStart, safeEnd) == normalizedInsertedText) {
+      return CollaborativeTextEdit(
+        document: this,
+        operations: const <CollaborationOperation>[],
+      );
     }
 
-    final currentIds = visibleAtomIds;
-    final removedEnd = currentIds.length - suffixLength;
-    final removedIds = currentIds.sublist(prefixLength, removedEnd);
-    final insertedEnd = nextGraphemes.length - suffixLength;
-    final inserted = nextGraphemes.sublist(prefixLength, insertedEnd);
+    final currentIds = view.visibleAtomIds;
+    final removedIds = currentIds.sublist(startAtomIndex, endAtomIndex);
+    final inserted = normalizedInsertedText.characters.toList(growable: false);
     if (removedIds.isEmpty && inserted.isEmpty) {
       return CollaborativeTextEdit(
         document: this,
@@ -161,7 +258,6 @@ final class CollaborativeText {
       );
     }
 
-    var nextDocument = this;
     final operations = <CollaborationOperation>[];
     if (removedIds.isNotEmpty) {
       final stamp = clock.nextOperation();
@@ -172,13 +268,13 @@ final class CollaborativeText {
         atomIds: removedIds,
       );
       operations.add(operation);
-      nextDocument = nextDocument.apply(operation);
     }
 
+    final insertedAtoms = <TextAtom>[];
     if (inserted.isNotEmpty) {
-      TextAtomId? parentId = prefixLength == 0
+      TextAtomId? parentId = startAtomIndex == 0
           ? null
-          : currentIds[prefixLength - 1];
+          : currentIds[startAtomIndex - 1];
       for (final chunk in _wireSafeInsertChunks(inserted)) {
         final stamp = clock.nextOperation();
         final atoms = <TextAtom>[];
@@ -188,7 +284,13 @@ final class CollaborativeText {
             operationSequence: stamp.id.sequence,
             atomIndex: index,
           );
-          atoms.add(TextAtom(id: id, parentId: parentId, value: chunk[index]));
+          final atom = TextAtom(
+            id: id,
+            parentId: parentId,
+            value: chunk[index],
+          );
+          atoms.add(atom);
+          insertedAtoms.add(atom);
           parentId = id;
         }
         final operation = TextInsertOperation(
@@ -198,12 +300,45 @@ final class CollaborativeText {
           atoms: atoms,
         );
         operations.add(operation);
-        nextDocument = nextDocument.apply(operation);
       }
     }
 
+    for (final operation in operations) {
+      switch (operation) {
+        case final TextInsertOperation insert:
+          _applyInsert(insert);
+        case final TextDeleteOperation delete:
+          _tombstones.addAll(delete.atomIds);
+        case ProjectDataRecordOperation():
+          break;
+      }
+    }
+    final firstInsertedAtom = insertedAtoms.firstOrNull;
+    final previousLeadingChild =
+        view.leadingChildIds[firstInsertedAtom?.parentId];
+    final canCarryViewForward =
+        firstInsertedAtom == null ||
+        previousLeadingChild == null ||
+        firstInsertedAtom.id.compareTo(previousLeadingChild) > 0;
+    if (canCarryViewForward) {
+      final nextText = view.text.replaceRange(
+        delta.startOffset,
+        delta.endOffset,
+        delta.replacementText,
+      );
+      view.replaceVisibleRange(
+        startAtomIndex,
+        endAtomIndex,
+        insertedAtoms,
+        nextText: nextText,
+      );
+      _cachedView = view;
+    } else {
+      _cachedView = null;
+    }
+
     return CollaborativeTextEdit(
-      document: nextDocument,
+      document: this,
       operations: List<CollaborationOperation>.unmodifiable(operations),
     );
   }
@@ -230,33 +365,23 @@ final class CollaborativeText {
   }
 
   TextCursorAnchor anchorAtOffset(int utf16Offset) {
-    final bounded = utf16Offset.clamp(0, text.length).toInt();
-    var consumed = 0;
-    TextAtomId? previous;
-    for (final atom in _orderedAtoms()) {
-      if (_tombstones.contains(atom.id)) continue;
-      final nextConsumed = consumed + atom.value.length;
-      if (bounded <= consumed) {
-        return TextCursorAnchor(atomId: previous, fallbackOffset: bounded);
-      }
-      if (bounded < nextConsumed) {
-        return TextCursorAnchor(atomId: previous, fallbackOffset: bounded);
-      }
-      consumed = nextConsumed;
-      previous = atom.id;
-    }
-    return TextCursorAnchor(atomId: previous, fallbackOffset: bounded);
+    final view = _view;
+    final bounded = utf16Offset.clamp(0, view.text.length).toInt();
+    final insertionIndex = _upperBound(view.visibleUtf16Offsets, bounded) - 1;
+    final previousIndex = insertionIndex - 1;
+    return TextCursorAnchor(
+      atomId: previousIndex < 0 ? null : view.visibleAtoms[previousIndex].id,
+      fallbackOffset: bounded,
+    );
   }
 
   int resolveAnchor(TextCursorAnchor anchor) {
     final targetId = anchor.atomId;
     if (targetId == null) return 0;
-    var offset = 0;
-    for (final atom in _orderedAtoms()) {
-      if (!_tombstones.contains(atom.id)) offset += atom.value.length;
-      if (atom.id == targetId) return offset;
-    }
-    return anchor.fallbackOffset.clamp(0, text.length).toInt();
+    final view = _view;
+    final index = view.visibleAtomIndex[targetId];
+    if (index != null) return view.visibleUtf16Offsets[index + 1];
+    return anchor.fallbackOffset.clamp(0, view.text.length).toInt();
   }
 
   void _applyInsert(TextInsertOperation operation) {
@@ -290,7 +415,7 @@ final class CollaborativeText {
     }
   }
 
-  Iterable<TextAtom> _orderedAtoms() sync* {
+  _CollaborativeTextView _buildView() {
     final children = <TextAtomId?, SplayTreeSet<TextAtomId>>{};
     for (final atom in _atoms.values) {
       children
@@ -317,8 +442,138 @@ final class CollaborativeText {
       }
     }
 
-    yield* visit(null);
+    final visibleAtoms = visit(
+      null,
+    ).where((atom) => !_tombstones.contains(atom.id)).toList(growable: false);
+    return _CollaborativeTextView.fromVisibleAtoms(
+      visibleAtoms,
+      leadingChildIds: <TextAtomId?, TextAtomId>{
+        for (final entry in children.entries)
+          if (entry.value.isNotEmpty) entry.key: entry.value.first,
+      },
+    );
   }
+}
+
+final class _CollaborativeTextView {
+  String text;
+  final List<TextAtom> visibleAtoms;
+  final List<TextAtomId> visibleAtomIds;
+  final List<int> visibleUtf16Offsets;
+  final Map<TextAtomId, int> visibleAtomIndex;
+  final Map<TextAtomId?, TextAtomId> leadingChildIds;
+
+  _CollaborativeTextView._({
+    required this.text,
+    required this.visibleAtoms,
+    required this.visibleAtomIds,
+    required this.visibleUtf16Offsets,
+    required this.visibleAtomIndex,
+    required this.leadingChildIds,
+  });
+
+  factory _CollaborativeTextView.fromVisibleAtoms(
+    Iterable<TextAtom> atoms, {
+    String? text,
+    Map<TextAtomId?, TextAtomId> leadingChildIds =
+        const <TextAtomId?, TextAtomId>{},
+  }) {
+    final visibleAtoms = List<TextAtom>.of(atoms);
+    final ids = <TextAtomId>[];
+    final offsets = <int>[0];
+    final indices = <TextAtomId, int>{};
+    final buffer = text == null ? StringBuffer() : null;
+    var offset = 0;
+    for (var index = 0; index < visibleAtoms.length; index += 1) {
+      final atom = visibleAtoms[index];
+      ids.add(atom.id);
+      indices[atom.id] = index;
+      offset += atom.value.length;
+      offsets.add(offset);
+      buffer?.write(atom.value);
+    }
+    assert(text == null || text.length == offset);
+    return _CollaborativeTextView._(
+      text: text ?? buffer.toString(),
+      visibleAtoms: visibleAtoms,
+      visibleAtomIds: ids,
+      visibleUtf16Offsets: offsets,
+      visibleAtomIndex: indices,
+      leadingChildIds: Map<TextAtomId?, TextAtomId>.of(leadingChildIds),
+    );
+  }
+
+  void replaceVisibleRange(
+    int start,
+    int end,
+    List<TextAtom> insertedAtoms, {
+    required String nextText,
+  }) {
+    final removedIds = visibleAtomIds.sublist(start, end);
+    final safeStart = visibleUtf16Offsets[start];
+    final safeEnd = visibleUtf16Offsets[end];
+    final replacementOffsets = <int>[];
+    var replacementEnd = safeStart;
+    for (final atom in insertedAtoms) {
+      replacementEnd += atom.value.length;
+      replacementOffsets.add(replacementEnd);
+    }
+    final offsetDelta = replacementEnd - safeEnd;
+
+    visibleAtoms.replaceRange(start, end, insertedAtoms);
+    visibleAtomIds.replaceRange(
+      start,
+      end,
+      insertedAtoms.map((atom) => atom.id),
+    );
+    visibleUtf16Offsets.replaceRange(start + 1, end + 1, replacementOffsets);
+    for (
+      var index = start + 1 + replacementOffsets.length;
+      index < visibleUtf16Offsets.length;
+      index += 1
+    ) {
+      visibleUtf16Offsets[index] += offsetDelta;
+    }
+
+    for (final id in removedIds) {
+      visibleAtomIndex.remove(id);
+    }
+    for (var index = start; index < visibleAtoms.length; index += 1) {
+      visibleAtomIndex[visibleAtoms[index].id] = index;
+    }
+    for (final atom in insertedAtoms) {
+      leadingChildIds[atom.parentId] = atom.id;
+    }
+    text = nextText;
+  }
+}
+
+int _lowerBound(List<int> values, int target) {
+  var low = 0;
+  var high = values.length;
+  while (low < high) {
+    final middle = low + ((high - low) >> 1);
+    if (values[middle] < target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+int _upperBound(List<int> values, int target) {
+  var low = 0;
+  var high = values.length;
+  while (low < high) {
+    final middle = low + ((high - low) >> 1);
+    if (values[middle] <= target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
 }
 
 final class TextCursorAnchor {

@@ -30,6 +30,7 @@ class EditorTextBox extends ConsumerStatefulWidget {
   final FocusNode focusNode;
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
+  final ValueChanged<int>? onInteractionOffset;
 
   const EditorTextBox({
     super.key,
@@ -37,6 +38,7 @@ class EditorTextBox extends ConsumerStatefulWidget {
     required this.focusNode,
     this.onUndo,
     this.onRedo,
+    this.onInteractionOffset,
   });
 
   @override
@@ -169,18 +171,35 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                         child: Stack(
                           children: [
                             Positioned.fill(
-                              child: CodeField(
-                                controller: widget.controller,
-                                focusNode: widget.focusNode,
-                                expands: true,
-                                maxLines: null,
-                                minLines: null,
-                                wrap: true,
-                                horizontalScroll: false,
-                                lineNumbers: false,
-                                background: editorBackground,
-                                textStyle: textStyle,
-                                cursorColor: colorScheme.primary,
+                              child: Listener(
+                                onPointerUp: (_) {
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    if (!mounted) return;
+                                    final selection =
+                                        widget.controller.selection;
+                                    if (selection.isValid &&
+                                        selection.isCollapsed) {
+                                      widget.onInteractionOffset?.call(
+                                        selection.extentOffset,
+                                      );
+                                    }
+                                  });
+                                },
+                                child: CodeField(
+                                  controller: widget.controller,
+                                  focusNode: widget.focusNode,
+                                  expands: true,
+                                  maxLines: null,
+                                  minLines: null,
+                                  wrap: true,
+                                  horizontalScroll: false,
+                                  lineNumbers: false,
+                                  background: editorBackground,
+                                  textStyle: textStyle,
+                                  cursorColor: colorScheme.primary,
+                                ),
                               ),
                             ),
                             Positioned.fill(

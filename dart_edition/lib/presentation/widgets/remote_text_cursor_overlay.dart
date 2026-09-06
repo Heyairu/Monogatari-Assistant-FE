@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter/rendering.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
+import "../../domain/collaboration/collaborative_text.dart";
 import "../providers/collaboration_providers.dart";
 
 final class RemoteTextCursorPosition {
@@ -293,13 +294,16 @@ class _CollaborativeProjectTextFieldRegionState
   final GlobalKey<RemoteTextCursorOverlayState> _overlayKey =
       GlobalKey<RemoteTextCursorOverlayState>();
   bool _textSyncScheduled = false;
+  bool _applyingCollaborativeText = false;
   late final CollaborationNotifier _collaborationNotifier;
+  late TextEditingValue _lastControllerValue;
 
   @override
   void initState() {
     super.initState();
     _collaborationNotifier = ref.read(collaborationProvider.notifier);
-    widget.controller.addListener(_publishSelection);
+    _lastControllerValue = widget.controller.value;
+    widget.controller.addListener(_handleControllerChanged);
     widget.focusNode.addListener(_handleFocusChange);
     if (widget.focusNode.hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -314,8 +318,9 @@ class _CollaborativeProjectTextFieldRegionState
   ) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_publishSelection);
-      widget.controller.addListener(_publishSelection);
+      oldWidget.controller.removeListener(_handleControllerChanged);
+      _lastControllerValue = widget.controller.value;
+      widget.controller.addListener(_handleControllerChanged);
     }
     if (!identical(oldWidget.focusNode, widget.focusNode)) {
       oldWidget.focusNode.removeListener(_handleFocusChange);
@@ -335,7 +340,7 @@ class _CollaborativeProjectTextFieldRegionState
   @override
   void dispose() {
     _clearCursorFor(widget);
-    widget.controller.removeListener(_publishSelection);
+    widget.controller.removeListener(_handleControllerChanged);
     widget.focusNode.removeListener(_handleFocusChange);
     super.dispose();
   }
@@ -357,7 +362,17 @@ class _CollaborativeProjectTextFieldRegionState
     }
   }
 
-  void _publishSelection() {
+  void _handleControllerChanged() {
+    final previous = _lastControllerValue;
+    final current = widget.controller.value;
+    _lastControllerValue = current;
+    final delta = !_applyingCollaborativeText && previous.text != current.text
+        ? CollaborativeTextDelta.between(previous.text, current.text)
+        : null;
+    _publishSelection(delta);
+  }
+
+  void _publishSelection([CollaborativeTextDelta? textDelta]) {
     if (!widget.focusNode.hasFocus) return;
     final selection = widget.controller.selection;
     if (!selection.isValid) return;
@@ -380,13 +395,21 @@ class _CollaborativeProjectTextFieldRegionState
       // between owners. Its old region is still mounted while the parent
       // loads the next owner's text, so publishing that programmatic change
       // would write the new text into the previous owner's CRDT document.
-      if (widget.shouldPublishTextChanges?.call() == false) return;
-      notifier.recordLocalProjectTextEdit(
-        documentId: documentId,
-        nextText: widget.controller.text,
-        anchorOffset: anchorOffset,
-        focusOffset: focusOffset,
-      );
+      if (textDelta != null) {
+        if (widget.shouldPublishTextChanges?.call() == false) return;
+        notifier.recordLocalProjectTextEdit(
+          documentId: documentId,
+          delta: textDelta,
+          anchorOffset: anchorOffset,
+          focusOffset: focusOffset,
+        );
+      } else {
+        notifier.updateLocalProjectTextCursor(
+          documentId: documentId,
+          anchorOffset: anchorOffset,
+          focusOffset: focusOffset,
+        );
+      }
     }
   }
 
@@ -429,11 +452,16 @@ class _CollaborativeProjectTextFieldRegionState
             );
       if (widget.controller.text != text ||
           widget.controller.selection != nextSelection) {
-        widget.controller.value = widget.controller.value.copyWith(
-          text: text,
-          selection: nextSelection,
-          composing: TextRange.empty,
-        );
+        _applyingCollaborativeText = true;
+        try {
+          widget.controller.value = widget.controller.value.copyWith(
+            text: text,
+            selection: nextSelection,
+            composing: TextRange.empty,
+          );
+        } finally {
+          _applyingCollaborativeText = false;
+        }
       }
       if (useRebase && activeRebase != null) {
         ref

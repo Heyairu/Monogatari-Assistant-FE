@@ -1,0 +1,11 @@
+[package]
+name = "rhodanthe-core"
+version = "0.1.0"
+description = "Core annotation arbitration engine for MonoAshi Rhodanthe"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "rhodanthe_core"
+path = "src/lib.rs"

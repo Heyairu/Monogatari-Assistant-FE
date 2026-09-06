@@ -116,6 +116,10 @@ dart run build_runner build --delete-conflicting-outputs
 | File / Data Format | XML、JSON assets |
 | UI | Material Design 3 |
 
+### 設計規格
+
+- [MonoAshi™ Rhodanthe* 即時 RichText 引擎](dart_edition/RHODANTHE_SPEC.md)：Rust 文字分析、Ring 0–8 優先級、搜尋、贅字與 Mention 標註協定。
+
 ### 主要依賴
 
 ```yaml

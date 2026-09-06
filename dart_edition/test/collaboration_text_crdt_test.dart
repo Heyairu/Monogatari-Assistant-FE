@@ -136,6 +136,75 @@ void main() {
     expect(edit.operations, hasLength(1));
   });
 
+  test("UTF-16 delta expands safely around a grapheme", () {
+    final document = CollaborativeText.seeded(
+      documentId: "chapter-emoji-delta",
+      text: "Ae\u0301B",
+    );
+    final previous = document.text;
+    final next = previous.replaceRange(2, 3, "x");
+    final edit = document.createLocalDelta(
+      delta: CollaborativeTextDelta.between(previous, next),
+      clock: ReplicaClock(replicaId: "replica-a"),
+    );
+
+    expect(edit.document.text, next);
+  });
+
+  test("local deltas carry the cached ordered view forward", () {
+    var document = CollaborativeText.seeded(
+      documentId: "chapter-long",
+      text: List<String>.filled(10000, "a").join(),
+    );
+    expect(document.text.length, 10000);
+    expect(document.fullViewBuildCount, 1);
+
+    for (var index = 0; index < 100; index += 1) {
+      final previous = document.text;
+      final edit = document.createLocalDelta(
+        delta: CollaborativeTextDelta(
+          baseTextLength: previous.length,
+          startOffset: previous.length,
+          endOffset: previous.length,
+          replacementText: "b",
+        ),
+        clock: ReplicaClock(replicaId: "replica-$index", lastSequence: index),
+      );
+      document = edit.document;
+      expect(document.text.length, 10001 + index);
+      expect(document.fullViewBuildCount, 1);
+    }
+    expect(document.copy().text, document.text);
+  });
+
+  test("operation log snapshots append without changing older snapshots", () {
+    final initial = _document("replica-a", text: "");
+    final first = initial.createLocalTextDelta(
+      documentId: "chapter-1",
+      delta: const CollaborativeTextDelta(
+        baseTextLength: 0,
+        startOffset: 0,
+        endOffset: 0,
+        replacementText: "a",
+      ),
+    );
+    final second = first.createLocalTextDelta(
+      documentId: "chapter-1",
+      delta: const CollaborativeTextDelta(
+        baseTextLength: 1,
+        startOffset: 1,
+        endOffset: 1,
+        replacementText: "b",
+      ),
+    );
+
+    expect(initial.operationCount, 0);
+    expect(first.operationCount, 1);
+    expect(second.operationCount, 2);
+    expect(first.operationsAfter(const <String, int>{}), hasLength(1));
+    expect(second.operationsAfter(const <String, int>{}), hasLength(2));
+  });
+
   test("large paste is split into bounded insert operations", () {
     final text = List<String>.filled(6000, "字").join();
     final edited = _document(

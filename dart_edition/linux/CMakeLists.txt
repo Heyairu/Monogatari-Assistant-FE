@@ -76,6 +76,27 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Build Rhodanthe when a host Rust toolchain is available. Packaged Linux apps
+# load the resulting shared object from bundle/lib via the existing RPATH.
+option(RHODANTHE_NATIVE "Build and package the Rhodanthe Rust bridge" ON)
+set(RHODANTHE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml")
+set(RHODANTHE_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/release/librhodanthe_bridge.so")
+if(RHODANTHE_NATIVE)
+  find_program(CARGO_EXECUTABLE NAMES cargo HINTS "$ENV{HOME}/.cargo/bin")
+  if(CARGO_EXECUTABLE)
+    add_custom_target(rhodanthe_native ALL
+      COMMAND "${CARGO_EXECUTABLE}" build --release -p rhodanthe-bridge
+        --manifest-path "${RHODANTHE_MANIFEST}"
+      BYPRODUCTS "${RHODANTHE_LIBRARY}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../rust"
+      COMMENT "Building MonoAshi Rhodanthe native bridge"
+      VERBATIM)
+    add_dependencies(${BINARY_NAME} rhodanthe_native)
+  else()
+    message(WARNING "Cargo was not found; Rhodanthe will use the Dart fallback")
+  endif()
+endif()
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -112,6 +133,12 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
+
+if(TARGET rhodanthe_native)
+  install(FILES "${RHODANTHE_LIBRARY}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
   install(FILES "${bundled_library}"

@@ -11,6 +11,7 @@ import "../../data/p2p/p2p_endpoint_service.dart";
 import "../../domain/collaboration/collaboration_document.dart";
 import "../../domain/collaboration/collaboration_operation.dart";
 import "../../domain/collaboration/collaboration_protocol.dart";
+import "../../domain/collaboration/collaborative_text.dart";
 import "../../domain/collaboration/typed_operation_log.dart";
 import "../../models/chapter_selection_data.dart";
 import "../../models/project_data.dart";
@@ -319,7 +320,7 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
 
   void recordLocalTextEdit({
     required String chapterId,
-    required String nextText,
+    required CollaborativeTextDelta delta,
     required int anchorOffset,
     required int focusOffset,
   }) {
@@ -336,23 +337,27 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
         initialText: location.chapter.chapterContent,
       );
     }
-    final next = current.createLocalTextEdit(
+    if (current.chapterText(chapterId)?.length != delta.baseTextLength) {
+      return;
+    }
+    final edited = current.createLocalTextDelta(
       documentId: chapterId,
-      nextText: nextText,
+      delta: delta,
     );
-    state = state.copyWith(document: next, errorMessage: null);
-    _lastLocalActivityAt = DateTime.now();
+    if (!identical(edited, state.document)) {
+      state = state.copyWith(document: edited, errorMessage: null);
+      _lastLocalActivityAt = DateTime.now();
+    }
     updateLocalCursor(
       chapterId: chapterId,
       anchorOffset: anchorOffset,
       focusOffset: focusOffset,
     );
-    _publishLocalBatch();
   }
 
   void recordLocalProjectTextEdit({
     required String documentId,
-    required String nextText,
+    required CollaborativeTextDelta delta,
     required int anchorOffset,
     required int focusOffset,
   }) {
@@ -361,22 +366,23 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
         !ProjectCollaborativeTextCodec.isProjectTextDocumentId(documentId)) {
       return;
     }
-    current = current.ensureProjectText(
+    current = current.ensureProjectText(documentId: documentId);
+    if (current.text(documentId)?.length != delta.baseTextLength) {
+      return;
+    }
+    final next = current.createLocalTextDelta(
       documentId: documentId,
-      initialText: nextText,
+      delta: delta,
     );
-    final next = current.createLocalTextEdit(
-      documentId: documentId,
-      nextText: nextText,
-    );
-    state = state.copyWith(document: next, errorMessage: null);
-    _lastLocalActivityAt = DateTime.now();
+    if (!identical(next, state.document)) {
+      state = state.copyWith(document: next, errorMessage: null);
+      _lastLocalActivityAt = DateTime.now();
+    }
     updateLocalProjectTextCursor(
       documentId: documentId,
       anchorOffset: anchorOffset,
       focusOffset: focusOffset,
     );
-    _publishLocalBatch();
   }
 
   void recordLocalProjectOperation(ProjectRecordOperation operation) {
@@ -1358,18 +1364,20 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
   void _publishLocalBatch() {
     try {
       final p2pState = ref.read(p2pSyncProvider);
-      final batch = _buildLocalBatch();
+      final document = state.document;
       final localOfferMatches =
-          p2pState.localProjectOffer.projectUuid == batch?.projectUuid;
+          p2pState.localProjectOffer.projectUuid == document?.projectUuid;
       final receivingRemoteProject =
           p2pState.selectedProjectSource == P2pProjectSource.remote &&
-          p2pState.remoteProjectOffer?.projectUuid == batch?.projectUuid;
-      if (batch == null ||
+          p2pState.remoteProjectOffer?.projectUuid == document?.projectUuid;
+      if (document == null ||
           !p2pState.hasAuthenticatedTransport ||
-          p2pState.sessionProjectUuid != batch.projectUuid ||
+          p2pState.sessionProjectUuid != document.projectUuid ||
           (!localOfferMatches && !receivingRemoteProject)) {
         return;
       }
+      final batch = _buildLocalBatch();
+      if (batch == null) return;
       _endpoint.updateLocalCollaborationBatch(batch);
     } on FormatException catch (error) {
       state = state.copyWith(
