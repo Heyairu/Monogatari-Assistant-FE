@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:monogatari_assistant/bin/file.dart';
 import 'package:monogatari_assistant/data/repositories/file_repository.dart';
+import 'package:monogatari_assistant/models/chapter_selection_data.dart';
 import 'package:monogatari_assistant/presentation/providers/core_providers.dart';
 import 'package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart';
 import 'package:monogatari_assistant/presentation/providers/project_io_providers.dart';
@@ -200,6 +201,55 @@ void main() {
   });
 
   test(
+    'reader exports hide annotations while XML preserves raw syntax',
+    () async {
+      const uuid = '4e251fc2-1e2b-4f78-93da-91f8c76d9a92';
+      const raw = '她看見 //@+^CE<$uuid|艾莉絲>{主角}//。';
+      final repository = _BlockingFileRepository();
+      final container = ProviderContainer(
+        overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(container.dispose);
+      final data = ProjectData.empty()
+        ..contentText = raw
+        ..segmentsData = [
+          SegmentData(
+            segmentName: '第一卷',
+            chapters: [ChapterData(chapterName: '第一章', chapterContent: raw)],
+          ),
+        ];
+      final controller = container.read(projectIoControllerProvider.notifier);
+
+      await controller.exportAs(
+        extension: 'txt',
+        currentData: data,
+        defaultFileName: 'reader',
+      );
+      expect(repository.lastExportContent, contains('她看見 艾莉絲。'));
+      expect(repository.lastExportContent, isNot(contains(uuid)));
+      expect(repository.lastExportContent, isNot(contains('{主角}')));
+
+      await controller.exportSelective(
+        currentData: data,
+        defaultFileName: 'reader',
+        selectedModules: const {'BaseInfo', 'Chapters'},
+        format: 'md',
+      );
+      expect(repository.lastExportContent, contains('艾莉絲'));
+      expect(repository.lastExportContent, isNot(contains(uuid)));
+
+      await controller.exportSelective(
+        currentData: data,
+        defaultFileName: 'archive',
+        selectedModules: const {'BaseInfo', 'Chapters'},
+        format: 'xml',
+      );
+      expect(repository.lastExportContent, contains(uuid));
+      expect(repository.lastExportContent, contains('{主角}'));
+    },
+  );
+
+  test(
     'verified remote snapshot overwrites only the known current location',
     () async {
       const projectUuid = '123e4567-e89b-42d3-a456-426614174000';
@@ -254,6 +304,7 @@ class _BlockingFileRepository implements FileRepository {
   int autoBackupWriteCount = 0;
   String? lastAutoBackupProjectName;
   String? lastAutoBackupContent;
+  String? lastExportContent;
 
   @override
   Future<ProjectFile> createNewProject() {
@@ -349,7 +400,8 @@ class _BlockingFileRepository implements FileRepository {
     required String fileName,
     required String extension,
   }) {
-    throw UnimplementedError();
+    lastExportContent = content;
+    return Future.value();
   }
 
   @override

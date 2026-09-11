@@ -1,12 +1,99 @@
+import "package:code_text_field/code_text_field.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:monogatari_assistant/domain/collaboration/collaboration_document.dart";
 import "package:monogatari_assistant/domain/collaboration/collaborative_text.dart";
+import "package:monogatari_assistant/features/inline_annotations/mosaic_editing_controller.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 import "package:monogatari_assistant/presentation/widgets/remote_text_cursor_overlay.dart";
 
 void main() {
+  testWidgets("Mosaic remote cursors avoid hidden UUID and note syntax", (
+    tester,
+  ) async {
+    const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+    const raw = "A//@<$uuid|艾莉絲>{主角}//Z";
+    final controller = MosaicEditingController(rawText: raw);
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    final entry = controller.projection.projectedAnnotations.single;
+    final cursors = <RemoteChapterCursorState>[
+      RemoteChapterCursorState(
+        replicaId: "remote-uuid",
+        ipAddress: "192.168.1.30",
+        chapterId: "chapter-1",
+        anchorOffset: raw.indexOf(uuid) + 5,
+        focusOffset: raw.indexOf(uuid) + 5,
+        presenceSequence: 1,
+        observedAt: DateTime(2026),
+      ),
+      RemoteChapterCursorState(
+        replicaId: "remote-note",
+        ipAddress: "192.168.1.31",
+        chapterId: "chapter-1",
+        anchorOffset: raw.indexOf("主角") + 1,
+        focusOffset: raw.indexOf("主角") + 1,
+        presenceSequence: 1,
+        observedAt: DateTime(2026),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 200,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CodeField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    lineNumbers: false,
+                    wrap: true,
+                  ),
+                ),
+                Positioned.fill(
+                  child: RemoteTextCursorOverlay(
+                    controller: controller,
+                    cursors: cursors,
+                    offsetMapper: controller.projection.rawOffsetToDisplay,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final editable = tester.state<EditableTextState>(find.byType(EditableText));
+    Offset expectedCaret(int displayOffset) =>
+        editable.renderEditable.localToGlobal(
+          editable.renderEditable
+              .getLocalRectForCaret(TextPosition(offset: displayOffset))
+              .topLeft,
+        );
+
+    final expectedUuid = expectedCaret(entry.labelRange.start);
+    final expectedNote = expectedCaret(entry.labelRange.end);
+    final actualUuid = tester.getTopLeft(
+      find.byKey(const ValueKey<String>("remote-caret-remote-uuid")),
+    );
+    final actualNote = tester.getTopLeft(
+      find.byKey(const ValueKey<String>("remote-caret-remote-note")),
+    );
+    expect(actualUuid.dx, closeTo(expectedUuid.dx, 0.01));
+    expect(actualUuid.dy, closeTo(expectedUuid.dy, 0.01));
+    expect(actualNote.dx, closeTo(expectedNote.dx, 0.01));
+    expect(actualNote.dy, closeTo(expectedNote.dy, 0.01));
+  });
+
   testWidgets("project field displays observed-IP cursor at exact caret rect", (
     tester,
   ) async {

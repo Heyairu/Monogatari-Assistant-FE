@@ -14,12 +14,12 @@
  * limitations under the License.
  ************************************************************/
 
-import "package:code_text_field/code_text_field.dart";
 import "package:flutter/foundation.dart" show kIsWeb;
 import "package:flutter/material.dart";
 import 'dart:async';
 
 import "ui_library.dart";
+import "../features/inline_annotations/mosaic_editing_controller.dart";
 import "../infrastructure/rhodanthe/rhodanthe_protocol.dart";
 import "../infrastructure/rhodanthe/rhodanthe_text_span_adapter.dart";
 import "../infrastructure/rhodanthe/rhodanthe_theme.dart";
@@ -63,8 +63,8 @@ class FindReplaceOptions {
 // ==================== 自定義 UI Controller ====================
 
 // 自定義 TextEditingController，支持高亮顯示
-class HighlightTextEditingController extends CodeController {
-  HighlightTextEditingController({super.text});
+class HighlightTextEditingController extends MosaicEditingController {
+  HighlightTextEditingController({String? text}) : super(rawText: text ?? "");
 
   int _textRevision = 0;
 
@@ -93,14 +93,13 @@ class HighlightTextEditingController extends CodeController {
   }
 
   @override
-  set text(String newText) {
-    super.text = newText;
-  }
-
-  @override
-  set value(TextEditingValue newValue) {
-    final bool textChanged = newValue.text != text;
+  void applyProjectedValue(TextEditingValue projectedValue) {
+    final bool textChanged = projectedValue.text != text;
     if (textChanged) {
+      // An editor mutation makes both worker snapshots stale. Cancel their
+      // owned isolates immediately instead of waiting for discarded results.
+      cancelFindAllMatches(this);
+      cancelReplaceAll(this);
       _textRevision++;
       _rhodantheRenderPlan = null;
       _rhodantheFailure = null;
@@ -113,7 +112,7 @@ class HighlightTextEditingController extends CodeController {
         _invalidateSpanCache();
       }
     }
-    super.value = newValue;
+    super.applyProjectedValue(projectedValue);
   }
 
   List<TextSelection> searchMatches = [];
@@ -134,6 +133,7 @@ class HighlightTextEditingController extends CodeController {
   String? _cachedSpanText;
   TextStyle? _cachedSpanStyle;
   int? _cachedSpanRevision;
+  int? _cachedInlinePaletteKey;
   TextSpan? _cachedSpan;
 
   // Cached, precomputed indices to avoid recomputing during every paint
@@ -212,18 +212,35 @@ class HighlightTextEditingController extends CodeController {
         _fillerIndex.isEmpty && fillerWordMatches.isNotEmpty
         ? _SelectionCoverageIndex.fromRaw(fillerWordMatches, text.length)
         : _fillerIndex;
+    final inlineRanges = inlineStyleRanges(context);
 
     if (searchIndex.isEmpty &&
         punctuationIndex.isEmpty &&
-        fillerIndex.isEmpty) {
+        fillerIndex.isEmpty &&
+        inlineRanges.isEmpty) {
       return TextSpan(text: text, style: style);
     }
+    if (searchIndex.isEmpty &&
+        punctuationIndex.isEmpty &&
+        fillerIndex.isEmpty) {
+      return super.buildTextSpan(
+        context: context,
+        style: style,
+        withComposing: withComposing,
+      );
+    }
+
+    final inlinePaletteKey = Object.hash(
+      Theme.of(context).brightness,
+      MediaQuery.maybeOf(context)?.highContrast ?? false,
+    );
 
     final TextSpan? cachedSpan = _cachedSpan;
     if (cachedSpan != null &&
         _cachedSpanText == text &&
         _cachedSpanStyle == style &&
-        _cachedSpanRevision == _highlightRevision) {
+        _cachedSpanRevision == _highlightRevision &&
+        _cachedInlinePaletteKey == inlinePaletteKey) {
       return cachedSpan;
     }
 
@@ -232,6 +249,11 @@ class HighlightTextEditingController extends CodeController {
     searchIndex.addBoundaries(boundaries);
     punctuationIndex.addBoundaries(boundaries);
     fillerIndex.addBoundaries(boundaries);
+    for (final inlineRange in inlineRanges) {
+      boundaries
+        ..add(inlineRange.range.start)
+        ..add(inlineRange.range.end);
+    }
     final List<int> sortedBoundaries = boundaries.toList()..sort();
 
     final TextSelection? currentMatch =
@@ -249,6 +271,16 @@ class HighlightTextEditingController extends CodeController {
 
       final String segmentText = text.substring(segmentStart, segmentEnd);
       TextStyle? segmentStyle = style;
+
+      for (final inlineRange in inlineRanges) {
+        if (inlineRange.range.start <= segmentStart &&
+            inlineRange.range.end >= segmentEnd) {
+          segmentStyle = (segmentStyle ?? const TextStyle()).merge(
+            inlineRange.style,
+          );
+          break;
+        }
+      }
 
       final bool isCurrentMatch =
           currentMatch != null &&
@@ -282,6 +314,7 @@ class HighlightTextEditingController extends CodeController {
     _cachedSpanText = text;
     _cachedSpanStyle = style;
     _cachedSpanRevision = _highlightRevision;
+    _cachedInlinePaletteKey = inlinePaletteKey;
     _cachedSpan = span;
     return span;
   }
@@ -291,6 +324,7 @@ class HighlightTextEditingController extends CodeController {
     _cachedSpanText = null;
     _cachedSpanStyle = null;
     _cachedSpanRevision = null;
+    _cachedInlinePaletteKey = null;
     _cachedSpan = null;
   }
 
@@ -1888,8 +1922,63 @@ Future<void> performReplaceAll(
     }
   }
 
-  textController.text = newText;
-  textController.selection = TextSelection.collapsed(offset: 0);
+  if (textController.annotations.isNotEmpty) {
+    final matches = findAllMatchesSync(
+      text,
+      findText,
+      options,
+      maxResults: result.replacementCount + 1,
+    );
+    if (matches.length != result.replacementCount) {
+      AppFeedback.error(context, "全部取代已取消：無法安全映射標記範圍。");
+      return;
+    }
+    final replacements = <String>[];
+    RegExp? expression;
+    if (options.useRegexp) {
+      expression = RegExp(findText, caseSensitive: true);
+    }
+    for (final match in matches) {
+      if (expression == null) {
+        replacements.add(replaceText);
+        continue;
+      }
+      final regexpMatch = expression.firstMatch(text.substring(match.start));
+      if (regexpMatch == null ||
+          regexpMatch.start != 0 ||
+          regexpMatch.end != match.end - match.start) {
+        AppFeedback.error(context, "全部取代已取消：無法安全映射正則標記範圍。");
+        return;
+      }
+      replacements.add(_expandRegexpReplacement(replaceText, regexpMatch));
+    }
+
+    var verifiedText = text;
+    for (var index = matches.length - 1; index >= 0; index--) {
+      verifiedText = verifiedText.replaceRange(
+        matches[index].start,
+        matches[index].end,
+        replacements[index],
+      );
+    }
+    if (verifiedText != newText) {
+      AppFeedback.error(context, "全部取代已取消：標記投影驗證失敗。");
+      return;
+    }
+    for (var index = matches.length - 1; index >= 0; index--) {
+      textController.replaceDisplayRange(
+        TextRange(start: matches[index].start, end: matches[index].end),
+        replacements[index],
+      );
+    }
+    textController.setRawText(
+      textController.rawText,
+      rawSelection: const TextSelection.collapsed(offset: 0),
+    );
+  } else {
+    textController.text = newText;
+    textController.selection = const TextSelection.collapsed(offset: 0);
+  }
   textController.clearSearchHighlights();
 
   onTextUpdate(newText);

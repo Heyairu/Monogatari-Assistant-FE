@@ -13,6 +13,7 @@ class SettingsSnapshot {
   final int autoBackupMaxSizeMb;
   final bool allowSingleDevicePairingConfirmation;
   final bool allowPersistentP2pVerification;
+  final bool poppinEnabled;
   final List<RecentProjectEntry> recentProjects;
 
   const SettingsSnapshot({
@@ -26,6 +27,7 @@ class SettingsSnapshot {
     required this.autoBackupMaxSizeMb,
     required this.allowSingleDevicePairingConfirmation,
     required this.allowPersistentP2pVerification,
+    required this.poppinEnabled,
     required this.recentProjects,
   });
 }
@@ -53,6 +55,8 @@ abstract class SettingsRepository {
 
   Future<void> saveAllowPersistentP2pVerification(bool value);
 
+  Future<void> savePoppinEnabled(bool value);
+
   Future<void> saveRecentProjects(List<RecentProjectEntry> projects);
 }
 
@@ -71,6 +75,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
       "p2p_allow_single_device_pairing_confirmation";
   static const String _allowPersistentP2pVerificationKey =
       "p2p_allow_persistent_verification";
+  static const String _poppinEnabledKey = "poppin_enabled";
   static const String _legacyAutoBackupEnabledKey = "autosave_enabled";
   static const String _legacyAutoBackupIntervalMinutesKey =
       "autosave_interval_minutes";
@@ -126,6 +131,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
         prefs.getBool(_allowSingleDevicePairingConfirmationKey) ?? true;
     final allowPersistentP2pVerification =
         prefs.getBool(_allowPersistentP2pVerificationKey) ?? false;
+    final poppinEnabled = prefs.getBool(_poppinEnabledKey) ?? true;
 
     final recentProjectStrings =
         prefs.getStringList(_recentProjectsKey) ?? const [];
@@ -154,6 +160,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
       allowSingleDevicePairingConfirmation:
           allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: allowPersistentP2pVerification,
+      poppinEnabled: poppinEnabled,
       recentProjects: trimmedProjects,
     );
   }
@@ -225,6 +232,12 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   Future<void> saveAllowPersistentP2pVerification(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_allowPersistentP2pVerificationKey, value);
+  }
+
+  @override
+  Future<void> savePoppinEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_poppinEnabledKey, value);
   }
 
   @override

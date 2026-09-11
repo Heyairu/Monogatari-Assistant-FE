@@ -250,7 +250,14 @@ class WorldSettingsCodec {
 // MARK: - 主視圖
 
 class WorldSettingsView extends ConsumerStatefulWidget {
-  const WorldSettingsView({super.key});
+  final String? initialLocationId;
+  final int selectionRequestId;
+
+  const WorldSettingsView({
+    super.key,
+    this.initialLocationId,
+    this.selectionRequestId = 0,
+  });
 
   @override
   ConsumerState<WorldSettingsView> createState() => _WorldSettingsViewState();
@@ -298,6 +305,33 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     locationNameController.addListener(_onNameChanged);
     locationTypeController.addListener(_onTypeChanged);
     locationNoteController.addListener(_onNoteChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyRequestedLocation();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant WorldSettingsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionRequestId != widget.selectionRequestId ||
+        oldWidget.initialLocationId != widget.initialLocationId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyRequestedLocation();
+      });
+    }
+  }
+
+  void _applyRequestedLocation() {
+    final id = widget.initialLocationId;
+    if (id == null) return;
+    _refreshLocationIndex();
+    if (!_locationIndex.containsKey(id)) return;
+    _flushDetailDraft();
+    setState(() {
+      selectedNodeId = id;
+      lastSelectedNodeId = id;
+      _syncDetailControllers();
+    });
   }
 
   List<_FlatNode> _buildFlatList(List<LocationData> locations) {

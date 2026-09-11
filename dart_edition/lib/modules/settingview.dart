@@ -127,6 +127,7 @@ class _SettingViewState extends ConsumerState<SettingView>
     int autoBackupMaxSizeMb,
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
+    bool poppinEnabled,
   })
   get _settingsViewState => ref.watch(
     settingsStateProvider.select((state) {
@@ -145,6 +146,7 @@ class _SettingViewState extends ConsumerState<SettingView>
             settings?.allowSingleDevicePairingConfirmation ?? true,
         allowPersistentP2pVerification:
             settings?.allowPersistentP2pVerification ?? false,
+        poppinEnabled: settings?.poppinEnabled ?? true,
       );
     }),
   );
@@ -227,6 +229,19 @@ class _SettingViewState extends ConsumerState<SettingView>
                         await ref
                             .read(settingsStateProvider.notifier)
                             .setShowExitWarning(value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchWithIconTitle(
+                      key: const Key("poppin-enabled-setting"),
+                      title: "啟用 Poppin IntelliSense",
+                      icon: Icons.auto_awesome_outlined,
+                      subtitle: "輸入標記類型、/ 或 \\ 時顯示游標旁候選清單",
+                      value: _settingsViewState.poppinEnabled,
+                      onChanged: (value) async {
+                        await ref
+                            .read(settingsStateProvider.notifier)
+                            .setPoppinEnabled(value);
                       },
                     ),
                     const SizedBox(height: 16),

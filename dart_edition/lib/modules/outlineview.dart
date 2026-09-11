@@ -1609,19 +1609,38 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       previous,
       next,
     ) {
-      if (previous?.requestId == next.requestId || next.sceneUUID == null) {
+      final targetId = next.targetUUID ?? next.sceneUUID;
+      if (previous?.requestId == next.requestId || targetId == null) {
         return;
       }
       _flushOutlineDraft();
       _ensureOutlineIndexCurrent(ref.read(outlineDataProvider));
-      final target = _sceneIndexById[next.sceneUUID];
-      if (target == null || !mounted) return;
+      if (!mounted) return;
       setState(() {
-        final storyline = storylines[target.storylineIndex];
-        final event = storyline.scenes[target.eventIndex];
-        selectedStorylineID = storyline.chapterUUID;
-        selectedEventID = event.storyEventUUID;
-        selectedSceneID = event.scenes[target.sceneIndex].sceneUUID;
+        final storylineIndex = _storylineIndexById[targetId];
+        final eventIndex = _eventIndexById[targetId];
+        final sceneIndex = _sceneIndexById[targetId];
+        if (storylineIndex != null) {
+          final storyline = storylines[storylineIndex];
+          selectedStorylineID = storyline.chapterUUID;
+          selectedEventID = storyline.scenes.firstOrNull?.storyEventUUID;
+          selectedSceneID =
+              storyline.scenes.firstOrNull?.scenes.firstOrNull?.sceneUUID;
+        } else if (eventIndex != null) {
+          final storyline = storylines[eventIndex.storylineIndex];
+          final event = storyline.scenes[eventIndex.eventIndex];
+          selectedStorylineID = storyline.chapterUUID;
+          selectedEventID = event.storyEventUUID;
+          selectedSceneID = event.scenes.firstOrNull?.sceneUUID;
+        } else if (sceneIndex != null) {
+          final storyline = storylines[sceneIndex.storylineIndex];
+          final event = storyline.scenes[sceneIndex.eventIndex];
+          selectedStorylineID = storyline.chapterUUID;
+          selectedEventID = event.storyEventUUID;
+          selectedSceneID = event.scenes[sceneIndex.sceneIndex].sceneUUID;
+        } else {
+          return;
+        }
         _syncAllControllers();
       });
     });

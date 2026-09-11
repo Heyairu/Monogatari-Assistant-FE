@@ -41,6 +41,7 @@ import "../models/codecs/character_snapshot_codec.dart";
 import "../models/character_snapshot_data.dart";
 import "../models/codecs/timeline_codec.dart";
 import "../models/timeline_data.dart";
+import "../features/inline_annotations/inline_annotation_projection.dart";
 
 export "../models/project_data.dart";
 export "../models/project_file.dart";
@@ -934,7 +935,11 @@ class ProjectManager {
         for (final chapter in folder.chapters) {
           buffer.writeln("${heading(depth + 1)} ${chapter.chapterName}");
           buffer.writeln();
-          buffer.writeln(chapter.chapterContent);
+          buffer.writeln(
+            InlineAnnotationProjection.readerTextFromRaw(
+              chapter.chapterContent,
+            ),
+          );
           buffer.writeln();
         }
         for (final child in folder.childSegments) {

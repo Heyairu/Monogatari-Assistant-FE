@@ -67,6 +67,7 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
       allowSingleDevicePairingConfirmation:
           snapshot.allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: snapshot.allowPersistentP2pVerification,
+      poppinEnabled: snapshot.poppinEnabled,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -144,6 +145,12 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     await ref
         .read(settingsRepositoryProvider)
         .saveAllowPersistentP2pVerification(value);
+  }
+
+  Future<void> setPoppinEnabled(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(poppinEnabled: value));
+    await ref.read(settingsRepositoryProvider).savePoppinEnabled(value);
   }
 
   Future<void> addRecentProject({

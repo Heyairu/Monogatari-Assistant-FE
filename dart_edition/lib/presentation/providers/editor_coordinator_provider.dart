@@ -512,11 +512,15 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
 
   void syncEditorToSelectedChapter({
     required TextEditingController textController,
+    String? authoritativeText,
   }) {
     if (!beginSync()) {
       return;
     }
 
+    final persistenceController = authoritativeText == null
+        ? textController
+        : TextEditingController(text: authoritativeText);
     try {
       final editorSelection = ref.read(editorSelectionProvider);
       final segmentsData = ref.read(segmentsDataProvider);
@@ -525,7 +529,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
             segmentsData: segmentsData,
             selectedSegID: editorSelection.selectedSegID,
             selectedChapID: editorSelection.selectedChapID,
-            textController: textController,
+            textController: persistenceController,
           );
       if (!hasChanged) {
         return;
@@ -540,7 +544,7 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         segmentsData: copiedSegments,
         selectedSegID: editorSelection.selectedSegID,
         selectedChapID: editorSelection.selectedChapID,
-        textController: textController,
+        textController: persistenceController,
         updateContentCallback: (String newContent) {
           syncedContent = newContent;
         },
@@ -556,6 +560,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
         ref.read(editorContentProvider.notifier).setContent(syncedContent!);
       }
     } finally {
+      if (!identical(persistenceController, textController)) {
+        persistenceController.dispose();
+      }
       endSync();
     }
   }

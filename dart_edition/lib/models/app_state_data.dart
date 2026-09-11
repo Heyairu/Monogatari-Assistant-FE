@@ -27,6 +27,7 @@ class AppSettingsStateData with _$AppSettingsStateData {
     @Default(512) int autoBackupMaxSizeMb,
     @Default(true) bool allowSingleDevicePairingConfirmation,
     @Default(false) bool allowPersistentP2pVerification,
+    @Default(true) bool poppinEnabled,
     @Default(<RecentProjectEntry>[]) List<RecentProjectEntry> recentProjects,
   }) = _AppSettingsStateData;
 }

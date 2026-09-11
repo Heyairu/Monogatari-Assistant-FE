@@ -32,4 +32,15 @@ void main() {
 
     expect((await repository.load()).allowPersistentP2pVerification, isTrue);
   });
+
+  test("Poppin IntelliSense defaults on and persists", () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final repository = SharedPreferencesSettingsRepository();
+
+    expect((await repository.load()).poppinEnabled, isTrue);
+
+    await repository.savePoppinEnabled(false);
+
+    expect((await repository.load()).poppinEnabled, isFalse);
+  });
 }

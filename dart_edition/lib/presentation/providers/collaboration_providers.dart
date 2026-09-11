@@ -229,9 +229,10 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
         );
       },
     );
-    _timer = Timer.periodic(_tickInterval, (_) => unawaited(_tick()));
+    _setTicking(ref.read(p2pSyncProvider).hasAuthenticatedTransport);
     ref.listen<P2pSyncState>(p2pSyncProvider, (previous, next) {
       _rememberOperationBootstrapRole(next);
+      _setTicking(next.hasAuthenticatedTransport);
       if (!next.hasAuthenticatedTransport) {
         _remoteAcknowledgedSequences.clear();
         _localPresence = null;
@@ -261,6 +262,15 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
       endpoint.updateLocalCollaborationBatch(null);
     });
     return const CollaborationState();
+  }
+
+  void _setTicking(bool active) {
+    if (!active) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    _timer ??= Timer.periodic(_tickInterval, (_) => unawaited(_tick()));
   }
 
   void openProject(ProjectData data) {

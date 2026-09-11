@@ -25,11 +25,13 @@ final class RemoteTextCursorPosition {
 class RemoteTextCursorOverlay extends StatefulWidget {
   final TextEditingController controller;
   final List<RemoteCursorState> cursors;
+  final int Function(int rawOffset)? offsetMapper;
 
   const RemoteTextCursorOverlay({
     super.key,
     required this.controller,
     required this.cursors,
+    this.offsetMapper,
   });
 
   @override
@@ -80,7 +82,9 @@ class RemoteTextCursorOverlayState extends State<RemoteTextCursorOverlay> {
     if (editable == null || !editable.hasSize) return;
     final positions = <RemoteTextCursorPosition>[];
     for (final cursor in widget.cursors) {
-      final offset = cursor.focusOffset
+      final mappedOffset =
+          widget.offsetMapper?.call(cursor.focusOffset) ?? cursor.focusOffset;
+      final offset = mappedOffset
           .clamp(0, widget.controller.text.length)
           .toInt();
       final caretRect = editable.getLocalRectForCaret(

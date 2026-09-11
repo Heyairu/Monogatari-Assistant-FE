@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
 import "package:monogatari_assistant/bin/findreplace.dart";
+import "package:monogatari_assistant/features/inline_annotations/inline_annotation_projection.dart";
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,4 +90,39 @@ void main() {
       expect(span.children, isNull);
     },
   );
+
+  testWidgets("search color overrides Mosaic foreground but keeps background", (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (buildContext) {
+            context = buildContext;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+    const raw = "A //@^CE<$uuid|艾莉絲>{secret}// B";
+    final controller = HighlightTextEditingController(text: raw);
+    addTearDown(controller.dispose);
+    controller.updateSearchHighlights(
+      matches: const [TextSelection(baseOffset: 3, extentOffset: 6)],
+      currentIndex: 0,
+    );
+
+    final span = controller.buildTextSpan(context: context);
+    final label = span.children!.cast<TextSpan>().singleWhere(
+      (child) => child.text == "艾莉絲",
+    );
+
+    expect(controller.text, "A $inlineAnnotationPlaceholder艾莉絲 B");
+    expect(controller.rawText, raw);
+    expect(label.style?.color, controller.currentMatchColor);
+    expect(label.style?.backgroundColor, isNotNull);
+  });
 }

@@ -151,8 +151,13 @@ final timelineViewProvider =
 class OutlineSelectionRequest {
   final int requestId;
   final String? sceneUUID;
+  final String? targetUUID;
 
-  const OutlineSelectionRequest({this.requestId = 0, this.sceneUUID});
+  const OutlineSelectionRequest({
+    this.requestId = 0,
+    this.sceneUUID,
+    this.targetUUID,
+  });
 }
 
 class OutlineSelectionRequestNotifier
@@ -164,6 +169,14 @@ class OutlineSelectionRequestNotifier
     state = OutlineSelectionRequest(
       requestId: state.requestId + 1,
       sceneUUID: sceneUUID,
+      targetUUID: sceneUUID,
+    );
+  }
+
+  void requestTarget(String targetUUID) {
+    state = OutlineSelectionRequest(
+      requestId: state.requestId + 1,
+      targetUUID: targetUUID,
     );
   }
 }

@@ -1,6 +1,7 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/file.dart";
+import "../../features/inline_annotations/inline_annotation_projection.dart";
 import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/characterview.dart";
@@ -557,7 +558,11 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         for (final chapter in folder.chapters) {
           buffer.writeln("${heading(depth + 1)} ${chapter.chapterName}");
           buffer.writeln();
-          buffer.writeln(chapter.chapterContent);
+          buffer.writeln(
+            InlineAnnotationProjection.readerTextFromRaw(
+              chapter.chapterContent,
+            ),
+          );
           buffer.writeln();
         }
         for (final child in folder.childSegments) {
@@ -660,17 +665,23 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
 
         buffer.writeln("</Project>");
       } else {
+        final readerSegments = _projectSegmentsForReader(
+          snapshotData.segmentsData,
+        );
         if (selectedModules.contains("BaseInfo")) {
+          final readerContent = InlineAnnotationProjection.readerTextFromRaw(
+            snapshotData.contentText,
+          );
           final baseInfoSnapshot =
               base_info_module.BaseInfoCodec.createSaveSnapshot(
                 data: snapshotData.baseInfoData,
-                contentText: snapshotData.contentText,
+                contentText: readerContent,
                 updateLatestSave: false,
               );
           final xml = base_info_module.BaseInfoCodec.saveXML(
             data: snapshotData.baseInfoData,
             totalWords: snapshotData.totalWords,
-            contentText: snapshotData.contentText,
+            contentText: readerContent,
             updateLatestSave: false,
             snapshot: baseInfoSnapshot,
           );
@@ -688,7 +699,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
 
         if (selectedModules.contains("Chapters")) {
           final xml = chapter_module.ChapterSelectionCodec.saveXML(
-            snapshotData.segmentsData,
+            readerSegments,
           );
           buffer.writeln("## Chapters");
           buffer.writeln();
@@ -782,6 +793,25 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       rethrow;
     }
   }
+}
+
+List<chapter_module.SegmentData> _projectSegmentsForReader(
+  List<chapter_module.SegmentData> segments,
+) {
+  return [
+    for (final segment in segments)
+      segment.copyWith(
+        chapters: [
+          for (final chapter in segment.chapters)
+            chapter.copyWith(
+              chapterContent: InlineAnnotationProjection.readerTextFromRaw(
+                chapter.chapterContent,
+              ),
+            ),
+        ],
+        childSegments: _projectSegmentsForReader(segment.childSegments),
+      ),
+  ];
 }
 
 final projectIoControllerProvider =

@@ -187,6 +187,7 @@ mixin _$AppSettingsStateData {
   bool get allowSingleDevicePairingConfirmation =>
       throw _privateConstructorUsedError;
   bool get allowPersistentP2pVerification => throw _privateConstructorUsedError;
+  bool get poppinEnabled => throw _privateConstructorUsedError;
   List<RecentProjectEntry> get recentProjects =>
       throw _privateConstructorUsedError;
 
@@ -215,6 +216,7 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
     int autoBackupMaxSizeMb,
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
+    bool poppinEnabled,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -247,6 +249,7 @@ class _$AppSettingsStateDataCopyWithImpl<
     Object? autoBackupMaxSizeMb = null,
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
+    Object? poppinEnabled = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -293,6 +296,10 @@ class _$AppSettingsStateDataCopyWithImpl<
                 ? _value.allowPersistentP2pVerification
                 : allowPersistentP2pVerification // ignore: cast_nullable_to_non_nullable
                       as bool,
+            poppinEnabled: null == poppinEnabled
+                ? _value.poppinEnabled
+                : poppinEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
             recentProjects: null == recentProjects
                 ? _value.recentProjects
                 : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -323,6 +330,7 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
     int autoBackupMaxSizeMb,
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
+    bool poppinEnabled,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -351,6 +359,7 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
     Object? autoBackupMaxSizeMb = null,
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
+    Object? poppinEnabled = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -396,6 +405,10 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
             ? _value.allowPersistentP2pVerification
             : allowPersistentP2pVerification // ignore: cast_nullable_to_non_nullable
                   as bool,
+        poppinEnabled: null == poppinEnabled
+            ? _value.poppinEnabled
+            : poppinEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
         recentProjects: null == recentProjects
             ? _value._recentProjects
             : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -419,6 +432,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     this.autoBackupMaxSizeMb = 512,
     this.allowSingleDevicePairingConfirmation = true,
     this.allowPersistentP2pVerification = false,
+    this.poppinEnabled = true,
     final List<RecentProjectEntry> recentProjects =
         const <RecentProjectEntry>[],
   }) : _recentProjects = recentProjects;
@@ -453,6 +467,9 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   @override
   @JsonKey()
   final bool allowPersistentP2pVerification;
+  @override
+  @JsonKey()
+  final bool poppinEnabled;
   final List<RecentProjectEntry> _recentProjects;
   @override
   @JsonKey()
@@ -464,7 +481,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
   @override
   String toString() {
-    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, recentProjects: $recentProjects)';
+    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, poppinEnabled: $poppinEnabled, recentProjects: $recentProjects)';
   }
 
   @override
@@ -506,6 +523,8 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
                 ) ||
                 other.allowPersistentP2pVerification ==
                     allowPersistentP2pVerification) &&
+            (identical(other.poppinEnabled, poppinEnabled) ||
+                other.poppinEnabled == poppinEnabled) &&
             const DeepCollectionEquality().equals(
               other._recentProjects,
               _recentProjects,
@@ -525,6 +544,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     autoBackupMaxSizeMb,
     allowSingleDevicePairingConfirmation,
     allowPersistentP2pVerification,
+    poppinEnabled,
     const DeepCollectionEquality().hash(_recentProjects),
   );
 
@@ -553,6 +573,7 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
     final int autoBackupMaxSizeMb,
     final bool allowSingleDevicePairingConfirmation,
     final bool allowPersistentP2pVerification,
+    final bool poppinEnabled,
     final List<RecentProjectEntry> recentProjects,
   }) = _$AppSettingsStateDataImpl;
 
@@ -576,6 +597,8 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
   bool get allowSingleDevicePairingConfirmation;
   @override
   bool get allowPersistentP2pVerification;
+  @override
+  bool get poppinEnabled;
   @override
   List<RecentProjectEntry> get recentProjects;
 

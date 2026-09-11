@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
 
 import "package:monogatari_assistant/bin/findreplace.dart";
+import "package:monogatari_assistant/features/inline_annotations/inline_annotation_projection.dart";
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -317,19 +318,21 @@ void main() {
     bool textCallbackCalled = false;
     bool stateCallbackCalled = false;
 
-    await performReplaceAll(
-      context,
-      controller,
-      "a",
-      "b",
-      FindReplaceOptions(),
-      (List<TextSelection> _, int _) {
-        stateCallbackCalled = true;
-      },
-      (String _) {
-        textCallbackCalled = true;
-      },
-      maxMatches: 3,
+    await tester.runAsync(
+      () => performReplaceAll(
+        context,
+        controller,
+        "a",
+        "b",
+        FindReplaceOptions(),
+        (List<TextSelection> _, int _) {
+          stateCallbackCalled = true;
+        },
+        (String _) {
+          textCallbackCalled = true;
+        },
+        maxMatches: 3,
+      ),
     );
 
     expect(controller.text, "aaaa");
@@ -338,5 +341,81 @@ void main() {
     expect(textCallbackCalled, isFalse);
     expect(stateCallbackCalled, isFalse);
     controller.dispose();
+  });
+
+  testWidgets("replace all preserves Mosaic syntax across multiple matches", (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (buildContext) {
+              context = buildContext;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+    final controller = HighlightTextEditingController(
+      text: "x //@<$uuid|Alice>{lead}// x",
+    );
+    addTearDown(controller.dispose);
+
+    await tester.runAsync(
+      () => performReplaceAll(
+        context,
+        controller,
+        "x",
+        "y",
+        FindReplaceOptions(),
+        (_, _) {},
+        (_) {},
+      ),
+    );
+
+    expect(controller.text, "y ${inlineAnnotationPlaceholder}Alice y");
+    expect(controller.rawText, "y //@<$uuid|Alice>{lead}// y");
+  });
+
+  testWidgets("replace all updates a Mosaic label without losing metadata", (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (buildContext) {
+              context = buildContext;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+    final controller = HighlightTextEditingController(
+      text: "//@<$uuid|Alice>{lead}//",
+    );
+    addTearDown(controller.dispose);
+
+    await tester.runAsync(
+      () => performReplaceAll(
+        context,
+        controller,
+        "Alice",
+        "Alicia",
+        FindReplaceOptions(),
+        (_, _) {},
+        (_) {},
+      ),
+    );
+
+    expect(controller.text, "${inlineAnnotationPlaceholder}Alicia");
+    expect(controller.rawText, "//@<$uuid|Alicia>{lead}//");
   });
 }

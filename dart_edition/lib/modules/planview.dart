@@ -295,8 +295,19 @@ class PlanCodec {
   }
 }
 
+enum PlanSelectionTarget { foreshadow, updatePlan }
+
 class PlanView extends ConsumerStatefulWidget {
-  const PlanView({super.key});
+  final String? initialTargetId;
+  final PlanSelectionTarget? initialTargetKind;
+  final int selectionRequestId;
+
+  const PlanView({
+    super.key,
+    this.initialTargetId,
+    this.initialTargetKind,
+    this.selectionRequestId = 0,
+  });
 
   @override
   ConsumerState<PlanView> createState() => _PlanViewState();
@@ -364,6 +375,43 @@ class _PlanViewState extends ConsumerState<PlanView> {
     _inspirationContentFocusNode.addListener(_flushInspirationOnBlur);
 
     _loadInspirationFromDisk();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyRequestedTarget();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PlanView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionRequestId != widget.selectionRequestId ||
+        oldWidget.initialTargetId != widget.initialTargetId ||
+        oldWidget.initialTargetKind != widget.initialTargetKind) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyRequestedTarget();
+      });
+    }
+  }
+
+  void _applyRequestedTarget() {
+    final id = widget.initialTargetId;
+    final kind = widget.initialTargetKind;
+    if (id == null || kind == null) return;
+    switch (kind) {
+      case PlanSelectionTarget.foreshadow:
+        if (!_foreshadowItems.any((item) => item.id == id)) return;
+        setState(() {
+          selectedForeshadowId = id;
+          selectedUpdatePlanId = null;
+          _syncForeshadowControllers();
+        });
+      case PlanSelectionTarget.updatePlan:
+        if (!_updatePlanItems.any((item) => item.id == id)) return;
+        setState(() {
+          selectedUpdatePlanId = id;
+          selectedForeshadowId = null;
+          _syncUpdatePlanControllers();
+        });
+    }
   }
 
   @override

@@ -164,6 +164,54 @@ void main() {
     expect(container.read(editorContentProvider), editedContent);
   });
 
+  test('syncEditorToSelectedChapter prefers authoritative raw text', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    const segmentId = 'segment-1';
+    const chapterId = 'chapter-1';
+    const displayText = '她看見 艾莉絲。';
+    const rawText = '她看見 //@<123e4567-e89b-12d3-a456-426614174000|艾莉絲>{主角}//。';
+    container.read(segmentsDataProvider.notifier).setSegmentsData([
+      chapter_module.SegmentData(
+        segmentUUID: segmentId,
+        chapters: [
+          chapter_module.ChapterData(
+            chapterUUID: chapterId,
+            chapterContent: displayText,
+          ),
+        ],
+      ),
+    ]);
+    container
+        .read(editorSelectionProvider.notifier)
+        .setSelectionAndCursor(
+          selectedSegID: segmentId,
+          selectedChapID: chapterId,
+          cursorOffset: 0,
+        );
+    final controller = TextEditingController(text: displayText);
+    addTearDown(controller.dispose);
+
+    container
+        .read(editorCoordinatorProvider.notifier)
+        .syncEditorToSelectedChapter(
+          textController: controller,
+          authoritativeText: rawText,
+        );
+
+    expect(
+      container
+          .read(segmentsDataProvider)
+          .single
+          .chapters
+          .single
+          .chapterContent,
+      rawText,
+    );
+    expect(container.read(editorContentProvider), rawText);
+  });
+
   test('syncEditorToSelectedChapter updates a recursively nested chapter', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

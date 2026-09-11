@@ -47,6 +47,14 @@ import "infrastructure/rhodanthe/rhodanthe_protocol.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_cohort.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_guard.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_store.dart";
+import "features/inline_annotations/inline_annotation_rhodanthe_adapter.dart";
+import "features/inline_annotations/inline_annotation_details_dialog.dart";
+import "features/inline_annotations/inline_annotation_edit_dialog.dart";
+import "features/inline_annotations/inline_annotation.dart";
+import "features/inline_annotations/inline_annotation_relink_dialog.dart";
+import "features/inline_annotations/inline_annotation_target_resolver.dart";
+import "features/inline_annotations/inline_annotation_projection.dart";
+import "features/inline_annotations/mosaic_editing_controller.dart";
 import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
@@ -489,6 +497,11 @@ class _ContentViewState extends ConsumerState<ContentView>
   int _projectSessionVersion = 0;
   String? _requestedCharacterId;
   int _characterSelectionRequestId = 0;
+  String? _requestedLocationId;
+  int _locationSelectionRequestId = 0;
+  String? _requestedPlanTargetId;
+  PlanModule.PlanSelectionTarget? _requestedPlanTargetKind;
+  int _planSelectionRequestId = 0;
   bool _isExitConfirmationInProgress = false;
   bool _isDesktopWindowClosing = false;
   bool _isWindowResizeInProgress = false;
@@ -520,6 +533,14 @@ class _ContentViewState extends ConsumerState<ContentView>
   RhodantheFillerRequest? _rhodantheFillerRequest;
   List<RhodantheExternalAnnotation> _rhodantheDiagnostics =
       const <RhodantheExternalAnnotation>[];
+  static const InlineAnnotationRhodantheAdapter _inlineRhodantheAdapter =
+      InlineAnnotationRhodantheAdapter();
+
+  List<RhodantheExternalAnnotation> get _rhodantheInlineAnnotations =>
+      _inlineRhodantheAdapter.build(
+        projection: textController.projection,
+        documentRevision: textController.textRevision,
+      );
 
   // 浮動視窗狀態
   bool showFindReplaceWindow = false;
@@ -755,10 +776,13 @@ class _ContentViewState extends ConsumerState<ContentView>
         editorContentNotifier.setContent(initialContent);
       }
 
-      if (textController.text != initialContent) {
-        textController.text = initialContent;
-      }
-      _lastObservedEditorText = textController.text;
+      // Seed the raw snapshot first so projection publication is not mistaken
+      // for a local collaborative edit during startup.
+      _lastObservedEditorText = initialContent;
+      textController.setRawText(
+        initialContent,
+        rawSelection: TextSelection.collapsed(offset: cursorOffset),
+      );
 
       _refreshActiveChapterWordCount();
     });
@@ -775,7 +799,11 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
 
     final WordCountMode mode = _settingsState.wordCountMode;
-    final String activeText = contentOverride ?? textController.text;
+    final String activeText = contentOverride == null
+        ? textController.readerText
+        : InlineAnnotationProjection.build(
+            contentOverride,
+          ).readerTextFor(TextRange(start: 0, end: contentOverride.length));
     final lookup = _wordCountService.observeChapter(
       chapterId: activeChapterId,
       content: activeText,
@@ -945,7 +973,10 @@ class _ContentViewState extends ConsumerState<ContentView>
           ? _rhodantheFillerRequest
           : null,
       externalAnnotations: session.mode == RhodantheRolloutMode.full
-          ? <RhodantheExternalAnnotation>[..._rhodantheDiagnostics]
+          ? <RhodantheExternalAnnotation>[
+              ..._rhodantheDiagnostics,
+              ..._rhodantheInlineAnnotations,
+            ]
           : const <RhodantheExternalAnnotation>[],
       dartSearchRanges: <RhodantheRange>[
         for (final match in dartMatches) RhodantheRange(match.start, match.end),
@@ -995,14 +1026,188 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   Future<void> _analyzeRhodantheProofreadingLayers() async {
     final session = _rhodantheSession;
-    if (session == null || session.mode != RhodantheRolloutMode.full) return;
+    if (session == null) return;
     await _synchronizeRhodantheDocument();
+    if (session.mode != RhodantheRolloutMode.full) return;
     await session.analyze(
       filler: _rhodantheFillerRequest,
       externalAnnotations: <RhodantheExternalAnnotation>[
         ..._rhodantheDiagnostics,
+        ..._rhodantheInlineAnnotations,
       ],
     );
+  }
+
+  Future<void> _handleInlineAnnotationInteraction(
+    EditorTextInteraction interaction,
+  ) async {
+    final entry = textController.projection.annotationAtDisplayOffset(
+      interaction.displayOffset,
+    );
+    if (entry == null) return;
+
+    final annotation = entry.annotation;
+    final sourceStart = annotation.sourceRange.start;
+    final rawSyntax = textController.rawSyntaxAtSourceStart(sourceStart);
+    if (rawSyntax == null) return;
+    final target = const InlineAnnotationTargetResolver().resolve(
+      annotation: annotation,
+      characters: ref.read(characterDataProvider),
+      locations: ref.read(worldSettingsDataProvider),
+      outline: ref.read(outlineDataProvider),
+      foreshadows: ref.read(foreshadowDataProvider),
+      plans: ref.read(updatePlanDataProvider),
+    );
+
+    final anchor = Rect.fromCircle(
+      center: interaction.globalPosition,
+      radius: 1,
+    );
+    final result = await InlineAnnotationDetailsDialog.show(
+      context: context,
+      annotation: annotation,
+      rawSyntax: rawSyntax,
+      target: target,
+      anchor: anchor,
+    );
+    if (!mounted) return;
+
+    switch (result?.action) {
+      case InlineAnnotationDetailsAction.applyDisplayText:
+        if (!textController.updateAnnotationDisplayText(
+          sourceStart,
+          result?.displayText ?? annotation.displayText,
+        )) {
+          AppFeedback.warning(context, "標記已變更，無法更新顯示文字。");
+        }
+        break;
+      case InlineAnnotationDetailsAction.applySyntax:
+        if (!textController.replaceAnnotationSyntax(
+          sourceStart,
+          result?.rawSyntax ?? rawSyntax,
+        )) {
+          AppFeedback.warning(context, "標記已變更，無法套用完整語法。");
+        }
+        break;
+      case InlineAnnotationDetailsAction.editAnnotation:
+        final replacement = await InlineAnnotationEditDialog.show(
+          context: context,
+          annotation: annotation,
+          rawSyntax: rawSyntax,
+          anchor: anchor,
+        );
+        if (!mounted) return;
+        if (replacement == null) {
+          textController.collapseAnnotations();
+          break;
+        }
+        if (!textController.replaceAnnotationSyntax(sourceStart, replacement)) {
+          AppFeedback.warning(context, "標記已變更，無法套用編輯。");
+        }
+        break;
+      case InlineAnnotationDetailsAction.navigateToTarget:
+        if (target == null) break;
+        _navigateToInlineAnnotationTarget(annotation.kind, target.id);
+        break;
+      case InlineAnnotationDetailsAction.relinkTarget:
+        final candidates = const InlineAnnotationTargetResolver().candidates(
+          kind: annotation.kind,
+          characters: ref.read(characterDataProvider),
+          locations: ref.read(worldSettingsDataProvider),
+          outline: ref.read(outlineDataProvider),
+          foreshadows: ref.read(foreshadowDataProvider),
+          plans: ref.read(updatePlanDataProvider),
+        );
+        if (candidates.isEmpty) {
+          await AppDialog.message(
+            context: context,
+            title: "無可用對象",
+            message: "請先建立相同類型的對象，再重新連結此標記。",
+          );
+          if (mounted) textController.collapseAnnotations();
+          break;
+        }
+        final replacement = await InlineAnnotationRelinkDialog.show(
+          context: context,
+          candidates: candidates,
+        );
+        if (!mounted) return;
+        if (replacement == null) {
+          textController.collapseAnnotations();
+          break;
+        }
+        if (!textController.relinkAnnotationTarget(
+          sourceStart: sourceStart,
+          targetId: replacement.id,
+          displayText: replacement.primaryName,
+        )) {
+          AppFeedback.warning(context, "標記已變更，無法重新連結。");
+        }
+        break;
+      case InlineAnnotationDetailsAction.copySyntax:
+        await Clipboard.setData(
+          ClipboardData(text: result?.rawSyntax ?? rawSyntax),
+        );
+        if (mounted) AppFeedback.success(context, "已複製完整標記語法。");
+        textController.collapseAnnotations();
+        break;
+      case InlineAnnotationDetailsAction.updateToPrimaryName:
+        final updated =
+            target != null &&
+            textController.updateAnnotationDisplayText(
+              sourceStart,
+              target.primaryName,
+            );
+        if (!updated) {
+          AppFeedback.warning(context, "標記已變更，無法更新名稱。");
+        }
+        break;
+      case InlineAnnotationDetailsAction.removeKeepText:
+        if (!textController.removeAnnotationKeepText(sourceStart)) {
+          AppFeedback.warning(context, "標記已變更，無法移除。");
+        }
+        break;
+      case null:
+        textController.collapseAnnotations();
+        break;
+    }
+  }
+
+  void _navigateToInlineAnnotationTarget(
+    InlineAnnotationKind kind,
+    String targetId,
+  ) {
+    _syncEditorToSelectedChapter();
+    final pageIndex = switch (kind) {
+      InlineAnnotationKind.character => 5,
+      InlineAnnotationKind.event => 3,
+      InlineAnnotationKind.location => 7,
+      InlineAnnotationKind.foreshadowing || InlineAnnotationKind.plan => 8,
+      InlineAnnotationKind.emphasis => null,
+    };
+    if (pageIndex == null) return;
+    _recordPageTransitionIfNeeded(pageIndex);
+    setState(() {
+      if (kind == InlineAnnotationKind.character) {
+        _requestedCharacterId = targetId;
+        _characterSelectionRequestId++;
+      } else if (kind == InlineAnnotationKind.event) {
+        ref
+            .read(outlineSelectionRequestProvider.notifier)
+            .requestTarget(targetId);
+      } else if (kind == InlineAnnotationKind.location) {
+        _requestedLocationId = targetId;
+        _locationSelectionRequestId++;
+      } else if (kind == InlineAnnotationKind.foreshadowing ||
+          kind == InlineAnnotationKind.plan) {
+        _requestedPlanTargetId = targetId;
+        _requestedPlanTargetKind = kind == InlineAnnotationKind.foreshadowing
+            ? PlanModule.PlanSelectionTarget.foreshadow
+            : PlanModule.PlanSelectionTarget.updatePlan;
+        _planSelectionRequestId++;
+      }
+      slidePageIndexNow = pageIndex;
+    });
   }
 
   @override
@@ -1051,17 +1256,20 @@ class _ContentViewState extends ConsumerState<ContentView>
 
     // 監聽文字變化
     textController.addListener(() {
-      final int selectionOffset = textController.selection.baseOffset;
+      final rawSelection = textController.projection.displaySelectionToRaw(
+        textController.selection,
+      );
+      final int selectionOffset = rawSelection.baseOffset;
       final int normalizedOffset = _clampOffset(
         selectionOffset,
-        textController.text.length,
+        textController.rawText.length,
       );
-      final String currentText = textController.text;
+      final String currentText = textController.rawText;
       final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
       final chapterId = selectedChapID;
       final focusOffset = _clampOffset(
-        textController.selection.extentOffset,
+        rawSelection.extentOffset,
         currentText.length,
       );
 
@@ -1084,7 +1292,7 @@ class _ContentViewState extends ConsumerState<ContentView>
               );
         }
         _lastObservedEditorText = currentText;
-        unawaited(_synchronizeRhodantheDocument());
+        unawaited(_analyzeRhodantheProofreadingLayers());
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
         _editorCoordinatorNotifier.markAsModified();
 
@@ -1161,7 +1369,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
     _subscriptions.add(
       ref.listenManual<String>(editorContentProvider, (previous, next) {
-        if (!mounted || _isSyncing || textController.text == next) {
+        if (!mounted || _isSyncing || textController.rawText == next) {
           return;
         }
 
@@ -1182,18 +1390,19 @@ class _ContentViewState extends ConsumerState<ContentView>
                   next.length,
                 ),
               )
-            : _clampSelection(textController.selection, next);
+            : _clampSelection(
+                textController.projection.displaySelectionToRaw(
+                  textController.selection,
+                ),
+                next,
+              );
 
         final coordinatorNotifier = ref.read(
           editorCoordinatorProvider.notifier,
         );
         final beganSync = coordinatorNotifier.beginSync();
         try {
-          textController.value = textController.value.copyWith(
-            text: next,
-            selection: currentSelection,
-            composing: TextRange.empty,
-          );
+          textController.setRawText(next, rawSelection: currentSelection);
           _lastObservedEditorText = next;
           unawaited(_synchronizeRhodantheDocument());
           if (selectionRebase != null &&
@@ -1624,11 +1833,13 @@ class _ContentViewState extends ConsumerState<ContentView>
     bool isPageTransition = false,
   }) {
     final selection = ref.read(editorSelectionProvider);
-    final int cursorOffset = textController.selection.isValid
-        ? _clampOffset(
-            textController.selection.baseOffset,
-            textController.text.length,
+    final rawSelection = textController.selection.isValid
+        ? textController.projection.displaySelectionToRaw(
+            textController.selection,
           )
+        : null;
+    final int cursorOffset = rawSelection != null
+        ? _clampOffset(rawSelection.baseOffset, textController.rawText.length)
         : selection.cursorOffset;
 
     return ProjectHistoryEntry(
@@ -1796,7 +2007,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       ChapterModule.ChapterTree.chaptersDepthFirst(segmentsData).map(
         (location) => WordCountChapterInput(
           chapterId: location.chapter.chapterUUID,
-          content: location.chapter.chapterContent,
+          content: InlineAnnotationProjection.readerTextFromRaw(
+            location.chapter.chapterContent,
+          ),
         ),
       ),
       _settingsState.wordCountMode,
@@ -2471,10 +2684,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                       _currentMatchIndex = index;
                     });
                   },
-                  (newText) {
+                  (_) {
                     setState(() {
-                      contentText = newText;
-                      _textChangeDebouncer.onTextChanged(newText);
+                      contentText = textController.rawText;
+                      _textChangeDebouncer.onTextChanged(
+                        textController.rawText,
+                      );
                     });
                   },
                 );
@@ -2498,10 +2713,12 @@ class _ContentViewState extends ConsumerState<ContentView>
                       _currentMatchIndex = index;
                     });
                   },
-                  (newText) {
+                  (_) {
                     setState(() {
-                      contentText = newText;
-                      _textChangeDebouncer.onTextChanged(newText);
+                      contentText = textController.rawText;
+                      _textChangeDebouncer.onTextChanged(
+                        textController.rawText,
+                      );
                     });
                   },
                 );
@@ -2592,6 +2809,7 @@ class _ContentViewState extends ConsumerState<ContentView>
               focusNode: editorFocusNode,
               onUndo: _undoProjectHistory,
               onRedo: _redoProjectHistory,
+              onInteractionOffset: _handleInlineAnnotationInteraction,
             ),
           ),
         ],
@@ -3121,7 +3339,10 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildWorldSettingsView() {
-    return const WorldSettingsView();
+    return WorldSettingsView(
+      initialLocationId: _requestedLocationId,
+      selectionRequestId: _locationSelectionRequestId,
+    );
   }
 
   Widget _buildCharacterSettingsView() {
@@ -3172,7 +3393,11 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildPlanView() {
-    return const PlanModule.PlanView();
+    return PlanModule.PlanView(
+      initialTargetId: _requestedPlanTargetId,
+      initialTargetKind: _requestedPlanTargetKind,
+      selectionRequestId: _planSelectionRequestId,
+    );
   }
 
   Widget _buildGlossaryView() {
@@ -3581,11 +3806,10 @@ class _ContentViewState extends ConsumerState<ContentView>
       return; // 沒有選定任何文本
     }
 
-    final selectedText = controller.text.substring(
-      selection.start,
-      selection.end,
-    );
-    debugPrint("[DEBUG] Copy: Copying text '$selectedText'");
+    final selectedText = controller is MosaicEditingController
+        ? controller.plainTextForSelection(selection)
+        : controller.text.substring(selection.start, selection.end);
+    debugPrint("[DEBUG] Copy: copying ${selectedText.length} UTF-16 units");
     Clipboard.setData(ClipboardData(text: selectedText));
   }
 
@@ -3604,11 +3828,10 @@ class _ContentViewState extends ConsumerState<ContentView>
       return; // 沒有選定任何文本
     }
 
-    final selectedText = controller.text.substring(
-      selection.start,
-      selection.end,
-    );
-    debugPrint("[DEBUG] Cut: Cutting text '$selectedText'");
+    final selectedText = controller is MosaicEditingController
+        ? controller.plainTextForSelection(selection)
+        : controller.text.substring(selection.start, selection.end);
+    debugPrint("[DEBUG] Cut: cutting ${selectedText.length} UTF-16 units");
     await Clipboard.setData(ClipboardData(text: selectedText));
 
     // 刪除選定的文本
@@ -3626,7 +3849,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         composing: TextRange.empty,
       ),
     );
-    debugPrint("[DEBUG] Cut: Text after cut '$newText'");
+    debugPrint("[DEBUG] Cut: resulting length=${newText.length}");
   }
 
   /// 從剪貼簿貼上文本
@@ -3639,7 +3862,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       final clipboardData = await Clipboard.getData('text/plain');
       final pastedText = clipboardData?.text ?? '';
 
-      debugPrint("[DEBUG] Paste: Clipboard data '$pastedText'");
+      debugPrint(
+        "[DEBUG] Paste: clipboard length=${pastedText.length} UTF-16 units",
+      );
 
       if (pastedText.isEmpty) {
         debugPrint("[DEBUG] Paste Clipboard is empty");
@@ -3679,9 +3904,9 @@ class _ContentViewState extends ConsumerState<ContentView>
           composing: TextRange.empty,
         ),
       );
-      debugPrint("[DEBUG] Paste: Text after paste '$newText'");
+      debugPrint("[DEBUG] Paste: resulting length=${newText.length}");
     } catch (e) {
-      debugPrint("[DEBUG] Paste Error - $e");
+      debugPrint("[DEBUG] Paste failed: ${e.runtimeType}");
     }
   }
 
@@ -3738,6 +3963,11 @@ class _ContentViewState extends ConsumerState<ContentView>
     _projectSessionVersion++;
     _requestedCharacterId = null;
     _characterSelectionRequestId = 0;
+    _requestedLocationId = null;
+    _locationSelectionRequestId = 0;
+    _requestedPlanTargetId = null;
+    _requestedPlanTargetKind = null;
+    _planSelectionRequestId = 0;
     _lastFocusedEditableNode = null;
     _preserveEditableFocusForEditorAction = false;
 
@@ -4357,7 +4587,10 @@ class _ContentViewState extends ConsumerState<ContentView>
     _flushPendingEditorContent();
     ref
         .read(editorCoordinatorProvider.notifier)
-        .syncEditorToSelectedChapter(textController: textController);
+        .syncEditorToSelectedChapter(
+          textController: textController,
+          authoritativeText: textController.rawText,
+        );
   }
 
   // 輔助方法：收集當前專案數據
@@ -4390,17 +4623,16 @@ class _ContentViewState extends ConsumerState<ContentView>
     final bool beganSync = coordinatorNotifier.beginSync();
     try {
       if (initialState.hasSelection) {
-        textController.text = contentText;
+        textController.setRawText(
+          contentText,
+          rawSelection: TextSelection.collapsed(
+            offset: _clampOffset(initialState.cursorOffset, contentText.length),
+          ),
+        );
       } else {
-        textController.text = "";
+        textController.setRawText("");
       }
-      textController.selection = TextSelection.collapsed(
-        offset: _clampOffset(
-          initialState.cursorOffset,
-          textController.text.length,
-        ),
-      );
-      _lastObservedEditorText = textController.text;
+      _lastObservedEditorText = textController.rawText;
     } finally {
       if (beganSync) {
         coordinatorNotifier.endSync();
