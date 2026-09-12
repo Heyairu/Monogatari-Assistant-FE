@@ -26,6 +26,6 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SplachScreen()));
 
     expect(find.text("物語 Assistant"), findsOneWidget);
-    expect(find.text("版本號碼 0.1.0    Build 1"), findsOneWidget);
+    expect(find.text("版本號碼 0.9.19   Build 919"), findsOneWidget);
   });
 }

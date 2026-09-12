@@ -38,6 +38,8 @@ import "../features/inline_annotations/inline_annotation_syntax.dart";
 import "../features/inline_annotations/inline_annotation_symbol_overlay.dart";
 import "../features/inline_annotations/mosaic_editing_controller.dart";
 import "../features/poppin/poppin.dart";
+import "../features/inline_annotations/inline_annotation_parser.dart";
+import "../features/inline_annotations/inline_annotation_edit_dialog.dart";
 
 final class EditorTextInteraction {
   final int displayOffset;
@@ -252,6 +254,15 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   void _selectCompletion(int index) {
     final candidates = _activeCompletionCandidates;
     if (candidates == null || index < 0 || index >= candidates.length) return;
+    if (candidates[index].customDisplayText) {
+      unawaited(_customMentionText(candidates[index]));
+      return;
+    }
+    final aliasCharacterId = candidates[index].createAliasForCharacterId;
+    if (aliasCharacterId != null) {
+      unawaited(_createCharacterAlias(aliasCharacterId));
+      return;
+    }
     final createKind = candidates[index].createTargetKind;
     if (createKind != null) {
       unawaited(_createCompletionTarget(candidates[index]));
@@ -263,6 +274,98 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       return;
     }
     _acceptCompletion(index);
+  }
+
+  Future<void> _customMentionText(MosaicCompletionCandidate candidate) async {
+    final controller = widget.controller;
+    final session = _completionSession;
+    if (controller is! MosaicEditingController || session == null) return;
+    final original = controller.rawText;
+    final parsed = const InlineAnnotationParser().parse(candidate.insertText);
+    if (parsed.length != 1) return;
+    final name = await _showCreateTargetDialog(
+      parsed.single.kind,
+      title: "輸入其他顯示文字（不加入別名）",
+      submitLabel: "插入",
+      fieldLabel: "顯示文字",
+    );
+    if (!mounted || name == null || controller.rawText != original) return;
+    final annotation = parsed.single;
+    controller.replaceRawRange(
+      session.rawReplacementRange,
+      InlineAnnotationSyntax.format(
+        kind: annotation.kind,
+        state: annotation.state,
+        colors: annotation.colors,
+        targetId: annotation.targetId,
+        displayText: name,
+        note: annotation.note,
+      ),
+    );
+    _dismissCompletion();
+    widget.focusNode.requestFocus();
+  }
+
+  Future<void> _mentionFromSelection() async {
+    final controller = widget.controller;
+    if (controller is! MosaicEditingController ||
+        controller.selection.isCollapsed ||
+        !controller.selection.isValid) {
+      return;
+    }
+    final original = controller.rawText;
+    final range = controller.projection.displayRangeToRaw(
+      TextRange(
+        start: controller.selection.start,
+        end: controller.selection.end,
+      ),
+    );
+    final syntax = InlineAnnotationSyntax.format(
+      kind: InlineAnnotationKind.emphasis,
+      state: InlineAnnotationState.none,
+      colors: const InlineAnnotationColorCode(background: "B", foreground: "0"),
+      displayText: controller.plainTextForSelection(controller.selection),
+    );
+    final result = await InlineAnnotationEditDialog.show(
+      context: context,
+      annotation: const InlineAnnotationParser().parse(syntax).single,
+      rawSyntax: syntax,
+    );
+    if (!mounted || result == null || controller.rawText != original) return;
+    controller.replaceRawRange(range, result);
+    widget.focusNode.requestFocus();
+  }
+
+  Future<void> _createCharacterAlias(String characterId) async {
+    final controller = widget.controller;
+    if (controller is! MosaicEditingController) return;
+    final originalRawText = controller.rawText;
+    final name = await _showCreateTargetDialog(
+      InlineAnnotationKind.character,
+      title: "新增別名",
+    );
+    if (!mounted || name == null) return;
+    ref.read(characterDataProvider.notifier).updateCharacterEntry(characterId, (
+      current,
+    ) {
+      if (current.aliases.any((alias) => alias.values.contains(name))) {
+        return current;
+      }
+      return current.copyWith(
+        aliases: [
+          ...current.aliases,
+          character_model.CharacterAlias(type: "nickname", values: [name]),
+        ],
+      );
+    });
+    widget.focusNode.requestFocus();
+    if (controller.rawText != originalRawText) return;
+    _refreshCompletion();
+    final roots = _activeCompletionCandidates;
+    if (roots == null) return;
+    final index = roots.indexWhere((candidate) => candidate.id == characterId);
+    if (index < 0) return;
+    _enterCompletionLevel(index);
   }
 
   Future<void> _createCompletionTarget(
@@ -313,6 +416,8 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   Future<String?> _showCreateTargetDialog(
     InlineAnnotationKind kind, {
     String? title,
+    String submitLabel = "建立",
+    String fieldLabel = "名稱",
   }) async {
     var draftName = "";
     final label = switch (kind) {
@@ -332,7 +437,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           child: TextField(
             key: const ValueKey("mosaic-create-target-name"),
             autofocus: true,
-            decoration: const InputDecoration(labelText: "名稱", isDense: true),
+            decoration: InputDecoration(labelText: fieldLabel, isDense: true),
             onChanged: (value) => draftName = value,
             onSubmitted: (value) {
               final trimmed = value.trim();
@@ -355,7 +460,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                 Navigator.of(dialogContext).pop(trimmed);
               }
             },
-            child: const Text("建立"),
+            child: Text(submitLabel),
           ),
         ],
       ),
@@ -866,6 +971,11 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                   });
                                 },
                                 child: CodeField(
+                                  selectionControls: _MentionSelectionControls(
+                                    () => unawaited(_mentionFromSelection()),
+                                    (cut) =>
+                                        unawaited(_copySelection(cut: cut)),
+                                  ),
                                   controller: widget.controller,
                                   focusNode: widget.focusNode,
                                   expands: true,
@@ -900,6 +1010,28 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                 child: InlineAnnotationSymbolOverlay(
                                   key: _annotationSymbolLayerKey,
                                   controller: controller,
+                                  tooltipFor: (annotation) {
+                                    final target = _targetResolver.resolve(
+                                      annotation: annotation,
+                                      characters: ref.read(
+                                        characterDataProvider,
+                                      ),
+                                      locations: ref.read(
+                                        worldSettingsDataProvider,
+                                      ),
+                                      outline: ref.read(outlineDataProvider),
+                                      foreshadows: ref.read(
+                                        foreshadowDataProvider,
+                                      ),
+                                      plans: ref.read(updatePlanDataProvider),
+                                    );
+                                    final name =
+                                        target?.primaryName ??
+                                        (annotation.targetId == null
+                                            ? annotation.displayText
+                                            : "遺失對象");
+                                    return "原名：$name\n備註：${annotation.note?.isNotEmpty == true ? annotation.note : '無'}";
+                                  },
                                 ),
                               ),
                             if (poppinEnabled && _completionSession != null)
@@ -949,6 +1081,70 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// CodeField 1.1.0 only exposes the legacy selectionControls adapter.
+// ignore_for_file: deprecated_member_use
+class _MentionSelectionControls extends MaterialTextSelectionControls {
+  final VoidCallback onMention;
+  final void Function(bool cut) onCopy;
+  _MentionSelectionControls(this.onMention, this.onCopy);
+
+  @override
+  Widget buildToolbar(
+    BuildContext context,
+    Rect globalEditableRegion,
+    double textLineHeight,
+    Offset selectionMidpoint,
+    List<TextSelectionPoint> endpoints,
+    TextSelectionDelegate delegate,
+    ValueListenable<ClipboardStatus>? clipboardStatus,
+    Offset? lastSecondaryTapDownPosition,
+  ) {
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: TextSelectionToolbarAnchors(
+        primaryAnchor:
+            lastSecondaryTapDownPosition ??
+            globalEditableRegion.topLeft + selectionMidpoint,
+      ),
+      buttonItems: [
+        if (canCut(delegate))
+          ContextMenuButtonItem(
+            label: "剪下",
+            onPressed: () {
+              delegate.hideToolbar();
+              onCopy(true);
+            },
+          ),
+        if (canCopy(delegate))
+          ContextMenuButtonItem(
+            label: "複製",
+            onPressed: () {
+              delegate.hideToolbar();
+              onCopy(false);
+            },
+          ),
+        if (canPaste(delegate))
+          ContextMenuButtonItem(
+            label: "貼上",
+            onPressed: () => handlePaste(delegate),
+          ),
+        if (canSelectAll(delegate))
+          ContextMenuButtonItem(
+            label: "全選",
+            onPressed: () => handleSelectAll(delegate),
+          ),
+        if (!delegate.textEditingValue.selection.isCollapsed)
+          ContextMenuButtonItem(
+            label: "新增 Mention",
+            onPressed: () {
+              delegate.hideToolbar();
+              onMention();
+            },
+          ),
+      ],
     );
   }
 }

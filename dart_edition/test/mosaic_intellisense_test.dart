@@ -79,7 +79,16 @@ void main() {
       "艾莉絲",
       "小艾",
       "愛麗絲",
+      "新增別名…",
+      "輸入其他顯示文字…",
     ]);
+    expect(
+      alice?.children
+          .firstWhere((item) => item.createAliasForCharacterId != null)
+          .createAliasForCharacterId,
+      uuid,
+    );
+    expect(alice?.children.last.customDisplayText, isTrue);
     expect(alice?.insertText, "//@<$uuid|艾莉絲>//");
   });
 
@@ -136,7 +145,10 @@ void main() {
     expect(event?.children.last.label, "新增場景…");
     expect(searching?.candidates, hasLength(1));
     expect(searching?.candidates.single.label, "城門衝突");
-    expect(searching?.candidates.single.children, isEmpty);
+    expect(
+      searching?.candidates.single.children.single.customDisplayText,
+      isTrue,
+    );
     expect(searching?.candidates.single.detail, contains("第一卷 › 王都篇"));
   });
 

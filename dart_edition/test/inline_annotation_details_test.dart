@@ -13,6 +13,50 @@ import "package:monogatari_assistant/models/world_settings_data.dart";
 void main() {
   const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
 
+  testWidgets(
+    "quick note edits are escaped and preserve an empty display fallback",
+    (tester) async {
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+      const raw = "//@<$uuid|小艾>{主角}//";
+      final resultFuture = InlineAnnotationDetailsDialog.show(
+        context: context,
+        annotation: const InlineAnnotationParser().parse(raw).single,
+        rawSyntax: raw,
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey("inline-annotation-quick-display-text")),
+        "",
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey("inline-annotation-note")),
+        "新{備註}/",
+      );
+      await tester.tap(
+        find.byKey(const ValueKey("inline-annotation-quick-apply")),
+      );
+      await tester.pumpAndSettle();
+      final result = await resultFuture;
+      expect(result?.action, InlineAnnotationDetailsAction.applySyntax);
+      final parsed = const InlineAnnotationParser()
+          .parse(result!.rawSyntax!)
+          .single;
+      expect(parsed.displayText, "小艾");
+      expect(parsed.targetId, uuid);
+      expect(parsed.note, "新{備註}/");
+    },
+  );
+
   test("target resolver recognizes a character alias", () {
     final annotation = const InlineAnnotationParser()
         .parse("//@<$uuid|小艾>//")

@@ -146,7 +146,7 @@ void main() {
       composing: TextRange(start: 0, end: 2),
     );
 
-    expect(controller.rawText, r"\/");
+    expect(controller.rawText, isEmpty);
     expect(controller.displayText, r"\/");
     expect(controller.value.composing, const TextRange(start: 0, end: 2));
 
@@ -156,5 +156,36 @@ void main() {
     expect(controller.displayText, "/");
     expect(controller.selection, const TextSelection.collapsed(offset: 1));
     expect(controller.value.composing, TextRange.empty);
+  });
+
+  test("IME intermediate replacements are committed to raw text once", () {
+    final controller = MosaicEditingController(rawText: "前//^<重點>//後");
+    addTearDown(controller.dispose);
+    final baseDisplay = controller.displayText;
+    final insertionOffset = baseDisplay.indexOf("前") + 1;
+
+    controller.value = TextEditingValue(
+      text: baseDisplay.replaceRange(insertionOffset, insertionOffset, "n"),
+      selection: TextSelection.collapsed(offset: insertionOffset + 1),
+      composing: TextRange(start: insertionOffset, end: insertionOffset + 1),
+    );
+    expect(controller.rawText, "前//^<重點>//後");
+    expect(controller.rawRevision, 0);
+
+    controller.value = TextEditingValue(
+      text: baseDisplay.replaceRange(insertionOffset, insertionOffset, "ni"),
+      selection: TextSelection.collapsed(offset: insertionOffset + 2),
+      composing: TextRange(start: insertionOffset, end: insertionOffset + 2),
+    );
+    expect(controller.rawText, "前//^<重點>//後");
+    expect(controller.rawRevision, 0);
+
+    controller.value = TextEditingValue(
+      text: baseDisplay.replaceRange(insertionOffset, insertionOffset, "你"),
+      selection: TextSelection.collapsed(offset: insertionOffset + 1),
+    );
+    expect(controller.rawText, "前你//^<重點>//後");
+    expect(controller.displayText, "前你$inlineAnnotationPlaceholder重點後");
+    expect(controller.rawRevision, 1);
   });
 }

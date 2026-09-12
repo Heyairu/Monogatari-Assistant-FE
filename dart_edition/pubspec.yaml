@@ -1,7 +1,7 @@
 name: monogatari_assistant
 description: "A writing assistant app for story creators"
 publish_to: 'none'
-version: 0.1.0
+version: 0.9.19
 
 environment:
   sdk: ^3.9.2

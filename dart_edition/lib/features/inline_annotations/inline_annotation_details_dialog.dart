@@ -3,6 +3,7 @@ import "package:flutter/material.dart";
 import "inline_annotation.dart";
 import "inline_annotation_anchored_popup.dart";
 import "inline_annotation_parser.dart";
+import "inline_annotation_syntax.dart";
 import "inline_annotation_target_resolver.dart";
 
 enum InlineAnnotationDetailsAction {
@@ -69,6 +70,7 @@ class _InlineAnnotationQuickEditorState
     extends State<_InlineAnnotationQuickEditor> {
   late final TextEditingController _displayController;
   late final TextEditingController _rawSyntaxController;
+  late final TextEditingController _noteController;
   String? _syntaxError;
 
   @override
@@ -78,16 +80,40 @@ class _InlineAnnotationQuickEditorState
       text: widget.annotation.displayText,
     );
     _rawSyntaxController = TextEditingController(text: widget.rawSyntax);
+    _noteController = TextEditingController(text: widget.annotation.note ?? "");
   }
 
   @override
   void dispose() {
     _displayController.dispose();
     _rawSyntaxController.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
   void _apply() {
+    if (_noteController.text != (widget.annotation.note ?? "")) {
+      final parsed = const InlineAnnotationParser().parse(
+        _rawSyntaxController.text,
+      );
+      if (parsed.length != 1 ||
+          parsed.single.sourceRange.end != _rawSyntaxController.text.length ||
+          parsed.single.sourceRange.start != 0) {
+        setState(() => _syntaxError = "完整語法無效，請修正後再套用。");
+        return;
+      }
+      final annotation = parsed.single;
+      _rawSyntaxController.text = InlineAnnotationSyntax.format(
+        kind: annotation.kind,
+        state: annotation.state,
+        colors: annotation.colors,
+        targetId: annotation.targetId,
+        displayText: _displayController.text.trim().isEmpty
+            ? widget.annotation.displayText
+            : _displayController.text,
+        note: _noteController.text,
+      );
+    }
     final rawSyntax = _rawSyntaxController.text;
     if (rawSyntax != widget.rawSyntax) {
       final parsed = const InlineAnnotationParser().parse(rawSyntax);
@@ -152,6 +178,17 @@ class _InlineAnnotationQuickEditorState
               ),
               _buildDisplayField(),
               const SizedBox(height: 8),
+              TextField(
+                key: const ValueKey("inline-annotation-note"),
+                controller: _noteController,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: "備註",
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
               Container(
                 key: const ValueKey("inline-annotation-basic-info"),
                 padding: const EdgeInsets.symmetric(
@@ -186,12 +223,6 @@ class _InlineAnnotationQuickEditorState
                       label: "色彩",
                       value:
                           "${widget.annotation.colors.background}${widget.annotation.colors.foreground}",
-                    ),
-                    _InfoRow(
-                      label: "備註",
-                      value: widget.annotation.note?.isNotEmpty == true
-                          ? widget.annotation.note!
-                          : "無備註",
                       isLast: true,
                     ),
                   ],

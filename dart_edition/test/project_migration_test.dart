@@ -113,7 +113,7 @@ void main() {
     );
 
     final savedXml = FileService.generateProjectXML(result.data);
-    expect(savedXml, contains("<ver>1.14</ver>"));
+    expect(savedXml, contains("<ver>1.16</ver>"));
     expect(savedXml, contains("Name=\"Alice &amp; Co\""));
     expect(savedXml, isNot(contains("DisplayName=")));
     expect(savedXml, contains("Id=\"${bob.key}\""));

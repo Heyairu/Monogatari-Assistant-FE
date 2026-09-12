@@ -86,7 +86,7 @@ void main() {
 
     repository.loadCompleter.complete(
       ProjectParseResult(
-        projectVersion: '0.1.0',
+        projectVersion: '0.9.19',
         sourceProjectUuid: sourceProjectUuid,
         data: ProjectData.empty(projectUUID: sourceProjectUuid),
       ),

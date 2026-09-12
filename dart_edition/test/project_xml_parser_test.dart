@@ -59,9 +59,17 @@ void main() {
     final secondSave = FileService.generateProjectXML(loaded.data);
 
     expect(firstSave, contains('<Project UUID="$projectUuid">'));
-    expect(firstSave, contains("<ver>1.14</ver>"));
+    expect(firstSave, contains("<ver>1.16</ver>"));
     expect(loaded.data.projectUUID, projectUuid);
     expect(secondSave, contains('<Project UUID="$projectUuid">'));
+  });
+
+  test("1.16 is supported while later project formats are rejected", () {
+    expect(FileService.projectVersion, "1.16");
+    expect(FileService.isProjectVersionNewerThanSupported("1.16"), isFalse);
+    expect(FileService.isProjectVersionNewerThanSupported("1.16.0"), isFalse);
+    expect(FileService.isProjectVersionNewerThanSupported("1.17"), isTrue);
+    expect(FileService.isProjectVersionNewerThanSupported("2.0"), isTrue);
   });
 
   test("legacy project without UUID receives one while loading", () {

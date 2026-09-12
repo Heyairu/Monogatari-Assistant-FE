@@ -42,6 +42,9 @@ class MosaicEditingController extends CodeController {
   late InlineAnnotationProjection _projection;
   bool _ready = false;
   bool _publishing = false;
+  TextEditingValue? _compositionBaseValue;
+  InlineAnnotationProjection? _compositionBaseProjection;
+  String? _compositionBaseRawText;
   int _rawRevision = 0;
   final int _presentationRevision = 0;
 
@@ -50,7 +53,7 @@ class MosaicEditingController extends CodeController {
   bool Function()? onTabKeyPressed;
 
   String get rawText => _rawText;
-  String get displayText => _projection.displayText;
+  String get displayText => text;
   String get readerText => _projection.readerText;
   InlineAnnotationProjection get projection => _projection;
   List<InlineAnnotation> get annotations => _projection.annotations;
@@ -103,6 +106,12 @@ class MosaicEditingController extends CodeController {
     bool? withComposing,
   }) {
     final baseStyle = style ?? const TextStyle();
+    if (_compositionBaseValue != null) {
+      return _buildImeTextSpan(
+        baseStyle: baseStyle,
+        withComposing: withComposing == true,
+      );
+    }
     final annotationRanges = inlineStyleRanges(context);
     final badgeRanges = <TextRange>[
       for (final entry in _projection.projectedAnnotations)
@@ -161,6 +170,51 @@ class MosaicEditingController extends CodeController {
     return TextSpan(style: baseStyle, children: children);
   }
 
+  TextSpan _buildImeTextSpan({
+    required TextStyle baseStyle,
+    required bool withComposing,
+  }) {
+    final composing = value.composing;
+    final showComposing =
+        withComposing && composing.isValid && !composing.isCollapsed;
+    final boundaries = <int>{0, text.length};
+    if (showComposing) {
+      boundaries
+        ..add(composing.start.clamp(0, text.length))
+        ..add(composing.end.clamp(0, text.length));
+    }
+    for (var offset = 0; offset < text.length; offset++) {
+      if (text.codeUnitAt(offset) ==
+          inlineAnnotationPlaceholder.codeUnitAt(0)) {
+        boundaries
+          ..add(offset)
+          ..add(offset + 1);
+      }
+    }
+
+    final sorted = boundaries.toList()..sort();
+    final children = <InlineSpan>[];
+    for (var index = 0; index + 1 < sorted.length; index++) {
+      final start = sorted[index];
+      final end = sorted[index + 1];
+      if (start == end) continue;
+      var segmentStyle = baseStyle;
+      if (text.codeUnitAt(start) == inlineAnnotationPlaceholder.codeUnitAt(0)) {
+        segmentStyle = segmentStyle.copyWith(color: Colors.transparent);
+      } else if (showComposing &&
+          start >= composing.start &&
+          end <= composing.end) {
+        segmentStyle = segmentStyle.merge(
+          const TextStyle(decoration: TextDecoration.underline),
+        );
+      }
+      children.add(
+        TextSpan(text: text.substring(start, end), style: segmentStyle),
+      );
+    }
+    return TextSpan(style: baseStyle, children: children);
+  }
+
   TextRange _displayTextRange(ProjectedInlineAnnotation entry) {
     return entry.isExpanded
         ? TextRange(
@@ -175,6 +229,7 @@ class MosaicEditingController extends CodeController {
   }
 
   void setRawText(String rawText, {TextSelection? rawSelection}) {
+    _clearCompositionSession();
     final nextRawSelection =
         rawSelection ?? TextSelection.collapsed(offset: rawText.length);
     if (rawText == _rawText) {
@@ -426,36 +481,20 @@ class MosaicEditingController extends CodeController {
     }
 
     final oldValue = super.value;
-    if (newValue.text == oldValue.text) {
-      if (newValue.composing == oldValue.composing) {
-        super.value = newValue;
-        return;
-      }
+    if (_hasActiveComposition(newValue)) {
+      _compositionBaseValue ??= oldValue.copyWith(composing: TextRange.empty);
+      _compositionBaseProjection ??= _projection;
+      _compositionBaseRawText ??= _rawText;
+      _publishTransientImeValue(newValue);
+      return;
+    }
+    if (_compositionBaseValue != null) {
+      _commitImeComposition(newValue);
+      return;
+    }
 
-      // IMEs commonly commit a composition by clearing the composing range
-      // without changing the text. Rebuild here so temporarily visible escape
-      // sequences and syntax are folded only after the IME has committed.
-      final rawSelection = newValue.selection.isValid
-          ? _projection.displaySelectionToRaw(newValue.selection)
-          : TextSelection.collapsed(offset: _rawText.length);
-      final composingRaw =
-          newValue.composing.isValid && !newValue.composing.isCollapsed
-          ? TextRange(
-              start: _projection.displayOffsetToRaw(
-                newValue.composing.start,
-                affinity: MosaicOffsetAffinity.downstream,
-              ),
-              end: _projection.displayOffsetToRaw(
-                newValue.composing.end,
-                affinity: MosaicOffsetAffinity.upstream,
-              ),
-            )
-          : TextRange.empty;
-      _rebuildProjection(composingRawRange: composingRaw);
-      _publishProjection(
-        _projection.rawSelectionToDisplay(rawSelection),
-        composingRawRange: composingRaw,
-      );
+    if (newValue.text == oldValue.text) {
+      super.value = newValue;
       return;
     }
 
@@ -474,6 +513,7 @@ class MosaicEditingController extends CodeController {
         ? TextSelection(
             baseOffset: _mapNewDisplayOffsetToRaw(
               newValue.selection.baseOffset,
+              projection: _projection,
               edit: edit,
               replacedRawRange: rawRange,
               affinity:
@@ -484,6 +524,7 @@ class MosaicEditingController extends CodeController {
             ),
             extentOffset: _mapNewDisplayOffsetToRaw(
               newValue.selection.extentOffset,
+              projection: _projection,
               edit: edit,
               replacedRawRange: rawRange,
               affinity:
@@ -501,12 +542,14 @@ class MosaicEditingController extends CodeController {
         ? TextRange(
             start: _mapNewDisplayOffsetToRaw(
               newValue.composing.start,
+              projection: _projection,
               edit: edit,
               replacedRawRange: rawRange,
               affinity: MosaicOffsetAffinity.downstream,
             ),
             end: _mapNewDisplayOffsetToRaw(
               newValue.composing.end,
+              projection: _projection,
               edit: edit,
               replacedRawRange: rawRange,
               affinity: MosaicOffsetAffinity.upstream,
@@ -522,6 +565,78 @@ class MosaicEditingController extends CodeController {
       composingRawRange: composingRaw,
     );
     _notifyIfProjectionStayedEqual(oldValue);
+  }
+
+  void _commitImeComposition(TextEditingValue committedValue) {
+    final baseValue = _compositionBaseValue!;
+    final baseProjection = _compositionBaseProjection!;
+    final baseRawText = _compositionBaseRawText!;
+    final previousPublishedValue = super.value;
+    final edit = _diff(baseValue.text, committedValue.text);
+    final rawRange = baseProjection.displayRangeToRaw(
+      TextRange(start: edit.oldStart, end: edit.oldEnd),
+    );
+    final inserted = committedValue.text.substring(edit.newStart, edit.newEnd);
+    final updatedRaw = baseRawText.replaceRange(
+      rawRange.start,
+      rawRange.end,
+      inserted,
+    );
+    final rawSelection = committedValue.selection.isValid
+        ? TextSelection(
+            baseOffset: _mapNewDisplayOffsetToRaw(
+              committedValue.selection.baseOffset,
+              projection: baseProjection,
+              edit: edit,
+              replacedRawRange: rawRange,
+              affinity:
+                  committedValue.selection.baseOffset <=
+                      committedValue.selection.extentOffset
+                  ? MosaicOffsetAffinity.downstream
+                  : MosaicOffsetAffinity.upstream,
+            ),
+            extentOffset: _mapNewDisplayOffsetToRaw(
+              committedValue.selection.extentOffset,
+              projection: baseProjection,
+              edit: edit,
+              replacedRawRange: rawRange,
+              affinity:
+                  committedValue.selection.baseOffset <=
+                      committedValue.selection.extentOffset
+                  ? MosaicOffsetAffinity.upstream
+                  : MosaicOffsetAffinity.downstream,
+            ),
+            affinity: committedValue.selection.affinity,
+            isDirectional: committedValue.selection.isDirectional,
+          )
+        : TextSelection.collapsed(offset: rawRange.start + inserted.length);
+
+    _clearCompositionSession();
+    if (_rawText != updatedRaw) {
+      _rawText = updatedRaw;
+      _rawRevision++;
+    }
+    _rebuildProjection();
+    _publishProjection(_projection.rawSelectionToDisplay(rawSelection));
+    _notifyIfProjectionStayedEqual(previousPublishedValue);
+  }
+
+  void _publishTransientImeValue(TextEditingValue value) {
+    _publishing = true;
+    try {
+      applyProjectedValue(value);
+    } finally {
+      _publishing = false;
+    }
+  }
+
+  static bool _hasActiveComposition(TextEditingValue value) =>
+      value.composing.isValid && !value.composing.isCollapsed;
+
+  void _clearCompositionSession() {
+    _compositionBaseValue = null;
+    _compositionBaseProjection = null;
+    _compositionBaseRawText = null;
   }
 
   void _notifyIfProjectionStayedEqual(TextEditingValue previousValue) {
@@ -542,18 +657,19 @@ class MosaicEditingController extends CodeController {
 
   int _mapNewDisplayOffsetToRaw(
     int newOffset, {
+    required InlineAnnotationProjection projection,
     required _DisplayEdit edit,
     required TextRange replacedRawRange,
     required MosaicOffsetAffinity affinity,
   }) {
     if (newOffset < edit.newStart) {
-      return _projection.displayOffsetToRaw(newOffset, affinity: affinity);
+      return projection.displayOffsetToRaw(newOffset, affinity: affinity);
     }
     if (newOffset <= edit.newEnd) {
       return replacedRawRange.start + (newOffset - edit.newStart);
     }
     final oldOffset = edit.oldEnd + (newOffset - edit.newEnd);
-    final oldRawOffset = _projection.displayOffsetToRaw(
+    final oldRawOffset = projection.displayOffsetToRaw(
       oldOffset,
       affinity: affinity,
     );

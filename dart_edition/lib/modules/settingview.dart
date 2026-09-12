@@ -17,6 +17,7 @@
  ************************************************************/
 
 import "package:flutter/material.dart";
+import "../features/inline_annotations/alias_mention_updates.dart";
 import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/file.dart" show AutoBackupDirectoryInfo;
@@ -246,6 +247,21 @@ class _SettingViewState extends ConsumerState<SettingView>
                     ),
                     const SizedBox(height: 16),
                     _buildWordCountSetting(),
+                    const SizedBox(height: 16),
+                    SwitchWithIconTitle(
+                      key: const Key("alias-mention-updates-setting"),
+                      title: "修改別名時更新正文 Mention",
+                      icon: Icons.sync,
+                      subtitle: "更新同角色且顯示文字等於原別名的標記",
+                      value:
+                          ref
+                              .watch(aliasMentionUpdatesEnabledProvider)
+                              .valueOrNull ??
+                          true,
+                      onChanged: (value) => ref
+                          .read(aliasMentionUpdatesEnabledProvider.notifier)
+                          .setEnabled(value),
+                    ),
                     const SizedBox(height: 16),
                     _buildAutoSaveSetting(),
                     const SizedBox(height: 16),

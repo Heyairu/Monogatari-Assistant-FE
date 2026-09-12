@@ -16,6 +16,8 @@ final class MosaicCompletionCandidate {
   final InlineAnnotationKind? createTargetKind;
   final String? createParentId;
   final int createDepth;
+  final bool customDisplayText;
+  final String? createAliasForCharacterId;
 
   const MosaicCompletionCandidate({
     required this.id,
@@ -27,6 +29,8 @@ final class MosaicCompletionCandidate {
     this.createTargetKind,
     this.createParentId,
     this.createDepth = 0,
+    this.customDisplayText = false,
+    this.createAliasForCharacterId,
   });
 }
 
@@ -501,42 +505,47 @@ final class MosaicIntelliSenseEngine {
         includeHierarchy &&
         (kind == InlineAnnotationKind.location ||
             (kind == InlineAnnotationKind.event && depth <= 1));
-    final childLimit = maxCandidatesPerLevel - (hasCreateAction ? 1 : 0);
+    final childLimit = maxCandidatesPerLevel - (hasCreateAction ? 1 : 0) - 1;
     final children = kind == InlineAnnotationKind.character
-        ? target.aliases.isEmpty
-              ? const <MosaicCompletionCandidate>[]
-              : <MosaicCompletionCandidate>[
-                  MosaicCompletionCandidate(
-                    id: "${target.id}:primary",
-                    label: target.primaryName,
-                    detail: "人物 · 主名稱",
-                    insertText: InlineAnnotationSyntax.format(
-                      kind: kind,
-                      state: state,
-                      colors: colors,
-                      targetId: target.id,
-                      displayText: target.primaryName,
-                    ),
-                  ),
-                  for (
-                    var aliasIndex = 0;
-                    aliasIndex < target.aliases.length &&
-                        aliasIndex < maxCandidatesPerLevel - 1;
-                    aliasIndex++
-                  )
-                    MosaicCompletionCandidate(
-                      id: "${target.id}:alias:$aliasIndex",
-                      label: target.aliases[aliasIndex],
-                      detail: "人物 · ${target.primaryName}的別名",
-                      insertText: InlineAnnotationSyntax.format(
-                        kind: kind,
-                        state: state,
-                        colors: colors,
-                        targetId: target.id,
-                        displayText: target.aliases[aliasIndex],
-                      ),
-                    ),
-                ]
+        ? <MosaicCompletionCandidate>[
+            MosaicCompletionCandidate(
+              id: "${target.id}:primary",
+              label: target.primaryName,
+              detail: "人物 · 主名稱",
+              insertText: InlineAnnotationSyntax.format(
+                kind: kind,
+                state: state,
+                colors: colors,
+                targetId: target.id,
+                displayText: target.primaryName,
+              ),
+            ),
+            for (
+              var aliasIndex = 0;
+              aliasIndex < target.aliases.length &&
+                  aliasIndex < maxCandidatesPerLevel - 3;
+              aliasIndex++
+            )
+              MosaicCompletionCandidate(
+                id: "${target.id}:alias:$aliasIndex",
+                label: target.aliases[aliasIndex],
+                detail: "人物 · ${target.primaryName}的別名",
+                insertText: InlineAnnotationSyntax.format(
+                  kind: kind,
+                  state: state,
+                  colors: colors,
+                  targetId: target.id,
+                  displayText: target.aliases[aliasIndex],
+                ),
+              ),
+            MosaicCompletionCandidate(
+              id: "${target.id}:create-alias",
+              label: "新增別名…",
+              detail: "為 ${target.primaryName} 新增別名",
+              insertText: "",
+              createAliasForCharacterId: target.id,
+            ),
+          ]
         : includeHierarchy
         ? <MosaicCompletionCandidate>[
             for (final child in target.children.take(childLimit))
@@ -552,6 +561,19 @@ final class MosaicIntelliSenseEngine {
         : const <MosaicCompletionCandidate>[];
     final hierarchicalChildren = <MosaicCompletionCandidate>[
       ...children,
+      MosaicCompletionCandidate(
+        id: "${target.id}:custom-text",
+        label: "輸入其他顯示文字…",
+        detail: "僅用於此 Mention，不加入別名",
+        customDisplayText: true,
+        insertText: InlineAnnotationSyntax.format(
+          kind: kind,
+          state: state,
+          colors: colors,
+          targetId: target.id,
+          displayText: target.primaryName,
+        ),
+      ),
       if (includeHierarchy && kind == InlineAnnotationKind.location)
         _createCandidate(
           kind: kind,
@@ -647,12 +669,33 @@ final class MosaicIntelliSenseEngine {
                     background.key,
                     foreground.key,
                   ),
+                  children: [_customHighlight(background.key, foreground.key)],
                 ),
+              _customHighlight(background.key, "0"),
             ],
           ),
       ],
     );
   }
+
+  MosaicCompletionCandidate _customHighlight(
+    String background,
+    String foreground,
+  ) => MosaicCompletionCandidate(
+    id: "highlight-$background-$foreground-custom-text",
+    label: "輸入其他顯示文字…",
+    detail: "僅用於此標註",
+    customDisplayText: true,
+    insertText: InlineAnnotationSyntax.format(
+      kind: InlineAnnotationKind.emphasis,
+      state: InlineAnnotationState.none,
+      colors: InlineAnnotationColorCode(
+        background: background,
+        foreground: foreground,
+      ),
+      displayText: "標註",
+    ),
+  );
 
   MosaicCompletionSession? _colorSession(String draft, int caret) {
     final match = RegExp(r"^//(?:[@!#?&])?[+-]?\^([A-F0]?)$").firstMatch(draft);

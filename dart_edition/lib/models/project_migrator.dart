@@ -21,7 +21,7 @@ class ProjectMigrationResult {
 /// Owns all project-format upgrades. Module codecs only decode their XML shape;
 /// they never guess which historical project version they received.
 class ProjectMigrator {
-  static const currentVersion = "1.14";
+  static const currentVersion = "1.16";
   static const _legacyMigrationCutoff = "1.08";
   static const _timelineProjectionCutoff = "1.10";
   static const _characterSnapshotCutoff = "1.11";

@@ -55,6 +55,7 @@ import "features/inline_annotations/inline_annotation_relink_dialog.dart";
 import "features/inline_annotations/inline_annotation_target_resolver.dart";
 import "features/inline_annotations/inline_annotation_projection.dart";
 import "features/inline_annotations/mosaic_editing_controller.dart";
+import "features/inline_annotations/alias_mention_updates.dart";
 import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
@@ -1368,6 +1369,12 @@ class _ContentViewState extends ConsumerState<ContentView>
     );
 
     _subscriptions.add(
+      ref.listenManual<AliasRename?>(aliasRenameProvider, (previous, rename) {
+        if (rename == null) return;
+        unawaited(_applyAliasMentionRename(rename));
+      }),
+    );
+    _subscriptions.add(
       ref.listenManual<String>(editorContentProvider, (previous, next) {
         if (!mounted || _isSyncing || textController.rawText == next) {
           return;
@@ -1628,6 +1635,41 @@ class _ContentViewState extends ConsumerState<ContentView>
       }
     }
     _subscriptions.clear();
+  }
+
+  Future<void> _applyAliasMentionRename(AliasRename rename) async {
+    final projectId = ref.read(projectDataProvider).projectUUID;
+    final enabled =
+        rename.isPrimaryName ||
+        await ref.read(aliasMentionUpdatesEnabledProvider.future);
+    if (!mounted ||
+        !enabled ||
+        ref.read(projectDataProvider).projectUUID != projectId) {
+      return;
+    }
+    _flushPendingEditorContent();
+    _syncEditorToSelectedChapter();
+    final selection = ref.read(editorSelectionProvider);
+    final locations = ChapterModule.ChapterTree.chaptersDepthFirst(
+      ref.read(segmentsDataProvider),
+    ).toList();
+    for (final location in locations) {
+      final chapter = location.chapter;
+      final isActive = chapter.chapterUUID == selection.selectedChapID;
+      final raw = isActive ? textController.rawText : chapter.chapterContent;
+      final updated = rewriteAliasMentions(raw, rename);
+      if (updated == raw) continue;
+      ref
+          .read(segmentsDataProvider.notifier)
+          .updateChapterContent(
+            segmentID: location.folder.segmentUUID,
+            chapterID: chapter.chapterUUID,
+            content: updated,
+          );
+      if (isActive) {
+        ref.read(editorContentProvider.notifier).setContent(updated);
+      }
+    }
   }
 
   void _flushPendingEditorContent() {

@@ -27,6 +27,8 @@
 */
 
 import "package:flutter/material.dart";
+import "../ui_library/alias_terms.dart";
+import "../features/inline_annotations/alias_mention_updates.dart";
 import "dart:async";
 import "package:xml/xml.dart" as xml;
 import "../models/codecs/xml_text_codec.dart";
@@ -2729,18 +2731,20 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         _buildTextField("生日：", _controllers["birthday"]!),
         const SizedBox(height: 8),
         _fixedSnapshotControl(
-          CardList(
-            title: "暱稱",
-            icon: Icons.alternate_email,
-            items: nicknames,
-            onAdd: (value) {
-              final nickname = value.trim();
-              if (nickname.isEmpty || nicknames.contains(nickname)) return;
-              setState(() => nicknames = [...nicknames, nickname]);
-              _markAsModified(structuredFields: true);
+          AliasTerms(
+            values: nicknames,
+            onRenamed: (oldName, newName) {
+              final id = selectedCharacter;
+              if (id != null) {
+                ref.read(aliasRenameProvider.notifier).state = AliasRename(
+                  id,
+                  oldName,
+                  newName,
+                );
+              }
             },
-            onRemove: (index) {
-              setState(() => nicknames = [...nicknames]..removeAt(index));
+            onChanged: (values) {
+              setState(() => nicknames = values);
               _markAsModified(structuredFields: true);
             },
           ),
@@ -5066,7 +5070,19 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characterId: currentId,
       entry: nextEntry,
     );
-    if (didUpdate) _emitCharacterDataChanged();
+    if (didUpdate) {
+      _emitCharacterDataChanged();
+      if (currentEntry != null &&
+          currentEntry.displayName.isNotEmpty &&
+          currentEntry.displayName != nextEntry.displayName) {
+        ref.read(aliasRenameProvider.notifier).state = AliasRename(
+          currentId,
+          currentEntry.displayName,
+          nextEntry.displayName,
+          isPrimaryName: true,
+        );
+      }
+    }
     _commitSavedCharacterEntrySnapshot(nextEntry);
     _setNameFieldTextSilently(targetName);
   }

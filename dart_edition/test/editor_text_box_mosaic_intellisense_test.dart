@@ -1,4 +1,4 @@
-import "dart:ui" show SemanticsAction, Tristate;
+import "dart:ui" show SemanticsAction, Tristate, PointerDeviceKind;
 
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
@@ -16,6 +16,144 @@ import "package:monogatari_assistant/presentation/providers/project_state_provid
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    "custom Mention text does not create an alias and exposes primary name tooltip",
+    (tester) async {
+      const id = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(characterDataProvider.notifier).setCharacterData(const {
+        id: CharacterEntryData(characterId: id, displayName: "艾莉絲"),
+      });
+      final controller = HighlightTextEditingController(text: "前@");
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      controller.selection = TextSelection.collapsed(
+        offset: controller.text.length,
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: EditorTextBox(controller: controller, focusNode: focusNode),
+            ),
+          ),
+        ),
+      );
+      focusNode.requestFocus();
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      await tester.tap(find.text("輸入其他顯示文字…"));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey("mosaic-create-target-name")),
+        "那位少女",
+      );
+      await tester.tap(
+        find.byKey(const ValueKey("mosaic-create-target-submit")),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.rawText, "前//@<$id|那位少女>//");
+      expect(container.read(characterDataProvider)[id]!.aliases, isEmpty);
+      expect(find.byTooltip("原名：艾莉絲\n備註：無"), findsOneWidget);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(700, 400));
+      await mouse.moveTo(tester.getCenter(find.byTooltip("原名：艾莉絲\n備註：無")));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(find.text("原名：艾莉絲\n備註：無"), findsOneWidget);
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets("selection toolbar creates a Mention from selected prose", (
+    tester,
+  ) async {
+    final controller = HighlightTextEditingController(text: "前選取正文後");
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: EditorTextBox(controller: controller, focusNode: focusNode),
+          ),
+        ),
+      ),
+    );
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .userUpdateTextEditingValue(
+          controller.value.copyWith(
+            selection: const TextSelection(baseOffset: 1, extentOffset: 5),
+          ),
+          SelectionChangedCause.longPress,
+        );
+    await tester.pump();
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("新增 Mention"));
+    await tester.pumpAndSettle();
+    expect(find.text("選取正文"), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey("inline-annotation-save")));
+    await tester.pumpAndSettle();
+    expect(controller.rawText, "前//^<選取正文>//後");
+  });
+
+  testWidgets("create alias from an empty character submenu preserves prose", (
+    tester,
+  ) async {
+    const id = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(characterDataProvider.notifier).setCharacterData(const {
+      id: CharacterEntryData(characterId: id, displayName: "艾莉絲"),
+    });
+    final controller = HighlightTextEditingController(text: "她看見 @");
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    controller.selection = TextSelection.collapsed(
+      offset: controller.text.length,
+    );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: EditorTextBox(controller: controller, focusNode: focusNode),
+          ),
+        ),
+      ),
+    );
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.tap(find.text("新增別名…"));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey("mosaic-create-target-name")),
+      "小艾",
+    );
+    await tester.tap(find.byKey(const ValueKey("mosaic-create-target-submit")));
+    await tester.pumpAndSettle();
+    expect(
+      container
+          .read(characterDataProvider)[id]!
+          .aliases
+          .expand((alias) => alias.values),
+      contains("小艾"),
+    );
+    expect(controller.rawText, "她看見 @");
+  });
 
   testWidgets(
     "target completion supports keyboard selection and one insertion",
@@ -375,7 +513,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(controller.rawText, "文字/");
+    expect(controller.rawText, "文字");
     expect(controller.value.composing, const TextRange(start: 2, end: 3));
     expect(find.byKey(const ValueKey("mosaic-completion-panel")), findsNothing);
 
@@ -387,6 +525,7 @@ void main() {
     );
     await tester.pump();
 
+    expect(controller.rawText, "文字/");
     expect(controller.value.composing, TextRange.empty);
     expect(
       find.byKey(const ValueKey("mosaic-completion-panel")),

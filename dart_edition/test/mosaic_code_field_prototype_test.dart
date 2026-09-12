@@ -70,11 +70,22 @@ void main() {
     );
     await tester.pump();
 
-    expect(controller.rawText, "前中文 //^<重點>//後");
+    expect(controller.rawText, "前 //^<重點>//後");
     expect(controller.text, "前中文 $inlineAnnotationPlaceholder重點後");
     expect(controller.value.composing, const TextRange(start: 1, end: 3));
     expect(controller.selection.extentOffset, 3);
     expect(tester.takeException(), isNull);
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: "前中文 $inlineAnnotationPlaceholder重點後",
+        selection: TextSelection.collapsed(offset: 3),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.rawText, "前中文 //^<重點>//後");
+    expect(controller.value.composing, TextRange.empty);
   });
 
   testWidgets("caret inside label keeps syntax hidden", (tester) async {
@@ -126,9 +137,20 @@ void main() {
     );
     await tester.pump();
 
-    expect(controller.rawText, "前//^<重中點>//後");
+    expect(controller.rawText, "前//^<重點>//後");
     expect(controller.text, "前$inlineAnnotationPlaceholder重中點後");
     expect(controller.value.composing.isValid, isTrue);
     expect(tester.takeException(), isNull);
+
+    tester.testTextInput.updateEditingValue(
+      TextEditingValue(
+        text: projected.replaceRange(insertionOffset, insertionOffset, "中"),
+        selection: TextSelection.collapsed(offset: insertionOffset + 1),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.rawText, "前//^<重中點>//後");
+    expect(controller.value.composing, TextRange.empty);
   });
 }
