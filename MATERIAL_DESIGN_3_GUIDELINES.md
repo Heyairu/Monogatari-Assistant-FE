@@ -14,12 +14,12 @@
 | --- | --- | --- |
 | 色彩 | 語意色彩角色、明暗主題、可選的動態配色 | 為追求 Expressive 展示風格而重新配置整體視覺 |
 | 字體 | 原版 15 級 type scale | Expressive 新增的 emphasized 字級系統與互動字形變化 |
-| 形狀 | 原版圓角階梯、圓形、膠囊形 | Expressive 的擴充形狀集合與裝飾性形狀變換 |
+| 形狀 | 原版圓角階梯；本專案以圓角矩形與圓形覆寫 Full | Expressive 的擴充形狀集合、膠囊形與裝飾性形狀變換 |
 | 動畫 | 原版 duration／easing token 與有意義的轉場 | Expressive motion physics 作為全站預設、強烈彈跳與形變 |
 | 元件 | 原版按鈕、FAB、chips、導覽、輸入與回饋元件 | Expressive button groups、FAB menu、形狀變換 loading indicator，以及 Expressive 元件變體 |
 | 進度顯示 | 傳統直線與圓形進度指示 | 波浪式進度外觀作為預設 |
 
-**膠囊按鈕、大圓角、動態配色、色調表面與選取指示背景都不是 M3E 專屬。** 不應為排除 Expressive 而全部移除。品牌色鮮明也不等於使用 M3E；本專案採取克制風格是使用者偏好，不是 M3 官方要求所有產品都低彩度。
+**膠囊按鈕、大圓角、動態配色、色調表面與選取指示背景都不是 M3E 專屬。** 不過，本專案基於視覺偏好，會把膠囊形元件改為圓角矩形或具有明確幾何意義的圓形元件。這是專案覆寫，不是原版 M3 的要求。品牌色鮮明也不等於使用 M3E；本專案採取克制風格同樣屬於產品選擇。
 
 Expressive 邊界參考：[官方更新介紹](https://m3.material.io/blog/building-with-m3-expressive)。
 
@@ -129,9 +129,33 @@ Expressive 邊界參考：[官方更新介紹](https://m3.material.io/blog/build
 | Extra large | 28dp |
 | Full | 完整圓形或膠囊形，依容器尺寸決定 |
 
-部分元件僅套用上方或側邊圓角。Full 在 Web 可用足夠大的 radius 實現，不表示元件必須具有固定的巨大半徑。上述值是階梯，不是所有容器都用 28dp 的要求。[官方 Shape tokens](https://raw.githubusercontent.com/material-components/material-web/main/tokens/versions/v0_192/_md-sys-shape.scss)
+部分元件僅套用上方或側邊圓角。Full 在 Web 可用足夠大的 radius 實現，不表示元件必須具有固定的巨大半徑。上述值是官方原版階梯，不是本專案必須逐項採用的形狀清單，也不是所有容器都用 28dp 的要求。[官方 Shape tokens](https://raw.githubusercontent.com/material-components/material-web/main/tokens/versions/v0_192/_md-sys-shape.scss)
 
-**專案建議**：以固定圓角與穩定輪廓維持一致性；不加入裝飾性花瓣、星形或按壓時的形狀變換。元件若需自訂圓角，集中建立變體。
+### 6.1 本專案的非膠囊形狀策略
+
+本專案不把 `corner-full` 套用到長方形容器。形狀依元件功能分成兩類：
+
+- **圓角矩形**：用於帶文字的操作、輸入、選取容器、卡片、選單與面板。圓角是固定 token，不隨元件高度自動變成半高。
+- **圓形**：只用於寬高相等且具有明確中心的元件，例如頭像、單一圖示按鈕、單選圓點、圓形進度指示或圓形色票。文字按鈕、chip、標籤與分段選項不使用圓形。
+
+| 元件 | 建議形狀 | 建議圓角／規則 |
+| --- | --- | --- |
+| Filled／Tonal／Elevated／Outlined button | 圓角矩形 | 8dp；較大型按鈕可用 12dp |
+| Text button 的狀態層 | 圓角矩形 | 8dp |
+| Chip、tag、filter | 圓角矩形 | 8dp；高度增加時仍維持 8dp |
+| Segmented button 外框 | 圓角矩形群組 | 外框 12dp；內部分段共用直線邊界 |
+| FAB／Extended FAB | 圓角正方形／圓角矩形 | 16dp；Extended FAB 不使用半高圓角 |
+| 一般 icon button | 圓角正方形 | 8dp 或 12dp |
+| 獨立圓形 icon button | 圓形 | 僅在寬高相等、圓形能表達獨立操作時使用 |
+| Search bar、text field | 圓角矩形 | 8dp 或 12dp；不使用兩端半圓 |
+| Cards、dialogs、menus | 圓角矩形 | 12dp、16dp 或 28dp，按容器層級選擇 |
+| Navigation 選取指示 | 圓角矩形 | 8dp 或 12dp；寬度由內容與版面決定 |
+| Switch 軌道 | 小圓角矩形 | 固定 8dp 或 12dp；thumb 保持圓形 |
+| Avatar、radio、圓形進度 | 圓形 | 寬高必須相等 |
+
+設計 token 可另外建立 `componentRadiusSmall = 8dp`、`componentRadiusMedium = 12dp`、`containerRadiusLarge = 16dp`、`containerRadiusExtraLarge = 28dp` 與 `circle = 50%`。不要讓一般元件直接引用 `corner-full`；如框架預設使用 Full，應在全域主題或共用元件層覆寫，而不是在各畫面重複修改。
+
+圓角矩形與圓形之間應保持功能差異：圓形偏向單一圖像、狀態或身份；圓角矩形承載文字、複合資訊與多步操作。互動時只改變色彩、層級或狀態層，不在按壓時切換成另一種形狀。
 
 ## 7. 層級 Elevation
 
@@ -187,9 +211,9 @@ Disabled 依元件個別定義。例如原版 Filled button 使用 `onSurface` �
 | Emphasized decelerate | `(0.05, 0.7, 0.1, 1)` |
 | Linear | `(0, 0, 1, 1)` |
 
-来源：[官方 Motion tokens](https://raw.githubusercontent.com/material-components/material-web/main/tokens/versions/v0_192/_md-sys-motion.scss)。**原版動畫中的 Emphasized 名稱不等於 Material 3 Expressive**。完整 emphasized 路徑在不同平台的表示方式可能不同，不應把單一 CSS 曲線宣稱為所有平台的精確實作。
+來源：[官方 Motion tokens](https://raw.githubusercontent.com/material-components/material-web/main/tokens/versions/v0_192/_md-sys-motion.scss)。**原版動畫中的 Emphasized 名稱不等於 Material 3 Expressive**。完整 emphasized 路徑在不同平台的表示方式可能不同，不應把單一 CSS 曲線宣稱為所有平台的精確實作。
 
-**專案建議**：小範圍回饋優先從 Short 選取，展開與面板切換從 Medium 選取，再按移動距離與內容調整。這是選用建議，不是每種操作的官方固定時長。保留必要的淡入、位移、ripple 與狀態切換；避免無功能的循環動畫、強烈彈跳與装飾性形變，並尊重減少動態效果偏好。
+**專案建議**：小範圍回饋優先從 Short 選取，展開與面板切換從 Medium 選取，再按移動距離與內容調整。這是選用建議，不是每種操作的官方固定時長。保留必要的淡入、位移、ripple 與狀態切換；避免無功能的循環動畫、強烈彈跳與裝飾性形變，並尊重減少動態效果偏好。
 
 ## 10. 版面與自適應 Layout
 
@@ -215,7 +239,7 @@ Disabled 依元件個別定義。例如原版 Filled button 使用 `onSurface` �
 
 ## 11. 元件使用清單
 
-以下整理原版 M3 的主要元件家族與選用原則；個別 variant 的 padding、最小寬度與狀態需查对应平台的元件規格。官網的現行元件頁可能顯示 Expressive，不能直接照最新示範替换本基線。
+以下整理原版 M3 的主要元件家族與選用原則；個別 variant 的 padding、最小寬度與狀態需查對應平台的元件規格。官網的現行元件頁可能顯示 Expressive，不能直接照最新示範替換本基線。
 
 | 元件家族 | 使用原則 |
 | --- | --- |
@@ -259,7 +283,8 @@ Disabled 依元件個別定義。例如原版 Filled button 使用 `onSurface` �
 | 元件／項目 | 原版基準 |
 | --- | --- |
 | Filled button 容器高度 | 40dp 等值邏輯尺寸 |
-| Filled button 形狀／文字 | Full／`labelLarge` |
+| Filled button 官方形狀／文字 | Full／`labelLarge` |
+| Filled button 專案覆寫 | 8dp 圓角矩形；大型版本可用 12dp |
 | Filled button 內圖示 | 18dp 等值邏輯尺寸 |
 | Filled text field 上方圓角 | 4dp 等值邏輯尺寸 |
 | Filled text field 底線 | 一般 1dp、focus 2dp 等值邏輯尺寸 |
@@ -289,10 +314,10 @@ Disabled 依元件個別定義。例如原版 Filled button 使用 `onSurface` �
 
 1. 將本文件作為原版 M3 基線；建立 light／dark 主題、15 級文字角色及原版圓角階梯。
 2. 用少量重點色建立操作層級，讓編輯內容保有視覺主導權。
-3. 保留原版膠囊按鈕、選取指示與必要動畫；不採 M3E 形變、波浪進度與彈跳風格。
+3. 將按鈕、chip、搜尋列與選取指示覆寫為固定圓角矩形；圓形僅用於等寬高且具有明確幾何意義的元件。
 4. 為桌面工作區集中管理間距與密度變體，避免逐頁任意縮小元件。
-5. 在框架升级時檢查元件樣式與預設值的改動，不能只靠「啟用 Material 3」選項保證視覺永遠停在原版。
-6. 若 SDK 已更改某元件預設，只針對已確認的差異覆寫主题或元件變體，記錄對應版本與理由。
+5. 在框架升級時檢查元件樣式與預設值的改動，不能只靠「啟用 Material 3」選項保證視覺永遠停在原版。
+6. 若 SDK 已更改某元件預設，只針對已確認的差異覆寫主題或元件變體，記錄對應版本與理由。
 
 ## 14. 設計審查清單
 
