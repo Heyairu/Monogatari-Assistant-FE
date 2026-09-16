@@ -8,6 +8,9 @@ import "outline_data.dart";
 import "plan_data.dart";
 import "timeline_data.dart";
 import "world_settings_data.dart";
+import "item_data.dart";
+import "item_snapshot_data.dart";
+import "location_snapshot_data.dart";
 
 class ProjectData {
   static const Uuid _uuid = Uuid();
@@ -22,6 +25,12 @@ class ProjectData {
   List<ForeshadowItem> foreshadowData;
   List<UpdatePlanItem> updatePlanData;
   List<LocationData> worldSettingsData;
+  Map<String, ItemClassData> itemClasses;
+  Map<String, ItemInstanceData> itemInstances;
+  List<ItemRelationData> itemRelations;
+  List<ItemClassStateChange> itemClassStateChanges;
+  List<ItemInstanceStateChange> itemInstanceStateChanges;
+  List<LocationStateChange> locationStateChanges;
   Map<String, CharacterEntryData> characterData;
   List<CharacterState> characterStates;
   Map<String, CharacterStateBaseline> characterStateBaselines;
@@ -40,6 +49,12 @@ class ProjectData {
     required this.foreshadowData,
     required this.updatePlanData,
     required this.worldSettingsData,
+    this.itemClasses = const <String, ItemClassData>{},
+    this.itemInstances = const <String, ItemInstanceData>{},
+    this.itemRelations = const <ItemRelationData>[],
+    this.itemClassStateChanges = const <ItemClassStateChange>[],
+    this.itemInstanceStateChanges = const <ItemInstanceStateChange>[],
+    this.locationStateChanges = const <LocationStateChange>[],
     required this.characterData,
     this.characterStates = const <CharacterState>[],
     this.characterStateBaselines = const <String, CharacterStateBaseline>{},
@@ -84,6 +99,12 @@ class ProjectData {
       foreshadowData: [],
       updatePlanData: [],
       worldSettingsData: [LocationData(localName: "主要場景")],
+      itemClasses: const <String, ItemClassData>{},
+      itemInstances: const <String, ItemInstanceData>{},
+      itemRelations: const <ItemRelationData>[],
+      itemClassStateChanges: const <ItemClassStateChange>[],
+      itemInstanceStateChanges: const <ItemInstanceStateChange>[],
+      locationStateChanges: const <LocationStateChange>[],
       characterData: {},
       characterStates: const <CharacterState>[],
       characterStateBaselines: const <String, CharacterStateBaseline>{},
@@ -107,6 +128,12 @@ class ProjectData {
       foreshadowData: const <ForeshadowItem>[],
       updatePlanData: const <UpdatePlanItem>[],
       worldSettingsData: const <LocationData>[],
+      itemClasses: const <String, ItemClassData>{},
+      itemInstances: const <String, ItemInstanceData>{},
+      itemRelations: const <ItemRelationData>[],
+      itemClassStateChanges: const <ItemClassStateChange>[],
+      itemInstanceStateChanges: const <ItemInstanceStateChange>[],
+      locationStateChanges: const <LocationStateChange>[],
       characterData: const <String, CharacterEntryData>{},
       characterStates: const <CharacterState>[],
       characterStateBaselines: const <String, CharacterStateBaseline>{},

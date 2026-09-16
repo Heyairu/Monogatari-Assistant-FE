@@ -2,6 +2,7 @@ import "../../domain/models/p2p_revision_models.dart";
 import "../../domain/models/p2p_sync_models.dart";
 import "../../models/base_info_data.dart";
 import "../../models/character_data.dart";
+import "../../models/item_snapshot_data.dart";
 import "../../models/project_data.dart";
 
 class P2pProjectRemainderSignatures {
@@ -23,6 +24,7 @@ class P2pProjectMergePlan {
   final P2pRevisionMetadata remoteRevision;
   final ProjectData localProject;
   final _P2pProjectRemainderChoice _remainderChoice;
+  final _P2pItemWorkspaceChoice _itemWorkspaceChoice;
   final P2pKeyedTableMergeResult baseInfoMerge;
   final List<_P2pCharacterMergeEntry> _characterEntries;
   final List<P2pFieldConflictItem> conflicts;
@@ -34,10 +36,12 @@ class P2pProjectMergePlan {
     required this.remoteRevision,
     required this.localProject,
     required _P2pProjectRemainderChoice remainderChoice,
+    required _P2pItemWorkspaceChoice itemWorkspaceChoice,
     required this.baseInfoMerge,
     required List<_P2pCharacterMergeEntry> characterEntries,
     required List<P2pFieldConflictItem> conflicts,
   }) : _remainderChoice = remainderChoice,
+       _itemWorkspaceChoice = itemWorkspaceChoice,
        _characterEntries = List.unmodifiable(characterEntries),
        conflicts = List.unmodifiable(conflicts);
 
@@ -74,6 +78,7 @@ class P2pProjectMergePlan {
       characters[key] = entry;
     }
     final remainder = _remainderChoice.resolve(resolutions);
+    final itemWorkspace = _itemWorkspaceChoice.resolve(resolutions);
     return ProjectData(
       projectUUID: localProject.projectUUID,
       baseInfoData: _baseInfoFromMap(baseInfoValues),
@@ -82,6 +87,12 @@ class P2pProjectMergePlan {
       foreshadowData: remainder.foreshadowData,
       updatePlanData: remainder.updatePlanData,
       worldSettingsData: remainder.worldSettingsData,
+      itemClasses: itemWorkspace.itemClasses,
+      itemInstances: itemWorkspace.itemInstances,
+      itemRelations: itemWorkspace.itemRelations,
+      itemClassStateChanges: itemWorkspace.itemClassStateChanges,
+      itemInstanceStateChanges: itemWorkspace.itemInstanceStateChanges,
+      locationStateChanges: remainder.locationStateChanges,
       characterData: characters,
       characterStates: remainder.characterStates,
       characterStateBaselines: remainder.characterStateBaselines,
@@ -148,6 +159,12 @@ class P2pProjectMergeEngine {
       remote: remote,
       signatures: remainderSignatures,
     );
+    final itemWorkspaceChoice = _P2pItemWorkspaceChoice.evaluate(
+      projectUuid: projectUuid,
+      base: base,
+      local: local,
+      remote: remote,
+    );
     final baseCharacters = _charactersByStableId(base.characterData.values);
     final localCharacters = _charactersByStableId(local.characterData.values);
     final remoteCharacters = _charactersByStableId(remote.characterData.values);
@@ -155,6 +172,7 @@ class P2pProjectMergeEngine {
     final conflicts = <P2pFieldConflictItem>[
       ...baseInfoMerge.conflicts,
       if (remainderChoice.conflict != null) remainderChoice.conflict!,
+      if (itemWorkspaceChoice.conflict != null) itemWorkspaceChoice.conflict!,
     ];
     final ids = <String>{
       ...baseCharacters.keys,
@@ -178,6 +196,7 @@ class P2pProjectMergeEngine {
       remoteRevision: remoteRevision,
       localProject: local,
       remainderChoice: remainderChoice,
+      itemWorkspaceChoice: itemWorkspaceChoice,
       baseInfoMerge: baseInfoMerge,
       characterEntries: characterEntries,
       conflicts: conflicts,
@@ -219,12 +238,18 @@ class P2pProjectMergeEngine {
       localSignature: localRemainderSignature,
       remoteSignature: remoteRemainderSignature,
     );
+    final itemWorkspaceChoice = _P2pItemWorkspaceChoice.evaluateWithoutBase(
+      projectUuid: projectUuid,
+      local: local,
+      remote: remote,
+    );
     final localCharacters = _charactersByStableId(local.characterData.values);
     final remoteCharacters = _charactersByStableId(remote.characterData.values);
     final characterEntries = <_P2pCharacterMergeEntry>[];
     final conflicts = <P2pFieldConflictItem>[
       ...baseInfoMerge.conflicts,
       if (remainderChoice.conflict != null) remainderChoice.conflict!,
+      if (itemWorkspaceChoice.conflict != null) itemWorkspaceChoice.conflict!,
     ];
     final ids = <String>{
       ...localCharacters.keys,
@@ -246,6 +271,7 @@ class P2pProjectMergeEngine {
       remoteRevision: remoteRevision,
       localProject: local,
       remainderChoice: remainderChoice,
+      itemWorkspaceChoice: itemWorkspaceChoice,
       baseInfoMerge: baseInfoMerge,
       characterEntries: characterEntries,
       conflicts: conflicts,
@@ -339,6 +365,244 @@ class P2pProjectMergeEngine {
       remote: remoteMap,
     );
     return _P2pCharacterMergeEntry.merged(id, merge);
+  }
+}
+
+/// Keeps the item graph and its timeline changes as one atomic merge unit.
+///
+/// A quantity transfer commonly updates a Class, several allocations, and
+/// related timeline records together. Choosing individual serialized fields
+/// could create stock that never existed on either peer, so a conflict chooses
+/// one complete item workspace while the rest of the project still merges.
+class _P2pItemWorkspaceChoice {
+  final ProjectData local;
+  final ProjectData remote;
+  final bool useRemote;
+  final P2pFieldConflictItem? conflict;
+
+  const _P2pItemWorkspaceChoice._({
+    required this.local,
+    required this.remote,
+    required this.useRemote,
+    this.conflict,
+  });
+
+  factory _P2pItemWorkspaceChoice.evaluate({
+    required String projectUuid,
+    required ProjectData base,
+    required ProjectData local,
+    required ProjectData remote,
+  }) {
+    final baseDocument = _itemWorkspaceDocument(base);
+    final localDocument = _itemWorkspaceDocument(local);
+    final remoteDocument = _itemWorkspaceDocument(remote);
+    if (P2pThreeWayMerge.deepEquals(localDocument, remoteDocument)) {
+      return _P2pItemWorkspaceChoice._(
+        local: local,
+        remote: remote,
+        useRemote: false,
+      );
+    }
+    if (P2pThreeWayMerge.deepEquals(localDocument, baseDocument)) {
+      return _P2pItemWorkspaceChoice._(
+        local: local,
+        remote: remote,
+        useRemote: true,
+      );
+    }
+    if (P2pThreeWayMerge.deepEquals(remoteDocument, baseDocument)) {
+      return _P2pItemWorkspaceChoice._(
+        local: local,
+        remote: remote,
+        useRemote: false,
+      );
+    }
+    return _P2pItemWorkspaceChoice._(
+      local: local,
+      remote: remote,
+      useRemote: false,
+      conflict: _itemWorkspaceConflict(
+        projectUuid: projectUuid,
+        base: base,
+        local: local,
+        remote: remote,
+        hasBase: true,
+      ),
+    );
+  }
+
+  factory _P2pItemWorkspaceChoice.evaluateWithoutBase({
+    required String projectUuid,
+    required ProjectData local,
+    required ProjectData remote,
+  }) {
+    if (P2pThreeWayMerge.deepEquals(
+      _itemWorkspaceDocument(local),
+      _itemWorkspaceDocument(remote),
+    )) {
+      return _P2pItemWorkspaceChoice._(
+        local: local,
+        remote: remote,
+        useRemote: false,
+      );
+    }
+    return _P2pItemWorkspaceChoice._(
+      local: local,
+      remote: remote,
+      useRemote: false,
+      conflict: _itemWorkspaceConflict(
+        projectUuid: projectUuid,
+        local: local,
+        remote: remote,
+        hasBase: false,
+      ),
+    );
+  }
+
+  ProjectData resolve(P2pConflictResolutionResult resolutions) {
+    final item = conflict;
+    if (item == null) return useRemote ? remote : local;
+    return resolutions.sideFor(item) == P2pConflictSide.remote ? remote : local;
+  }
+}
+
+Map<String, Object?> _itemWorkspaceDocument(
+  ProjectData project,
+) => <String, Object?>{
+  "classes": <String, Object?>{
+    for (final entry in project.itemClasses.entries)
+      entry.key: entry.value.toJson(),
+  },
+  "instances": <String, Object?>{
+    for (final entry in project.itemInstances.entries)
+      entry.key: entry.value.toJson(),
+  },
+  "relations": <String, Object?>{
+    for (final item in project.itemRelations) item.relationId: item.toJson(),
+  },
+  "classStateChanges": <String, Object?>{
+    for (final item in project.itemClassStateChanges)
+      item.stateChangeId: item.toJson(),
+  },
+  "instanceStateChanges": <String, Object?>{
+    for (final item in project.itemInstanceStateChanges)
+      item.stateChangeId: item.toJson(),
+  },
+};
+
+P2pFieldConflictItem _itemWorkspaceConflict({
+  required String projectUuid,
+  ProjectData? base,
+  required ProjectData local,
+  required ProjectData remote,
+  required bool hasBase,
+}) {
+  final collision = _findAllocationCollision(base, local, remote);
+  final path = collision == null
+      ? const <String>["物品資料", "整體版本"]
+      : <String>[
+          "物品時間軸",
+          collision.classLabel,
+          "場景 ${collision.sceneUuid}",
+          collision.allocationIds.isEmpty
+              ? "分配數量"
+              : "分配 ${collision.allocationIds.join(', ')}",
+        ];
+  return P2pFieldConflictItem(
+    groupId: projectUuid,
+    groupType: "itemWorkspace",
+    groupLabel: collision == null ? "物品資料" : "物品分配：${collision.classLabel}",
+    fieldPathSegments: path,
+    base: hasBase
+        ? const P2pFieldValue.present("共同祖先物品版本")
+        : const P2pFieldValue.absent(),
+    local: const P2pFieldValue.present("本機物品版本（整組採用）"),
+    remote: const P2pFieldValue.present("對方物品版本（整組採用）"),
+  );
+}
+
+class _ItemAllocationCollision {
+  final String classLabel;
+  final String sceneUuid;
+  final List<String> allocationIds;
+
+  const _ItemAllocationCollision({
+    required this.classLabel,
+    required this.sceneUuid,
+    required this.allocationIds,
+  });
+}
+
+_ItemAllocationCollision? _findAllocationCollision(
+  ProjectData? base,
+  ProjectData local,
+  ProjectData remote,
+) {
+  final baseChanges = _classChangesBySemanticKey(
+    base?.itemClassStateChanges ?? const <ItemClassStateChange>[],
+  );
+  final localChanges = _classChangesBySemanticKey(local.itemClassStateChanges);
+  final remoteChanges = _classChangesBySemanticKey(
+    remote.itemClassStateChanges,
+  );
+  final keys =
+      localChanges.keys
+          .toSet()
+          .intersection(remoteChanges.keys.toSet())
+          .toList()
+        ..sort();
+  for (final key in keys) {
+    final localChange = localChanges[key]!;
+    final remoteChange = remoteChanges[key]!;
+    final baseChange = baseChanges[key];
+    if (P2pThreeWayMerge.deepEquals(
+          localChange.toJson(),
+          remoteChange.toJson(),
+        ) ||
+        P2pThreeWayMerge.deepEquals(
+          localChange.toJson(),
+          baseChange?.toJson(),
+        ) ||
+        P2pThreeWayMerge.deepEquals(
+          remoteChange.toJson(),
+          baseChange?.toJson(),
+        )) {
+      continue;
+    }
+    final ids = <String>{
+      ..._allocationIds(localChange),
+      ..._allocationIds(remoteChange),
+    }.toList()..sort();
+    final itemClass =
+        local.itemClasses[localChange.classId] ??
+        remote.itemClasses[localChange.classId] ??
+        base?.itemClasses[localChange.classId];
+    final name = itemClass?.name.trim();
+    return _ItemAllocationCollision(
+      classLabel: name == null || name.isEmpty ? localChange.classId : name,
+      sceneUuid: localChange.sceneUUID,
+      allocationIds: ids,
+    );
+  }
+  return null;
+}
+
+Map<String, ItemClassStateChange> _classChangesBySemanticKey(
+  Iterable<ItemClassStateChange> changes,
+) => <String, ItemClassStateChange>{
+  for (final change in changes)
+    "${change.classId.length}:${change.classId}/"
+            "${change.sceneUUID.length}:${change.sceneUUID}/"
+            "${change.sourcePlacementUUID ?? ''}/${change.sequence}":
+        change,
+};
+
+Iterable<String> _allocationIds(ItemClassStateChange change) sync* {
+  final allocations = change.patch.allocations;
+  if (allocations?.operation != StateValueOperation.set) return;
+  for (final allocation in allocations!.value!) {
+    final id = allocation.allocationId.trim();
+    if (id.isNotEmpty) yield id;
   }
 }
 

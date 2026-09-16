@@ -12,6 +12,7 @@ import "../../domain/collaboration/collaboration_document.dart";
 import "../../domain/collaboration/collaboration_operation.dart";
 import "../../domain/collaboration/collaboration_protocol.dart";
 import "../../domain/collaboration/collaborative_text.dart";
+import "../../domain/collaboration/project_operation_transaction_buffer.dart";
 import "../../domain/collaboration/typed_operation_log.dart";
 import "../../models/chapter_selection_data.dart";
 import "../../models/project_data.dart";
@@ -147,6 +148,7 @@ final class CollaborationState {
   final Map<String, RemoteCursorState> remoteCursors;
   final LocalTextSelectionRebase? localSelectionRebase;
   final List<ProjectDataRecordOperation> unappliedProjectOperations;
+  final int pendingProjectTransactionCount;
   final String? errorMessage;
 
   const CollaborationState({
@@ -155,6 +157,7 @@ final class CollaborationState {
     this.remoteCursors = const <String, RemoteCursorState>{},
     this.localSelectionRebase,
     this.unappliedProjectOperations = const <ProjectDataRecordOperation>[],
+    this.pendingProjectTransactionCount = 0,
     this.errorMessage,
   });
 
@@ -164,6 +167,7 @@ final class CollaborationState {
     Map<String, RemoteCursorState>? remoteCursors,
     Object? localSelectionRebase = _unset,
     List<ProjectDataRecordOperation>? unappliedProjectOperations,
+    int? pendingProjectTransactionCount,
     Object? errorMessage = _unset,
   }) {
     return CollaborationState(
@@ -180,6 +184,8 @@ final class CollaborationState {
       unappliedProjectOperations: List<ProjectDataRecordOperation>.unmodifiable(
         unappliedProjectOperations ?? this.unappliedProjectOperations,
       ),
+      pendingProjectTransactionCount:
+          pendingProjectTransactionCount ?? this.pendingProjectTransactionCount,
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
           : errorMessage as String?,
@@ -188,6 +194,15 @@ final class CollaborationState {
 }
 
 const Object _unset = Object();
+
+bool _isItemRecordKind(ProjectRecordKind kind) => const {
+  ProjectRecordKind.itemClass,
+  ProjectRecordKind.itemInstance,
+  ProjectRecordKind.itemRelation,
+  ProjectRecordKind.itemClassStateChange,
+  ProjectRecordKind.itemInstanceStateChange,
+  ProjectRecordKind.locationStateChange,
+}.contains(kind);
 
 class CollaborationNotifier extends Notifier<CollaborationState> {
   static const Duration _tickInterval = Duration(milliseconds: 80);
@@ -201,12 +216,15 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
   final Map<ProjectRecordKey, ProjectRecordOperation> _projectRecords =
       <ProjectRecordKey, ProjectRecordOperation>{};
   final Map<String, int> _remoteAcknowledgedSequences = <String, int>{};
+  final ProjectOperationTransactionBuffer _projectTransactionBuffer =
+      ProjectOperationTransactionBuffer();
   Timer? _timer;
   StreamSubscription<P2pInboundCollaborationBatch>? _inboundSubscription;
   bool _exchangeInProgress = false;
   bool _disposed = false;
   int _presenceSequence = 0;
   int _selectionRebaseRevision = 0;
+  int _localProjectTransactionSequence = 0;
   _LocalCursorLocation? _localCursorLocation;
   CollaboratorPresence? _localPresence;
   DateTime? _lastExchangeAt;
@@ -287,6 +305,8 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
         ),
       );
     _remoteAcknowledgedSequences.clear();
+    _projectTransactionBuffer.clear();
+    _localProjectTransactionSequence = 0;
     _checkpointProjectTexts
       ..clear()
       ..addAll(ProjectCollaborativeTextCodec.snapshot(data));
@@ -320,6 +340,8 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
     _capturedProjectTexts.clear();
     _projectRecords.clear();
     _remoteAcknowledgedSequences.clear();
+    _projectTransactionBuffer.clear();
+    _localProjectTransactionSequence = 0;
     _localCursorLocation = null;
     _localPresence = null;
     _operationBootstrapProjectUuid = null;
@@ -435,15 +457,20 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
     _capturedProjectTexts
       ..clear()
       ..addAll(nextProjectTexts);
+    if (document == null) return;
+    final activeDocument = document;
     final nextRecords = ProjectRecordCodec.snapshot(
       data,
       omitCollaborativeText: true,
     );
-    final operations = ProjectRecordCodec.diff(_projectRecords, nextRecords);
+    final operations = _groupItemRecordTransaction(
+      ProjectRecordCodec.diff(_projectRecords, nextRecords),
+      activeDocument.replicaId,
+    );
     _projectRecords
       ..clear()
       ..addAll(nextRecords);
-    var nextDocument = document!;
+    var nextDocument = activeDocument;
     for (final operation in operations) {
       nextDocument = nextDocument.createLocalProjectOperation(operation);
     }
@@ -972,32 +999,61 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
       _projectRecords,
     );
     final changedKinds = <ProjectRecordKind>{};
-    for (final operation in operations) {
-      final record = operation.record;
-      final key = ProjectRecordKey(
-        kind: record.recordKind,
-        recordId: record.recordId,
-      );
-      final materialized = document.projectOperationLog.lookup(
-        record.recordKind,
-        record.recordId,
-      );
-      if (materialized == null || materialized.operationId != operation.id) {
-        continue;
-      }
-      if (materialized.isRemoved) {
-        _projectRecords.remove(key);
-      } else {
-        _projectRecords[key] = materialized.operation;
-      }
-      changedKinds.add(record.recordKind);
-    }
-    if (changedKinds.isEmpty) return true;
-    final projectTextValues = <String, String>{
-      for (final entry in document.projectTexts.entries)
-        entry.key: entry.value.text,
-    };
     try {
+      final readyOperations = _projectTransactionBuffer.accept(operations);
+      state = state.copyWith(
+        pendingProjectTransactionCount:
+            _projectTransactionBuffer.pendingTransactionCount,
+      );
+      if (readyOperations.isEmpty) return true;
+      final transactional = <String, List<ProjectDataRecordOperation>>{};
+      for (final operation in readyOperations) {
+        final transactionId = operation.record.transactionId;
+        if (transactionId != null) {
+          transactional
+              .putIfAbsent(transactionId, () => <ProjectDataRecordOperation>[])
+              .add(operation);
+        }
+      }
+      for (final entry in transactional.entries) {
+        final isCurrent = entry.value.every((operation) {
+          final record = operation.record;
+          final materialized = document.projectOperationLog.lookup(
+            record.recordKind,
+            record.recordId,
+          );
+          return materialized != null &&
+              materialized.operationId == operation.id;
+        });
+        if (!isCurrent) {
+          throw FormatException("交易 ${entry.key} 與較新的並行修改衝突，未套用任何片段。");
+        }
+      }
+      for (final operation in readyOperations) {
+        final record = operation.record;
+        final key = ProjectRecordKey(
+          kind: record.recordKind,
+          recordId: record.recordId,
+        );
+        final materialized = document.projectOperationLog.lookup(
+          record.recordKind,
+          record.recordId,
+        );
+        if (materialized == null || materialized.operationId != operation.id) {
+          continue;
+        }
+        if (materialized.isRemoved) {
+          _projectRecords.remove(key);
+        } else {
+          _projectRecords[key] = materialized.operation;
+        }
+        changedKinds.add(record.recordKind);
+      }
+      if (changedKinds.isEmpty) return true;
+      final projectTextValues = <String, String>{
+        for (final entry in document.projectTexts.entries)
+          entry.key: entry.value.text,
+      };
       if (changedKinds.contains(ProjectRecordKind.baseInfo)) {
         ref
             .read(baseInfoDataProvider.notifier)
@@ -1084,6 +1140,41 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
               ProjectRecordCodec.decodeCharacterChanges(_projectRecords),
             );
       }
+      if (changedKinds.any(
+        const {
+          ProjectRecordKind.itemClass,
+          ProjectRecordKind.itemInstance,
+          ProjectRecordKind.itemRelation,
+          ProjectRecordKind.itemClassStateChange,
+          ProjectRecordKind.itemInstanceStateChange,
+          ProjectRecordKind.locationStateChange,
+        }.contains,
+      )) {
+        ref
+            .read(itemWorkspaceProvider.notifier)
+            .setWorkspace(
+              ItemWorkspaceData(
+                itemClasses: ProjectRecordCodec.decodeItemClasses(
+                  _projectRecords,
+                ),
+                itemInstances: ProjectRecordCodec.decodeItemInstances(
+                  _projectRecords,
+                ),
+                itemRelations: ProjectRecordCodec.decodeItemRelations(
+                  _projectRecords,
+                ),
+                itemClassStateChanges:
+                    ProjectRecordCodec.decodeItemClassChanges(_projectRecords),
+                itemInstanceStateChanges:
+                    ProjectRecordCodec.decodeItemInstanceChanges(
+                      _projectRecords,
+                    ),
+                locationStateChanges: ProjectRecordCodec.decodeLocationChanges(
+                  _projectRecords,
+                ),
+              ),
+            );
+      }
       if (changedKinds.contains(ProjectRecordKind.timelineGrid) ||
           changedKinds.contains(ProjectRecordKind.timelineTrack) ||
           changedKinds.contains(ProjectRecordKind.timelinePlacement)) {
@@ -1109,6 +1200,17 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
       );
       return false;
     }
+  }
+
+  List<ProjectRecordOperation> _groupItemRecordTransaction(
+    List<ProjectRecordOperation> operations,
+    String replicaId,
+  ) {
+    return groupProjectRecordTransaction(
+      operations: operations,
+      transactionId: "$replicaId:item:${++_localProjectTransactionSequence}",
+      include: (operation) => _isItemRecordKind(operation.recordKind),
+    );
   }
 
   void _applyChapterTextToProject(

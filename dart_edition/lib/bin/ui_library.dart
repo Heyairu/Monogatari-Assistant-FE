@@ -745,6 +745,8 @@ class CardList extends StatelessWidget {
   final List<String> items;
   final ValueChanged<String> onAdd;
   final ValueChanged<int> onRemove;
+  final ValueChanged<int>? onConvert;
+  final String? conversionKeyPrefix;
 
   const CardList({
     super.key,
@@ -754,6 +756,8 @@ class CardList extends StatelessWidget {
     this.items = const [],
     required this.onAdd,
     required this.onRemove,
+    this.onConvert,
+    this.conversionKeyPrefix,
   });
 
   @override
@@ -780,13 +784,33 @@ class CardList extends StatelessWidget {
             children: items.asMap().entries.map((entry) {
               final index = entry.key;
               final item = entry.value;
-              return Chip(
-                label: Text(item),
-                deleteIcon: const Icon(Icons.close, size: 18),
-                onDeleted: () => onRemove(index),
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.secondaryContainer,
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Chip(
+                    label: Text(item),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () => onRemove(index),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.secondaryContainer,
+                  ),
+                  if (onConvert != null)
+                    IconButton(
+                      key: ValueKey(
+                        "${conversionKeyPrefix ?? title}-convert-$index",
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      tooltip: "轉為正式物品關聯",
+                      onPressed: () => onConvert!(index),
+                      icon: const Icon(Icons.sync_alt, size: 18),
+                    ),
+                ],
               );
             }).toList(),
           ),

@@ -2,6 +2,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 
 import "package:monogatari_assistant/bin/file.dart";
+import "package:monogatari_assistant/models/item_data.dart";
 import "package:monogatari_assistant/presentation/providers/project_history_provider.dart";
 
 ProjectData _copyProject(
@@ -12,6 +13,7 @@ ProjectData _copyProject(
   final segment = source.segmentsData.single;
   final chapter = segment.chapters.single;
   return ProjectData(
+    projectUUID: source.projectUUID,
     baseInfoData: source.baseInfoData.copyWith(
       bookName: "History test",
       latestSave: latestSave,
@@ -25,7 +27,18 @@ ProjectData _copyProject(
     foreshadowData: source.foreshadowData,
     updatePlanData: source.updatePlanData,
     worldSettingsData: source.worldSettingsData,
+    itemClasses: source.itemClasses,
+    itemInstances: source.itemInstances,
+    itemRelations: source.itemRelations,
+    itemClassStateChanges: source.itemClassStateChanges,
+    itemInstanceStateChanges: source.itemInstanceStateChanges,
+    locationStateChanges: source.locationStateChanges,
     characterData: source.characterData,
+    characterStates: source.characterStates,
+    characterStateBaselines: source.characterStateBaselines,
+    characterStateChanges: source.characterStateChanges,
+    timelineDocument: source.timelineDocument,
+    outlineChapterLinks: source.outlineChapterLinks,
     totalWords: chapterContent.length,
     contentText: chapterContent,
     isDirty: source.isDirty,
@@ -91,6 +104,26 @@ void main() {
 
     expect(first.contentDigest, second.contentDigest);
     expect(first.contentDigest, isNot(changed.contentDigest));
+  });
+
+  test("digest and snapshot include item workspace content", () {
+    final seed = _copyProject(
+      ProjectData.empty(),
+      chapterContent: "same chapter",
+    );
+    final before = _entry(seed);
+    seed.itemClasses = {
+      "coins": ItemClassData(
+        classId: "coins",
+        name: "金幣",
+        mode: ItemMode.generic,
+      ),
+    };
+    final after = _entry(seed);
+    seed.itemClasses.clear();
+
+    expect(before.contentDigest, isNot(after.contentDigest));
+    expect(after.data.itemClasses["coins"]?.name, "金幣");
   });
 
   test("record deduplicates content and enforces the total count limit", () {

@@ -26,11 +26,42 @@ import "../bin/ui_library.dart";
 import "../models/chapter_selection_data.dart";
 import "../models/outline_data.dart";
 import "../models/timeline_data.dart";
+import "../models/world_settings_data.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 
 typedef TimelineOpenChapter = void Function(String chapterUUID);
 typedef TimelineOpenOutlineScene = void Function(String sceneUUID);
+typedef TimelineOpenEntity = void Function(String entityId);
+
+enum _TimelineImpactFilter { all, character, item, location }
+
+class _TimelineImpactEntry {
+  final String id;
+  final String label;
+  final String navigationId;
+
+  const _TimelineImpactEntry({
+    required this.id,
+    required this.label,
+    required this.navigationId,
+  });
+}
+
+class _TimelineSceneImpact {
+  final Map<String, _TimelineImpactEntry> characters = {};
+  final Map<String, _TimelineImpactEntry> items = {};
+  final Map<String, _TimelineImpactEntry> locations = {};
+
+  bool get isEmpty => characters.isEmpty && items.isEmpty && locations.isEmpty;
+
+  void addAll(_TimelineSceneImpact? other) {
+    if (other == null) return;
+    characters.addAll(other.characters);
+    items.addAll(other.items);
+    locations.addAll(other.locations);
+  }
+}
 
 class _PendingOutlineBox {
   final StorylineData storyline;
@@ -58,8 +89,18 @@ class _TimelineResizePreview {
 class TimelineView extends ConsumerStatefulWidget {
   final TimelineOpenChapter? onOpenChapter;
   final TimelineOpenOutlineScene? onOpenOutlineScene;
+  final TimelineOpenEntity? onOpenCharacter;
+  final TimelineOpenEntity? onOpenItem;
+  final TimelineOpenEntity? onOpenLocation;
 
-  const TimelineView({super.key, this.onOpenChapter, this.onOpenOutlineScene});
+  const TimelineView({
+    super.key,
+    this.onOpenChapter,
+    this.onOpenOutlineScene,
+    this.onOpenCharacter,
+    this.onOpenItem,
+    this.onOpenLocation,
+  });
 
   @override
   ConsumerState<TimelineView> createState() => _TimelineViewState();
@@ -73,6 +114,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
   final Map<String, _TimelineResizePreview> _resizePreviews =
       <String, _TimelineResizePreview>{};
   _TimelineTickAxis? _activeAxis;
+  _TimelineImpactFilter _impactFilter = _TimelineImpactFilter.all;
 
   @override
   void dispose() {
@@ -83,6 +125,78 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
 
   TimelineActions get _actions => ref.read(timelineActionsProvider);
 
+  Map<String, _TimelineSceneImpact> _buildSceneImpacts() {
+    final impacts = <String, _TimelineSceneImpact>{};
+    _TimelineSceneImpact impactFor(String sceneUUID) =>
+        impacts.putIfAbsent(sceneUUID, _TimelineSceneImpact.new);
+
+    final characters = ref.watch(characterDataProvider);
+    for (final change in ref.watch(characterStateChangesProvider)) {
+      final character = characters[change.characterId];
+      impactFor(
+        change.sceneUUID,
+      ).characters[change.characterId] = _TimelineImpactEntry(
+        id: change.characterId,
+        label: character?.displayName.isNotEmpty == true
+            ? character!.displayName
+            : change.characterId,
+        navigationId: change.characterId,
+      );
+    }
+
+    final workspace = ref.watch(itemWorkspaceProvider);
+    for (final change in workspace.itemClassStateChanges) {
+      final itemClass = workspace.itemClasses[change.classId];
+      impactFor(
+        change.sceneUUID,
+      ).items["class:${change.classId}"] = _TimelineImpactEntry(
+        id: "class:${change.classId}",
+        label: itemClass?.name.isNotEmpty == true
+            ? itemClass!.name
+            : change.classId,
+        navigationId: change.classId,
+      );
+    }
+    for (final change in workspace.itemInstanceStateChanges) {
+      final instance = workspace.itemInstances[change.instanceId];
+      final itemClass = instance == null
+          ? null
+          : workspace.itemClasses[instance.classId];
+      impactFor(
+        change.sceneUUID,
+      ).items["instance:${change.instanceId}"] = _TimelineImpactEntry(
+        id: "instance:${change.instanceId}",
+        label: instance?.name.isNotEmpty == true
+            ? instance!.name
+            : itemClass?.name.isNotEmpty == true
+            ? itemClass!.name
+            : change.instanceId,
+        navigationId: instance?.classId ?? change.instanceId,
+      );
+    }
+
+    final locationLabels = <String, String>{};
+    void collectLocations(Iterable<LocationData> nodes) {
+      for (final node in nodes) {
+        locationLabels[node.id] = node.localName;
+        collectLocations(node.child);
+      }
+    }
+
+    collectLocations(ref.watch(worldSettingsDataProvider));
+    for (final change in workspace.locationStateChanges) {
+      final label = locationLabels[change.locationId];
+      impactFor(
+        change.sceneUUID,
+      ).locations[change.locationId] = _TimelineImpactEntry(
+        id: change.locationId,
+        label: label?.isNotEmpty == true ? label! : change.locationId,
+        navigationId: change.locationId,
+      );
+    }
+    return impacts;
+  }
+
   @override
   Widget build(BuildContext context) {
     final document = ref.watch(timelineDocumentProvider);
@@ -92,6 +206,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
     final outline = ref.watch(outlineDataProvider);
     final chapters = ref.watch(timelineChapterIndexProvider);
     final editorSelection = ref.watch(editorSelectionProvider);
+    final sceneImpacts = _buildSceneImpacts();
 
     final placementsById = {
       for (final placement in document.placements)
@@ -116,6 +231,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       scenes: scenes,
       links: links,
       currentChapterUUID: currentChapterUUID,
+      sceneImpacts: sceneImpacts,
+      impactFilter: _impactFilter,
     );
     final scopePlacements = document.placements
         .where(
@@ -179,6 +296,25 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                 setState(() {});
               },
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final filter in _TimelineImpactFilter.values)
+                  FilterChip(
+                    key: ValueKey("timeline-impact-filter-${filter.name}"),
+                    label: Text(switch (filter) {
+                      _TimelineImpactFilter.all => "全部狀態變更",
+                      _TimelineImpactFilter.character => "角色",
+                      _TimelineImpactFilter.item => "物品",
+                      _TimelineImpactFilter.location => "地點",
+                    }),
+                    selected: _impactFilter == filter,
+                    onSelected: (_) => setState(() => _impactFilter = filter),
+                  ),
+              ],
+            ),
             const SizedBox(height: 16),
             _buildToolbar(viewState, currentChapterUUID, scope, document.grid),
             const SizedBox(height: 16),
@@ -190,6 +326,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                 document: document,
                 placements: filteredPlacements,
                 scenes: scenes,
+                sceneImpacts: sceneImpacts,
                 selectedPlacementUUID: selected?.placementUUID,
                 pixelsPerTick: viewState.pixelsPerTick,
                 axis: timelineAxis,
@@ -228,6 +365,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
               scenes: scenes,
               chapters: chapters,
               links: links,
+              sceneImpacts: sceneImpacts,
               onUpdate: _updatePlacement,
               onDelete: _deletePlacement,
               onAddChapterLink: _showChapterLinkDialog,
@@ -238,6 +376,9 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                   ),
               onOpenChapter: widget.onOpenChapter,
               onOpenOutlineScene: widget.onOpenOutlineScene,
+              onOpenCharacter: widget.onOpenCharacter,
+              onOpenItem: widget.onOpenItem,
+              onOpenLocation: widget.onOpenLocation,
             ),
             const SizedBox(height: 16),
             _buildPendingOutlineBoxes(pendingOutlineBoxes),
@@ -256,6 +397,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
     required Map<String, TimelineSceneReference> scenes,
     required List<OutlineChapterLinkData> links,
     required String? currentChapterUUID,
+    required Map<String, _TimelineSceneImpact> sceneImpacts,
+    required _TimelineImpactFilter impactFilter,
   }) {
     final query = state.query.trim().toLowerCase();
     return document.placements
@@ -271,6 +414,20 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
           final sceneLinks = links
               .where((link) => sceneUUIDs.contains(link.sceneUUID))
               .toList(growable: false);
+          if (impactFilter != _TimelineImpactFilter.all) {
+            final hasSelectedImpact = sceneUUIDs.any((sceneUUID) {
+              final impact = sceneImpacts[sceneUUID];
+              return switch (impactFilter) {
+                _TimelineImpactFilter.all => true,
+                _TimelineImpactFilter.character =>
+                  impact?.characters.isNotEmpty == true,
+                _TimelineImpactFilter.item => impact?.items.isNotEmpty == true,
+                _TimelineImpactFilter.location =>
+                  impact?.locations.isNotEmpty == true,
+              };
+            });
+            if (!hasSelectedImpact) return false;
+          }
           if (state.onlyCurrentChapter &&
               (currentChapterUUID == null ||
                   !sceneLinks.any(
@@ -1448,6 +1605,7 @@ class _TimelineBoard extends StatelessWidget {
   final TimelineDocumentData document;
   final List<TimelinePlacementData> placements;
   final Map<String, TimelineSceneReference> scenes;
+  final Map<String, _TimelineSceneImpact> sceneImpacts;
   final String? selectedPlacementUUID;
   final double pixelsPerTick;
   final _TimelineTickAxis axis;
@@ -1479,6 +1637,7 @@ class _TimelineBoard extends StatelessWidget {
     required this.document,
     required this.placements,
     required this.scenes,
+    required this.sceneImpacts,
     required this.selectedPlacementUUID,
     required this.pixelsPerTick,
     required this.axis,
@@ -1742,6 +1901,17 @@ class _TimelineBoard extends StatelessWidget {
 
   Widget _placementCard(BuildContext context, TimelinePlacementData placement) {
     final selected = placement.placementUUID == selectedPlacementUUID;
+    final sceneImpact = _TimelineSceneImpact();
+    for (final sceneUUID in timelineSceneUUIDsForPlacement(
+      document,
+      placement.placementUUID,
+    )) {
+      sceneImpact.addAll(sceneImpacts[sceneUUID]);
+    }
+    final impactCount =
+        sceneImpact.characters.length +
+        sceneImpact.items.length +
+        sceneImpact.locations.length;
     final scheme = Theme.of(context).colorScheme;
     final rawDragOffset = dragOffsets[placement.placementUUID] ?? Offset.zero;
     final visibleTracks =
@@ -1989,6 +2159,32 @@ class _TimelineBoard extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (impactCount > 0)
+                            Tooltip(
+                              message:
+                                  "狀態變更：角色 ${sceneImpact.characters.length}、物品 ${sceneImpact.items.length}、地點 ${sceneImpact.locations.length}",
+                              child: Container(
+                                key: ValueKey(
+                                  "timeline-impact-marker-${placement.placementUUID}",
+                                ),
+                                width: 16,
+                                height: 16,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: scheme.tertiaryContainer,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text(
+                                  "$impactCount",
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: scheme.onTertiaryContainer,
+                                        fontSize: 9,
+                                        height: 1,
+                                      ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -2010,6 +2206,7 @@ class _TimelineInspector extends StatefulWidget {
   final Map<String, TimelineSceneReference> scenes;
   final Map<String, ChapterLocation> chapters;
   final List<OutlineChapterLinkData> links;
+  final Map<String, _TimelineSceneImpact> sceneImpacts;
   final void Function(
     TimelinePlacementData placement, {
     int? startTick,
@@ -2024,6 +2221,9 @@ class _TimelineInspector extends StatefulWidget {
   onRemoveChapterLink;
   final TimelineOpenChapter? onOpenChapter;
   final TimelineOpenOutlineScene? onOpenOutlineScene;
+  final TimelineOpenEntity? onOpenCharacter;
+  final TimelineOpenEntity? onOpenItem;
+  final TimelineOpenEntity? onOpenLocation;
 
   const _TimelineInspector({
     required this.placement,
@@ -2031,12 +2231,16 @@ class _TimelineInspector extends StatefulWidget {
     required this.scenes,
     required this.chapters,
     required this.links,
+    required this.sceneImpacts,
     required this.onUpdate,
     required this.onDelete,
     required this.onAddChapterLink,
     required this.onRemoveChapterLink,
     required this.onOpenChapter,
     required this.onOpenOutlineScene,
+    required this.onOpenCharacter,
+    required this.onOpenItem,
+    required this.onOpenLocation,
   });
 
   @override
@@ -2091,6 +2295,16 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
       widget.document,
       placement.placementUUID,
     );
+    final sceneImpact = _TimelineSceneImpact();
+    for (final sceneUUID in sceneUUIDs) {
+      sceneImpact.addAll(widget.sceneImpacts[sceneUUID]);
+    }
+    final impactedCharacters = sceneImpact.characters.values.toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
+    final impactedItems = sceneImpact.items.values.toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
+    final impactedLocations = sceneImpact.locations.values.toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
     final links =
         widget.links
             .where((link) => sceneUUIDs.contains(link.sceneUUID))
@@ -2212,6 +2426,52 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
                 message: "以下章節彙整自 ${sceneUUIDs.length} 個子場景。",
                 tone: AppFeedbackTone.info,
               ),
+            const Divider(height: 28),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "場景狀態變更",
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Text(
+                  "角色 ${impactedCharacters.length}・物品 ${impactedItems.length}・地點 ${impactedLocations.length}",
+                  key: const ValueKey("timeline-impact-summary"),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (sceneImpact.isEmpty)
+              const Text("此場景沒有角色、物品或地點快照變更。")
+            else ...[
+              if (impactedCharacters.isNotEmpty)
+                _buildImpactChips(
+                  context,
+                  icon: Icons.person_outline,
+                  prefix: "character",
+                  entries: impactedCharacters,
+                  onOpen: widget.onOpenCharacter,
+                ),
+              if (impactedItems.isNotEmpty)
+                _buildImpactChips(
+                  context,
+                  icon: Icons.inventory_2_outlined,
+                  prefix: "item",
+                  entries: impactedItems,
+                  onOpen: widget.onOpenItem,
+                ),
+              if (impactedLocations.isNotEmpty)
+                _buildImpactChips(
+                  context,
+                  icon: Icons.location_on_outlined,
+                  prefix: "location",
+                  entries: impactedLocations,
+                  onOpen: widget.onOpenLocation,
+                ),
+            ],
+            const Divider(height: 28),
             Row(
               children: [
                 Expanded(
@@ -2264,6 +2524,34 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
               tone: AppFeedbackTone.info,
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImpactChips(
+    BuildContext context, {
+    required IconData icon,
+    required String prefix,
+    required List<_TimelineImpactEntry> entries,
+    required TimelineOpenEntity? onOpen,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final entry in entries)
+            ActionChip(
+              key: ValueKey("timeline-impact-$prefix-${entry.id}"),
+              avatar: Icon(icon, size: 16),
+              label: Text(entry.label),
+              tooltip: onOpen == null ? null : "開啟${entry.label}",
+              onPressed: onOpen == null
+                  ? null
+                  : () => onOpen(entry.navigationId),
+            ),
         ],
       ),
     );

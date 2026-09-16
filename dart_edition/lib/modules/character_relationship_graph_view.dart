@@ -95,6 +95,7 @@ class _CharacterRelationshipGraphViewState
   final FocusNode _searchFocusNode = FocusNode();
   Size _viewportSize = Size.zero;
   bool _initialGlobalPreviewScheduled = false;
+  bool _toolbarExpanded = true;
   String? _selectedSnapshotEventId;
 
   bool get _isViewingSnapshot => _selectedSnapshotEventId != null;
@@ -120,6 +121,7 @@ class _CharacterRelationshipGraphViewState
       ..clearSelection();
     _selectedSnapshotEventId = null;
     _initialGlobalPreviewScheduled = false;
+    _toolbarExpanded = true;
   }
 
   @override
@@ -241,181 +243,204 @@ class _CharacterRelationshipGraphViewState
                     text: "關係設定",
                   ),
                 ),
-                SizedBox(
-                  width: constraints.maxWidth,
-                  child: AppDropdownField<String>(
-                    key: const ValueKey("relationship-snapshot-selector"),
-                    value: selectedSnapshotEvent?.id ?? "__current__",
-                    labelText: "關係快照",
-                    options: [
-                      const DropdownOption(
-                        value: "__current__",
-                        label: "預設角色資料",
-                      ),
-                      for (final event in snapshotEvents)
-                        DropdownOption(
-                          value: event.id,
-                          label:
-                              "Tick ${event.resolvedTick} · ${event.sceneName}（${event.changedCharacterIds.length} 位角色變更）",
-                        ),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedSnapshotEventId = value == "__current__"
-                            ? null
-                            : value;
-                      });
-                    },
+                IconButton(
+                  key: const ValueKey("relationship-toolbar-toggle"),
+                  tooltip: _toolbarExpanded ? "收合工具列" : "展開工具列",
+                  onPressed: () =>
+                      setState(() => _toolbarExpanded = !_toolbarExpanded),
+                  icon: Icon(
+                    _toolbarExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
                   ),
                 ),
-                if (selectedSnapshotEvent != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: AppNoticeBanner(
-                      message:
-                          "正在檢視 Tick ${selectedSnapshotEvent.resolvedTick} 的關係快照；每位角色皆採用自己在此 Tick 前最後一次變更的關係。",
-                      icon: Icons.history_toggle_off_outlined,
-                      tone: AppFeedbackTone.info,
+                if (_toolbarExpanded) ...[
+                  SizedBox(
+                    width: constraints.maxWidth,
+                    child: AppDropdownField<String>(
+                      key: const ValueKey("relationship-snapshot-selector"),
+                      value: selectedSnapshotEvent?.id ?? "__current__",
+                      labelText: "關係快照",
+                      options: [
+                        const DropdownOption(
+                          value: "__current__",
+                          label: "預設角色資料",
+                        ),
+                        for (final event in snapshotEvents)
+                          DropdownOption(
+                            value: event.id,
+                            label:
+                                "Tick ${event.resolvedTick} · ${event.sceneName}（${event.changedCharacterIds.length} 位角色變更）",
+                          ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSnapshotEventId = value == "__current__"
+                              ? null
+                              : value;
+                        });
+                      },
                     ),
                   ),
-                SizedBox(
-                  width: constraints.maxWidth,
-                  child: RawAutocomplete<String>(
-                    textEditingController: _searchController,
-                    focusNode: _searchFocusNode,
-                    optionsBuilder: (textEditingValue) =>
-                        _buildSearchOptions(characters, textEditingValue.text),
-                    onSelected: (_) =>
-                        _focusFirstSearchResult(characters, graph),
-                    fieldViewBuilder:
-                        (
-                          context,
-                          textEditingController,
-                          focusNode,
-                          onFieldSubmitted,
-                        ) => TextField(
-                          key: const ValueKey("relationship-search-field"),
-                          controller: textEditingController,
-                          focusNode: focusNode,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            prefixIcon: const Icon(
-                              Icons.person_search_outlined,
-                            ),
-                            hintText: "搜尋或選擇人物",
-                            suffixIcon: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_searchController.text.isNotEmpty)
+                  if (selectedSnapshotEvent != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: AppNoticeBanner(
+                        message:
+                            "正在檢視 Tick ${selectedSnapshotEvent.resolvedTick} 的關係快照；每位角色皆採用自己在此 Tick 前最後一次變更的關係。",
+                        icon: Icons.history_toggle_off_outlined,
+                        tone: AppFeedbackTone.info,
+                      ),
+                    ),
+                  SizedBox(
+                    width: constraints.maxWidth,
+                    child: RawAutocomplete<String>(
+                      textEditingController: _searchController,
+                      focusNode: _searchFocusNode,
+                      optionsBuilder: (textEditingValue) => _buildSearchOptions(
+                        characters,
+                        textEditingValue.text,
+                      ),
+                      onSelected: (_) =>
+                          _focusFirstSearchResult(characters, graph),
+                      fieldViewBuilder:
+                          (
+                            context,
+                            textEditingController,
+                            focusNode,
+                            onFieldSubmitted,
+                          ) => TextField(
+                            key: const ValueKey("relationship-search-field"),
+                            controller: textEditingController,
+                            focusNode: focusNode,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              prefixIcon: const Icon(
+                                Icons.person_search_outlined,
+                              ),
+                              hintText: "搜尋或選擇人物",
+                              suffixIcon: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_searchController.text.isNotEmpty)
+                                    IconButton(
+                                      tooltip: "清除搜尋",
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() {});
+                                      },
+                                      icon: const Icon(Icons.clear),
+                                    ),
                                   IconButton(
-                                    tooltip: "清除搜尋",
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {});
+                                    key: const ValueKey(
+                                      "relationship-search-button",
+                                    ),
+                                    tooltip: "搜尋並聚焦",
+                                    onPressed: () => _focusFirstSearchResult(
+                                      characters,
+                                      graph,
+                                    ),
+                                    icon: const Icon(Icons.center_focus_strong),
+                                  ),
+                                ],
+                              ),
+                              border: const OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) {
+                              onFieldSubmitted();
+                              _focusFirstSearchResult(characters, graph);
+                            },
+                          ),
+                      optionsViewBuilder: (context, onSelected, options) =>
+                          Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 8,
+                              borderRadius: BorderRadius.circular(8),
+                              clipBehavior: Clip.antiAlias,
+                              child: SizedBox(
+                                width: constraints.maxWidth,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 240,
+                                  ),
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    itemCount: options.length,
+                                    itemBuilder: (context, index) {
+                                      final option = options.elementAt(index);
+                                      return ListTile(
+                                        key: ValueKey(
+                                          "relationship-search-option-$option",
+                                        ),
+                                        dense: true,
+                                        leading: const Icon(
+                                          Icons.person_outline,
+                                        ),
+                                        title: Text(option),
+                                        onTap: () => onSelected(option),
+                                      );
                                     },
-                                    icon: const Icon(Icons.clear),
                                   ),
-                                IconButton(
-                                  key: const ValueKey(
-                                    "relationship-search-button",
-                                  ),
-                                  tooltip: "搜尋並聚焦",
-                                  onPressed: () => _focusFirstSearchResult(
-                                    characters,
-                                    graph,
-                                  ),
-                                  icon: const Icon(Icons.center_focus_strong),
                                 ),
-                              ],
-                            ),
-                            border: const OutlineInputBorder(),
-                          ),
-                          onChanged: (_) => setState(() {}),
-                          onSubmitted: (_) {
-                            onFieldSubmitted();
-                            _focusFirstSearchResult(characters, graph);
-                          },
-                        ),
-                    optionsViewBuilder: (context, onSelected, options) => Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 8,
-                        borderRadius: BorderRadius.circular(8),
-                        clipBehavior: Clip.antiAlias,
-                        child: SizedBox(
-                          width: constraints.maxWidth,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 240),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (context, index) {
-                                final option = options.elementAt(index);
-                                return ListTile(
-                                  key: ValueKey(
-                                    "relationship-search-option-$option",
-                                  ),
-                                  dense: true,
-                                  leading: const Icon(Icons.person_outline),
-                                  title: Text(option),
-                                  onTap: () => onSelected(option),
-                                );
-                              },
+                              ),
                             ),
                           ),
-                        ),
-                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  key: const ValueKey("neighbors-only-toggle-button"),
-                  tooltip: "只顯示一階鄰居",
-                  isSelected: _controller.neighborsOnly,
-                  style: _controller.neighborsOnly
-                      ? IconButton.styleFrom(foregroundColor: Colors.teal[400])
-                      : null,
-                  onPressed: _controller.selectedNodeId == null
-                      ? null
-                      : () => _controller.setNeighborsOnly(
-                          !_controller.neighborsOnly,
-                        ),
-                  icon: const Icon(Icons.hub_outlined),
-                ),
-                IconButton(
-                  key: const ValueKey("global-preview-button"),
-                  tooltip: "全局預覽",
-                  onPressed: () => _showGlobalPreview(graph, _viewportSize),
-                  icon: const Icon(Icons.fit_screen_outlined),
-                ),
-                IconButton(
-                  tooltip: "新增關係",
-                  onPressed: _isViewingSnapshot
-                      ? null
-                      : () => _addRelationship(characters),
-                  icon: const Icon(Icons.add_link),
-                ),
-                IconButton(
-                  tooltip: "自動重新排列",
-                  onPressed: _controller.rearrange,
-                  icon: const Icon(Icons.auto_fix_high_outlined),
-                ),
-                IconButton(
-                  tooltip: "重設縮放",
-                  onPressed: _controller.resetZoom,
-                  icon: const Icon(Icons.refresh),
-                ),
-                IconButton(
-                  tooltip: "縮小",
-                  onPressed: () => _controller.zoomBy(0.8, _viewportSize),
-                  icon: const Icon(Icons.zoom_out),
-                ),
-                IconButton(
-                  tooltip: "放大",
-                  onPressed: () => _controller.zoomBy(1.25, _viewportSize),
-                  icon: const Icon(Icons.zoom_in),
-                ),
+                  IconButton(
+                    key: const ValueKey("neighbors-only-toggle-button"),
+                    tooltip: "只顯示一階鄰居",
+                    isSelected: _controller.neighborsOnly,
+                    style: _controller.neighborsOnly
+                        ? IconButton.styleFrom(
+                            backgroundColor: scheme.primaryContainer,
+                            foregroundColor: scheme.onPrimaryContainer,
+                          )
+                        : null,
+                    onPressed: _controller.selectedNodeId == null
+                        ? null
+                        : () => _controller.setNeighborsOnly(
+                            !_controller.neighborsOnly,
+                          ),
+                    icon: const Icon(Icons.hub_outlined),
+                  ),
+                  IconButton(
+                    key: const ValueKey("global-preview-button"),
+                    tooltip: "全局預覽",
+                    onPressed: () => _showGlobalPreview(graph, _viewportSize),
+                    icon: const Icon(Icons.fit_screen_outlined),
+                  ),
+                  IconButton(
+                    tooltip: "新增關係",
+                    onPressed: _isViewingSnapshot
+                        ? null
+                        : () => _addRelationship(characters),
+                    icon: const Icon(Icons.add_link),
+                  ),
+                  IconButton(
+                    tooltip: "自動重新排列",
+                    onPressed: _controller.rearrange,
+                    icon: const Icon(Icons.auto_fix_high_outlined),
+                  ),
+                  IconButton(
+                    tooltip: "重設縮放",
+                    onPressed: _controller.resetZoom,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  IconButton(
+                    tooltip: "縮小",
+                    onPressed: () => _controller.zoomBy(0.8, _viewportSize),
+                    icon: const Icon(Icons.zoom_out),
+                  ),
+                  IconButton(
+                    tooltip: "放大",
+                    onPressed: () => _controller.zoomBy(1.25, _viewportSize),
+                    icon: const Icon(Icons.zoom_in),
+                  ),
+                ],
               ],
             );
           },

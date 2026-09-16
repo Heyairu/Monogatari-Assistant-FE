@@ -36,6 +36,7 @@ import "bin/findreplace.dart";
 import "bin/punctuation_panel.dart";
 import "bin/ui_library.dart";
 import "bin/settings_manager.dart";
+import "application/project_import/selective_project_import.dart";
 import "data/p2p/p2p_snapshot_quarantine.dart";
 import "domain/collaboration/collaborative_text.dart";
 import "domain/models/p2p_sync_models.dart";
@@ -89,6 +90,7 @@ import "modules/characterview.dart";
 import "modules/character_relationship_graph_view.dart";
 import "modules/settingview.dart";
 import "modules/timelineview.dart";
+import "modules/itemview.dart";
 
 typedef _CoordinatorUiEventState = ({
   int messageEventId,
@@ -492,7 +494,7 @@ class _WindowResizeViewport extends StatelessWidget {
 class _ContentViewState extends ConsumerState<ContentView>
     with WindowListener, WidgetsBindingObserver {
   // 狀態變數
-  int slidePageCounts = 15;
+  int slidePageCounts = 16;
   int slidePageIndexCurrent = 0;
   int slidePageIndexNow = 0;
   int _projectSessionVersion = 0;
@@ -500,6 +502,8 @@ class _ContentViewState extends ConsumerState<ContentView>
   int _characterSelectionRequestId = 0;
   String? _requestedLocationId;
   int _locationSelectionRequestId = 0;
+  String? _requestedItemClassId;
+  int _itemSelectionRequestId = 0;
   String? _requestedPlanTargetId;
   PlanModule.PlanSelectionTarget? _requestedPlanTargetKind;
   int _planSelectionRequestId = 0;
@@ -608,6 +612,7 @@ class _ContentViewState extends ConsumerState<ContentView>
     6, // Timeline
     7, // Character relationships
     8, // Plans
+    15, // Items
   };
 
   List<ChapterModule.SegmentData> get segmentsData =>
@@ -2475,6 +2480,12 @@ class _ContentViewState extends ConsumerState<ContentView>
       case 14:
         page = _buildAboutView();
         break;
+      case 15:
+        page = ItemView(
+          initialClassId: _requestedItemClassId,
+          selectionRequestId: _itemSelectionRequestId,
+        );
+        break;
       default:
         page = Center(child: Text("Page ${pageIndex + 1}"));
     }
@@ -3377,13 +3388,14 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildOutlineView() {
-    return const OutlineModule.OutlineAdjustView();
+    return OutlineModule.OutlineAdjustView(onOpenItem: _openItemClass);
   }
 
   Widget _buildWorldSettingsView() {
     return WorldSettingsView(
       initialLocationId: _requestedLocationId,
       selectionRequestId: _locationSelectionRequestId,
+      onOpenItem: _openItemClass,
     );
   }
 
@@ -3392,7 +3404,38 @@ class _ContentViewState extends ConsumerState<ContentView>
       projectSessionId: _projectSessionVersion,
       initialCharacterId: _requestedCharacterId,
       selectionRequestId: _characterSelectionRequestId,
+      onOpenItem: _openItemClass,
     );
+  }
+
+  void _openItemClass(String classId) {
+    _syncEditorToSelectedChapter();
+    _recordPageTransitionIfNeeded(15);
+    setState(() {
+      _requestedItemClassId = classId;
+      _itemSelectionRequestId++;
+      slidePageIndexNow = 15;
+    });
+  }
+
+  void _openCharacter(String characterId) {
+    _syncEditorToSelectedChapter();
+    _recordPageTransitionIfNeeded(5);
+    setState(() {
+      _requestedCharacterId = characterId;
+      _characterSelectionRequestId++;
+      slidePageIndexNow = 5;
+    });
+  }
+
+  void _openLocation(String locationId) {
+    _syncEditorToSelectedChapter();
+    _recordPageTransitionIfNeeded(7);
+    setState(() {
+      _requestedLocationId = locationId;
+      _locationSelectionRequestId++;
+      slidePageIndexNow = 7;
+    });
   }
 
   Widget _buildTimelineView() {
@@ -3416,6 +3459,9 @@ class _ContentViewState extends ConsumerState<ContentView>
         _recordPageTransitionIfNeeded(3);
         setState(() => slidePageIndexNow = 3);
       },
+      onOpenCharacter: _openCharacter,
+      onOpenItem: _openItemClass,
+      onOpenLocation: _openLocation,
     );
   }
 
@@ -3505,6 +3551,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       case "export_selective":
         _showExportDialog();
         break;
+      case "import_selective":
+        _importSelective();
+        break;
       case "export_txt":
         _exportAs("txt");
         break;
@@ -3514,13 +3563,157 @@ class _ContentViewState extends ConsumerState<ContentView>
     }
   }
 
+  Future<void> _importSelective() async {
+    try {
+      _syncEditorToSelectedChapter();
+      final controller = ref.read(projectIoControllerProvider.notifier);
+      final sourceFile = await controller.pickProjectFile();
+      if (sourceFile == null || !mounted) return;
+      final sourceXml = sourceFile.content;
+      if (sourceXml.trim().isEmpty) {
+        throw const FormatException("匯入檔案沒有內容。");
+      }
+      final manifest = SelectiveProjectImportManifest.fromXml(sourceXml);
+      if (manifest.availableModules.isEmpty) {
+        throw const FormatException("匯入檔案沒有可辨識的模組。");
+      }
+      final loaded = await controller.loadProject(sourceFile);
+      if (!mounted) return;
+      if (FileService.isProjectVersionNewerThanSupported(
+        loaded.projectVersion,
+      )) {
+        final proceed = await ProjectManager.showVersionCompatibilityDialog(
+          context,
+          fileVersion: loaded.projectVersion ?? "unknown",
+          supportedVersion: FileService.projectVersion,
+        );
+        if (!mounted || !proceed) return;
+      }
+
+      final currentBeforeImport = _collectProjectData();
+      final selected = <SelectiveProjectModule>{...manifest.availableModules};
+      final chosen = await AppDialog.showCustom<Set<SelectiveProjectModule>>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            SelectiveProjectImportResult? preview;
+            if (selected.isNotEmpty) {
+              preview = const SelectiveProjectImporter().apply(
+                current: currentBeforeImport,
+                source: loaded.data,
+                manifest: manifest,
+                selectedModules: selected,
+              );
+            }
+            return AppDialog(
+              title: "匯入模組",
+              icon: Icons.input,
+              content: SizedBox(
+                width: 560,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("來源：${sourceFile.fullFileName}"),
+                      const SizedBox(height: 8),
+                      const Text("勾選的模組會取代目前專案中的對應資料。"),
+                      const SizedBox(height: 12),
+                      for (final module in SelectiveProjectModule.values)
+                        if (manifest.availableModules.contains(module))
+                          CheckboxListTile(
+                            key: Key("selective-import-${module.id}"),
+                            title: Text(module.label),
+                            value: selected.contains(module),
+                            dense: true,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (value) => setDialogState(() {
+                              if (value == true) {
+                                selected.add(module);
+                              } else {
+                                selected.remove(module);
+                              }
+                            }),
+                          ),
+                      if (preview != null && preview.warnings.isNotEmpty) ...[
+                        const Divider(),
+                        Text(
+                          "需要稍後修復的引用：${preview.warnings.length}",
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        for (final warning in preview.warnings)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text("• ${warning.message}"),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text("取消"),
+                ),
+                FilledButton(
+                  key: const Key("selective-import-apply"),
+                  onPressed: selected.isEmpty
+                      ? null
+                      : () => Navigator.of(
+                          dialogContext,
+                        ).pop(Set<SelectiveProjectModule>.from(selected)),
+                  child: const Text("套用匯入"),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (!mounted || chosen == null) return;
+
+      _recordProjectHistorySnapshot();
+      final imported = const SelectiveProjectImporter().apply(
+        current: currentBeforeImport,
+        source: loaded.data,
+        manifest: manifest,
+        selectedModules: chosen,
+      );
+      final initialState = ref
+          .read(editorCoordinatorProvider.notifier)
+          .calculateInitialState(imported.data, _settingsState.wordCountMode);
+      setState(() {
+        _applyProjectData(
+          imported.data,
+          initialState,
+          reopenCollaboration: false,
+        );
+      });
+      _editorCoordinatorNotifier.markAsModified();
+      _recordProjectHistorySnapshot();
+      final warningSuffix = imported.warnings.isEmpty
+          ? ""
+          : "；${imported.warnings.length} 筆引用需要修復";
+      _showMessage("已匯入 ${chosen.length} 個模組$warningSuffix。");
+    } catch (error) {
+      if (mounted) _showError("匯入失敗：$error");
+    }
+  }
+
   Future<void> _showExportDialog() async {
     final Set<String> selectedModules = {
       "BaseInfo",
       "Chapters",
       "Outline",
+      "Plans",
       "WorldSettings",
       "Characters",
+      "Items",
     };
     String selectedFormat = "xml";
 
@@ -3571,15 +3764,19 @@ class _ContentViewState extends ConsumerState<ContentView>
                       "BaseInfo",
                       "Chapters",
                       "Outline",
+                      "Plans",
                       "WorldSettings",
                       "Characters",
+                      "Items",
                     ].map((module) {
                       final displayNames = {
                         "BaseInfo": "故事設定",
                         "Chapters": "章節內容",
                         "Outline": "大綱",
+                        "Plans": "更新計畫與伏筆",
                         "WorldSettings": "世界設定",
                         "Characters": "角色設定",
+                        "Items": "物品設定與快照",
                       };
                       return CheckboxListTile(
                         title: Text(displayNames[module] ?? module),
@@ -4007,6 +4204,8 @@ class _ContentViewState extends ConsumerState<ContentView>
     _characterSelectionRequestId = 0;
     _requestedLocationId = null;
     _locationSelectionRequestId = 0;
+    _requestedItemClassId = null;
+    _itemSelectionRequestId = 0;
     _requestedPlanTargetId = null;
     _requestedPlanTargetKind = null;
     _planSelectionRequestId = 0;
@@ -4645,8 +4844,9 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 輔助方法：應用專案數據到狀態 (改為接收預先計算的狀態)
   void _applyProjectData(
     ProjectData data,
-    EditorProjectInitialState initialState,
-  ) {
+    EditorProjectInitialState initialState, {
+    bool reopenCollaboration = true,
+  }) {
     _cancelPendingContentCommit();
     final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
     final beganApplying = coordinatorNotifier.beginApplyingProjectData();
@@ -4656,7 +4856,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       data: data,
       initialState: initialState,
     );
-    ref.read(collaborationProvider.notifier).openProject(data);
+    if (reopenCollaboration) {
+      ref.read(collaborationProvider.notifier).openProject(data);
+    }
 
     if (previousSelectedChapID != selectedChapID) {
       _proofreadingChapterSwitchVersion++;

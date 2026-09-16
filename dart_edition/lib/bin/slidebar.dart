@@ -135,6 +135,10 @@ class MonogatariNavigationSidebar extends StatelessWidget {
               icon: Icon(Icons.info),
               label: Text("關於"),
             ),
+            NavigationRailDestination(
+              icon: Icon(Icons.inventory_2_outlined),
+              label: Text("物品設定"),
+            ),
           ],
         ),
       ),

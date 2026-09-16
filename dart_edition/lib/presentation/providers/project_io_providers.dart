@@ -6,7 +6,13 @@ import "../../modules/baseinfoview.dart" as base_info_module;
 import "../../modules/chapterselectionview.dart" as chapter_module;
 import "../../modules/characterview.dart";
 import "../../modules/outlineview.dart" as outline_module;
+import "../../modules/planview.dart" as plan_module;
 import "../../modules/worldsettingsview.dart";
+import "../../models/codecs/character_snapshot_codec.dart";
+import "../../models/codecs/character_state_codec.dart";
+import "../../models/codecs/item_codec.dart";
+import "../../models/codecs/item_snapshot_codec.dart";
+import "../../models/codecs/location_snapshot_codec.dart";
 import "../../models/codecs/timeline_codec.dart";
 import "core_providers.dart";
 import "project_snapshot_utils.dart";
@@ -614,6 +620,7 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         buffer.writeln('<Project UUID="${snapshotData.projectUUID}">');
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
+        _writeSelectiveExportManifest(buffer, selectedModules);
 
         if (selectedModules.contains("BaseInfo")) {
           final baseInfoSnapshot =
@@ -651,16 +658,55 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           if (timelineXml != null) buffer.writeln(timelineXml);
         }
 
+        if (selectedModules.contains("Plans")) {
+          final xml = plan_module.PlanCodec.saveXML(
+            snapshotData.foreshadowData,
+            snapshotData.updatePlanData,
+          );
+          if (xml != null) buffer.writeln(xml);
+        }
+
         if (selectedModules.contains("WorldSettings")) {
           final xml = WorldSettingsCodec.saveXML(
             snapshotData.worldSettingsData,
           );
           if (xml != null) buffer.writeln(xml);
+          final locationChangesXml = LocationSnapshotCodec.saveChanges(
+            snapshotData.locationStateChanges,
+          );
+          if (locationChangesXml != null) buffer.writeln(locationChangesXml);
         }
 
         if (selectedModules.contains("Characters")) {
           final xml = CharacterCodec.saveXML(snapshotData.characterData);
           if (xml != null) buffer.writeln(xml);
+          for (final section in <String?>[
+            CharacterStateCodec.saveXML(snapshotData.characterStates),
+            CharacterSnapshotCodec.saveBaselines(
+              snapshotData.characterStateBaselines,
+            ),
+            CharacterSnapshotCodec.saveChanges(
+              snapshotData.characterStateChanges,
+            ),
+          ]) {
+            if (section != null) buffer.writeln(section);
+          }
+        }
+
+        if (selectedModules.contains("Items")) {
+          for (final section in <String?>[
+            ItemCodec.saveClasses(snapshotData.itemClasses),
+            ItemCodec.saveInstances(snapshotData.itemInstances),
+            ItemCodec.saveRelations(snapshotData.itemRelations),
+            ItemSnapshotCodec.saveClassChanges(
+              snapshotData.itemClassStateChanges,
+            ),
+            ItemSnapshotCodec.saveInstanceChanges(
+              snapshotData.itemInstanceStateChanges,
+            ),
+          ]) {
+            if (section != null) buffer.writeln(section);
+          }
         }
 
         buffer.writeln("</Project>");
@@ -743,6 +789,17 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           buffer.writeln();
         }
 
+        if (selectedModules.contains("Plans")) {
+          _writeMarkdownXmlSection(
+            buffer,
+            "Plans",
+            plan_module.PlanCodec.saveXML(
+              snapshotData.foreshadowData,
+              snapshotData.updatePlanData,
+            ),
+          );
+        }
+
         if (selectedModules.contains("WorldSettings")) {
           final xml = WorldSettingsCodec.saveXML(
             snapshotData.worldSettingsData,
@@ -757,6 +814,13 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           buffer.writeln();
           buffer.writeln("---");
           buffer.writeln();
+          _writeMarkdownXmlSection(
+            buffer,
+            "LocationStateChanges",
+            LocationSnapshotCodec.saveChanges(
+              snapshotData.locationStateChanges,
+            ),
+          );
         }
 
         if (selectedModules.contains("Characters")) {
@@ -771,6 +835,57 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
           buffer.writeln();
           buffer.writeln("---");
           buffer.writeln();
+          _writeMarkdownXmlSection(
+            buffer,
+            "CharacterStates",
+            CharacterStateCodec.saveXML(snapshotData.characterStates),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "CharacterStateBaselines",
+            CharacterSnapshotCodec.saveBaselines(
+              snapshotData.characterStateBaselines,
+            ),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "CharacterStateChanges",
+            CharacterSnapshotCodec.saveChanges(
+              snapshotData.characterStateChanges,
+            ),
+          );
+        }
+
+        if (selectedModules.contains("Items")) {
+          _writeMarkdownXmlSection(
+            buffer,
+            "ItemClasses",
+            ItemCodec.saveClasses(snapshotData.itemClasses),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "ItemInstances",
+            ItemCodec.saveInstances(snapshotData.itemInstances),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "ItemRelations",
+            ItemCodec.saveRelations(snapshotData.itemRelations),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "ItemClassStateChanges",
+            ItemSnapshotCodec.saveClassChanges(
+              snapshotData.itemClassStateChanges,
+            ),
+          );
+          _writeMarkdownXmlSection(
+            buffer,
+            "ItemInstanceStateChanges",
+            ItemSnapshotCodec.saveInstanceChanges(
+              snapshotData.itemInstanceStateChanges,
+            ),
+          );
         }
       }
 
@@ -793,6 +908,39 @@ class ProjectIoController extends AsyncNotifier<ProjectIoStatus> {
       rethrow;
     }
   }
+}
+
+void _writeMarkdownXmlSection(StringBuffer buffer, String title, String? xml) {
+  if (xml == null) return;
+  buffer.writeln("## $title");
+  buffer.writeln();
+  buffer.writeln("```xml");
+  buffer.writeln(xml);
+  buffer.writeln("```");
+  buffer.writeln();
+  buffer.writeln("---");
+  buffer.writeln();
+}
+
+void _writeSelectiveExportManifest(
+  StringBuffer buffer,
+  Set<String> selectedModules,
+) {
+  const supported = <String>{
+    "BaseInfo",
+    "Chapters",
+    "Outline",
+    "Plans",
+    "WorldSettings",
+    "Characters",
+    "Items",
+  };
+  final modules = selectedModules.where(supported.contains).toList()..sort();
+  buffer.writeln("<SelectiveExport>");
+  for (final module in modules) {
+    buffer.writeln("  <Module>$module</Module>");
+  }
+  buffer.writeln("</SelectiveExport>");
 }
 
 List<chapter_module.SegmentData> _projectSegmentsForReader(

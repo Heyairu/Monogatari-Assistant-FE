@@ -21,7 +21,7 @@ class ProjectMigrationResult {
 /// Owns all project-format upgrades. Module codecs only decode their XML shape;
 /// they never guess which historical project version they received.
 class ProjectMigrator {
-  static const currentVersion = "1.16";
+  static const currentVersion = "1.18";
   static const _legacyMigrationCutoff = "1.08";
   static const _timelineProjectionCutoff = "1.10";
   static const _characterSnapshotCutoff = "1.11";
@@ -89,8 +89,16 @@ class ProjectMigrator {
           timelineUpgrade.changed ||
           snapshotUpgrade.changed ||
           tableUpgrade.changed ||
-          _requiresProjectUuidUpgrade(sourceVersion),
+          _requiresProjectUuidUpgrade(sourceVersion) ||
+          _requiresCurrentFormatUpgrade(sourceVersion),
     );
+  }
+
+  static bool _requiresCurrentFormatUpgrade(String? sourceVersion) {
+    final version = sourceVersion?.trim();
+    return version == null ||
+        version.isEmpty ||
+        _compareVersion(version, currentVersion) < 0;
   }
 
   static bool _requiresProjectUuidUpgrade(String? sourceVersion) {
@@ -137,6 +145,12 @@ class ProjectMigrator {
         foreshadowData: source.foreshadowData,
         updatePlanData: source.updatePlanData,
         worldSettingsData: source.worldSettingsData,
+        itemClasses: source.itemClasses,
+        itemInstances: source.itemInstances,
+        itemRelations: source.itemRelations,
+        itemClassStateChanges: source.itemClassStateChanges,
+        itemInstanceStateChanges: source.itemInstanceStateChanges,
+        locationStateChanges: source.locationStateChanges,
         characterData: characters,
         characterStates: source.characterStates,
         characterStateBaselines: unmatchedBaselines,
@@ -245,6 +259,12 @@ class ProjectMigrator {
         foreshadowData: source.foreshadowData,
         updatePlanData: source.updatePlanData,
         worldSettingsData: source.worldSettingsData,
+        itemClasses: source.itemClasses,
+        itemInstances: source.itemInstances,
+        itemRelations: source.itemRelations,
+        itemClassStateChanges: source.itemClassStateChanges,
+        itemInstanceStateChanges: source.itemInstanceStateChanges,
+        locationStateChanges: source.locationStateChanges,
         characterData: source.characterData,
         characterStates: const <CharacterState>[],
         characterStateBaselines: baselines,
@@ -342,6 +362,12 @@ class ProjectMigrator {
         foreshadowData: source.foreshadowData,
         updatePlanData: source.updatePlanData,
         worldSettingsData: source.worldSettingsData,
+        itemClasses: source.itemClasses,
+        itemInstances: source.itemInstances,
+        itemRelations: source.itemRelations,
+        itemClassStateChanges: source.itemClassStateChanges,
+        itemInstanceStateChanges: source.itemInstanceStateChanges,
+        locationStateChanges: source.locationStateChanges,
         characterData: source.characterData,
         characterStates: source.characterStates,
         characterStateBaselines: source.characterStateBaselines,
@@ -478,6 +504,12 @@ class ProjectMigrator {
       foreshadowData: source.foreshadowData,
       updatePlanData: source.updatePlanData,
       worldSettingsData: source.worldSettingsData,
+      itemClasses: source.itemClasses,
+      itemInstances: source.itemInstances,
+      itemRelations: source.itemRelations,
+      itemClassStateChanges: source.itemClassStateChanges,
+      itemInstanceStateChanges: source.itemInstanceStateChanges,
+      locationStateChanges: source.locationStateChanges,
       characterData: characters,
       characterStates: source.characterStates,
       characterStateBaselines: source.characterStateBaselines,

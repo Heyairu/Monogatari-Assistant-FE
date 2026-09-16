@@ -2311,6 +2311,12 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
                 state.sessionProjectUuid == sessionProjectUuid
             ? state.selectedProjectSource
             : null);
+    final pendingAck = _pendingRemoteResolutionAck;
+    final preservePendingResolutionMessage =
+        pendingAck != null &&
+        pendingAck.projectUuid == sessionProjectUuid &&
+        state.remoteRevisionGraph?.revisions[pendingAck.resolutionRevisionId] !=
+            null;
     state = state.copyWith(
       connectionStatus: connectionStatus,
       reachablePeer: reachablePeer,
@@ -2320,7 +2326,9 @@ class P2pSyncNotifier extends Notifier<P2pSyncState> {
       selectedProjectSource: selectedProjectSource,
       sessionProjectUuid: sessionProjectUuid,
       negotiationGeneration: state.negotiationGeneration + 1,
-      message: _negotiationMessage(negotiation),
+      message: preservePendingResolutionMessage
+          ? "對方已 ACK 遠端 resolve revision；等待下載並安裝該 revision。"
+          : _negotiationMessage(negotiation),
       errorMessage: null,
     );
   }

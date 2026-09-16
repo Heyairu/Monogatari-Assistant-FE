@@ -21,13 +21,16 @@ import "dart:async";
 import "package:xml/xml.dart" as xml;
 import "../models/codecs/xml_text_codec.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:uuid/uuid.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/outline_data.dart";
+import "../models/item_data.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
+import "../presentation/widgets/project_object_selector.dart";
 
 export "../models/outline_data.dart";
 
@@ -48,6 +51,22 @@ class OutlineDragData {
 }
 
 enum OutlineDragType { storyline, event, scene }
+
+enum _LegacyItemConversionAction { linkExisting, createAndLink }
+
+class _LegacyItemSubject {
+  final String itemId;
+  final ItemReferenceKind itemKind;
+  final ItemClassData? newClass;
+  final ItemInstanceData? newInstance;
+
+  const _LegacyItemSubject({
+    required this.itemId,
+    required this.itemKind,
+    this.newClass,
+    this.newInstance,
+  });
+}
 
 // MARK: - 拖放識別字串
 class DragPayload {
@@ -489,7 +508,9 @@ class OutlineCodec {
 
 // MARK: - OutlineAdjustView
 class OutlineAdjustView extends ConsumerStatefulWidget {
-  const OutlineAdjustView({super.key});
+  final ValueChanged<String>? onOpenItem;
+
+  const OutlineAdjustView({super.key, this.onOpenItem});
 
   @override
   ConsumerState<OutlineAdjustView> createState() => _OutlineAdjustViewState();
@@ -2356,6 +2377,22 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       return const SizedBox.shrink();
     }
     final event = storylines[si].scenes[ei];
+    final itemWorkspace = ref.watch(itemWorkspaceProvider);
+    final linkedItems =
+        itemWorkspace.itemRelations
+            .where(
+              (relation) =>
+                  relation.targetKind == ItemRelationTargetKind.event &&
+                  relation.targetId == event.storyEventUUID,
+            )
+            .map((relation) {
+              final label = relation.itemKind == ItemReferenceKind.itemClass
+                  ? itemWorkspace.itemClasses[relation.itemId]?.name
+                  : itemWorkspace.itemInstances[relation.itemId]?.name;
+              return (relation: relation, label: label ?? relation.itemId);
+            })
+            .toList(growable: false)
+          ..sort((a, b) => a.label.compareTo(b.label));
 
     return AppSectionCard(
       padding: EdgeInsets.zero,
@@ -2455,6 +2492,12 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               title: "預設物件",
               icon: Icons.category,
               items: event.item,
+              conversionKeyPrefix: "event-legacy-item-${event.storyEventUUID}",
+              onConvert: (index) => _convertLegacyOutlineItem(
+                eventId: event.storyEventUUID,
+                legacyIndex: index,
+                legacyName: event.item[index],
+              ),
               onAdd: (item) {
                 setState(() {
                   _updateEventAt(si, ei, (current) {
@@ -2473,6 +2516,85 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 _notifyChange();
               },
             ),
+
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "已連結物品",
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  key: const Key("event-link-item"),
+                  onPressed: () => _linkItemToEvent(event.storyEventUUID),
+                  icon: const Icon(Icons.add_link),
+                  label: const Text("連結物品"),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (linkedItems.isEmpty)
+              const Text("尚未連結正式物品。")
+            else
+              ...linkedItems.map(
+                (entry) => ListTile(
+                  dense: true,
+                  key: ValueKey(
+                    "event-linked-item-${entry.relation.relationId}",
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    entry.relation.itemKind == ItemReferenceKind.itemClass
+                        ? Icons.category_outlined
+                        : Icons.inventory_2_outlined,
+                  ),
+                  title: Text(entry.label),
+                  subtitle: Text(
+                    [
+                      entry.relation.itemKind == ItemReferenceKind.itemClass
+                          ? "物品 Class"
+                          : "單件物品",
+                      if (entry.relation.role.isNotEmpty) entry.relation.role,
+                      if (entry.relation.note.isNotEmpty) entry.relation.note,
+                    ].join("・"),
+                  ),
+                  trailing: Wrap(
+                    children: [
+                      if (widget.onOpenItem != null)
+                        IconButton(
+                          key: ValueKey(
+                            "event-open-item-${entry.relation.relationId}",
+                          ),
+                          tooltip: "開啟物品頁",
+                          onPressed: () {
+                            final classId =
+                                entry.relation.itemKind ==
+                                    ItemReferenceKind.itemClass
+                                ? entry.relation.itemId
+                                : itemWorkspace
+                                      .itemInstances[entry.relation.itemId]
+                                      ?.classId;
+                            if (classId != null) widget.onOpenItem!(classId);
+                          },
+                          icon: const Icon(Icons.open_in_new),
+                        ),
+                      IconButton(
+                        key: ValueKey(
+                          "event-unlink-item-${entry.relation.relationId}",
+                        ),
+                        tooltip: "解除關聯",
+                        onPressed: () => ref
+                            .read(itemWorkspaceProvider.notifier)
+                            .removeRelation(entry.relation.relationId),
+                        icon: const Icon(Icons.link_off),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             const SizedBox(height: 16),
 
@@ -2504,6 +2626,338 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         ),
       ),
     );
+  }
+
+  Future<void> _linkItemToEvent(String eventId) async {
+    final workspace = ref.read(itemWorkspaceProvider);
+    final excluded = workspace.itemRelations
+        .where(
+          (relation) =>
+              relation.targetKind == ItemRelationTargetKind.event &&
+              relation.targetId == eventId,
+        )
+        .map(
+          (relation) =>
+              "${relation.itemKind == ItemReferenceKind.itemClass ? ProjectObjectKind.itemClass.name : ProjectObjectKind.itemInstance.name}:${relation.itemId}",
+        )
+        .toSet();
+    final selected = await showProjectObjectSelector(
+      context: context,
+      title: "選擇要連結的事件物品",
+      allowedKinds: const {
+        ProjectObjectKind.itemClass,
+        ProjectObjectKind.itemInstance,
+      },
+      excludedKeys: excluded,
+    );
+    final itemKind = selected?.itemReferenceKind;
+    if (!mounted || selected == null || itemKind == null) return;
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .putRelation(
+          ItemRelationData(
+            relationId: const Uuid().v4(),
+            itemId: selected.id,
+            itemKind: itemKind,
+            targetId: eventId,
+            targetKind: ItemRelationTargetKind.event,
+            role: "相關",
+          ),
+        );
+  }
+
+  Future<void> _convertLegacyOutlineItem({
+    required String eventId,
+    String? sceneId,
+    required int legacyIndex,
+    required String legacyName,
+  }) async {
+    final action = await showDialog<_LegacyItemConversionAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const Key("legacy-item-conversion-choice"),
+        title: Text("轉換「$legacyName」"),
+        content: const Text("轉換成功後會移除這筆舊文字，改用可追蹤的正式物品 ID 關聯。"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("取消"),
+          ),
+          OutlinedButton(
+            key: const Key("legacy-item-link-existing"),
+            onPressed: () => Navigator.pop(
+              context,
+              _LegacyItemConversionAction.linkExisting,
+            ),
+            child: const Text("連結既有"),
+          ),
+          FilledButton(
+            key: const Key("legacy-item-create-and-link"),
+            onPressed: () => Navigator.pop(
+              context,
+              _LegacyItemConversionAction.createAndLink,
+            ),
+            child: const Text("建立並連結"),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+
+    final targetKind = sceneId == null
+        ? ItemRelationTargetKind.event
+        : ItemRelationTargetKind.scene;
+    final targetId = sceneId ?? eventId;
+    _LegacyItemSubject? subject;
+    if (action == _LegacyItemConversionAction.linkExisting) {
+      final workspace = ref.read(itemWorkspaceProvider);
+      final excluded = workspace.itemRelations
+          .where(
+            (relation) =>
+                relation.targetKind == targetKind &&
+                relation.targetId == targetId,
+          )
+          .map(
+            (relation) =>
+                "${relation.itemKind == ItemReferenceKind.itemClass ? ProjectObjectKind.itemClass.name : ProjectObjectKind.itemInstance.name}:${relation.itemId}",
+          )
+          .toSet();
+      final selected = await showProjectObjectSelector(
+        context: context,
+        title: "選擇「$legacyName」對應的物品",
+        allowedKinds: const {
+          ProjectObjectKind.itemClass,
+          ProjectObjectKind.itemInstance,
+        },
+        excludedKeys: excluded,
+      );
+      final itemKind = selected?.itemReferenceKind;
+      if (!mounted || selected == null || itemKind == null) return;
+      subject = _LegacyItemSubject(itemId: selected.id, itemKind: itemKind);
+    } else {
+      subject = await _showCreateLegacyItemDialog(legacyName);
+      if (!mounted || subject == null) return;
+    }
+
+    try {
+      _commitLegacyOutlineItemConversion(
+        eventId: eventId,
+        sceneId: sceneId,
+        legacyIndex: legacyIndex,
+        legacyName: legacyName,
+        subject: subject,
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("已轉為正式物品關聯。")));
+    } on StateError catch (error) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+    }
+  }
+
+  Future<_LegacyItemSubject?> _showCreateLegacyItemDialog(
+    String legacyName,
+  ) async {
+    var name = legacyName.trim();
+    var mode = ItemMode.dedicated;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          key: const Key("legacy-item-create-dialog"),
+          title: const Text("建立正式物品"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                key: const Key("legacy-item-create-name"),
+                initialValue: name,
+                decoration: const InputDecoration(labelText: "名稱"),
+                onChanged: (value) => setDialogState(() => name = value),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ItemMode>(
+                key: const Key("legacy-item-create-mode"),
+                initialValue: mode,
+                decoration: const InputDecoration(labelText: "物品模式"),
+                items: const [
+                  DropdownMenuItem(
+                    value: ItemMode.dedicated,
+                    child: Text("專用（建立獨立 ID）"),
+                  ),
+                  DropdownMenuItem(
+                    value: ItemMode.semiDedicated,
+                    child: Text("半專用（Class 內建立一件）"),
+                  ),
+                  DropdownMenuItem(
+                    value: ItemMode.generic,
+                    child: Text("非專用（只建立 Class）"),
+                  ),
+                ],
+                onChanged: (value) => setDialogState(() {
+                  if (value != null) mode = value;
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              key: const Key("legacy-item-create-confirm"),
+              onPressed: name.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text("建立並連結"),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return null;
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) return null;
+    final classId = const Uuid().v4();
+    final itemClass = ItemClassData(
+      classId: classId,
+      name: normalizedName,
+      mode: mode,
+    );
+    if (mode == ItemMode.generic) {
+      return _LegacyItemSubject(
+        itemId: classId,
+        itemKind: ItemReferenceKind.itemClass,
+        newClass: itemClass,
+      );
+    }
+    final instance = ItemInstanceData(
+      instanceId: const Uuid().v4(),
+      classId: classId,
+      name: normalizedName,
+    );
+    return _LegacyItemSubject(
+      itemId: instance.instanceId,
+      itemKind: ItemReferenceKind.instance,
+      newClass: itemClass,
+      newInstance: instance,
+    );
+  }
+
+  void _commitLegacyOutlineItemConversion({
+    required String eventId,
+    String? sceneId,
+    required int legacyIndex,
+    required String legacyName,
+    required _LegacyItemSubject subject,
+  }) {
+    final originalOutline = ref.read(outlineDataProvider);
+    final originalWorkspace = ref.read(itemWorkspaceProvider);
+    final nextOutline = [...originalOutline];
+    var found = false;
+    for (
+      var storylineIndex = 0;
+      storylineIndex < nextOutline.length;
+      storylineIndex++
+    ) {
+      final storyline = nextOutline[storylineIndex];
+      final events = [...storyline.scenes];
+      final eventIndex = events.indexWhere(
+        (event) => event.storyEventUUID == eventId,
+      );
+      if (eventIndex < 0) continue;
+      final event = events[eventIndex];
+      if (sceneId == null) {
+        if (legacyIndex >= event.item.length ||
+            event.item[legacyIndex] != legacyName) {
+          break;
+        }
+        final items = [...event.item]..removeAt(legacyIndex);
+        events[eventIndex] = event.copyWith(item: items);
+      } else {
+        final scenes = [...event.scenes];
+        final sceneIndex = scenes.indexWhere(
+          (scene) => scene.sceneUUID == sceneId,
+        );
+        if (sceneIndex < 0 ||
+            legacyIndex >= scenes[sceneIndex].item.length ||
+            scenes[sceneIndex].item[legacyIndex] != legacyName) {
+          break;
+        }
+        final items = [...scenes[sceneIndex].item]..removeAt(legacyIndex);
+        scenes[sceneIndex] = scenes[sceneIndex].copyWith(item: items);
+        events[eventIndex] = event.copyWith(scenes: scenes);
+      }
+      nextOutline[storylineIndex] = storyline.copyWith(scenes: events);
+      found = true;
+      break;
+    }
+    if (!found) {
+      throw StateError("原物件文字已變更，請重新開啟轉換流程。");
+    }
+
+    final classes = {...originalWorkspace.itemClasses};
+    final instances = {...originalWorkspace.itemInstances};
+    if (subject.newClass != null) {
+      if (classes.containsKey(subject.newClass!.classId)) {
+        throw StateError("新物品 ID 已存在，請重試。");
+      }
+      classes[subject.newClass!.classId] = subject.newClass!;
+    }
+    if (subject.newInstance != null) {
+      if (instances.containsKey(subject.newInstance!.instanceId)) {
+        throw StateError("新單件物品 ID 已存在，請重試。");
+      }
+      instances[subject.newInstance!.instanceId] = subject.newInstance!;
+    }
+    final subjectExists = subject.itemKind == ItemReferenceKind.itemClass
+        ? classes.containsKey(subject.itemId)
+        : instances.containsKey(subject.itemId);
+    if (!subjectExists) {
+      throw StateError("選取的正式物品已不存在，請重新選擇。");
+    }
+    final targetKind = sceneId == null
+        ? ItemRelationTargetKind.event
+        : ItemRelationTargetKind.scene;
+    final targetId = sceneId ?? eventId;
+    final duplicate = originalWorkspace.itemRelations.any(
+      (relation) =>
+          relation.itemId == subject.itemId &&
+          relation.itemKind == subject.itemKind &&
+          relation.targetId == targetId &&
+          relation.targetKind == targetKind,
+    );
+    if (duplicate) {
+      throw StateError("這個正式物品已連結到目前目標。");
+    }
+    final nextWorkspace = originalWorkspace.copyWith(
+      itemClasses: classes,
+      itemInstances: instances,
+      itemRelations: [
+        ...originalWorkspace.itemRelations,
+        ItemRelationData(
+          relationId: const Uuid().v4(),
+          itemId: subject.itemId,
+          itemKind: subject.itemKind,
+          targetId: targetId,
+          targetKind: targetKind,
+          role: "大綱物件",
+          note: "由舊文字「$legacyName」轉換",
+        ),
+      ],
+    );
+
+    try {
+      ref.read(itemWorkspaceProvider.notifier).setWorkspace(nextWorkspace);
+      ref.read(outlineDataProvider.notifier).setOutlineData(nextOutline);
+    } catch (_) {
+      ref.read(itemWorkspaceProvider.notifier).setWorkspace(originalWorkspace);
+      ref.read(outlineDataProvider.notifier).setOutlineData(originalOutline);
+      rethrow;
+    }
   }
 
   // MARK: - 小箱（場景）區段
@@ -2799,7 +3253,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         ci >= storylines[si].scenes[ei].scenes.length) {
       return const SizedBox.shrink();
     }
-    final scene = storylines[si].scenes[ei].scenes[ci];
+    final event = storylines[si].scenes[ei];
+    final scene = event.scenes[ci];
 
     return AppSectionCard(
       padding: EdgeInsets.zero,
@@ -2987,6 +3442,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               title: "物件",
               icon: Icons.category,
               items: scene.item,
+              conversionKeyPrefix: "scene-legacy-item-${scene.sceneUUID}",
+              onConvert: (index) => _convertLegacyOutlineItem(
+                eventId: event.storyEventUUID,
+                sceneId: scene.sceneUUID,
+                legacyIndex: index,
+                legacyName: scene.item[index],
+              ),
               onAdd: (item) {
                 setState(() {
                   _updateSceneAt(si, ei, ci, (current) {

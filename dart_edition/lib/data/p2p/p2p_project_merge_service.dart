@@ -78,6 +78,13 @@ class P2pProjectMergeService {
       foreshadowData: data.foreshadowData,
       updatePlanData: data.updatePlanData,
       worldSettingsData: data.worldSettingsData,
+      // Item data has its own atomic conflict choice in the merge plan.
+      itemClasses: const {},
+      itemInstances: const {},
+      itemRelations: const [],
+      itemClassStateChanges: const [],
+      itemInstanceStateChanges: const [],
+      locationStateChanges: data.locationStateChanges,
       characterData: const {},
       characterStates: data.characterStates,
       characterStateBaselines: data.characterStateBaselines,

@@ -11,6 +11,9 @@ import "../../models/plan_data.dart";
 import "../../models/project_data.dart";
 import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart";
+import "../../models/item_data.dart";
+import "../../models/item_snapshot_data.dart";
+import "../../models/location_snapshot_data.dart";
 
 /// Converts ProjectData models to versioned, stable-id collaboration records.
 /// Chapter content is intentionally absent; it belongs exclusively to CRDT.
@@ -311,6 +314,49 @@ abstract final class ProjectRecordCodec {
           "patch": _patchToJson(change.patch),
           "note": change.note,
         },
+      );
+    }
+
+    for (final value in data.itemClasses.values) {
+      put(
+        kind: ProjectRecordKind.itemClass,
+        id: value.classId,
+        fields: value.toJson(),
+      );
+    }
+    for (final value in data.itemInstances.values) {
+      put(
+        kind: ProjectRecordKind.itemInstance,
+        id: value.instanceId,
+        fields: value.toJson(),
+      );
+    }
+    for (final value in data.itemRelations) {
+      put(
+        kind: ProjectRecordKind.itemRelation,
+        id: value.relationId,
+        fields: value.toJson(),
+      );
+    }
+    for (final value in data.itemClassStateChanges) {
+      put(
+        kind: ProjectRecordKind.itemClassStateChange,
+        id: value.stateChangeId,
+        fields: value.toJson(),
+      );
+    }
+    for (final value in data.itemInstanceStateChanges) {
+      put(
+        kind: ProjectRecordKind.itemInstanceStateChange,
+        id: value.stateChangeId,
+        fields: value.toJson(),
+      );
+    }
+    for (final value in data.locationStateChanges) {
+      put(
+        kind: ProjectRecordKind.locationStateChange,
+        id: value.stateChangeId,
+        fields: value.toJson(),
       );
     }
 
@@ -665,6 +711,70 @@ abstract final class ProjectRecordCodec {
           patch: _patchFromJson(_object(record.fields, "patch")),
           note: _string(record.fields, "note"),
         ),
+      )
+      .toList(growable: false);
+
+  static Map<String, ItemClassData> decodeItemClasses(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => {
+    for (final record in _recordsOf(records, ProjectRecordKind.itemClass))
+      record.recordId: ItemClassData.fromJson({
+        ...record.fields,
+        "classId": record.recordId,
+      }),
+  };
+
+  static Map<String, ItemInstanceData> decodeItemInstances(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => {
+    for (final record in _recordsOf(records, ProjectRecordKind.itemInstance))
+      record.recordId: ItemInstanceData.fromJson({
+        ...record.fields,
+        "instanceId": record.recordId,
+      }),
+  };
+
+  static List<ItemRelationData> decodeItemRelations(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => _recordsOf(records, ProjectRecordKind.itemRelation)
+      .map(
+        (record) => ItemRelationData.fromJson({
+          ...record.fields,
+          "relationId": record.recordId,
+        }),
+      )
+      .toList(growable: false);
+
+  static List<ItemClassStateChange> decodeItemClassChanges(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => _recordsOf(records, ProjectRecordKind.itemClassStateChange)
+      .map(
+        (record) => ItemClassStateChange.fromJson({
+          ...record.fields,
+          "stateChangeId": record.recordId,
+        }),
+      )
+      .toList(growable: false);
+
+  static List<ItemInstanceStateChange> decodeItemInstanceChanges(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => _recordsOf(records, ProjectRecordKind.itemInstanceStateChange)
+      .map(
+        (record) => ItemInstanceStateChange.fromJson({
+          ...record.fields,
+          "stateChangeId": record.recordId,
+        }),
+      )
+      .toList(growable: false);
+
+  static List<LocationStateChange> decodeLocationChanges(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) => _recordsOf(records, ProjectRecordKind.locationStateChange)
+      .map(
+        (record) => LocationStateChange.fromJson({
+          ...record.fields,
+          "stateChangeId": record.recordId,
+        }),
       )
       .toList(growable: false);
 

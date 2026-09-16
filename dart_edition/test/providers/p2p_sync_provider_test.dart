@@ -19,6 +19,7 @@ import "package:monogatari_assistant/data/p2p/p2p_snapshot_quarantine.dart";
 import "package:monogatari_assistant/domain/collaboration/collaboration_protocol.dart";
 import "package:monogatari_assistant/domain/collaboration/collaboration_document.dart";
 import "package:monogatari_assistant/domain/collaboration/collaboration_operation.dart";
+import "package:monogatari_assistant/domain/collaboration/project_operation_transaction_buffer.dart";
 import "package:monogatari_assistant/domain/models/p2p_pairing_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_revision_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_resolution_models.dart";
@@ -28,6 +29,7 @@ import "package:monogatari_assistant/models/base_info_data.dart";
 import "package:monogatari_assistant/models/chapter_selection_data.dart";
 import "package:monogatari_assistant/models/character_data.dart";
 import "package:monogatari_assistant/models/project_data.dart";
+import "package:monogatari_assistant/models/item_data.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 import "package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart";
 import "package:monogatari_assistant/presentation/providers/global_state_providers.dart";
@@ -2303,4 +2305,121 @@ void main() {
       expect(container.read(p2pSyncProvider).sessionProjectUuid, isNotNull);
     },
   );
+
+  test(
+    "item transaction is projected only after every cross-batch fragment arrives",
+    () async {
+      const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+      const remoteAddress = "192.168.1.20";
+      final service = _FakeP2pEndpointService();
+      final container = ProviderContainer(
+        overrides: [p2pEndpointServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+      final before = ProjectData.collaborationShell(projectUUID: projectUuid);
+      final after = ProjectData.collaborationShell(projectUUID: projectUuid)
+        ..itemClasses = {
+          for (var index = 0; index < 40; index++)
+            "item-$index": ItemClassData(
+              classId: "item-$index",
+              name: "物品 $index",
+              mode: ItemMode.generic,
+            ),
+        };
+      final previousRecords = ProjectRecordCodec.snapshot(
+        before,
+        omitCollaborativeText: true,
+      );
+      final nextRecords = ProjectRecordCodec.snapshot(
+        after,
+        omitCollaborativeText: true,
+      );
+      final itemDiff = ProjectRecordCodec.diff(previousRecords, nextRecords)
+          .where(
+            (operation) => operation.recordKind == ProjectRecordKind.itemClass,
+          )
+          .toList(growable: false);
+      expect(itemDiff, hasLength(40));
+      final grouped = groupProjectRecordTransaction(
+        operations: itemDiff,
+        transactionId: "remote:item:1",
+        include: (_) => true,
+      );
+      var source = CollaborationDocument.seeded(
+        projectUuid: projectUuid,
+        replicaId: "remote",
+        chapterTexts: const {},
+      );
+      for (final operation in grouped) {
+        source = source.createLocalProjectOperation(operation);
+      }
+      final operations = source.operationsAfter(const {}, limit: 128);
+      expect(operations, hasLength(40));
+
+      container.read(collaborationProvider.notifier).openProject(before);
+      service.emitInboundCollaborationBatch(
+        remoteAddress,
+        CollaborationSyncBatch(
+          projectUuid: projectUuid,
+          senderReplicaId: source.replicaId,
+          acknowledgedSequences: source.acknowledgedSequences,
+          operations: operations.skip(32),
+        ),
+      );
+      await pumpEventQueue();
+      expect(container.read(itemWorkspaceProvider).itemClasses, isEmpty);
+      expect(
+        container.read(collaborationProvider).pendingProjectTransactionCount,
+        1,
+      );
+
+      service.emitInboundCollaborationBatch(
+        remoteAddress,
+        CollaborationSyncBatch(
+          projectUuid: projectUuid,
+          senderReplicaId: source.replicaId,
+          acknowledgedSequences: source.acknowledgedSequences,
+          operations: operations.take(32),
+        ),
+      );
+      await pumpEventQueue();
+      expect(container.read(itemWorkspaceProvider).itemClasses, hasLength(40));
+      expect(
+        container.read(collaborationProvider).pendingProjectTransactionCount,
+        0,
+      );
+    },
+  );
+
+  test("local item snapshot diff receives stable transaction metadata", () {
+    const projectUuid = "123e4567-e89b-12d3-a456-426614174000";
+    final service = _FakeP2pEndpointService();
+    final container = ProviderContainer(
+      overrides: [p2pEndpointServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+    final before = ProjectData.collaborationShell(projectUUID: projectUuid);
+    final after = ProjectData.collaborationShell(projectUUID: projectUuid)
+      ..itemClasses = {
+        "first": ItemClassData(classId: "first", name: "第一件"),
+        "second": ItemClassData(classId: "second", name: "第二件"),
+      };
+    final notifier = container.read(collaborationProvider.notifier);
+    notifier.openProject(before);
+    notifier.captureProjectData(after);
+
+    final records = container
+        .read(collaborationProvider)
+        .document!
+        .operationsAfter(const {}, limit: 128)
+        .whereType<ProjectDataRecordOperation>()
+        .map((operation) => operation.record)
+        .where((record) => record.recordKind == ProjectRecordKind.itemClass)
+        .toList(growable: false);
+    expect(records, hasLength(2));
+    expect(records.map((record) => record.transactionId).toSet(), hasLength(1));
+    expect(records.first.transactionId, isNotNull);
+    expect(records.map((record) => record.transactionIndex).toSet(), {0, 1});
+    expect(records.every((record) => record.transactionSize == 2), isTrue);
+  });
 }

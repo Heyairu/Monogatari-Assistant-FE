@@ -106,10 +106,10 @@ void main() {
 
     final actionContext = tester.element(find.byTooltip("檔案"));
     final result = Actions.invoke(actionContext, const NewFileIntent());
+    await tester.pump();
     if (result is Future<void>) {
       await result;
     }
-    await tester.pump();
     await tester.pump(const Duration(seconds: 1));
 
     expect(

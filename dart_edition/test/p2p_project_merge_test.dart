@@ -1,9 +1,13 @@
 import "package:flutter_test/flutter_test.dart";
+import "package:monogatari_assistant/bin/file.dart";
 import "package:monogatari_assistant/data/p2p/p2p_project_merge.dart";
+import "package:monogatari_assistant/data/p2p/p2p_project_merge_service.dart";
 import "package:monogatari_assistant/domain/models/p2p_revision_models.dart";
 import "package:monogatari_assistant/domain/models/p2p_sync_models.dart";
 import "package:monogatari_assistant/models/character_data.dart";
 import "package:monogatari_assistant/models/chapter_selection_data.dart";
+import "package:monogatari_assistant/models/item_data.dart";
+import "package:monogatari_assistant/models/item_snapshot_data.dart";
 import "package:monogatari_assistant/models/project_data.dart";
 
 const _projectUuid = "11111111-1111-4111-8111-111111111111";
@@ -244,6 +248,163 @@ void main() {
       P2pConflictResolutionResult(const <String, P2pConflictSide>{}),
     );
     expect(merged.segmentsData.single.chapters.single.chapterContent, "遠端新增內容");
+  });
+
+  test("concurrent allocation edits expose one atomic item conflict", () {
+    final base = ProjectData.empty(projectUUID: _projectUuid)
+      ..itemClasses = <String, ItemClassData>{
+        "class-coins": ItemClassData(
+          classId: "class-coins",
+          name: "銀幣",
+          mode: ItemMode.generic,
+        ),
+      };
+    final local = ProjectData.empty(projectUUID: _projectUuid)
+      ..itemClasses = Map<String, ItemClassData>.from(base.itemClasses)
+      ..itemClassStateChanges = <ItemClassStateChange>[
+        ItemClassStateChange(
+          stateChangeId: "local-transfer",
+          classId: "class-coins",
+          sceneUUID: "scene-market",
+          patch: ItemStatePatch(
+            allocations:
+                StateValue<List<ItemAllocationData>>.set(<ItemAllocationData>[
+                  ItemAllocationData(allocationId: "purse", quantity: 7),
+                  ItemAllocationData(allocationId: "merchant", quantity: 3),
+                ]),
+          ),
+        ),
+      ];
+    final remote = ProjectData.empty(projectUUID: _projectUuid)
+      ..itemClasses = Map<String, ItemClassData>.from(base.itemClasses)
+      ..itemClassStateChanges = <ItemClassStateChange>[
+        ItemClassStateChange(
+          stateChangeId: "remote-transfer",
+          classId: "class-coins",
+          sceneUUID: "scene-market",
+          patch: ItemStatePatch(
+            allocations:
+                StateValue<List<ItemAllocationData>>.set(<ItemAllocationData>[
+                  ItemAllocationData(allocationId: "purse", quantity: 8),
+                  ItemAllocationData(allocationId: "merchant", quantity: 2),
+                ]),
+          ),
+        ),
+      ];
+
+    final plan = const P2pProjectMergeEngine().createPlan(
+      sessionId: "item-allocation-conflict",
+      baseRevision: baseRevision,
+      localRevision: localRevision,
+      remoteRevision: remoteRevision,
+      base: base,
+      local: local,
+      remote: remote,
+      remainderSignatures: const P2pProjectRemainderSignatures(
+        base: "same",
+        local: "same",
+        remote: "same",
+      ),
+    );
+
+    expect(plan.conflicts, hasLength(1));
+    final conflict = plan.conflicts.single;
+    expect(conflict.groupType, "itemWorkspace");
+    expect(conflict.groupLabel, "物品分配：銀幣");
+    expect(conflict.fieldPath, contains("場景 scene-market"));
+    expect(conflict.fieldPath, contains("merchant, purse"));
+
+    ProjectData resolve(P2pConflictSide side) => plan.apply(
+      P2pConflictResolutionResult(<String, P2pConflictSide>{
+        conflict.conflictId: side,
+      }),
+    );
+
+    final localResult = resolve(P2pConflictSide.local);
+    expect(localResult.itemClassStateChanges, hasLength(1));
+    expect(
+      localResult.itemClassStateChanges.single.stateChangeId,
+      "local-transfer",
+    );
+    expect(
+      localResult.itemClassStateChanges.single.patch.allocations!.value!.map(
+        (item) => item.quantity,
+      ),
+      <int?>[7, 3],
+    );
+
+    final remoteResult = resolve(P2pConflictSide.remote);
+    expect(remoteResult.itemClassStateChanges, hasLength(1));
+    expect(
+      remoteResult.itemClassStateChanges.single.stateChangeId,
+      "remote-transfer",
+    );
+    expect(
+      remoteResult.itemClassStateChanges.single.patch.allocations!.value!.map(
+        (item) => item.quantity,
+      ),
+      <int?>[8, 2],
+    );
+  });
+
+  test("one-sided item workspace change is selected without conflict", () {
+    final base = ProjectData.empty(projectUUID: _projectUuid);
+    final local = ProjectData.empty(projectUUID: _projectUuid);
+    final remote = ProjectData.empty(projectUUID: _projectUuid)
+      ..itemClasses = <String, ItemClassData>{
+        "class-map": ItemClassData(classId: "class-map", name: "地圖"),
+      };
+
+    final plan = const P2pProjectMergeEngine().createPlan(
+      sessionId: "one-sided-item-change",
+      baseRevision: baseRevision,
+      localRevision: localRevision,
+      remoteRevision: remoteRevision,
+      base: base,
+      local: local,
+      remote: remote,
+      remainderSignatures: const P2pProjectRemainderSignatures(
+        base: "same",
+        local: "same",
+        remote: "same",
+      ),
+    );
+
+    expect(plan.conflicts, isEmpty);
+    final merged = plan.apply(
+      P2pConflictResolutionResult(const <String, P2pConflictSide>{}),
+    );
+    expect(merged.itemClasses["class-map"]?.name, "地圖");
+  });
+
+  test("XML merge service does not duplicate item conflict as remainder", () {
+    final sharedXml = FileService.generateProjectXMLWithoutLatestSaveUpdate(
+      ProjectData.empty(projectUUID: _projectUuid),
+    );
+    ProjectData itemProject(String name) {
+      final project = FileService.parseProjectXMLWithMetadata(sharedXml).data;
+      project.itemClasses = <String, ItemClassData>{
+        "class-map": ItemClassData(classId: "class-map", name: name),
+      };
+      return project;
+    }
+
+    final base = itemProject("舊地圖");
+    final local = itemProject("本機地圖");
+    final remote = itemProject("對方地圖");
+
+    final plan = const P2pProjectMergeService().createPlanFromVerifiedXml(
+      sessionId: "xml-item-conflict",
+      baseRevision: baseRevision,
+      localRevision: localRevision,
+      remoteRevision: remoteRevision,
+      baseXml: FileService.generateProjectXMLWithoutLatestSaveUpdate(base),
+      localXml: FileService.generateProjectXMLWithoutLatestSaveUpdate(local),
+      remoteXml: FileService.generateProjectXMLWithoutLatestSaveUpdate(remote),
+    );
+
+    expect(plan.conflicts, hasLength(1));
+    expect(plan.conflicts.single.groupType, "itemWorkspace");
   });
 
   test("unrelated histories merge fields and preserve distinct table keys", () {

@@ -2,9 +2,16 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:monogatari_assistant/application/project_import/selective_project_import.dart';
 import 'package:monogatari_assistant/bin/file.dart';
 import 'package:monogatari_assistant/data/repositories/file_repository.dart';
 import 'package:monogatari_assistant/models/chapter_selection_data.dart';
+import 'package:monogatari_assistant/models/character_data.dart';
+import 'package:monogatari_assistant/models/character_snapshot_data.dart';
+import 'package:monogatari_assistant/models/item_data.dart';
+import 'package:monogatari_assistant/models/item_snapshot_data.dart';
+import 'package:monogatari_assistant/models/location_snapshot_data.dart';
+import 'package:monogatari_assistant/models/plan_data.dart';
 import 'package:monogatari_assistant/presentation/providers/core_providers.dart';
 import 'package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart';
 import 'package:monogatari_assistant/presentation/providers/project_io_providers.dart';
@@ -248,6 +255,153 @@ void main() {
       expect(repository.lastExportContent, contains('{主角}'));
     },
   );
+
+  test(
+    'selective XML preserves item, character, and location snapshots',
+    () async {
+      final repository = _BlockingFileRepository();
+      final container = ProviderContainer(
+        overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+      );
+      addTearDown(container.dispose);
+      final data = ProjectData.empty();
+      data.itemClasses = <String, ItemClassData>{
+        'class-coins': ItemClassData(
+          classId: 'class-coins',
+          name: '銀幣',
+          mode: ItemMode.generic,
+        ),
+      };
+      data.itemClassStateChanges = <ItemClassStateChange>[
+        ItemClassStateChange(
+          stateChangeId: 'item-change',
+          classId: 'class-coins',
+          sceneUUID: 'scene-market',
+          patch: ItemStatePatch(
+            allocations: StateValue<List<ItemAllocationData>>.set(
+              <ItemAllocationData>[
+                ItemAllocationData(allocationId: 'purse', quantity: 7),
+              ],
+            ),
+          ),
+        ),
+      ];
+      data.characterStates = const <CharacterState>[
+        CharacterState(characterId: 'character-lia', emotion: '警戒'),
+      ];
+      data.characterStateBaselines = <String, CharacterStateBaseline>{
+        'character-lia': CharacterStateBaseline(
+          characterId: 'character-lia',
+          note: '基準',
+        ),
+      };
+      data.characterStateChanges = <CharacterStateChange>[
+        CharacterStateChange(
+          stateChangeId: 'character-change',
+          characterId: 'character-lia',
+          sceneUUID: 'scene-market',
+          fallbackTick: 3,
+          note: '角色變更',
+        ),
+      ];
+      data.locationStateChanges = <LocationStateChange>[
+        LocationStateChange(
+          stateChangeId: 'location-change',
+          locationId: data.worldSettingsData.single.id,
+          sceneUUID: 'scene-market',
+          patch: LocationStatePatch(status: const StateValue<String>.set('封鎖')),
+        ),
+      ];
+      data.foreshadowData = <ForeshadowItem>[
+        ForeshadowItem(id: 'foreshadow-map', title: '地圖暗號'),
+      ];
+      data.updatePlanData = <UpdatePlanItem>[
+        UpdatePlanItem(id: 'plan-map', title: '揭露地圖來源'),
+      ];
+
+      await container
+          .read(projectIoControllerProvider.notifier)
+          .exportSelective(
+            currentData: data,
+            defaultFileName: 'snapshot-matrix',
+            selectedModules: const <String>{
+              'Items',
+              'Characters',
+              'WorldSettings',
+              'Plans',
+            },
+            format: 'xml',
+          );
+
+      final exported = repository.lastExportContent!;
+      final manifest = SelectiveProjectImportManifest.fromXml(exported);
+      expect(
+        manifest.declaredModules,
+        containsAll(<SelectiveProjectModule>{
+          SelectiveProjectModule.items,
+          SelectiveProjectModule.characters,
+          SelectiveProjectModule.worldSettings,
+          SelectiveProjectModule.plans,
+        }),
+      );
+      expect(exported, contains('<Name>ItemClasses</Name>'));
+      expect(exported, contains('<Name>ItemClassStateChanges</Name>'));
+      expect(exported, contains('<Name>CharacterStates</Name>'));
+      expect(exported, contains('<Name>CharacterStateBaselines</Name>'));
+      expect(exported, contains('<Name>CharacterStateChanges</Name>'));
+      expect(exported, contains('<Name>LocationStateChanges</Name>'));
+      expect(exported, contains('<Name>PlanSettings</Name>'));
+      final reopened = FileService.parseProjectXML(exported);
+      expect(
+        reopened.itemClasses['class-coins'],
+        data.itemClasses['class-coins'],
+      );
+      expect(reopened.itemClassStateChanges, data.itemClassStateChanges);
+      expect(reopened.characterStates, data.characterStates);
+      expect(reopened.characterStateBaselines, data.characterStateBaselines);
+      expect(reopened.characterStateChanges, data.characterStateChanges);
+      expect(reopened.locationStateChanges, data.locationStateChanges);
+      expect(reopened.foreshadowData, data.foreshadowData);
+      expect(reopened.updatePlanData, data.updatePlanData);
+    },
+  );
+
+  test('selective Markdown includes lossless item snapshot sections', () async {
+    final repository = _BlockingFileRepository();
+    final container = ProviderContainer(
+      overrides: [fileRepositoryProvider.overrideWithValue(repository)],
+    );
+    addTearDown(container.dispose);
+    final data = ProjectData.empty()
+      ..itemClasses = <String, ItemClassData>{
+        'class-map': ItemClassData(classId: 'class-map', name: '地圖'),
+      }
+      ..itemInstanceStateChanges = <ItemInstanceStateChange>[
+        ItemInstanceStateChange(
+          stateChangeId: 'map-change',
+          instanceId: 'map-1',
+          sceneUUID: 'scene-library',
+          patch: ItemStatePatch(status: const StateValue<String>.set('破損')),
+        ),
+      ];
+
+    await container
+        .read(projectIoControllerProvider.notifier)
+        .exportSelective(
+          currentData: data,
+          defaultFileName: 'items',
+          selectedModules: const <String>{'Items'},
+          format: 'md',
+        );
+
+    expect(repository.lastExportContent, contains('## ItemClasses'));
+    expect(
+      repository.lastExportContent,
+      contains('## ItemInstanceStateChanges'),
+    );
+    expect(repository.lastExportContent, contains('class-map'));
+    expect(repository.lastExportContent, contains('map-change'));
+  });
 
   test(
     'verified remote snapshot overwrites only the known current location',

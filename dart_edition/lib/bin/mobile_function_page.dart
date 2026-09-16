@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  ************************************************************/
- 
+
 import "package:flutter/material.dart";
 
 import "punctuation_panel.dart";
@@ -159,6 +159,7 @@ class _MobileNavigationChip extends StatelessWidget {
       {"icon": Icons.auto_awesome, "label": "Copilot"},
       {"icon": Icons.settings, "label": "設定"},
       {"icon": Icons.info, "label": "關於"},
+      {"icon": Icons.inventory_2_outlined, "label": "物品設定"},
     ];
 
     final function = functions[index];

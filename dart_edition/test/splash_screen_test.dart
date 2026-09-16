@@ -11,7 +11,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("物語 Assistant"), findsOneWidget);
-    expect(find.text("Monogatari Assistant"), findsOneWidget);
+    expect(find.text("Codename Hana"), findsOneWidget);
+    expect(find.text("Version 0.9.19    Build 919"), findsOneWidget);
     expect(find.text("120×360\n裝飾區"), findsNothing);
     expect(
       find.descendant(
@@ -26,6 +27,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SplachScreen()));
 
     expect(find.text("物語 Assistant"), findsOneWidget);
-    expect(find.text("版本號碼 0.9.19   Build 919"), findsOneWidget);
+    expect(find.text("Codename Hana"), findsOneWidget);
+    expect(find.text("Version 0.9.19    Build 919"), findsOneWidget);
   });
 }

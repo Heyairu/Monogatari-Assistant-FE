@@ -5,6 +5,8 @@ import "package:monogatari_assistant/bin/file.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 import "package:monogatari_assistant/models/character_snapshot_data.dart";
 import "package:monogatari_assistant/models/outline_data.dart";
+import "package:monogatari_assistant/models/item_data.dart";
+import "package:monogatari_assistant/models/item_snapshot_data.dart";
 import "package:monogatari_assistant/models/project_migrator.dart";
 import "package:monogatari_assistant/models/timeline_data.dart";
 import "package:monogatari_assistant/modules/characterview.dart";
@@ -382,6 +384,193 @@ void main() {
       expect(character.customFields["稱號"]!.rawValue, "勇者");
     });
 
+    testWidgets("character page projects linked item quantities at Tick", (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container
+          .read(characterDataProvider.notifier)
+          .setCharacterEntry(
+            characterId: characterId,
+            entry: const CharacterEntryData(
+              characterId: characterId,
+              displayName: "艾莉絲",
+            ),
+          );
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(
+            ItemClassData(
+              classId: "coins",
+              name: "金幣",
+              unit: "枚",
+              mode: ItemMode.generic,
+              defaultState: ItemSnapshotState(
+                name: "金幣",
+                allocations: [
+                  ItemAllocationData(
+                    allocationId: "alice-coins",
+                    holderCharacterId: characterId,
+                    quantity: 12,
+                    note: "旅費",
+                  ),
+                ],
+              ),
+            ),
+          );
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putRelation(
+            ItemRelationData(
+              relationId: "coins-character-relation",
+              itemId: "coins",
+              itemKind: ItemReferenceKind.itemClass,
+              targetId: characterId,
+              targetKind: ItemRelationTargetKind.character,
+              role: "紀念物",
+            ),
+          );
+      String? openedItemClassId;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: CharacterView(
+                onOpenItem: (classId) => openedItemClassId = classId,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final statusSection = find.text("角色狀態").first;
+      await tester.ensureVisible(statusSection);
+      await tester.tap(statusSection);
+      await tester.pumpAndSettle();
+      final linkedTable = find.byKey(const ValueKey("linked-items-table"));
+      await tester.ensureVisible(linkedTable);
+
+      expect(linkedTable, findsOneWidget);
+      expect(find.text("一般關聯物品"), findsOneWidget);
+      expect(find.text("目前持有物品"), findsOneWidget);
+      expect(find.text("金幣"), findsNWidgets(2));
+      expect(find.text("紀念物"), findsOneWidget);
+      expect(find.text("12 枚"), findsOneWidget);
+      expect(find.text("旅費"), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey("character-open-item-alice-coins")),
+      );
+      expect(openedItemClassId, "coins");
+      openedItemClassId = null;
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            "character-open-related-item-coins-character-relation",
+          ),
+        ),
+      );
+      expect(openedItemClassId, "coins");
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(ItemClassData(classId: "map", name: "古地圖"));
+      await tester.pumpAndSettle();
+      final linkButton = find.byKey(const Key("character-link-item"));
+      await tester.ensureVisible(linkButton);
+      await tester.tap(linkButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("古地圖"));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(itemWorkspaceProvider)
+            .itemRelations
+            .any(
+              (relation) =>
+                  relation.itemId == "map" && relation.targetId == characterId,
+            ),
+        isTrue,
+      );
+    });
+
+    testWidgets(
+      "CharacterView converts a legacy possession into a formal item",
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1400, 1000));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container
+            .read(characterDataProvider.notifier)
+            .setCharacterEntry(
+              characterId: characterId,
+              entry: const CharacterEntryData(
+                characterId: characterId,
+                displayName: "艾莉絲",
+                possessions: <CharacterPossessionEntry>[
+                  CharacterPossessionEntry(
+                    name: "懷錶",
+                    quantity: "1",
+                    description: "母親遺物",
+                  ),
+                ],
+              ),
+            );
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(home: Scaffold(body: CharacterView())),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final statusSection = find.text("角色狀態").first;
+        await tester.ensureVisible(statusSection);
+        await tester.tap(statusSection);
+        await tester.pumpAndSettle();
+        final possessionCell = find.byKey(const ValueKey("possession-name-0"));
+        await tester.ensureVisible(possessionCell);
+        await tester.tap(possessionCell);
+        await tester.pump();
+        final convert = find.byTooltip("轉換為正式物品");
+        await tester.ensureVisible(convert);
+        await tester.tap(convert);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key("character-legacy-item-create")));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text("建立").last);
+        await tester.pumpAndSettle();
+        expect(find.text("預設／baseline：1 筆"), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key("character-legacy-item-confirm")),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          container.read(characterDataProvider)[characterId]!.possessions,
+          isEmpty,
+        );
+        final workspace = container.read(itemWorkspaceProvider);
+        expect(workspace.itemClasses, hasLength(1));
+        expect(workspace.itemInstances, hasLength(1));
+        expect(
+          workspace
+              .itemInstances
+              .values
+              .single
+              .defaultState
+              .holderCharacterId!
+              .value,
+          characterId,
+        );
+        expect(workspace.itemRelations.single.note, contains("母親遺物"));
+      },
+    );
+
     testWidgets("CharacterView previews and quickly adds a Scene snapshot", (
       tester,
     ) async {
@@ -526,6 +715,64 @@ void main() {
             .rawValue,
         "英雄",
       );
+    });
+
+    testWidgets("CharacterView shows linked item quantities at current Tick", (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container
+          .read(characterDataProvider.notifier)
+          .setCharacterEntry(
+            characterId: characterId,
+            entry: const CharacterEntryData(
+              characterId: characterId,
+              displayName: "艾莉絲",
+            ),
+          );
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(
+            ItemClassData(
+              classId: "coins",
+              name: "銀幣",
+              unit: "枚",
+              mode: ItemMode.generic,
+              defaultState: ItemSnapshotState(
+                name: "銀幣",
+                allocations: [
+                  ItemAllocationData(
+                    allocationId: "alice-coins",
+                    holderCharacterId: characterId,
+                    quantity: 12,
+                    note: "旅費",
+                  ),
+                ],
+              ),
+            ),
+          );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: CharacterView())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final statusSection = find.text("角色狀態").first;
+      await tester.ensureVisible(statusSection);
+      await tester.tap(statusSection);
+      await tester.pumpAndSettle();
+      final linkedTable = find.byKey(const ValueKey("linked-items-table"));
+      await tester.ensureVisible(linkedTable);
+
+      expect(linkedTable, findsOneWidget);
+      expect(find.text("銀幣"), findsOneWidget);
+      expect(find.text("12 枚"), findsOneWidget);
+      expect(find.text("旅費"), findsOneWidget);
     });
 
     testWidgets(

@@ -9,6 +9,9 @@ import "../../models/plan_data.dart" as plan_module;
 import "../../models/project_data.dart";
 import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart" as world_settings_module;
+import "../../models/item_data.dart";
+import "../../models/item_snapshot_data.dart";
+import "../../models/location_snapshot_data.dart";
 
 List<T> _freezeListCopy<T>(List<T> source) {
   if (source is UnmodifiableListView<T>) {
@@ -215,6 +218,20 @@ ProjectData snapshotProjectData(
     foreshadowData: snapshotForeshadowData(source.foreshadowData),
     updatePlanData: snapshotUpdatePlanData(source.updatePlanData),
     worldSettingsData: snapshotWorldSettingsData(source.worldSettingsData),
+    itemClasses: Map<String, ItemClassData>.unmodifiable(source.itemClasses),
+    itemInstances: Map<String, ItemInstanceData>.unmodifiable(
+      source.itemInstances,
+    ),
+    itemRelations: List<ItemRelationData>.unmodifiable(source.itemRelations),
+    itemClassStateChanges: List<ItemClassStateChange>.unmodifiable(
+      source.itemClassStateChanges,
+    ),
+    itemInstanceStateChanges: List<ItemInstanceStateChange>.unmodifiable(
+      source.itemInstanceStateChanges,
+    ),
+    locationStateChanges: List<LocationStateChange>.unmodifiable(
+      source.locationStateChanges,
+    ),
     characterData: snapshotCharacterData(source.characterData),
     characterStates: List<character_model.CharacterState>.unmodifiable(
       source.characterStates.map(

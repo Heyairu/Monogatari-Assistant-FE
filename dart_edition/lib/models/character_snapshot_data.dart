@@ -4,6 +4,7 @@ import "package:uuid/uuid.dart";
 
 import "character_data.dart";
 import "timeline_data.dart";
+import "story_state_time.dart";
 
 const _snapshotUuid = Uuid();
 
@@ -396,45 +397,19 @@ ResolvedCharacterStateChange resolveCharacterStateChangeTime(
   CharacterStateChange change,
   TimelineDocumentData timeline,
 ) {
-  final tracks = {
-    for (final track in timeline.tracks) track.trackUUID: track.order,
-  };
-  final candidates = timeline.placements
-      .where(
-        (placement) =>
-            placement.sceneUUID == change.sceneUUID &&
-            placement.level == TimelineElementLevel.small,
-      )
-      .toList(growable: false);
-
-  TimelinePlacementData? placement;
-  if (change.sourcePlacementUUID != null) {
-    for (final candidate in candidates) {
-      if (candidate.placementUUID == change.sourcePlacementUUID) {
-        placement = candidate;
-        break;
-      }
-    }
-  }
-  if (placement == null && candidates.isNotEmpty) {
-    final sorted = [...candidates]
-      ..sort((a, b) {
-        final byTick = a.startTick.compareTo(b.startTick);
-        if (byTick != 0) return byTick;
-        final byTrack = (tracks[a.trackUUID] ?? 0).compareTo(
-          tracks[b.trackUUID] ?? 0,
-        );
-        if (byTrack != 0) return byTrack;
-        return a.placementUUID.compareTo(b.placementUUID);
-      });
-    placement = sorted.first;
-  }
-
+  final time = resolveStoryStateTime(
+    StoryStateTimeAnchor(
+      sceneUUID: change.sceneUUID,
+      sourcePlacementUUID: change.sourcePlacementUUID,
+      fallbackTick: change.fallbackTick,
+    ),
+    timeline,
+  );
   return ResolvedCharacterStateChange(
     change: change,
-    resolvedTick: placement?.startTick ?? change.fallbackTick,
-    resolvedPlacementUUID: placement?.placementUUID,
-    usesFallbackTick: placement == null,
+    resolvedTick: time.resolvedTick,
+    resolvedPlacementUUID: time.resolvedPlacementUUID,
+    usesFallbackTick: time.usesFallbackTick,
   );
 }
 
@@ -447,13 +422,16 @@ List<ResolvedCharacterStateChange> orderedCharacterStateChanges({
       .where((change) => change.characterId == characterId)
       .map((change) => resolveCharacterStateChangeTime(change, timeline))
       .toList(growable: false);
-  result.sort((a, b) {
-    final byTick = a.resolvedTick.compareTo(b.resolvedTick);
-    if (byTick != 0) return byTick;
-    final bySequence = a.change.sequence.compareTo(b.change.sequence);
-    if (bySequence != 0) return bySequence;
-    return a.change.stateChangeId.compareTo(b.change.stateChangeId);
-  });
+  result.sort(
+    (a, b) => compareStoryStateTime(
+      leftTick: a.resolvedTick,
+      leftSequence: a.change.sequence,
+      leftId: a.change.stateChangeId,
+      rightTick: b.resolvedTick,
+      rightSequence: b.change.sequence,
+      rightId: b.change.stateChangeId,
+    ),
+  );
   return List<ResolvedCharacterStateChange>.unmodifiable(result);
 }
 

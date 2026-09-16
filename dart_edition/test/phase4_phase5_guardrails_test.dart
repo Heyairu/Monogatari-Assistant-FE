@@ -198,7 +198,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    expect(find.text("暱稱"), findsOneWidget);
+    expect(find.text("別名"), findsOneWidget);
     expect(find.text("角色類型"), findsOneWidget);
     expect(find.text(defaultCharacterType), findsOneWidget);
     expect(find.text("角色類型：$defaultCharacterType"), findsOneWidget);

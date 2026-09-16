@@ -18,6 +18,10 @@ import "../../models/project_data.dart";
 import "../../models/project_file.dart";
 import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart";
+import "../../models/item_data.dart";
+import "../../models/item_snapshot_data.dart";
+import "../../models/location_snapshot_data.dart";
+import "../../application/snapshots/project_story_state_index.dart";
 import "project_snapshot_utils.dart";
 
 const Object _editorSelectionUnset = Object();
@@ -2619,7 +2623,492 @@ final currentProjectFileProvider =
       CurrentProjectFileNotifier.new,
     );
 
+class ItemWorkspaceData {
+  final Map<String, ItemClassData> itemClasses;
+  final Map<String, ItemInstanceData> itemInstances;
+  final List<ItemRelationData> itemRelations;
+  final List<ItemClassStateChange> itemClassStateChanges;
+  final List<ItemInstanceStateChange> itemInstanceStateChanges;
+  final List<LocationStateChange> locationStateChanges;
+
+  const ItemWorkspaceData({
+    this.itemClasses = const {},
+    this.itemInstances = const {},
+    this.itemRelations = const [],
+    this.itemClassStateChanges = const [],
+    this.itemInstanceStateChanges = const [],
+    this.locationStateChanges = const [],
+  });
+
+  factory ItemWorkspaceData.fromProject(ProjectData data) => ItemWorkspaceData(
+    itemClasses: data.itemClasses,
+    itemInstances: data.itemInstances,
+    itemRelations: data.itemRelations,
+    itemClassStateChanges: data.itemClassStateChanges,
+    itemInstanceStateChanges: data.itemInstanceStateChanges,
+    locationStateChanges: data.locationStateChanges,
+  );
+
+  ItemWorkspaceData copyWith({
+    Map<String, ItemClassData>? itemClasses,
+    Map<String, ItemInstanceData>? itemInstances,
+    List<ItemRelationData>? itemRelations,
+    List<ItemClassStateChange>? itemClassStateChanges,
+    List<ItemInstanceStateChange>? itemInstanceStateChanges,
+    List<LocationStateChange>? locationStateChanges,
+  }) => ItemWorkspaceData(
+    itemClasses: itemClasses ?? this.itemClasses,
+    itemInstances: itemInstances ?? this.itemInstances,
+    itemRelations: itemRelations ?? this.itemRelations,
+    itemClassStateChanges: itemClassStateChanges ?? this.itemClassStateChanges,
+    itemInstanceStateChanges:
+        itemInstanceStateChanges ?? this.itemInstanceStateChanges,
+    locationStateChanges: locationStateChanges ?? this.locationStateChanges,
+  );
+}
+
+class ItemWorkspaceNotifier extends Notifier<ItemWorkspaceData> {
+  @override
+  ItemWorkspaceData build() => const ItemWorkspaceData();
+
+  void setWorkspace(ItemWorkspaceData value) {
+    state = ItemWorkspaceData(
+      itemClasses: Map.unmodifiable(value.itemClasses),
+      itemInstances: Map.unmodifiable(value.itemInstances),
+      itemRelations: List.unmodifiable(value.itemRelations),
+      itemClassStateChanges: List.unmodifiable(value.itemClassStateChanges),
+      itemInstanceStateChanges: List.unmodifiable(
+        value.itemInstanceStateChanges,
+      ),
+      locationStateChanges: List.unmodifiable(value.locationStateChanges),
+    );
+  }
+
+  void putClass(ItemClassData itemClass) {
+    if (itemClass.classId.trim().isEmpty) {
+      throw ArgumentError.value(itemClass.classId, "classId");
+    }
+    if (itemClass.mode == ItemMode.generic &&
+        state.itemInstances.values.any(
+          (instance) =>
+              instance.classId == itemClass.classId && !instance.archived,
+        )) {
+      throw StateError("已有單件物品，需先完成安全轉換才能改為非專用。");
+    }
+    if (itemClass.mode == ItemMode.dedicated &&
+        state.itemInstances.values
+                .where((instance) => instance.classId == itemClass.classId)
+                .where((instance) => !instance.archived)
+                .length >
+            1) {
+      throw StateError("多個單件物品需先完成安全轉換才能改為專用。");
+    }
+    setWorkspace(
+      state.copyWith(
+        itemClasses: {...state.itemClasses, itemClass.classId: itemClass},
+      ),
+    );
+  }
+
+  void putInstance(ItemInstanceData instance) {
+    final itemClass = state.itemClasses[instance.classId];
+    if (itemClass == null) {
+      throw ArgumentError.value(instance.classId, "classId", "unknown Class");
+    }
+    if (itemClass.mode == ItemMode.generic) {
+      throw StateError("非專用物品不可建立單件實例。");
+    }
+    if (itemClass.mode == ItemMode.dedicated &&
+        state.itemInstances.values.any(
+          (value) =>
+              value.classId == instance.classId &&
+              value.instanceId != instance.instanceId,
+        )) {
+      throw StateError("專用物品只能有一個單件 ID。");
+    }
+    setWorkspace(
+      state.copyWith(
+        itemInstances: {...state.itemInstances, instance.instanceId: instance},
+      ),
+    );
+  }
+
+  void changeClassMode({
+    required String classId,
+    required ItemMode mode,
+    String? dedicatedInstanceId,
+  }) {
+    final itemClass = state.itemClasses[classId];
+    if (itemClass == null) {
+      throw ArgumentError.value(classId, "classId", "unknown Class");
+    }
+    if (itemClass.mode == mode) return;
+    final activeInstances = state.itemInstances.values
+        .where((value) => value.classId == classId && !value.archived)
+        .toList(growable: false);
+    if (mode == ItemMode.generic) {
+      throw StateError("專用或半專用物品必須透過 Scene 安全轉為新的非專用 Class。");
+    }
+    if (mode == ItemMode.dedicated && activeInstances.length > 1) {
+      throw StateError("多個固定 ID 不能直接合併為一件專用物品。");
+    }
+
+    var nextInstances = Map<String, ItemInstanceData>.of(state.itemInstances);
+    var nextClass = itemClass.copyWith(mode: mode);
+    if (mode == ItemMode.dedicated && activeInstances.isEmpty) {
+      final instanceId = dedicatedInstanceId?.trim();
+      if (instanceId == null || instanceId.isEmpty) {
+        throw ArgumentError.value(
+          dedicatedInstanceId,
+          "dedicatedInstanceId",
+          "required when no active instance exists",
+        );
+      }
+      nextInstances[instanceId] = ItemInstanceData(
+        instanceId: instanceId,
+        classId: classId,
+        name: itemClass.name,
+        conversionSource: ItemConversionSourceData(
+          sourceClassId: classId,
+          conversionId: "mode-to-dedicated",
+          note: "切換為專用時建立獨立 ID",
+        ),
+      );
+    }
+    setWorkspace(
+      state.copyWith(
+        itemClasses: {...state.itemClasses, classId: nextClass},
+        itemInstances: nextInstances,
+      ),
+    );
+  }
+
+  void putRelation(ItemRelationData relation) {
+    final hasSubject = relation.itemKind == ItemReferenceKind.itemClass
+        ? state.itemClasses.containsKey(relation.itemId)
+        : state.itemInstances.containsKey(relation.itemId);
+    if (!hasSubject) {
+      throw ArgumentError.value(relation.itemId, "itemId", "unknown item");
+    }
+    final duplicate = state.itemRelations.any(
+      (value) =>
+          value.relationId != relation.relationId &&
+          value.itemId == relation.itemId &&
+          value.itemKind == relation.itemKind &&
+          value.targetId == relation.targetId &&
+          value.targetKind == relation.targetKind &&
+          value.role == relation.role,
+    );
+    if (duplicate) throw StateError("相同物品關聯已存在。");
+    final next = [
+      for (final value in state.itemRelations)
+        if (value.relationId != relation.relationId) value,
+      relation,
+    ];
+    setWorkspace(state.copyWith(itemRelations: next));
+  }
+
+  void putClassStateChange(ItemClassStateChange change) {
+    if (!state.itemClasses.containsKey(change.classId)) {
+      throw ArgumentError.value(change.classId, "classId", "unknown Class");
+    }
+    setWorkspace(
+      state.copyWith(
+        itemClassStateChanges: _replaceById(
+          state.itemClassStateChanges,
+          change,
+          (value) => value.stateChangeId,
+        ),
+      ),
+    );
+  }
+
+  void putInstanceStateChange(ItemInstanceStateChange change) {
+    if (!state.itemInstances.containsKey(change.instanceId)) {
+      throw ArgumentError.value(
+        change.instanceId,
+        "instanceId",
+        "unknown instance",
+      );
+    }
+    setWorkspace(
+      state.copyWith(
+        itemInstanceStateChanges: _replaceById(
+          state.itemInstanceStateChanges,
+          change,
+          (value) => value.stateChangeId,
+        ),
+      ),
+    );
+  }
+
+  void materializeAggregateInstance({
+    required ItemClassData itemClass,
+    required ItemInstanceData instance,
+    required ItemClassStateChange classChange,
+    required ItemInstanceStateChange instanceChange,
+  }) {
+    final currentClass = state.itemClasses[instance.classId];
+    if (currentClass == null) {
+      throw ArgumentError.value(instance.classId, "classId", "unknown Class");
+    }
+    if (currentClass.mode != ItemMode.generic &&
+        currentClass.mode != ItemMode.semiDedicated) {
+      throw StateError("只有非專用或半專用物品可建立拆分單件。");
+    }
+    if (itemClass.classId != instance.classId ||
+        itemClass.mode == ItemMode.generic ||
+        classChange.classId != instance.classId ||
+        instanceChange.instanceId != instance.instanceId) {
+      throw ArgumentError("拆分結果的 Class 或 instance ID 不一致。");
+    }
+    if (state.itemInstances.containsKey(instance.instanceId)) {
+      throw StateError("單件物品 ID 已存在。");
+    }
+    setWorkspace(
+      state.copyWith(
+        itemClasses: {...state.itemClasses, itemClass.classId: itemClass},
+        itemInstances: {...state.itemInstances, instance.instanceId: instance},
+        itemClassStateChanges: _replaceById(
+          state.itemClassStateChanges,
+          classChange,
+          (value) => value.stateChangeId,
+        ),
+        itemInstanceStateChanges: _replaceById(
+          state.itemInstanceStateChanges,
+          instanceChange,
+          (value) => value.stateChangeId,
+        ),
+      ),
+    );
+  }
+
+  void demoteIdentifiedClass({
+    required ItemClassData sourceClass,
+    required Iterable<ItemInstanceData> sourceInstances,
+    required ItemClassData targetClass,
+    required ItemClassStateChange sourceClassChange,
+    required ItemClassStateChange targetClassChange,
+    required Iterable<ItemInstanceStateChange> sourceInstanceChanges,
+  }) {
+    final currentSource = state.itemClasses[sourceClass.classId];
+    if (currentSource == null || currentSource.mode == ItemMode.generic) {
+      throw StateError("找不到可反向聚合的專用或半專用 Class。");
+    }
+    if (!sourceClass.archived || targetClass.mode != ItemMode.generic) {
+      throw ArgumentError("反向聚合結果的 Class 狀態無效。");
+    }
+    if (state.itemClasses.containsKey(targetClass.classId)) {
+      throw StateError("新的聚合 Class ID 已存在。");
+    }
+    if (sourceClassChange.classId != sourceClass.classId ||
+        targetClassChange.classId != targetClass.classId) {
+      throw ArgumentError("反向聚合的 Class 快照 ID 不一致。");
+    }
+    final instances = sourceInstances.toList(growable: false);
+    final instanceIds = instances
+        .map((instance) => instance.instanceId)
+        .toSet();
+    final currentInstanceIds = state.itemInstances.values
+        .where(
+          (instance) =>
+              instance.classId == sourceClass.classId && !instance.archived,
+        )
+        .map((instance) => instance.instanceId)
+        .toSet();
+    if (instanceIds.length != instances.length ||
+        instanceIds.length != currentInstanceIds.length ||
+        !instanceIds.containsAll(currentInstanceIds)) {
+      throw ArgumentError("反向聚合必須包含來源 Class 的所有未封存 instance。");
+    }
+    if (instances.any(
+      (instance) =>
+          instance.classId != sourceClass.classId || !instance.archived,
+    )) {
+      throw ArgumentError("反向聚合的來源 instance 狀態無效。");
+    }
+    final instanceChanges = sourceInstanceChanges.toList(growable: false);
+    if (instanceChanges.any(
+      (change) => !instanceIds.contains(change.instanceId),
+    )) {
+      throw ArgumentError("反向聚合的 instance 快照 ID 不一致。");
+    }
+    var nextClassChanges = state.itemClassStateChanges;
+    for (final change in [sourceClassChange, targetClassChange]) {
+      nextClassChanges = _replaceById(
+        nextClassChanges,
+        change,
+        (value) => value.stateChangeId,
+      );
+    }
+    var nextInstanceChanges = state.itemInstanceStateChanges;
+    for (final change in instanceChanges) {
+      nextInstanceChanges = _replaceById(
+        nextInstanceChanges,
+        change,
+        (value) => value.stateChangeId,
+      );
+    }
+    setWorkspace(
+      state.copyWith(
+        itemClasses: {
+          ...state.itemClasses,
+          sourceClass.classId: sourceClass,
+          targetClass.classId: targetClass,
+        },
+        itemInstances: {
+          ...state.itemInstances,
+          for (final instance in instances) instance.instanceId: instance,
+        },
+        itemClassStateChanges: nextClassChanges,
+        itemInstanceStateChanges: nextInstanceChanges,
+      ),
+    );
+  }
+
+  void putLocationStateChange(LocationStateChange change) {
+    putLocationStateChanges([change]);
+  }
+
+  void putLocationStateChanges(Iterable<LocationStateChange> changes) {
+    var next = state.locationStateChanges;
+    for (final change in changes) {
+      next = _replaceById(next, change, (value) => value.stateChangeId);
+    }
+    setWorkspace(state.copyWith(locationStateChanges: next));
+  }
+
+  void removeRelation(String relationId) {
+    setWorkspace(
+      state.copyWith(
+        itemRelations: state.itemRelations
+            .where((value) => value.relationId != relationId)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  void removeClassStateChange(String stateChangeId) {
+    setWorkspace(
+      state.copyWith(
+        itemClassStateChanges: state.itemClassStateChanges
+            .where((value) => value.stateChangeId != stateChangeId)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  void removeInstanceStateChange(String stateChangeId) {
+    setWorkspace(
+      state.copyWith(
+        itemInstanceStateChanges: state.itemInstanceStateChanges
+            .where((value) => value.stateChangeId != stateChangeId)
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  void removeLocationStateChange(String stateChangeId) {
+    final target = state.locationStateChanges
+        .where((value) => value.stateChangeId == stateChangeId)
+        .firstOrNull;
+    final transactionId = target?.transactionId;
+    setWorkspace(
+      state.copyWith(
+        locationStateChanges: state.locationStateChanges
+            .where(
+              (value) => transactionId == null
+                  ? value.stateChangeId != stateChangeId
+                  : value.transactionId != transactionId,
+            )
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+List<T> _replaceById<T>(
+  Iterable<T> source,
+  T replacement,
+  String Function(T) idOf,
+) => List<T>.unmodifiable([
+  for (final value in source)
+    if (idOf(value) != idOf(replacement)) value,
+  replacement,
+]);
+
+final itemWorkspaceProvider =
+    NotifierProvider<ItemWorkspaceNotifier, ItemWorkspaceData>(
+      ItemWorkspaceNotifier.new,
+    );
+
+final projectStoryStateIndexProvider = Provider<ProjectStoryStateIndex>((ref) {
+  final workspace = ref.watch(itemWorkspaceProvider);
+  return ProjectStoryStateIndex(
+    itemClassChanges: workspace.itemClassStateChanges,
+    itemInstanceChanges: workspace.itemInstanceStateChanges,
+    locationChanges: workspace.locationStateChanges,
+    timeline: ref.watch(timelineDocumentProvider),
+  );
+});
+
+typedef ItemSnapshotQuery = ({String id, int tick});
+
+final itemClassSnapshotProvider =
+    Provider.family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
+      final workspace = ref.watch(itemWorkspaceProvider);
+      final itemClass = workspace.itemClasses[query.id];
+      if (itemClass == null) return null;
+      return ref
+          .watch(projectStoryStateIndexProvider)
+          .resolveItemClass(itemClass, query.tick);
+    });
+
+final itemInstanceSnapshotProvider =
+    Provider.family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
+      final workspace = ref.watch(itemWorkspaceProvider);
+      final instance = workspace.itemInstances[query.id];
+      if (instance == null) return null;
+      final itemClass = workspace.itemClasses[instance.classId];
+      if (itemClass == null) return null;
+      return ref
+          .watch(projectStoryStateIndexProvider)
+          .resolveItemInstance(
+            itemClass: itemClass,
+            instance: instance,
+            atTick: query.tick,
+          );
+    });
+
+final locationSnapshotProvider =
+    Provider.family<LocationSnapshotState?, ItemSnapshotQuery>((ref, query) {
+      LocationData? find(Iterable<LocationData> nodes) {
+        for (final node in nodes) {
+          if (node.id == query.id) return node;
+          final child = find(node.child);
+          if (child != null) return child;
+        }
+        return null;
+      }
+
+      final node = find(ref.watch(worldSettingsDataProvider));
+      if (node == null || node.nodeType != WorldNodeType.location) return null;
+      final defaultState = LocationSnapshotState(
+        name: node.localName,
+        description: node.note,
+        properties: {for (final value in node.customVal) value.key: value.val},
+      );
+      return ref
+          .watch(projectStoryStateIndexProvider)
+          .resolveLocation(
+            locationId: node.id,
+            defaultState: defaultState,
+            atTick: query.tick,
+          );
+    });
+
 final projectDataProvider = Provider<ProjectData>((ref) {
+  final itemWorkspace = ref.watch(itemWorkspaceProvider);
   return ProjectData(
     projectUUID: ref.watch(projectUuidProvider),
     baseInfoData: ref.watch(baseInfoDataProvider),
@@ -2628,6 +3117,12 @@ final projectDataProvider = Provider<ProjectData>((ref) {
     foreshadowData: ref.watch(foreshadowDataProvider),
     updatePlanData: ref.watch(updatePlanDataProvider),
     worldSettingsData: ref.watch(worldSettingsDataProvider),
+    itemClasses: itemWorkspace.itemClasses,
+    itemInstances: itemWorkspace.itemInstances,
+    itemRelations: itemWorkspace.itemRelations,
+    itemClassStateChanges: itemWorkspace.itemClassStateChanges,
+    itemInstanceStateChanges: itemWorkspace.itemInstanceStateChanges,
+    locationStateChanges: itemWorkspace.locationStateChanges,
     characterData: ref.watch(characterDataProvider),
     characterStates: ref.watch(characterStatesProvider),
     characterStateBaselines: ref.watch(characterStateBaselinesProvider),

@@ -61,12 +61,12 @@ void main() {
       );
       await tester.tap(find.byKey(Key("p2p-field-${note.conflictId}")));
       await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(Key("p2p-field-local-${note.conflictId}")),
-    );
-    await tester.drag(find.byType(ListView), const Offset(0, -180));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(Key("p2p-field-local-${note.conflictId}")));
+      await tester.ensureVisible(
+        find.byKey(Key("p2p-field-local-${note.conflictId}")),
+      );
+      await tester.drag(find.byType(ListView), const Offset(0, -180));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key("p2p-field-local-${note.conflictId}")));
       await tester.pump();
       await tester.tap(find.byKey(const Key("p2p-conflict-apply")));
 
@@ -95,5 +95,51 @@ void main() {
     );
     await tester.tap(find.byKey(const Key("p2p-conflict-cancel")));
     expect(cancelled, isTrue);
+  });
+
+  testWidgets("item allocation conflict uses localized atomic choice", (
+    WidgetTester tester,
+  ) async {
+    final conflict = P2pFieldConflictItem(
+      groupId: "project-1",
+      groupType: "itemWorkspace",
+      groupLabel: "物品分配：銀幣",
+      fieldPathSegments: const <String>[
+        "物品時間軸",
+        "銀幣",
+        "場景 scene-market",
+        "分配 merchant, purse",
+      ],
+      base: const P2pFieldValue.present("共同祖先物品版本"),
+      local: const P2pFieldValue.present("本機物品版本（整組採用）"),
+      remote: const P2pFieldValue.present("對方物品版本（整組採用）"),
+    );
+    P2pConflictResolutionResult? applied;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: P2pConflictResolutionDialog(
+            conflicts: <P2pFieldConflictItem>[conflict],
+            onApply: (result) => applied = result,
+            onCancel: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text("物品：物品分配：銀幣"), findsOneWidget);
+    expect(find.textContaining("場景 scene-market"), findsNothing);
+    final groupKey =
+        "${"itemWorkspace".length}:itemWorkspace/${"project-1".length}:project-1";
+    await tester.tap(find.byKey(Key("p2p-conflict-group-$groupKey")));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("場景 scene-market"), findsOneWidget);
+    await tester.tap(find.byKey(Key("p2p-group-remote-$groupKey")));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key("p2p-conflict-apply")));
+
+    expect(applied, isNotNull);
+    expect(applied!.sideFor(conflict), P2pConflictSide.remote);
   });
 }

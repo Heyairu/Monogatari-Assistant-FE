@@ -41,6 +41,12 @@ import "../models/codecs/character_snapshot_codec.dart";
 import "../models/character_snapshot_data.dart";
 import "../models/codecs/timeline_codec.dart";
 import "../models/timeline_data.dart";
+import "../models/item_data.dart";
+import "../models/item_snapshot_data.dart";
+import "../models/location_snapshot_data.dart";
+import "../models/codecs/item_codec.dart";
+import "../models/codecs/item_snapshot_codec.dart";
+import "../models/codecs/location_snapshot_codec.dart";
 import "../features/inline_annotations/inline_annotation_projection.dart";
 
 export "../models/project_data.dart";
@@ -978,11 +984,38 @@ class ProjectManager {
     try {
       setLoading(true);
       final buffer = StringBuffer();
+      void writeXmlMarkdown(String title, String? xmlContent) {
+        if (xmlContent == null) return;
+        buffer.writeln("## $title");
+        buffer.writeln();
+        buffer.writeln("```xml");
+        buffer.writeln(xmlContent);
+        buffer.writeln("```");
+        buffer.writeln();
+        buffer.writeln("---");
+        buffer.writeln();
+      }
 
       if (format == "xml") {
         buffer.writeln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         buffer.writeln('<Project UUID="${currentData.projectUUID}">');
         buffer.writeln("<ver>${FileService.projectVersion}</ver>");
+        const supportedModules = <String>{
+          "BaseInfo",
+          "Chapters",
+          "Outline",
+          "Plans",
+          "WorldSettings",
+          "Characters",
+          "Items",
+        };
+        final declaredModules =
+            selectedModules.where(supportedModules.contains).toList()..sort();
+        buffer.writeln("<SelectiveExport>");
+        for (final module in declaredModules) {
+          buffer.writeln("  <Module>$module</Module>");
+        }
+        buffer.writeln("</SelectiveExport>");
 
         if (selectedModules.contains("BaseInfo")) {
           final xml = BaseInfoModule.BaseInfoCodec.saveXML(
@@ -1005,16 +1038,60 @@ class ProjectManager {
             currentData.outlineData,
           );
           if (xml != null) buffer.writeln(xml);
+          final timelineXml = TimelineCodec.saveXML(
+            currentData.timelineDocument,
+            currentData.outlineChapterLinks,
+          );
+          if (timelineXml != null) buffer.writeln(timelineXml);
+        }
+
+        if (selectedModules.contains("Plans")) {
+          final xml = PlanModule.PlanCodec.saveXML(
+            currentData.foreshadowData,
+            currentData.updatePlanData,
+          );
+          if (xml != null) buffer.writeln(xml);
         }
 
         if (selectedModules.contains("WorldSettings")) {
           final xml = WorldSettingsCodec.saveXML(currentData.worldSettingsData);
           if (xml != null) buffer.writeln(xml);
+          final locationChangesXml = LocationSnapshotCodec.saveChanges(
+            currentData.locationStateChanges,
+          );
+          if (locationChangesXml != null) buffer.writeln(locationChangesXml);
         }
 
         if (selectedModules.contains("Characters")) {
           final xml = CharacterCodec.saveXML(currentData.characterData);
           if (xml != null) buffer.writeln(xml);
+          for (final section in <String?>[
+            CharacterStateCodec.saveXML(currentData.characterStates),
+            CharacterSnapshotCodec.saveBaselines(
+              currentData.characterStateBaselines,
+            ),
+            CharacterSnapshotCodec.saveChanges(
+              currentData.characterStateChanges,
+            ),
+          ]) {
+            if (section != null) buffer.writeln(section);
+          }
+        }
+
+        if (selectedModules.contains("Items")) {
+          for (final section in <String?>[
+            ItemCodec.saveClasses(currentData.itemClasses),
+            ItemCodec.saveInstances(currentData.itemInstances),
+            ItemCodec.saveRelations(currentData.itemRelations),
+            ItemSnapshotCodec.saveClassChanges(
+              currentData.itemClassStateChanges,
+            ),
+            ItemSnapshotCodec.saveInstanceChanges(
+              currentData.itemInstanceStateChanges,
+            ),
+          ]) {
+            if (section != null) buffer.writeln(section);
+          }
         }
 
         buffer.writeln("</Project>");
@@ -1048,6 +1125,23 @@ class ProjectManager {
           );
           buffer.writeln("---");
           buffer.writeln();
+          writeXmlMarkdown(
+            "Timeline",
+            TimelineCodec.saveXML(
+              currentData.timelineDocument,
+              currentData.outlineChapterLinks,
+            ),
+          );
+        }
+
+        if (selectedModules.contains("Plans")) {
+          writeXmlMarkdown(
+            "Plans",
+            PlanModule.PlanCodec.saveXML(
+              currentData.foreshadowData,
+              currentData.updatePlanData,
+            ),
+          );
         }
 
         if (selectedModules.contains("WorldSettings")) {
@@ -1058,6 +1152,10 @@ class ProjectManager {
           );
           buffer.writeln("---");
           buffer.writeln();
+          writeXmlMarkdown(
+            "LocationStateChanges",
+            LocationSnapshotCodec.saveChanges(currentData.locationStateChanges),
+          );
         }
 
         if (selectedModules.contains("Characters")) {
@@ -1066,6 +1164,49 @@ class ProjectManager {
           );
           buffer.writeln("---");
           buffer.writeln();
+          writeXmlMarkdown(
+            "CharacterStates",
+            CharacterStateCodec.saveXML(currentData.characterStates),
+          );
+          writeXmlMarkdown(
+            "CharacterStateBaselines",
+            CharacterSnapshotCodec.saveBaselines(
+              currentData.characterStateBaselines,
+            ),
+          );
+          writeXmlMarkdown(
+            "CharacterStateChanges",
+            CharacterSnapshotCodec.saveChanges(
+              currentData.characterStateChanges,
+            ),
+          );
+        }
+
+        if (selectedModules.contains("Items")) {
+          writeXmlMarkdown(
+            "ItemClasses",
+            ItemCodec.saveClasses(currentData.itemClasses),
+          );
+          writeXmlMarkdown(
+            "ItemInstances",
+            ItemCodec.saveInstances(currentData.itemInstances),
+          );
+          writeXmlMarkdown(
+            "ItemRelations",
+            ItemCodec.saveRelations(currentData.itemRelations),
+          );
+          writeXmlMarkdown(
+            "ItemClassStateChanges",
+            ItemSnapshotCodec.saveClassChanges(
+              currentData.itemClassStateChanges,
+            ),
+          );
+          writeXmlMarkdown(
+            "ItemInstanceStateChanges",
+            ItemSnapshotCodec.saveInstanceChanges(
+              currentData.itemInstanceStateChanges,
+            ),
+          );
         }
       }
 
@@ -1117,6 +1258,13 @@ class _ProjectParser {
     List<CharacterState>? loadedCharacterStates;
     Map<String, CharacterStateBaseline>? loadedCharacterStateBaselines;
     List<CharacterStateChange>? loadedCharacterStateChanges;
+    Map<String, ItemClassData>? loadedItemClasses;
+    Map<String, ItemInstanceData>? loadedItemInstances;
+    List<ItemRelationData>? loadedItemRelations;
+    List<ItemClassStateChange>? loadedItemClassChanges;
+    List<ItemInstanceStateChange>? loadedItemInstanceChanges;
+    List<LocationStateChange>? loadedLocationChanges;
+    Object? itemSectionError;
     TimelineProjectData? loadedTimeline;
 
     // 計算 contentText 和 totalWords
@@ -1205,15 +1353,54 @@ class _ProjectParser {
             case "Timeline":
               loadedTimeline ??= TimelineCodec.loadElement(element);
               break;
+            case "ItemClasses":
+              loadedItemClasses ??= ItemCodec.loadClasses(element);
+              break;
+            case "ItemInstances":
+              loadedItemInstances ??= ItemCodec.loadInstances(element);
+              break;
+            case "ItemRelations":
+              loadedItemRelations ??= ItemCodec.loadRelations(element);
+              break;
+            case "ItemClassStateChanges":
+              loadedItemClassChanges ??= ItemSnapshotCodec.loadClassChanges(
+                element,
+              );
+              break;
+            case "ItemInstanceStateChanges":
+              loadedItemInstanceChanges ??=
+                  ItemSnapshotCodec.loadInstanceChanges(element);
+              break;
+            case "LocationStateChanges":
+              loadedLocationChanges ??= LocationSnapshotCodec.loadChanges(
+                element,
+              );
+              break;
           }
         } catch (e) {
           debugPrint("解析 $typeName 區塊時發生錯誤: $e");
+          if (const {
+            "ItemClasses",
+            "ItemInstances",
+            "ItemRelations",
+            "ItemClassStateChanges",
+            "ItemInstanceStateChanges",
+            "LocationStateChanges",
+          }.contains(typeName)) {
+            itemSectionError ??= e;
+          }
           // 繼續解析其他區塊
         }
       }
     } catch (e) {
       debugPrint("XML 解析失敗: $e");
       // 如果 XML 格式完全錯誤，將回傳預設的空專案
+    }
+
+    // Never replace malformed new-domain data with empty collections and then
+    // permit the next save to silently discard it.
+    if (itemSectionError != null) {
+      throw FormatException("物品／地點快照資料無效：$itemSectionError");
     }
 
     List<ChapterModule.SegmentData> snapshotSegments(
@@ -1283,6 +1470,12 @@ class _ProjectParser {
     }
 
     final decodedData = ProjectData(
+      itemClasses: loadedItemClasses ?? const {},
+      itemInstances: loadedItemInstances ?? const {},
+      itemRelations: loadedItemRelations ?? const [],
+      itemClassStateChanges: loadedItemClassChanges ?? const [],
+      itemInstanceStateChanges: loadedItemInstanceChanges ?? const [],
+      locationStateChanges: loadedLocationChanges ?? const [],
       projectUUID: projectUUID ?? defaultData.projectUUID,
       baseInfoData: parsedBaseInfo,
       segmentsData: parsedSegments,
@@ -1414,6 +1607,17 @@ class _ProjectMerger {
     if (characterChangesXml != null) {
       buffer.writeln();
       buffer.write(characterChangesXml);
+    }
+
+    for (final section in [
+      ItemCodec.saveClasses(data.itemClasses),
+      ItemCodec.saveInstances(data.itemInstances),
+      ItemCodec.saveRelations(data.itemRelations),
+      ItemSnapshotCodec.saveClassChanges(data.itemClassStateChanges),
+      ItemSnapshotCodec.saveInstanceChanges(data.itemInstanceStateChanges),
+      LocationSnapshotCodec.saveChanges(data.locationStateChanges),
+    ]) {
+      if (section != null) buffer.writeln(section);
     }
 
     buffer.writeln("</Project>");

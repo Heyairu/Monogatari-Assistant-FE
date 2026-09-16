@@ -30,6 +30,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final updatePlan = ref.watch(updatePlanDataProvider);
   final timeline = ref.watch(timelineDocumentProvider);
   final timelineLinks = ref.watch(outlineChapterLinksProvider);
+  final itemWorkspace = ref.watch(itemWorkspaceProvider);
 
   return Object.hash(
     projectUuid,
@@ -53,6 +54,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
     identityHashCode(updatePlan),
     identityHashCode(timeline),
     identityHashCode(timelineLinks),
+    identityHashCode(itemWorkspace),
   );
 });
 
@@ -426,6 +428,18 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       foreshadowData: ref.read(foreshadowDataProvider),
       updatePlanData: ref.read(updatePlanDataProvider),
       worldSettingsData: ref.read(worldSettingsDataProvider),
+      itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
+      itemInstances: ref.read(itemWorkspaceProvider).itemInstances,
+      itemRelations: ref.read(itemWorkspaceProvider).itemRelations,
+      itemClassStateChanges: ref
+          .read(itemWorkspaceProvider)
+          .itemClassStateChanges,
+      itemInstanceStateChanges: ref
+          .read(itemWorkspaceProvider)
+          .itemInstanceStateChanges,
+      locationStateChanges: ref
+          .read(itemWorkspaceProvider)
+          .locationStateChanges,
       characterData: ref.read(characterDataProvider),
       characterStates: ref.read(characterStatesProvider),
       characterStateBaselines: ref.read(characterStateBaselinesProvider),
@@ -467,6 +481,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     ref
         .read(worldSettingsDataProvider.notifier)
         .updateWorldSettingsData((_) => snapshot.worldSettingsData);
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .setWorkspace(ItemWorkspaceData.fromProject(snapshot));
     ref
         .read(characterDataProvider.notifier)
         .updateCharacterData((_) => snapshot.characterData);

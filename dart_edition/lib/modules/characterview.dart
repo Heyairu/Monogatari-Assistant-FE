@@ -33,22 +33,56 @@ import "dart:async";
 import "package:xml/xml.dart" as xml;
 import "../models/codecs/xml_text_codec.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:uuid/uuid.dart";
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
+import "../application/items/legacy_character_possession_conversion.dart";
 import "../models/character_snapshot_data.dart";
 import "../models/world_settings_data.dart";
 import "../models/timeline_data.dart";
+import "../models/item_data.dart";
 import "../presentation/providers/character_snapshot_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
+import "../presentation/widgets/project_object_selector.dart";
 import "character_relationship_operations.dart" as relationship_operations;
 
 export "../models/character_data.dart";
 
 final _log = Logger("CharacterView");
+
+class _LinkedCharacterItem {
+  final String id;
+  final String classId;
+  final String name;
+  final String quantity;
+  final String description;
+
+  const _LinkedCharacterItem({
+    required this.id,
+    required this.classId,
+    required this.name,
+    required this.quantity,
+    required this.description,
+  });
+}
+
+class _LegacyCharacterItemSubject {
+  final String itemId;
+  final ItemReferenceKind itemKind;
+  final ItemClassData? newClass;
+  final ItemInstanceData? newInstance;
+
+  const _LegacyCharacterItemSubject({
+    required this.itemId,
+    required this.itemKind,
+    this.newClass,
+    this.newInstance,
+  });
+}
 
 /// Owns the pending CharacterView draft for exactly one project session.
 ///
@@ -1752,12 +1786,14 @@ class CharacterView extends ConsumerStatefulWidget {
   final int projectSessionId;
   final String? initialCharacterId;
   final int selectionRequestId;
+  final ValueChanged<String>? onOpenItem;
 
   const CharacterView({
     super.key,
     this.projectSessionId = 0,
     this.initialCharacterId,
     this.selectionRequestId = 0,
+    this.onOpenItem,
   });
 
   @override
@@ -2973,6 +3009,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             ),
             const SizedBox(height: 16),
             _buildPossessionTableSection(),
+            const SizedBox(height: 16),
+            _buildLinkedItemProjection(),
             const SizedBox(height: 8),
           ],
         ),
@@ -4786,6 +4824,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                       tooltip: selectedPossessionIndex == null ? "新增" : "更新",
                       onPressed: canSubmit ? _submitPossessionEntry : null,
                     ),
+                    ItemAction(
+                      icon: Icons.sync_alt,
+                      tooltip: "轉換為正式物品",
+                      onPressed: selectedPossessionIndex == null
+                          ? null
+                          : _convertSelectedLegacyPossession,
+                    ),
                     ItemAction.delete(
                       tooltip: "刪除",
                       onPressed: selectedPossessionIndex == null
@@ -4822,6 +4867,516 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         ),
       ],
     );
+  }
+
+  Widget _buildLinkedItemProjection() {
+    final characterId = selectedCharacter;
+    if (characterId == null) return const SizedBox.shrink();
+    final workspace = ref.watch(itemWorkspaceProvider);
+    final tick = ref.watch(
+      timelineViewProvider.select((state) => state.currentTick),
+    );
+    final relatedEntries =
+        workspace.itemRelations
+            .where(
+              (relation) =>
+                  relation.targetKind == ItemRelationTargetKind.character &&
+                  relation.targetId == characterId,
+            )
+            .map((relation) {
+              final instance = relation.itemKind == ItemReferenceKind.instance
+                  ? workspace.itemInstances[relation.itemId]
+                  : null;
+              final classId = relation.itemKind == ItemReferenceKind.itemClass
+                  ? relation.itemId
+                  : instance?.classId;
+              final label = relation.itemKind == ItemReferenceKind.itemClass
+                  ? workspace.itemClasses[classId]?.name
+                  : instance?.name;
+              return (
+                relation: relation,
+                classId: classId,
+                label: label?.isNotEmpty == true ? label! : relation.itemId,
+              );
+            })
+            .where((entry) => entry.classId != null)
+            .toList(growable: false)
+          ..sort((a, b) => a.label.compareTo(b.label));
+    final entries = <_LinkedCharacterItem>[];
+    for (final itemClass in workspace.itemClasses.values) {
+      final unit = itemClass.unit.trim();
+      final state = ref.watch(
+        itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
+      );
+      if (state?.exists == true && state!.allocations.isNotEmpty) {
+        for (final allocation in state.allocations.where(
+          (value) => value.holderCharacterId == characterId,
+        )) {
+          entries.add(
+            _LinkedCharacterItem(
+              id: allocation.allocationId,
+              classId: itemClass.classId,
+              name: state.name.isEmpty ? itemClass.name : state.name,
+              quantity: allocation.quantity == null
+                  ? "未知"
+                  : "${allocation.quantity}${unit.isEmpty ? "" : " $unit"}",
+              description: allocation.note.isNotEmpty
+                  ? allocation.note
+                  : state.status,
+            ),
+          );
+        }
+      }
+      if (itemClass.mode == ItemMode.generic) continue;
+      for (final instance in workspace.itemInstances.values.where(
+        (value) => value.classId == itemClass.classId,
+      )) {
+        final state = ref.watch(
+          itemInstanceSnapshotProvider((id: instance.instanceId, tick: tick)),
+        );
+        if (state == null ||
+            !state.exists ||
+            state.holderCharacterId != characterId) {
+          continue;
+        }
+        entries.add(
+          _LinkedCharacterItem(
+            id: instance.instanceId,
+            classId: itemClass.classId,
+            name: state.name.isEmpty
+                ? (instance.name.isEmpty ? itemClass.name : instance.name)
+                : state.name,
+            quantity: "1${unit.isEmpty ? "" : " $unit"}",
+            description: state.status,
+          ),
+        );
+      }
+    }
+    entries.sort((a, b) => a.name.compareTo(b.name));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: SmallTitle(icon: Icons.link_outlined, text: "一般關聯物品"),
+            ),
+            FilledButton.tonalIcon(
+              key: const Key("character-link-item"),
+              onPressed: () => _linkItemToCharacter(characterId),
+              icon: const Icon(Icons.add_link),
+              label: const Text("連結物品"),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (relatedEntries.isEmpty)
+          const Text("尚未設定一般物品關聯。")
+        else
+          ...relatedEntries.map(
+            (entry) => ListTile(
+              dense: true,
+              key: ValueKey(
+                "character-related-item-${entry.relation.relationId}",
+              ),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.link),
+              title: Text(entry.label),
+              subtitle: Text(
+                [
+                  if (entry.relation.role.isNotEmpty) entry.relation.role,
+                  if (entry.relation.note.isNotEmpty) entry.relation.note,
+                ].join("・"),
+              ),
+              trailing: Wrap(
+                children: [
+                  if (widget.onOpenItem != null)
+                    IconButton(
+                      key: ValueKey(
+                        "character-open-related-item-${entry.relation.relationId}",
+                      ),
+                      tooltip: "開啟物品頁",
+                      onPressed: () => widget.onOpenItem!(entry.classId!),
+                      icon: const Icon(Icons.open_in_new),
+                    ),
+                  IconButton(
+                    key: ValueKey(
+                      "character-unlink-item-${entry.relation.relationId}",
+                    ),
+                    tooltip: "解除關聯",
+                    onPressed: () => ref
+                        .read(itemWorkspaceProvider.notifier)
+                        .removeRelation(entry.relation.relationId),
+                    icon: const Icon(Icons.link_off),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+        const SmallTitle(icon: Icons.inventory_2_outlined, text: "目前持有物品"),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          const AppEmptyState(
+            title: "目前沒有已連結物品",
+            description: "在物品頁設定持有人或聚合分配後會顯示於此",
+            icon: Icons.link_off_outlined,
+            compact: true,
+          )
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              key: const ValueKey("linked-items-table"),
+              columns: const [
+                DataColumn(label: Text("物品")),
+                DataColumn(label: Text("數量"), numeric: true),
+                DataColumn(label: Text("狀態／備註")),
+              ],
+              rows: entries
+                  .map(
+                    (entry) => DataRow(
+                      key: ValueKey("linked-item-${entry.id}"),
+                      cells: [
+                        DataCell(
+                          TextButton.icon(
+                            key: ValueKey("character-open-item-${entry.id}"),
+                            onPressed: widget.onOpenItem == null
+                                ? null
+                                : () => widget.onOpenItem!(entry.classId),
+                            icon: const Icon(Icons.open_in_new, size: 16),
+                            label: Text(entry.name),
+                          ),
+                        ),
+                        DataCell(Text(entry.quantity)),
+                        DataCell(Text(entry.description)),
+                      ],
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _convertSelectedLegacyPossession() async {
+    final index = selectedPossessionIndex;
+    final characterId = selectedCharacter;
+    if (index == null ||
+        characterId == null ||
+        index < 0 ||
+        index >= possessions.length) {
+      return;
+    }
+    final legacy = possessions[index];
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const Key("character-legacy-item-choice"),
+        title: Text("轉換「${legacy.name}」"),
+        content: const Text("會移除角色預設與可定位 Scene 快照中的同名舊資料，並建立正式物品狀態。"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("取消"),
+          ),
+          OutlinedButton(
+            key: const Key("character-legacy-item-existing"),
+            onPressed: () => Navigator.pop(context, "existing"),
+            child: const Text("連結既有"),
+          ),
+          FilledButton(
+            key: const Key("character-legacy-item-create"),
+            onPressed: () => Navigator.pop(context, "create"),
+            child: const Text("建立並轉換"),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    _LegacyCharacterItemSubject? subject;
+    if (action == "existing") {
+      final selected = await showProjectObjectSelector(
+        context: context,
+        title: "選擇「${legacy.name}」對應的正式物品",
+        allowedKinds: const <ProjectObjectKind>{
+          ProjectObjectKind.itemClass,
+          ProjectObjectKind.itemInstance,
+        },
+      );
+      if (selected == null || selected.itemReferenceKind == null) return;
+      subject = _LegacyCharacterItemSubject(
+        itemId: selected.id,
+        itemKind: selected.itemReferenceKind!,
+      );
+    } else {
+      subject = await _showCreateCharacterLegacyItemDialog(legacy);
+    }
+    if (!mounted || subject == null) return;
+
+    try {
+      final preview = _buildLegacyPossessionConversion(
+        characterId,
+        legacy,
+        subject,
+      );
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          key: const Key("character-legacy-item-preview"),
+          title: const Text("確認持有物轉換"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("預設／baseline：${preview.convertedDefaultOccurrences} 筆"),
+              Text("Scene 快照：${preview.convertedSceneOccurrences} 筆"),
+              if (preview.preservedUnanchoredOccurrences > 0)
+                Text(
+                  "另有 ${preview.preservedUnanchoredOccurrences} 筆舊 CharacterState 無法可靠連結 Scene，將保留原文字。",
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              key: const Key("character-legacy-item-confirm"),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("套用轉換"),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      final result = _buildLegacyPossessionConversion(
+        characterId,
+        legacy,
+        subject,
+      );
+      _commitLegacyPossessionConversion(characterId, result);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("持有物轉換失敗：$error")));
+      }
+    }
+  }
+
+  Future<_LegacyCharacterItemSubject?> _showCreateCharacterLegacyItemDialog(
+    CharacterPossessionEntry legacy,
+  ) async {
+    var name = legacy.name.trim();
+    var mode = (int.tryParse(legacy.quantity.trim()) ?? 1) > 1
+        ? ItemMode.generic
+        : ItemMode.dedicated;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          key: const Key("character-legacy-item-create-dialog"),
+          title: const Text("建立正式物品"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                initialValue: name,
+                decoration: const InputDecoration(labelText: "物品名稱"),
+                onChanged: (value) => setDialogState(() => name = value),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ItemMode>(
+                initialValue: mode,
+                decoration: const InputDecoration(labelText: "物品模式"),
+                items: const <DropdownMenuItem<ItemMode>>[
+                  DropdownMenuItem(
+                    value: ItemMode.dedicated,
+                    child: Text("專用（建立獨立 ID）"),
+                  ),
+                  DropdownMenuItem(
+                    value: ItemMode.semiDedicated,
+                    child: Text("半專用（Class 內建立一件）"),
+                  ),
+                  DropdownMenuItem(
+                    value: ItemMode.generic,
+                    child: Text("非專用（保留數量）"),
+                  ),
+                ],
+                onChanged: (value) => setDialogState(() {
+                  if (value != null) mode = value;
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              onPressed: name.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text("建立"),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted || name.trim().isEmpty) return null;
+    final classId = const Uuid().v4();
+    final itemClass = ItemClassData(
+      classId: classId,
+      name: name.trim(),
+      description: legacy.description,
+      mode: mode,
+    );
+    if (mode == ItemMode.generic) {
+      return _LegacyCharacterItemSubject(
+        itemId: classId,
+        itemKind: ItemReferenceKind.itemClass,
+        newClass: itemClass,
+      );
+    }
+    final instance = ItemInstanceData(
+      instanceId: const Uuid().v4(),
+      classId: classId,
+      name: name.trim(),
+    );
+    return _LegacyCharacterItemSubject(
+      itemId: instance.instanceId,
+      itemKind: ItemReferenceKind.instance,
+      newClass: itemClass,
+      newInstance: instance,
+    );
+  }
+
+  LegacyCharacterPossessionConversionResult _buildLegacyPossessionConversion(
+    String characterId,
+    CharacterPossessionEntry legacy,
+    _LegacyCharacterItemSubject subject,
+  ) {
+    final workspace = ref.read(itemWorkspaceProvider);
+    return const LegacyCharacterPossessionConverter().convert(
+      characterId: characterId,
+      legacy: legacy,
+      characterData: ref.read(characterDataProvider),
+      baselines: ref.read(characterStateBaselinesProvider),
+      characterChanges: ref.read(characterStateChangesProvider),
+      legacyStates: ref.read(characterStatesProvider),
+      itemClasses: workspace.itemClasses,
+      itemInstances: workspace.itemInstances,
+      itemRelations: workspace.itemRelations,
+      itemClassStateChanges: workspace.itemClassStateChanges,
+      itemInstanceStateChanges: workspace.itemInstanceStateChanges,
+      itemKind: subject.itemKind,
+      itemId: subject.itemId,
+      newClass: subject.newClass,
+      newInstance: subject.newInstance,
+    );
+  }
+
+  void _commitLegacyPossessionConversion(
+    String characterId,
+    LegacyCharacterPossessionConversionResult result,
+  ) {
+    final oldCharacters = ref.read(characterDataProvider);
+    final oldBaselines = ref.read(characterStateBaselinesProvider);
+    final oldChanges = ref.read(characterStateChangesProvider);
+    final oldWorkspace = ref.read(itemWorkspaceProvider);
+    final nextWorkspace = oldWorkspace.copyWith(
+      itemClasses: result.itemClasses,
+      itemInstances: result.itemInstances,
+      itemRelations: result.itemRelations,
+      itemClassStateChanges: result.itemClassStateChanges,
+      itemInstanceStateChanges: result.itemInstanceStateChanges,
+    );
+    try {
+      ref
+          .read(characterDataProvider.notifier)
+          .setCharacterData(result.characterData);
+      ref
+          .read(characterStateBaselinesProvider.notifier)
+          .setBaselines(result.baselines);
+      ref
+          .read(characterStateChangesProvider.notifier)
+          .setChanges(result.characterChanges);
+      ref.read(itemWorkspaceProvider.notifier).setWorkspace(nextWorkspace);
+    } catch (_) {
+      ref.read(characterDataProvider.notifier).setCharacterData(oldCharacters);
+      ref
+          .read(characterStateBaselinesProvider.notifier)
+          .setBaselines(oldBaselines);
+      ref.read(characterStateChangesProvider.notifier).setChanges(oldChanges);
+      ref.read(itemWorkspaceProvider.notifier).setWorkspace(oldWorkspace);
+      rethrow;
+    }
+    setState(() {
+      selectedPossessionIndex = null;
+      _possessionNameController.clear();
+      _possessionQuantityController.clear();
+      _possessionDescriptionController.clear();
+      final selectedChangeId = _selectedSnapshotChangeId;
+      if (selectedChangeId == null) {
+        _loadCharacterData(characterId);
+      } else {
+        final entries = ref.read(
+          characterSnapshotTimelineProvider(characterId),
+        );
+        final selectedEntry = entries
+            .where((entry) => entry.change?.stateChangeId == selectedChangeId)
+            .firstOrNull;
+        if (selectedEntry == null) {
+          _selectedSnapshotChangeId = null;
+          _loadCharacterData(characterId);
+        } else {
+          _loadSnapshotState(selectedEntry.snapshot.state);
+        }
+      }
+    });
+  }
+
+  Future<void> _linkItemToCharacter(String characterId) async {
+    final workspace = ref.read(itemWorkspaceProvider);
+    final excluded = workspace.itemRelations
+        .where(
+          (relation) =>
+              relation.targetKind == ItemRelationTargetKind.character &&
+              relation.targetId == characterId,
+        )
+        .map(
+          (relation) =>
+              "${relation.itemKind == ItemReferenceKind.itemClass ? ProjectObjectKind.itemClass.name : ProjectObjectKind.itemInstance.name}:${relation.itemId}",
+        )
+        .toSet();
+    final selected = await showProjectObjectSelector(
+      context: context,
+      title: "選擇要連結的人物物品",
+      allowedKinds: const {
+        ProjectObjectKind.itemClass,
+        ProjectObjectKind.itemInstance,
+      },
+      excludedKeys: excluded,
+    );
+    final itemKind = selected?.itemReferenceKind;
+    if (!mounted || selected == null || itemKind == null) return;
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .putRelation(
+          ItemRelationData(
+            relationId: const Uuid().v4(),
+            itemId: selected.id,
+            itemKind: itemKind,
+            targetId: characterId,
+            targetKind: ItemRelationTargetKind.character,
+            role: "相關",
+          ),
+        );
   }
 
   // Checkbox

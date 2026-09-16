@@ -106,6 +106,14 @@ class MonogatariTopAppBar extends StatelessWidget
                   ),
                   const PopupMenuDivider(),
                   const PopupMenuItem(
+                    value: "import_selective",
+                    child: ListTile(
+                      leading: Icon(Icons.input),
+                      title: Text("匯入..."),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
                     value: "export_selective",
                     child: ListTile(
                       leading: Icon(Icons.output),

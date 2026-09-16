@@ -42,6 +42,7 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  vm_service: ^15.2.0
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
   freezed: ^2.5.8

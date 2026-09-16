@@ -183,7 +183,7 @@ class _P2pConflictResolutionDialogState
       child: ExpansionTile(
         key: Key("p2p-conflict-group-${group.key}"),
         initiallyExpanded: false,
-        title: Text("${group.type}：${group.label}"),
+        title: Text("${_displayGroupType(group.type)}：${group.label}"),
         subtitle: Text(
           "${group.conflicts.length} 個衝突欄位 · ${_shortId(group.id)}",
         ),
@@ -346,6 +346,14 @@ class _P2pConflictResolutionDialogState
   }
 
   String _shortId(String id) => id.length <= 8 ? id : id.substring(0, 8);
+
+  String _displayGroupType(String type) => switch (type) {
+    "project" => "作品",
+    "character" => "角色",
+    "projectRemainder" => "專案區段",
+    "itemWorkspace" => "物品",
+    _ => type,
+  };
 }
 
 class _P2pConflictGroup {

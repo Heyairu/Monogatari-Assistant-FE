@@ -3,9 +3,15 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/bin/file.dart";
 import "package:monogatari_assistant/models/chapter_selection_data.dart";
+import "package:monogatari_assistant/models/character_data.dart";
+import "package:monogatari_assistant/models/character_snapshot_data.dart";
 import "package:monogatari_assistant/models/codecs/timeline_codec.dart";
+import "package:monogatari_assistant/models/item_data.dart";
+import "package:monogatari_assistant/models/item_snapshot_data.dart";
+import "package:monogatari_assistant/models/location_snapshot_data.dart";
 import "package:monogatari_assistant/models/outline_data.dart";
 import "package:monogatari_assistant/models/timeline_data.dart";
+import "package:monogatari_assistant/models/world_settings_data.dart";
 import "package:monogatari_assistant/modules/timelineview.dart";
 import "package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
@@ -926,7 +932,7 @@ void main() {
     final saved = FileService.generateProjectXMLWithoutLatestSaveUpdate(
       parsed.data,
     );
-    expect(saved, contains("<ver>1.16</ver>"));
+    expect(saved, contains("<ver>1.18</ver>"));
     expect(saved, contains('TicksPerSmallBox="1"'));
     final reopened = FileService.parseProjectXMLWithMetadata(saved);
     expect(reopened.wasMigrated, isFalse);
@@ -1014,7 +1020,7 @@ void main() {
     final xml = FileService.generateProjectXMLWithoutLatestSaveUpdate(data);
     final parsed = FileService.parseProjectXMLWithMetadata(xml);
 
-    expect(xml, contains("<ver>1.16</ver>"));
+    expect(xml, contains("<ver>1.18</ver>"));
     expect(parsed.wasMigrated, isFalse);
     expect(parsed.data.timelineDocument.placements, isEmpty);
   });
@@ -1144,6 +1150,149 @@ void main() {
     expect(
       synced.where((placement) => placement.sceneUUID != null),
       hasLength(1),
+    );
+  });
+
+  testWidgets("timeline filters and opens Scene snapshot impacts", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(outlineDataProvider.notifier).setOutlineData([
+      StorylineData(
+        chapterUUID: "story",
+        storylineName: "主線",
+        scenes: [
+          StoryEventData(
+            storyEventUUID: "event",
+            storyEvent: "事件",
+            scenes: [
+              SceneData(sceneUUID: "impacted-scene", sceneName: "交會"),
+              SceneData(sceneUUID: "quiet-scene", sceneName: "平靜"),
+            ],
+          ),
+        ],
+      ),
+    ]);
+    container
+        .read(timelineDocumentProvider.notifier)
+        .setDocument(
+          const TimelineDocumentData(
+            tracks: [TimelineTrackData(trackUUID: "track", name: "主時間軸")],
+            placements: [
+              TimelinePlacementData(
+                placementUUID: "impacted-placement",
+                level: TimelineElementLevel.small,
+                sceneUUID: "impacted-scene",
+                trackUUID: "track",
+                label: "交會",
+              ),
+              TimelinePlacementData(
+                placementUUID: "quiet-placement",
+                level: TimelineElementLevel.small,
+                sceneUUID: "quiet-scene",
+                trackUUID: "track",
+                startTick: 10,
+                label: "平靜",
+              ),
+            ],
+          ),
+        );
+    container.read(characterDataProvider.notifier).setCharacterData({
+      "alice": const CharacterEntryData(
+        characterId: "alice",
+        displayName: "愛麗絲",
+      ),
+    });
+    container.read(characterStateChangesProvider.notifier).setChanges([
+      CharacterStateChange(
+        stateChangeId: "alice-change",
+        characterId: "alice",
+        sceneUUID: "impacted-scene",
+        fallbackTick: 0,
+      ),
+    ]);
+    container.read(worldSettingsDataProvider.notifier).setWorldSettingsData([
+      LocationData(id: "harbor", localName: "港口"),
+    ]);
+    final itemNotifier = container.read(itemWorkspaceProvider.notifier);
+    itemNotifier.putClass(
+      ItemClassData(classId: "key", name: "鑰匙", mode: ItemMode.generic),
+    );
+    itemNotifier.putClassStateChange(
+      ItemClassStateChange(
+        stateChangeId: "key-change",
+        classId: "key",
+        sceneUUID: "impacted-scene",
+      ),
+    );
+    itemNotifier.putLocationStateChange(
+      LocationStateChange(
+        stateChangeId: "harbor-change",
+        locationId: "harbor",
+        sceneUUID: "impacted-scene",
+      ),
+    );
+    container.read(timelineViewProvider.notifier).select("impacted-placement");
+    String? openedCharacter;
+    String? openedItem;
+    String? openedLocation;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: TimelineView(
+            onOpenCharacter: (id) => openedCharacter = id,
+            onOpenItem: (id) => openedItem = id,
+            onOpenLocation: (id) => openedLocation = id,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text("角色 1・物品 1・地點 1"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey("timeline-impact-marker-impacted-placement")),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-impact-marker-quiet-placement")),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey("timeline-impact-character-alice")),
+    );
+    final itemImpact = find.byKey(
+      const ValueKey("timeline-impact-item-class:key"),
+    );
+    await tester.ensureVisible(itemImpact);
+    await tester.tap(itemImpact);
+    final locationImpact = find.byKey(
+      const ValueKey("timeline-impact-location-harbor"),
+    );
+    await tester.ensureVisible(locationImpact);
+    await tester.tap(locationImpact);
+    expect(openedCharacter, "alice");
+    expect(openedItem, "key");
+    expect(openedLocation, "harbor");
+
+    final locationFilter = find.byKey(
+      const ValueKey("timeline-impact-filter-location"),
+    );
+    await tester.ensureVisible(locationFilter);
+    await tester.tap(locationFilter);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey("timeline-move-impacted-placement")),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey("timeline-move-quiet-placement")),
+      findsNothing,
     );
   });
 

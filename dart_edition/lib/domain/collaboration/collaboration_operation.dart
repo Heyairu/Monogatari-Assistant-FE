@@ -9,7 +9,7 @@ import "package:characters/characters.dart";
 /// version. XML is a checkpoint/persistence format and never appears in a
 /// realtime operation.
 abstract final class CollaborationSchema {
-  static const int currentVersion = 4;
+  static const int currentVersion = 6;
   static const String projectTextDocumentPrefix = "projectText:";
   static const int maximumOperationsPerBatch = 128;
   static const int maximumInsertedTextBytes = 24 * 1024;
@@ -183,6 +183,12 @@ enum ProjectRecordKind {
   timelineTrack,
   timelinePlacement,
   outlineChapterLink,
+  itemClass,
+  itemInstance,
+  itemRelation,
+  itemClassStateChange,
+  itemInstanceStateChange,
+  locationStateChange,
 }
 
 enum ProjectRecordMutation { put, remove, move }
@@ -200,6 +206,9 @@ final class ProjectRecordOperation {
   final String? parentId;
   final String? afterRecordId;
   final Map<String, Object?> fields;
+  final String? transactionId;
+  final int? transactionIndex;
+  final int? transactionSize;
 
   ProjectRecordOperation({
     required this.recordKind,
@@ -208,6 +217,9 @@ final class ProjectRecordOperation {
     this.parentId,
     this.afterRecordId,
     Map<String, Object?> fields = const <String, Object?>{},
+    this.transactionId,
+    this.transactionIndex,
+    this.transactionSize,
   }) : fields = UnmodifiableMapView<String, Object?>(
          Map<String, Object?>.from(fields),
        ) {
@@ -220,17 +232,72 @@ final class ProjectRecordOperation {
     if (mutation == ProjectRecordMutation.remove && fields.isNotEmpty) {
       throw ArgumentError("remove operation 不可攜帶 record fields。");
     }
+    final transactionValues = [
+      transactionId,
+      transactionIndex,
+      transactionSize,
+    ];
+    final hasAnyTransactionValue = transactionValues.any(
+      (value) => value != null,
+    );
+    if (hasAnyTransactionValue &&
+        transactionValues.any((value) => value == null)) {
+      throw ArgumentError(
+        "transactionId、transactionIndex、transactionSize 必須一起設定。",
+      );
+    }
+    if (transactionId != null &&
+        (transactionId!.trim().isEmpty ||
+            transactionId!.length > 256 ||
+            transactionIndex! < 0 ||
+            transactionSize! < 2 ||
+            transactionSize! > 4096 ||
+            transactionIndex! >= transactionSize!)) {
+      throw ArgumentError("project record transaction metadata 無效。");
+    }
   }
 
+  bool get isTransactional => transactionId != null;
+
+  ProjectRecordOperation inTransaction({
+    required String id,
+    required int index,
+    required int size,
+  }) => ProjectRecordOperation(
+    recordKind: recordKind,
+    mutation: mutation,
+    recordId: recordId,
+    parentId: parentId,
+    afterRecordId: afterRecordId,
+    fields: fields,
+    transactionId: id,
+    transactionIndex: index,
+    transactionSize: size,
+  );
+
   factory ProjectRecordOperation.fromJson(Map<String, Object?> json) {
-    _expectExactKeys(json, const <String>{
+    const baseKeys = <String>{
       "recordKind",
       "mutation",
       "recordId",
       "parentId",
       "afterRecordId",
       "fields",
-    });
+    };
+    const transactionKeys = <String>{
+      ...baseKeys,
+      "transactionId",
+      "transactionIndex",
+      "transactionSize",
+    };
+    final isLegacy =
+        json.length == baseKeys.length && json.keys.every(baseKeys.contains);
+    final isTransactional =
+        json.length == transactionKeys.length &&
+        json.keys.every(transactionKeys.contains);
+    if (!isLegacy && !isTransactional) {
+      throw const FormatException("collaboration JSON schema 欄位不符。");
+    }
     final rawKind = json["recordKind"];
     final rawMutation = json["mutation"];
     final rawFields = json["fields"];
@@ -248,6 +315,15 @@ final class ProjectRecordOperation {
       parentId: _optionalId(json, "parentId"),
       afterRecordId: _optionalId(json, "afterRecordId"),
       fields: _jsonObject(rawFields, "fields"),
+      transactionId: isTransactional
+          ? _requiredId(json, "transactionId")
+          : null,
+      transactionIndex: isTransactional
+          ? _requiredNonNegativeInt(json, "transactionIndex")
+          : null,
+      transactionSize: isTransactional
+          ? _requiredPositiveInt(json, "transactionSize")
+          : null,
     );
   }
 
@@ -258,6 +334,11 @@ final class ProjectRecordOperation {
     "parentId": parentId,
     "afterRecordId": afterRecordId,
     "fields": fields,
+    if (transactionId != null) ...<String, Object?>{
+      "transactionId": transactionId,
+      "transactionIndex": transactionIndex,
+      "transactionSize": transactionSize,
+    },
   };
 }
 
@@ -565,6 +646,14 @@ String? _optionalId(Map<String, Object?> json, String key) {
 int _requiredPositiveInt(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! int || value < 1) throw FormatException("$key 無效。");
+  return value;
+}
+
+int _requiredNonNegativeInt(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! int || value < 0) {
+    throw FormatException("$key 無效。");
+  }
   return value;
 }
 
