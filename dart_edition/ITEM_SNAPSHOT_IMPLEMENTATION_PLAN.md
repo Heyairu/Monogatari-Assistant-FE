@@ -294,7 +294,7 @@ flutter analyze
 ### 2026-09-17 整合驗收紀錄
 
 - 完整 `flutter analyze`：0 error、0 warning；另有 160 項既有 info lint，集中在舊檔頭註解、命名、括號及 Flutter 棄用 API。
-- 完整 `flutter test --no-pub --concurrency=2`：673 通過、1 跳過、0 失敗，約 3 分鐘完成。物品、地點、角色快照、物件選擇器、格式 1.18、匯入匯出、協作交易、P2P 物品衝突及大型資料效能均納入通過範圍；低併發避免測試機同時建立過多 Dart worker。
+- 完整 `flutter test --no-pub --concurrency=2`：676 通過、1 跳過、0 失敗，約 3 分鐘完成。物品、地點、角色快照、物件選擇器、格式 1.18、匯入匯出、協作交易、P2P 物品衝突、大型資料效能及 IME composing 均納入通過範圍；低併發避免測試機同時建立過多 Dart worker。
 - 修正 P2P pending resolve ACK 訊息被同 UUID 一般協商狀態覆蓋、角色關係圖窄版工具列與主題選取色，以及新專案測試在等待 frame 前先等待 Future 所造成的逾時。
 - 角色別名與 Hana 啟動畫面測試已同步現行介面契約。架構 guardrail 明列 25 組既有 `bin/file.dart`／view 傳遞循環作為 legacy allowlist，新增循環仍會使測試失敗；完整解耦保留為既有技術債。
 - 新增共用 `ProjectStoryStateIndex`，物品／地點 snapshot provider 與物件選擇器不再為每個目標重掃全部變更；Scene placement 依 Scene 預先分組，查詢結果按 subject 快取。
@@ -302,7 +302,10 @@ flutter analyze
 - `ITEMS_AND_SCENE_SNAPSHOTS_GUIDE.md` 已整理三種物品模式、共用物件選擇器、Scene 快照、1.18 格式、協作 schema 6、舊檔遷移、備份復原與目前限制。
 - Windows profile 整合測試在真實 runner 中切換 1200×900 與 600×900，完成建立、名稱保存、Scene 快照、專用→半專用、instance 展開、事件連結、返回與搜尋焦點；最終流程 5.76 秒、57 frames、build P95 10.7ms、raster P95 245.6ms、RSS 75→120MiB、max RSS 141MiB。raster 數字包含視窗縮放及首次開啟對話框，保留為後續優化基線。
 - Windows Flutter Driver 在 profile mode 不會替 `TextFormField` 派送測試用 `onChanged`，因此整合測試先驗證實際 focus/input，再直接呼叫同一 callback；另有一般 widget 測試驗證名稱輸入確實寫回 workspace 與 default state。
-- Windows x64 release build 於 135.3 秒完成；未壓縮內容 34 個檔案、101 MiB。啟動 smoke test 維持執行且介面有回應，主視窗標題為 `Monogatari Assistant`。封裝檔 `monogatari-assistant-0.9.19-windows-x64.zip` 為 54.56 MiB，含 EXE、Flutter DLL 與 data 目錄，SHA-256 為 `9C4B773E980B22B7C22B7AFC5AB88CB59F56DFC8841D77D33FF805FA6C6FBF0B`。
+- 物品頁改用與世界設定一致的大標題、集合卡、快速新增及詳情卡結構；清單列顯示模式、單件數、關聯與歸屬，並提供編輯及保留歷史的封存操作。窄版固定把物品清單／選擇器放在詳情上方，選取或新增後不再隱藏清單。
+- 世界設定的名稱、類型與備註在 IME composing 期間不再觸發 debounce 寫回；共用協作文字層等組字結束後才送出完整差異，期間仍同步游標。
+- 剛新增且最多只有一個暫時 ID、沒有快照、歸屬、instance 關聯或轉換紀錄的物品，可沿用原 Class 直接切為非專用；已有身份資料或多個獨立 ID 時仍要求以 Scene 安全聚合。
+- 最新 Windows x64 release build 於 93.0 秒完成；未壓縮內容 34 個檔案、101 MiB。封裝檔 `monogatari-assistant-0.9.19-windows-x64.zip` 為 54.56 MiB，含 EXE、Flutter DLL 與 data 目錄，SHA-256 為 `DD40967EB2A763FC541BA0B7D9F7B8CC91927A04C24212E81415FECADD806E7B`。
 
 ### 2026-09-15 已完成的模式轉換里程碑
 
@@ -310,7 +313,7 @@ flutter analyze
 - 只有一筆且數量為 1 的非專用分配可直接轉成專用；其他數量要求先用半專用逐件拆分。
 - 專用或半專用轉為非專用時建立新的 Class ID，按該 Scene 當時仍存在的 instance 彙總持有人、所在地與未分配數量。
 - 原 Class 與 instance 只封存，不改寫既有 conversionSource、一般關聯或快照；來源自轉換 Scene 起設為不存在，新聚合 Class 自同一 Scene 起存在。
-- 資料層拒絕沿用同一 Class ID 直接改為非專用，並驗證反向聚合包含所有未封存 instance，避免半完成提交。
+- 資料層只允許全新、最多一個暫時 ID 且沒有身份資料的物品沿用 Class ID 直接改為非專用；其餘情況驗證反向聚合包含所有未封存 instance，避免半完成提交。
 - 角色與地點的歷史投影會解析封存來源，因此轉換前仍可看到原單件，轉換後只計入新聚合數量。
 - 聚合轉移、拆出單件與反向聚合均依所選 Scene 當下狀態計算；預覽期間物品或 placement 被修改時拒絕提交並要求重新預覽。
 - 半專用只有在剩餘聚合量為零且最多一個固定 instance 時才能直接轉為專用；多個 ID 不會再被封存、合併或改寫關聯。

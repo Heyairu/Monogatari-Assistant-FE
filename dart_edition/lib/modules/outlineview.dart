@@ -2488,42 +2488,33 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
             const SizedBox(height: 16),
 
-            CardList(
-              title: "預設物件",
-              icon: Icons.category,
-              items: event.item,
-              conversionKeyPrefix: "event-legacy-item-${event.storyEventUUID}",
-              onConvert: (index) => _convertLegacyOutlineItem(
-                eventId: event.storyEventUUID,
-                legacyIndex: index,
-                legacyName: event.item[index],
+            if (event.item.isNotEmpty) ...[
+              _buildLegacyOutlineItems(
+                items: event.item,
+                keyPrefix: "event-legacy-item-${event.storyEventUUID}",
+                onConvert: (index) => _convertLegacyOutlineItem(
+                  eventId: event.storyEventUUID,
+                  legacyIndex: index,
+                  legacyName: event.item[index],
+                ),
+                onRemove: (index) {
+                  setState(() {
+                    _updateEventAt(si, ei, (current) {
+                      final items = [...current.item]..removeAt(index);
+                      return current.copyWith(item: items);
+                    });
+                  });
+                  _notifyChange();
+                },
               ),
-              onAdd: (item) {
-                setState(() {
-                  _updateEventAt(si, ei, (current) {
-                    return current.copyWith(item: [...current.item, item]);
-                  });
-                });
-                _notifyChange();
-              },
-              onRemove: (index) {
-                setState(() {
-                  _updateEventAt(si, ei, (current) {
-                    final items = [...current.item]..removeAt(index);
-                    return current.copyWith(item: items);
-                  });
-                });
-                _notifyChange();
-              },
-            ),
-
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
 
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    "已連結物品",
+                    "物品分配",
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
@@ -2531,13 +2522,13 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   key: const Key("event-link-item"),
                   onPressed: () => _linkItemToEvent(event.storyEventUUID),
                   icon: const Icon(Icons.add_link),
-                  label: const Text("連結物品"),
+                  label: const Text("分配物品"),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             if (linkedItems.isEmpty)
-              const Text("尚未連結正式物品。")
+              const Text("尚未分配正式物品。")
             else
               ...linkedItems.map(
                 (entry) => ListTile(
@@ -2661,9 +2652,179 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             itemKind: itemKind,
             targetId: eventId,
             targetKind: ItemRelationTargetKind.event,
-            role: "相關",
+            role: "大綱物件",
           ),
         );
+  }
+
+  Widget _buildLegacyOutlineItems({
+    required List<String> items,
+    required String keyPrefix,
+    required ValueChanged<int> onConvert,
+    required ValueChanged<int> onRemove,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppNoticeBanner(
+          message: "以下是舊版文字物件。請轉換為正式物品；大綱已不再新增舊格式物件。",
+          icon: Icons.sync_alt,
+          tone: AppFeedbackTone.warning,
+        ),
+        const SizedBox(height: 8),
+        ...items.asMap().entries.map(
+          (entry) => ListTile(
+            key: ValueKey("$keyPrefix-${entry.key}"),
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(entry.value),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  key: ValueKey("$keyPrefix-convert-${entry.key}"),
+                  tooltip: "轉換為正式物品",
+                  onPressed: () => onConvert(entry.key),
+                  icon: const Icon(Icons.sync_alt),
+                ),
+                IconButton(
+                  tooltip: "刪除舊資料",
+                  onPressed: () => onRemove(entry.key),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSceneItemManager(String sceneId) {
+    final workspace = ref.watch(itemWorkspaceProvider);
+    final entries = workspace.itemRelations
+        .where(
+          (relation) =>
+              relation.targetKind == ItemRelationTargetKind.scene &&
+              relation.targetId == sceneId,
+        )
+        .map((relation) {
+          final instance = relation.itemKind == ItemReferenceKind.instance
+              ? workspace.itemInstances[relation.itemId]
+              : null;
+          final classId = relation.itemKind == ItemReferenceKind.itemClass
+              ? relation.itemId
+              : instance?.classId;
+          final label = relation.itemKind == ItemReferenceKind.itemClass
+              ? workspace.itemClasses[classId]?.name
+              : instance?.name;
+          return (
+            relation: relation,
+            classId: classId,
+            label: label?.isNotEmpty == true ? label! : relation.itemId,
+          );
+        })
+        .toList(growable: false)
+      ..sort((a, b) => a.label.compareTo(b.label));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                "物品分配",
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            FilledButton.tonalIcon(
+              key: const Key("scene-link-item"),
+              onPressed: () => _linkItemToScene(sceneId),
+              icon: const Icon(Icons.add_link),
+              label: const Text("分配物品"),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          const Text("尚未分配正式物品。")
+        else
+          ...entries.map(
+            (entry) => ListTile(
+              dense: true,
+              key: ValueKey(
+                "scene-linked-item-${entry.relation.relationId}",
+              ),
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                entry.relation.itemKind == ItemReferenceKind.itemClass
+                    ? Icons.category_outlined
+                    : Icons.inventory_2_outlined,
+              ),
+              title: Text(entry.label),
+              subtitle: Text(
+                entry.relation.itemKind == ItemReferenceKind.itemClass
+                    ? "物品 Class"
+                    : "單件物品",
+              ),
+              trailing: Wrap(
+                children: [
+                  if (widget.onOpenItem != null && entry.classId != null)
+                    IconButton(
+                      tooltip: "開啟物品頁",
+                      onPressed: () => widget.onOpenItem!(entry.classId!),
+                      icon: const Icon(Icons.open_in_new),
+                    ),
+                  IconButton(
+                    key: ValueKey(
+                      "scene-unlink-item-${entry.relation.relationId}",
+                    ),
+                    tooltip: "移除分配",
+                    onPressed: () => ref
+                        .read(itemWorkspaceProvider.notifier)
+                        .removeRelation(entry.relation.relationId),
+                    icon: const Icon(Icons.link_off),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _linkItemToScene(String sceneId) async {
+    final workspace = ref.read(itemWorkspaceProvider);
+    final excluded = workspace.itemRelations
+        .where(
+          (relation) =>
+              relation.targetKind == ItemRelationTargetKind.scene &&
+              relation.targetId == sceneId,
+        )
+        .map(
+          (relation) =>
+              "${relation.itemKind == ItemReferenceKind.itemClass ? ProjectObjectKind.itemClass.name : ProjectObjectKind.itemInstance.name}:${relation.itemId}",
+        )
+        .toSet();
+    final selected = await showProjectObjectSelector(
+      context: context,
+      title: "選擇要分配給場景的物品",
+      allowedKinds: const {
+        ProjectObjectKind.itemClass,
+        ProjectObjectKind.itemInstance,
+      },
+      excludedKeys: excluded,
+    );
+    final itemKind = selected?.itemReferenceKind;
+    if (!mounted || selected == null || itemKind == null) return;
+    ref.read(itemWorkspaceProvider.notifier).putRelation(
+      ItemRelationData(
+        relationId: const Uuid().v4(),
+        itemId: selected.id,
+        itemKind: itemKind,
+        targetId: sceneId,
+        targetKind: ItemRelationTargetKind.scene,
+        role: "大綱物件",
+      ),
+    );
   }
 
   Future<void> _convertLegacyOutlineItem({
@@ -3438,35 +3599,30 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
             const SizedBox(height: 16),
 
-            CardList(
-              title: "物件",
-              icon: Icons.category,
-              items: scene.item,
-              conversionKeyPrefix: "scene-legacy-item-${scene.sceneUUID}",
-              onConvert: (index) => _convertLegacyOutlineItem(
-                eventId: event.storyEventUUID,
-                sceneId: scene.sceneUUID,
-                legacyIndex: index,
-                legacyName: scene.item[index],
+            if (scene.item.isNotEmpty) ...[
+              _buildLegacyOutlineItems(
+                items: scene.item,
+                keyPrefix: "scene-legacy-item-${scene.sceneUUID}",
+                onConvert: (index) => _convertLegacyOutlineItem(
+                  eventId: event.storyEventUUID,
+                  sceneId: scene.sceneUUID,
+                  legacyIndex: index,
+                  legacyName: scene.item[index],
+                ),
+                onRemove: (index) {
+                  setState(() {
+                    _updateSceneAt(si, ei, ci, (current) {
+                      final items = [...current.item]..removeAt(index);
+                      return current.copyWith(item: items);
+                    });
+                  });
+                  _notifyChange();
+                },
               ),
-              onAdd: (item) {
-                setState(() {
-                  _updateSceneAt(si, ei, ci, (current) {
-                    return current.copyWith(item: [...current.item, item]);
-                  });
-                });
-                _notifyChange();
-              },
-              onRemove: (index) {
-                setState(() {
-                  _updateSceneAt(si, ei, ci, (current) {
-                    final items = [...current.item]..removeAt(index);
-                    return current.copyWith(item: items);
-                  });
-                });
-                _notifyChange();
-              },
-            ),
+              const SizedBox(height: 16),
+            ],
+
+            _buildSceneItemManager(scene.sceneUUID),
 
             const SizedBox(height: 16),
 

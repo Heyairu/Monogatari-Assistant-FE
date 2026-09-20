@@ -47,11 +47,22 @@ WorldItemMigrationResult migrateWorldItems({
     return result;
   }
 
-  List<LocationData> visit(Iterable<LocationData> nodes, List<String> path) {
+  List<LocationData> visit(
+    Iterable<LocationData> nodes,
+    List<String> path,
+    String? parentLocationId,
+  ) {
     final retained = <LocationData>[];
     for (final node in nodes) {
       final nodePath = [...path, node.localName].where((v) => v.isNotEmpty);
-      final children = visit(node.child, nodePath.toList(growable: false));
+      final containingLocationId = node.nodeType == WorldNodeType.location
+          ? node.id
+          : parentLocationId;
+      final children = visit(
+        node.child,
+        nodePath.toList(growable: false),
+        containingLocationId,
+      );
       if (node.nodeType != WorldNodeType.item) {
         retained.add(node.copyWith(child: children));
         continue;
@@ -90,6 +101,9 @@ WorldItemMigrationResult migrateWorldItems({
             name: StateValue.set(node.localName),
             description: StateValue.set(node.note),
             properties: StateValue.set(properties),
+            locationId: parentLocationId == null
+                ? null
+                : StateValue<String?>.set(parentLocationId),
           ),
           conversionSource: source,
         );
@@ -105,7 +119,7 @@ WorldItemMigrationResult migrateWorldItems({
   }
 
   return WorldItemMigrationResult(
-    worldNodes: List.unmodifiable(visit(worldNodes, const [])),
+    worldNodes: List.unmodifiable(visit(worldNodes, const [], null)),
     itemClasses: Map.unmodifiable(nextClasses),
     itemInstances: Map.unmodifiable(nextInstances),
     warnings: List.unmodifiable(warnings),

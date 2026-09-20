@@ -31,6 +31,82 @@ void _placeScene(ProviderContainer container, String sceneId, {int tick = 12}) {
 }
 
 void main() {
+  testWidgets("item page uses collection and detail sections", (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(itemWorkspaceProvider.notifier)
+        .putClass(ItemClassData(classId: "relic", name: "古代遺物"));
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: ItemView()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text("物品設定"), findsOneWidget);
+    expect(find.text("物品清單"), findsOneWidget);
+    expect(find.text("物品詳情"), findsOneWidget);
+    expect(find.byKey(const Key("item-class-collection")), findsOneWidget);
+    expect(find.textContaining("專用 · 0 件單件 · 0 個關聯"), findsOneWidget);
+
+    final addInput = find.descendant(
+      of: find.byType(AddItemInput),
+      matching: find.byType(TextFormField),
+    );
+    await tester.enterText(addInput, "魔法書");
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(
+      container
+          .read(itemWorkspaceProvider)
+          .itemClasses
+          .values
+          .any((itemClass) => itemClass.name == "魔法書"),
+      isTrue,
+    );
+  });
+
+  testWidgets("item list archives a Class and its active instances", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(itemWorkspaceProvider.notifier);
+    notifier.putClass(ItemClassData(classId: "relic", name: "古代遺物"));
+    notifier.putInstance(
+      ItemInstanceData(
+        instanceId: "relic-instance",
+        classId: "relic",
+        name: "古代遺物",
+      ),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: ItemView()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip("封存物品"));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("1 件單件物品會一併封存"), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, "封存"));
+    await tester.pumpAndSettle();
+
+    final workspace = container.read(itemWorkspaceProvider);
+    expect(workspace.itemClasses["relic"]?.archived, isTrue);
+    expect(workspace.itemInstances["relic-instance"]?.archived, isTrue);
+    expect(find.text("古代遺物"), findsNothing);
+  });
+
   testWidgets("item list filters by mode, category and current assignment", (
     tester,
   ) async {
@@ -246,7 +322,31 @@ void main() {
     );
   });
 
-  testWidgets("narrow item page can return from details to the list", (
+  testWidgets("new item can switch to generic without a Scene", (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: ItemView()),
+      ),
+    );
+    await tester.tap(find.byKey(const Key("item-add-class")));
+    await tester.pump();
+
+    final modeSwitch = find.byKey(const Key("item-mode-switch"));
+    tester.widget<SegmentedButton<ItemMode>>(modeSwitch).onSelectionChanged!({
+      ItemMode.generic,
+    });
+    await tester.pumpAndSettle();
+
+    final workspace = container.read(itemWorkspaceProvider);
+    expect(workspace.itemClasses.values.single.mode, ItemMode.generic);
+    expect(workspace.itemInstances, isEmpty);
+    expect(find.text("請先將 Scene 放入時間軸，再轉為非專用。"), findsNothing);
+  });
+
+  testWidgets("narrow item page keeps the selector above item details", (
     tester,
   ) async {
     tester.view.physicalSize = const Size(600, 900);
@@ -259,10 +359,11 @@ void main() {
     );
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
-    expect(find.text("返回物品清單"), findsOneWidget);
-    await tester.tap(find.text("返回物品清單"));
-    await tester.pump();
+    expect(find.byKey(const Key("item-narrow-sections")), findsOneWidget);
+    expect(find.text("物品清單"), findsOneWidget);
     expect(find.text("搜尋物品"), findsOneWidget);
+    expect(find.text("物品詳情"), findsOneWidget);
+    expect(find.text("返回物品清單"), findsNothing);
   });
 
   testWidgets("item page explicitly migrates legacy world items", (

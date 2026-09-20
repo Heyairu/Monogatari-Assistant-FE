@@ -2873,6 +2873,19 @@ class FileService {
     required String fileName,
     required String extension,
   }) async {
+    await exportTextWithResult(
+      content: content,
+      fileName: fileName,
+      extension: extension,
+    );
+  }
+
+  /// 匯出文字檔案，並回報使用者是否實際選擇了儲存位置。
+  static Future<bool> exportTextWithResult({
+    required String content,
+    required String fileName,
+    required String extension,
+  }) async {
     try {
       String exportContent = content;
 
@@ -2887,12 +2900,13 @@ class FileService {
         content: exportContent, // 傳遞內容以供某些平台 direct save
       );
 
-      if (outputFile == null) return;
+      if (outputFile == null) return false;
 
       // 在桌面平台上仍需要寫入檔案
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await _FileIO.write(outputFile, exportContent);
       }
+      return true;
     } catch (e) {
       throw FileException("匯出檔案失敗: ${e.toString()}");
     }

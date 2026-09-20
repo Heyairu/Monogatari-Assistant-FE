@@ -31,6 +31,8 @@ class _ItemViewState extends ConsumerState<ItemView> {
   String? _selectedClassSnapshotId;
   final Map<String, String?> _selectedInstanceSnapshotIds = {};
   final _searchController = TextEditingController();
+  final _pageScrollController = ScrollController();
+  final _classListScrollController = ScrollController();
   String _modeFilter = _allFilter;
   String _categoryFilter = _allFilter;
   String _assignmentFilter = _allFilter;
@@ -54,15 +56,20 @@ class _ItemViewState extends ConsumerState<ItemView> {
   @override
   void dispose() {
     _searchController.dispose();
+    _pageScrollController.dispose();
+    _classListScrollController.dispose();
     super.dispose();
   }
 
-  void _createClass() {
+  void _createClass([String? requestedName]) {
+    final name = requestedName?.trim().isNotEmpty == true
+        ? requestedName!.trim()
+        : "新物品";
     final itemClass = ItemClassData(
       classId: _uuid.v4(),
-      name: "新物品",
+      name: name,
       mode: ItemMode.dedicated,
-      defaultState: ItemSnapshotState(name: "新物品"),
+      defaultState: ItemSnapshotState(name: name),
     );
     ref.read(itemWorkspaceProvider.notifier).putClass(itemClass);
     ref
@@ -78,6 +85,40 @@ class _ItemViewState extends ConsumerState<ItemView> {
       _selectedClassId = itemClass.classId;
       _selectedClassSnapshotId = null;
       _selectedInstanceSnapshotIds.clear();
+    });
+  }
+
+  Future<void> _archiveClass(
+    ItemClassData itemClass,
+    ItemWorkspaceData workspace,
+  ) async {
+    final activeInstances = workspace.itemInstances.values
+        .where(
+          (instance) =>
+              instance.classId == itemClass.classId && !instance.archived,
+        )
+        .toList(growable: false);
+    final confirmed = await AppDialog.confirm(
+      context: context,
+      title: "封存物品",
+      message:
+          "要封存「${itemClass.name.trim().isEmpty ? "未命名物品" : itemClass.name}」嗎？"
+          "現有關聯與歷史快照會保留，${activeInstances.length} 件單件物品會一併封存。",
+      confirmLabel: "封存",
+    );
+    if (!confirmed || !mounted) return;
+
+    final notifier = ref.read(itemWorkspaceProvider.notifier);
+    for (final instance in activeInstances) {
+      notifier.putInstance(instance.copyWith(archived: true));
+    }
+    notifier.putClass(itemClass.copyWith(archived: true));
+    setState(() {
+      if (_selectedClassId == itemClass.classId) {
+        _selectedClassId = null;
+        _selectedClassSnapshotId = null;
+        _selectedInstanceSnapshotIds.clear();
+      }
     });
   }
 
@@ -1027,6 +1068,11 @@ class _ItemViewState extends ConsumerState<ItemView> {
     List<ItemInstanceData> instances,
   ) async {
     if (mode == ItemMode.generic && itemClass.mode != ItemMode.generic) {
+      final notifier = ref.read(itemWorkspaceProvider.notifier);
+      if (notifier.canChangeToGenericDirectly(itemClass.classId)) {
+        notifier.changeClassMode(classId: itemClass.classId, mode: mode);
+        return;
+      }
       await _demoteToGeneric(itemClass, instances);
       return;
     }
@@ -1454,64 +1500,120 @@ class _ItemViewState extends ConsumerState<ItemView> {
     );
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("物品設定"),
-        actions: [
-          if (worldItemCount > 0)
-            IconButton(
-              key: const Key("item-migrate-world"),
-              tooltip: "搬移世界設定中的 $worldItemCount 筆物品",
-              onPressed: _migrateWorldItems,
-              icon: const Icon(Icons.move_down),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const LargeTitle(
+                  icon: Icons.inventory_2_outlined,
+                  text: "物品設定",
+                ),
+                const Spacer(),
+                if (worldItemCount > 0)
+                  IconButton(
+                    key: const Key("item-migrate-world"),
+                    tooltip: "搬移世界設定中的 $worldItemCount 筆物品",
+                    onPressed: _migrateWorldItems,
+                    icon: const Icon(Icons.move_down_outlined),
+                  ),
+                IconButton(
+                  key: const Key("item-add-class"),
+                  tooltip: "新增物品",
+                  onPressed: _createClass,
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
             ),
-          IconButton(
-            key: const Key("item-add-class"),
-            tooltip: "新增物品",
-            onPressed: _createClass,
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 720) {
-            return selected == null
-                ? _buildClassList(classes, categories)
-                : _buildDetails(selected, workspace);
-          }
-          return Row(
-            children: [
-              SizedBox(width: 300, child: _buildClassList(classes, categories)),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: selected == null
-                    ? const Center(child: Text("選擇或新增物品"))
-                    : _buildDetails(selected, workspace),
+            const SizedBox(height: 24),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 720) {
+                    final listHeight = (constraints.maxHeight * 0.62)
+                        .clamp(420.0, 560.0)
+                        .toDouble();
+                    return Scrollbar(
+                      controller: _pageScrollController,
+                      child: ListView(
+                        key: const Key("item-narrow-sections"),
+                        controller: _pageScrollController,
+                        primary: false,
+                        children: [
+                          SizedBox(
+                            height: listHeight,
+                            child: _buildClassList(
+                              classes,
+                              categories,
+                              workspace,
+                              tick,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            height: constraints.maxHeight,
+                            child: selected == null
+                                ? _buildEmptyDetails()
+                                : _buildDetailsSection(selected, workspace),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 360,
+                        child: _buildClassList(
+                          classes,
+                          categories,
+                          workspace,
+                          tick,
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Expanded(
+                        child: selected == null
+                            ? _buildEmptyDetails()
+                            : _buildDetailsSection(selected, workspace),
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildClassList(List<ItemClassData> classes, List<String> categories) {
+  Widget _buildClassList(
+    List<ItemClassData> classes,
+    List<String> categories,
+    ItemWorkspaceData workspace,
+    int tick,
+  ) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              labelText: "搜尋物品",
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
+        const MediumTitle(icon: Icons.inventory_2_outlined, text: "物品清單"),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _searchController,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search),
+            labelText: "搜尋物品",
+            border: OutlineInputBorder(),
           ),
+          onChanged: (_) => setState(() {}),
         ),
+        const SizedBox(height: 8),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
               Row(
@@ -1567,38 +1669,138 @@ class _ItemViewState extends ConsumerState<ItemView> {
             ],
           ),
         ),
+        const SizedBox(height: 8),
         Expanded(
-          child: classes.isEmpty
-              ? Center(
-                  child: FilledButton.icon(
-                    onPressed: _createClass,
-                    icon: const Icon(Icons.add),
-                    label: const Text("新增第一個物品"),
+          child: LayoutBuilder(
+            builder: (context, constraints) => CollectionPanel.builder(
+              key: const Key("item-class-collection"),
+              title: "物品清單",
+              showSectionCard: false,
+              minHeight: constraints.maxHeight,
+              maxHeight: constraints.maxHeight,
+              controller: _classListScrollController,
+              showScrollbar: true,
+              itemCount: classes.length,
+              emptyTitle: "尚無物品",
+              emptyDescription: "新增第一個物品",
+              emptyIcon: Icons.inventory_2_outlined,
+              itemBuilder: (context, index) {
+                final itemClass = classes[index];
+                final instanceCount = workspace.itemInstances.values
+                    .where(
+                      (instance) =>
+                          instance.classId == itemClass.classId &&
+                          !instance.archived,
+                    )
+                    .length;
+                final relationCount = workspace.itemRelations
+                    .where(
+                      (relation) =>
+                          relation.itemKind == ItemReferenceKind.itemClass &&
+                          relation.itemId == itemClass.classId,
+                    )
+                    .length;
+                final assigned = _isAssignedAtTick(
+                  itemClass: itemClass,
+                  workspace: workspace,
+                  tick: tick,
+                );
+                return Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    key: ValueKey("item-class-row-${itemClass.classId}"),
+                    selected: itemClass.classId == _selectedClassId,
+                    leading: Icon(
+                      _modeIcon(itemClass.mode),
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(
+                      itemClass.name.trim().isEmpty ? "未命名物品" : itemClass.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      "${_modeLabel(itemClass.mode)} · $instanceCount 件單件 · "
+                      "$relationCount 個關聯${assigned ? " · 已有歸屬" : ""}",
+                    ),
+                    trailing: ItemActionBar.editDelete(
+                      iconSize: 18,
+                      editTooltip: "編輯物品",
+                      deleteTooltip: "封存物品",
+                      onEdit: () => _selectClass(itemClass.classId),
+                      onDelete: () => _archiveClass(itemClass, workspace),
+                    ),
+                    onTap: () => _selectClass(itemClass.classId),
                   ),
-                )
-              : ListView.builder(
-                  itemCount: classes.length,
-                  itemBuilder: (context, index) {
-                    final itemClass = classes[index];
-                    return ListTile(
-                      selected: itemClass.classId == _selectedClassId,
-                      leading: Icon(_modeIcon(itemClass.mode)),
-                      title: Text(
-                        itemClass.name.trim().isEmpty
-                            ? "未命名物品"
-                            : itemClass.name,
-                      ),
-                      subtitle: Text(_modeLabel(itemClass.mode)),
-                      onTap: () => setState(() {
-                        _selectedClassId = itemClass.classId;
-                        _selectedClassSnapshotId = null;
-                        _selectedInstanceSnapshotIds.clear();
-                      }),
-                    );
-                  },
-                ),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        AddItemInput(title: "物品", onAdd: _createClass),
+      ],
+    );
+  }
+
+  void _selectClass(String classId) {
+    setState(() {
+      _selectedClassId = classId;
+      _selectedClassSnapshotId = null;
+      _selectedInstanceSnapshotIds.clear();
+    });
+  }
+
+  Widget _buildEmptyDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const MediumTitle(icon: Icons.info_outline, text: "物品詳情"),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            decoration: _detailPanelDecoration(context),
+            child: const Material(
+              type: MaterialType.transparency,
+              child: AppEmptyState(
+                title: "選擇或新增物品",
+                description: "物品的模式、快照、歸屬與關聯會顯示在這裡",
+                icon: Icons.inventory_2_outlined,
+              ),
+            ),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDetailsSection(
+    ItemClassData itemClass,
+    ItemWorkspaceData workspace,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const MediumTitle(icon: Icons.info_outline, text: "物品詳情"),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            decoration: _detailPanelDecoration(context),
+            child: Material(
+              type: MaterialType.transparency,
+              child: _buildDetails(itemClass, workspace),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  BoxDecoration _detailPanelDecoration(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return BoxDecoration(
+      border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
+      borderRadius: BorderRadius.circular(8),
+      color: scheme.surfaceContainerLowest,
     );
   }
 
@@ -1645,19 +1847,10 @@ class _ItemViewState extends ConsumerState<ItemView> {
       key: ValueKey("item-details-${itemClass.classId}"),
       padding: const EdgeInsets.all(16),
       children: [
-        if (MediaQuery.sizeOf(context).width < 720)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => setState(() => _selectedClassId = null),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text("返回物品清單"),
-            ),
-          ),
         TextFormField(
           key: ValueKey("item-name-${itemClass.classId}"),
           initialValue: itemClass.name,
-          decoration: const InputDecoration(labelText: "名稱"),
+          decoration: const InputDecoration(labelText: "名稱", isDense: true),
           onChanged: (value) => _updateClass(
             itemClass.copyWith(
               name: value,
@@ -1669,14 +1862,14 @@ class _ItemViewState extends ConsumerState<ItemView> {
         TextFormField(
           key: ValueKey("item-unit-${itemClass.classId}"),
           initialValue: itemClass.unit,
-          decoration: const InputDecoration(labelText: "數量單位"),
+          decoration: const InputDecoration(labelText: "數量單位", isDense: true),
           onChanged: (value) => _updateClass(itemClass.copyWith(unit: value)),
         ),
         const SizedBox(height: 12),
         TextFormField(
           key: ValueKey("item-category-${itemClass.classId}"),
           initialValue: itemClass.category,
-          decoration: const InputDecoration(labelText: "分類"),
+          decoration: const InputDecoration(labelText: "分類", isDense: true),
           onChanged: (value) =>
               _updateClass(itemClass.copyWith(category: value)),
         ),
@@ -1709,6 +1902,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
             labelText: "設定說明",
             alignLabelWithHint: true,
             border: OutlineInputBorder(),
+            isDense: true,
           ),
           onChanged: (value) => _updateClass(
             itemClass.copyWith(

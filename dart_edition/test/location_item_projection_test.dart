@@ -11,6 +11,76 @@ import "package:monogatari_assistant/presentation/providers/project_state_provid
 import "package:monogatari_assistant/presentation/providers/timeline_providers.dart";
 
 void main() {
+  testWidgets("world detail fields defer writes until IME composition ends", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(worldSettingsDataProvider.notifier).setWorldSettingsData([
+      LocationData(id: "ime-location", localName: "原始名稱"),
+    ]);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: WorldSettingsView(
+              initialLocationId: "ime-location",
+              selectionRequestId: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final region = find.byKey(const ValueKey("world-name-ime-location"));
+    final field = find.descendant(
+      of: region,
+      matching: find.byType(TextFormField),
+    );
+    await tester.tap(field);
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: "世",
+        selection: TextSelection.collapsed(offset: 1),
+        composing: TextRange(start: 0, end: 1),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      container
+          .read(worldSettingsDataProvider)
+          .singleWhere((location) => location.id == "ime-location")
+          .localName,
+      "原始名稱",
+    );
+    final controller = tester.widget<TextFormField>(field).controller!;
+    expect(controller.value.composing, const TextRange(start: 0, end: 1));
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: "世界",
+        selection: TextSelection.collapsed(offset: 2),
+        composing: TextRange.empty,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 301));
+
+    expect(
+      container
+          .read(worldSettingsDataProvider)
+          .singleWhere((location) => location.id == "ime-location")
+          .localName,
+      "世界",
+    );
+  });
+
   testWidgets(
     "location tree retains existing children beneath an unavailable parent",
     (tester) async {
@@ -191,6 +261,30 @@ void main() {
           ),
       isTrue,
     );
+
+    container.read(itemWorkspaceProvider.notifier).putClass(
+      ItemClassData(
+        classId: "water",
+        name: "飲水",
+        mode: ItemMode.generic,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final assignButton = find.byKey(const Key("location-assign-item"));
+    await tester.ensureVisible(assignButton);
+    await tester.tap(assignButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("飲水"));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key("location-assignment-quantity")),
+      "6",
+    );
+    await tester.tap(find.byKey(const Key("location-assignment-confirm")));
+    await tester.pumpAndSettle();
+    final water = container.read(itemWorkspaceProvider).itemClasses["water"]!;
+    expect(water.defaultState.allocations.single.locationId, "warehouse");
+    expect(water.defaultState.allocations.single.quantity, 6);
   });
 
   testWidgets("location snapshot is anchored to a timeline Scene", (

@@ -495,6 +495,37 @@ void main() {
             ),
         isTrue,
       );
+
+      container.read(itemWorkspaceProvider.notifier).putClass(
+        ItemClassData(
+          classId: "rations",
+          name: "乾糧",
+          mode: ItemMode.generic,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final assignButton = find.byKey(const Key("character-assign-item"));
+      await tester.ensureVisible(assignButton);
+      await tester.tap(assignButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("乾糧"));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key("character-assignment-quantity")),
+        "3",
+      );
+      await tester.tap(
+        find.byKey(const Key("character-assignment-confirm")),
+      );
+      await tester.pumpAndSettle();
+      final rations = container
+          .read(itemWorkspaceProvider)
+          .itemClasses["rations"]!;
+      expect(
+        rations.defaultState.allocations.single.holderCharacterId,
+        characterId,
+      );
+      expect(rations.defaultState.allocations.single.quantity, 3);
     });
 
     testWidgets(
@@ -532,11 +563,9 @@ void main() {
         await tester.ensureVisible(statusSection);
         await tester.tap(statusSection);
         await tester.pumpAndSettle();
-        final possessionCell = find.byKey(const ValueKey("possession-name-0"));
-        await tester.ensureVisible(possessionCell);
-        await tester.tap(possessionCell);
-        await tester.pump();
-        final convert = find.byTooltip("轉換為正式物品");
+        final convert = find.byKey(
+          const ValueKey("legacy-possession-convert-0"),
+        );
         await tester.ensureVisible(convert);
         await tester.tap(convert);
         await tester.pumpAndSettle();

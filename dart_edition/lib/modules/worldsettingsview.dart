@@ -33,6 +33,8 @@ import "../models/location_snapshot_data.dart";
 import "../models/item_snapshot_data.dart";
 import "../models/item_data.dart";
 import "../application/locations/location_deletion.dart";
+import "../application/items/item_assignment_operations.dart";
+import "../application/items/world_item_migration.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
@@ -46,6 +48,8 @@ final _log = Logger("WorldSettingsView");
 class _LocationItemProjectionEntry {
   final String id;
   final String classId;
+  final String itemId;
+  final ItemReferenceKind itemKind;
   final String name;
   final String quantity;
   final String description;
@@ -53,6 +57,8 @@ class _LocationItemProjectionEntry {
   const _LocationItemProjectionEntry({
     required this.id,
     required this.classId,
+    required this.itemId,
+    required this.itemKind,
     required this.name,
     required this.quantity,
     required this.description,
@@ -481,6 +487,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
 
   void _scheduleDetailDraft() {
     if (_isSyncingDetailControllers) return;
+    if (_hasActiveDetailComposition) {
+      _detailDraftTimer?.cancel();
+      _detailDraftTimer = null;
+      _pendingDetailCommit = null;
+      return;
+    }
     final nodeId = selectedNodeId ?? lastSelectedNodeId;
     if (nodeId == null) return;
     final name = locationNameController.text;
@@ -500,6 +512,16 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       _pendingDetailCommit = null;
       commit?.call();
     });
+  }
+
+  bool get _hasActiveDetailComposition =>
+      _isComposing(locationNameController) ||
+      _isComposing(locationTypeController) ||
+      _isComposing(locationNoteController);
+
+  bool _isComposing(TextEditingController controller) {
+    final composing = controller.value.composing;
+    return composing.isValid && !composing.isCollapsed;
   }
 
   void _flushDetailDraft() {
@@ -1152,6 +1174,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             _LocationItemProjectionEntry(
               id: allocation.allocationId,
               classId: itemClass.classId,
+              itemId: itemClass.classId,
+              itemKind: ItemReferenceKind.itemClass,
               name: state.name.isEmpty ? itemClass.name : state.name,
               quantity: allocation.quantity == null
                   ? "未知"
@@ -1177,6 +1201,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           _LocationItemProjectionEntry(
             id: instance.instanceId,
             classId: itemClass.classId,
+            itemId: instance.instanceId,
+            itemKind: ItemReferenceKind.instance,
             name: state.name.isEmpty
                 ? (instance.name.isEmpty ? itemClass.name : instance.name)
                 : state.name,
@@ -1249,12 +1275,27 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             ),
           ),
         const SizedBox(height: 16),
-        const SmallTitle(icon: Icons.inventory_2_outlined, text: "目前位於本地點的物品"),
+        Row(
+          children: [
+            const Expanded(
+              child: SmallTitle(
+                icon: Icons.inventory_2_outlined,
+                text: "目前位於本地點的物品",
+              ),
+            ),
+            FilledButton.tonalIcon(
+              key: const Key("location-assign-item"),
+              onPressed: () => _assignItemToLocation(locationId),
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text("分配物品"),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         if (entries.isEmpty)
           const AppEmptyState(
             title: "目前沒有物品",
-            description: "在物品頁設定所在地或聚合分配後會顯示於此",
+            description: "按「分配物品」即可在此頁設定所在地或聚合數量",
             icon: Icons.inventory_2_outlined,
             compact: true,
           )
@@ -1267,6 +1308,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                 DataColumn(label: Text("物品")),
                 DataColumn(label: Text("數量"), numeric: true),
                 DataColumn(label: Text("狀態／備註")),
+                DataColumn(label: Text("操作")),
               ],
               rows: entries
                   .map(
@@ -1285,6 +1327,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                         ),
                         DataCell(Text(entry.quantity)),
                         DataCell(Text(entry.description)),
+                        DataCell(
+                          IconButton(
+                            key: ValueKey("location-unassign-item-${entry.id}"),
+                            tooltip: "清除預設分配",
+                            onPressed: () =>
+                                _clearLocationItemAssignment(locationId, entry),
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                        ),
                       ],
                     ),
                   )
@@ -1331,6 +1382,170 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             role: "相關",
           ),
         );
+  }
+
+  Future<void> _assignItemToLocation(String locationId) async {
+    final selected = await showProjectObjectSelector(
+      context: context,
+      title: "選擇要放在本地點的物品",
+      allowedKinds: const {
+        ProjectObjectKind.itemClass,
+        ProjectObjectKind.itemInstance,
+      },
+    );
+    final itemKind = selected?.itemReferenceKind;
+    if (!mounted || selected == null || itemKind == null) return;
+    int? quantity = 1;
+    final workspace = ref.read(itemWorkspaceProvider);
+    final itemClass = workspace.itemClasses[selected.classId ?? selected.id];
+    if (itemKind == ItemReferenceKind.itemClass &&
+        itemClass != null &&
+        itemClass.mode != ItemMode.dedicated) {
+      var quantityText = "1";
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("分配「${selected.label}」"),
+          content: TextFormField(
+            key: const Key("location-assignment-quantity"),
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            initialValue: quantityText,
+            decoration: const InputDecoration(
+              labelText: "數量",
+              helperText: "留空代表數量未知",
+            ),
+            onChanged: (value) => quantityText = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              key: const Key("location-assignment-confirm"),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("分配"),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      quantity = quantityText.trim().isEmpty
+          ? null
+          : int.tryParse(quantityText.trim());
+      if (quantityText.trim().isNotEmpty &&
+          (quantity == null || quantity < 0)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("數量必須是零或正整數。")));
+        return;
+      }
+    }
+    try {
+      final current = ref.read(itemWorkspaceProvider);
+      final result = assignItemDefault(
+        itemClasses: current.itemClasses,
+        itemInstances: current.itemInstances,
+        itemKind: itemKind,
+        itemId: selected.id,
+        targetKind: ItemRelationTargetKind.location,
+        targetId: locationId,
+        allocationId: const Uuid().v4(),
+        quantity: quantity,
+      );
+      ref
+          .read(itemWorkspaceProvider.notifier)
+          .setWorkspace(
+            current.copyWith(
+              itemClasses: result.itemClasses,
+              itemInstances: result.itemInstances,
+            ),
+          );
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("無法分配物品：$error")));
+      }
+    }
+  }
+
+  void _clearLocationItemAssignment(
+    String locationId,
+    _LocationItemProjectionEntry entry,
+  ) {
+    final current = ref.read(itemWorkspaceProvider);
+    final result = clearItemDefaultAssignment(
+      itemClasses: current.itemClasses,
+      itemInstances: current.itemInstances,
+      itemKind: entry.itemKind,
+      itemId: entry.itemId,
+      targetKind: ItemRelationTargetKind.location,
+      targetId: locationId,
+    );
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .setWorkspace(
+          current.copyWith(
+            itemClasses: result.itemClasses,
+            itemInstances: result.itemInstances,
+          ),
+        );
+  }
+
+  Future<void> _migrateLegacyWorldItems() async {
+    final worldNodes = ref.read(worldSettingsDataProvider);
+    final count = countWorldItemNodes(worldNodes);
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("搬移舊版世界物品"),
+        content: Text("將 $count 筆物品子節點搬到新版物品管理；原 ID、內容與來源路徑會保留。"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("取消"),
+          ),
+          FilledButton(
+            key: const Key("world-migrate-items-confirm"),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("搬移"),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    _flushDetailDraft();
+    final latestWorldNodes = ref.read(worldSettingsDataProvider);
+    final workspace = ref.read(itemWorkspaceProvider);
+    final result = migrateWorldItems(
+      worldNodes: latestWorldNodes,
+      existingClasses: workspace.itemClasses,
+      existingInstances: workspace.itemInstances,
+    );
+    ref
+        .read(worldSettingsDataProvider.notifier)
+        .setWorldSettingsData(result.worldNodes);
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .setWorkspace(
+          workspace.copyWith(
+            itemClasses: result.itemClasses,
+            itemInstances: result.itemInstances,
+          ),
+        );
+    setState(() {
+      selectedNodeId = null;
+      lastSelectedNodeId = null;
+      _selectedLocationSnapshotId = null;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("已搬移 ${result.migratedCount} 筆物品到新版物品管理。")),
+      );
+    }
   }
 
   // MARK: - UI 介面建構
@@ -1819,25 +2034,39 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           ),
           const SizedBox(height: 16),
 
-          AppDropdownField<WorldNodeType>(
-            value: location.nodeType,
-            labelText: "節點類別",
-            options: WorldNodeType.values
-                .map(
-                  (type) => DropdownOption<WorldNodeType>(
-                    value: type,
-                    label: type.label,
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value == null || value == location.nodeType) return;
-              _updateLocationById(
-                location.id,
-                (current) => current.copyWith(nodeType: value),
-              );
-            },
-          ),
+          if (location.nodeType == WorldNodeType.item)
+            AppNoticeBanner(
+              message: "這是舊版物品子節點。新版物品不再存放於世界設定樹，請搬移後在本頁地點區直接管理分配。",
+              icon: Icons.move_down_outlined,
+              tone: AppFeedbackTone.warning,
+              action: TextButton.icon(
+                key: const Key("world-migrate-items"),
+                onPressed: _migrateLegacyWorldItems,
+                icon: const Icon(Icons.move_down_outlined),
+                label: const Text("搬移全部物品"),
+              ),
+            )
+          else
+            AppDropdownField<WorldNodeType>(
+              value: location.nodeType,
+              labelText: "節點類別",
+              options: WorldNodeType.values
+                  .where((type) => type != WorldNodeType.item)
+                  .map(
+                    (type) => DropdownOption<WorldNodeType>(
+                      value: type,
+                      label: type.label,
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null || value == location.nodeType) return;
+                _updateLocationById(
+                  location.id,
+                  (current) => current.copyWith(nodeType: value),
+                );
+              },
+            ),
           const SizedBox(height: 16),
 
           if (location.nodeType == WorldNodeType.location) ...[
@@ -2571,7 +2800,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     TextEditingController controller,
     String text,
   ) {
-    if (controller.text == text) {
+    if (controller.text == text || _isComposing(controller)) {
       return;
     }
     controller.text = text;

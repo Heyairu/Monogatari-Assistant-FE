@@ -290,6 +290,35 @@ void main() {
     },
   );
 
+  test("pristine identified item can become generic without a Scene", () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(itemWorkspaceProvider.notifier);
+    notifier.putClass(
+      ItemClassData(
+        classId: "class",
+        name: "新物品",
+        mode: ItemMode.dedicated,
+        defaultState: ItemSnapshotState(name: "新物品"),
+      ),
+    );
+    notifier.putInstance(
+      ItemInstanceData(
+        instanceId: "temporary-instance",
+        classId: "class",
+        name: "新物品",
+      ),
+    );
+
+    expect(notifier.canChangeToGenericDirectly("class"), isTrue);
+    notifier.changeClassMode(classId: "class", mode: ItemMode.generic);
+
+    final workspace = container.read(itemWorkspaceProvider);
+    expect(workspace.itemClasses["class"]!.mode, ItemMode.generic);
+    expect(workspace.itemClasses["class"]!.name, "新物品");
+    expect(workspace.itemInstances, isEmpty);
+  });
+
   test("semi-dedicated conversion cannot merge multiple stable IDs", () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

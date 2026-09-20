@@ -2733,6 +2733,50 @@ class ItemWorkspaceNotifier extends Notifier<ItemWorkspaceData> {
     );
   }
 
+  bool canChangeToGenericDirectly(String classId) {
+    final itemClass = state.itemClasses[classId];
+    if (itemClass == null) return false;
+    if (itemClass.mode == ItemMode.generic) return true;
+    if (itemClass.archived || itemClass.conversionSource != null) return false;
+    if (itemClass.defaultState.holderCharacterId != null ||
+        itemClass.defaultState.locationId != null ||
+        itemClass.defaultState.ownerCharacterIds.isNotEmpty ||
+        itemClass.defaultState.allocations.isNotEmpty) {
+      return false;
+    }
+    if (state.itemClassStateChanges.any(
+      (change) => change.classId == classId,
+    )) {
+      return false;
+    }
+
+    final instances = state.itemInstances.values
+        .where((instance) => instance.classId == classId)
+        .toList(growable: false);
+    if (instances.length > 1) return false;
+    final instanceIds = instances
+        .map((instance) => instance.instanceId)
+        .toSet();
+    if (instances.any(
+      (instance) =>
+          instance.archived ||
+          instance.conversionSource != null ||
+          !instance.defaultState.isEmpty,
+    )) {
+      return false;
+    }
+    if (state.itemInstanceStateChanges.any(
+      (change) => instanceIds.contains(change.instanceId),
+    )) {
+      return false;
+    }
+    return !state.itemRelations.any(
+      (relation) =>
+          relation.itemKind == ItemReferenceKind.instance &&
+          instanceIds.contains(relation.itemId),
+    );
+  }
+
   void changeClassMode({
     required String classId,
     required ItemMode mode,
@@ -2747,7 +2791,22 @@ class ItemWorkspaceNotifier extends Notifier<ItemWorkspaceData> {
         .where((value) => value.classId == classId && !value.archived)
         .toList(growable: false);
     if (mode == ItemMode.generic) {
-      throw StateError("專用或半專用物品必須透過 Scene 安全轉為新的非專用 Class。");
+      if (!canChangeToGenericDirectly(classId)) {
+        throw StateError("專用或半專用物品必須透過 Scene 安全轉為新的非專用 Class。");
+      }
+      setWorkspace(
+        state.copyWith(
+          itemClasses: {
+            ...state.itemClasses,
+            classId: itemClass.copyWith(mode: ItemMode.generic),
+          },
+          itemInstances: {
+            for (final entry in state.itemInstances.entries)
+              if (entry.value.classId != classId) entry.key: entry.value,
+          },
+        ),
+      );
+      return;
     }
     if (mode == ItemMode.dedicated && activeInstances.length > 1) {
       throw StateError("多個固定 ID 不能直接合併為一件專用物品。");

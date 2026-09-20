@@ -3522,7 +3522,47 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   Widget _buildCopilotView() {
-    return const copilot_module.CopilotView();
+    return copilot_module.CopilotView(
+      onOpenChapter: (chapterUUID) {
+        _flushPendingEditorContent();
+        _syncEditorToSelectedChapter();
+        final opened = ref
+            .read(editorCoordinatorProvider.notifier)
+            .navigateToChapter(chapterUUID);
+        if (!opened) {
+          AppFeedback.warning(context, "找不到來源章節，可能已被移除。");
+          return;
+        }
+        if (MediaQuery.of(context).size.width < 800) {
+          setState(() => slidePageIndexNow = 114514);
+        }
+      },
+      onOpenResource: (resourceType, resourceId) {
+        switch (resourceType) {
+          case "character":
+            _openCharacter(resourceId);
+            break;
+          case "worldSetting":
+            _openLocation(resourceId);
+            break;
+          case "outlineEvent":
+            _syncEditorToSelectedChapter();
+            ref
+                .read(outlineSelectionRequestProvider.notifier)
+                .requestTarget(resourceId);
+            _recordPageTransitionIfNeeded(3);
+            setState(() => slidePageIndexNow = 3);
+            break;
+          case "glossaryTerm":
+            _syncEditorToSelectedChapter();
+            _recordPageTransitionIfNeeded(9);
+            setState(() => slidePageIndexNow = 9);
+            break;
+          default:
+            AppFeedback.warning(context, "此來源目前無法定位。");
+        }
+      },
+    );
   }
 
   Widget _buildSettingView() {

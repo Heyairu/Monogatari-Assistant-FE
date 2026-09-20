@@ -67,7 +67,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text("已連結物品"), findsOneWidget);
+    expect(find.text("物品分配"), findsOneWidget);
     expect(find.text("銀幣"), findsOneWidget);
     expect(find.text("物品 Class・交易物・贖金"), findsOneWidget);
     await tester.tap(find.byKey(const Key("event-open-item-coin-event")));
@@ -223,6 +223,26 @@ void main() {
     expect(relation.itemId, "torch");
     expect(relation.targetId, "forest-scene");
     expect(relation.targetKind, ItemRelationTargetKind.scene);
+
+    container.read(itemWorkspaceProvider.notifier).putClass(
+      ItemClassData(classId: "lantern", name: "提燈"),
+    );
+    await tester.pumpAndSettle();
+    final assign = find.byKey(const Key("scene-link-item"));
+    await tester.ensureVisible(assign);
+    await tester.tap(assign);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("提燈"));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(itemWorkspaceProvider).itemRelations.any(
+        (value) =>
+            value.itemId == "lantern" &&
+            value.targetId == "forest-scene" &&
+            value.targetKind == ItemRelationTargetKind.scene,
+      ),
+      isTrue,
+    );
   });
 
   testWidgets("stale legacy conversion leaves outline and items unchanged", (

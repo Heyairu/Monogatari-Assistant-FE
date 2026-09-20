@@ -270,36 +270,9 @@ void main() {
     );
 
     await expandSection("角色狀態");
-    expect(find.text("擁有物品"), findsOneWidget);
-    expect(find.byType(AppThreeColumnTable), findsOneWidget);
-    final possessionEditor = find.byKey(const ValueKey("possession-editor"));
-    await tester.ensureVisible(possessionEditor);
-    await tester.pumpAndSettle();
-    final possessionFields = find.descendant(
-      of: possessionEditor,
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(possessionFields.at(0), "懷錶");
-    await tester.enterText(possessionFields.at(1), "1 個");
-    await tester.enterText(possessionFields.at(2), "父親遺物");
-    final possessionAddButton = find.descendant(
-      of: possessionEditor,
-      matching: find.byWidgetPredicate(
-        (widget) => widget is IconButton && widget.tooltip == "新增",
-      ),
-    );
-    tester.widget<IconButton>(possessionAddButton).onPressed?.call();
-    await tester.pumpAndSettle();
-    expect(
-      container.read(characterDataProvider)[alice.characterId]!.possessions,
-      const [
-        CharacterPossessionEntry(
-          name: "懷錶",
-          quantity: "1 個",
-          description: "父親遺物",
-        ),
-      ],
-    );
+    expect(find.text("目前持有物品"), findsOneWidget);
+    expect(find.byKey(const Key("character-assign-item")), findsOneWidget);
+    expect(find.byKey(const ValueKey("possession-editor")), findsNothing);
 
     final advancedTab = find.widgetWithText(Tab, "進階設定");
     await tester.ensureVisible(advancedTab);

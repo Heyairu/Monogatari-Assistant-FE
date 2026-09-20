@@ -131,9 +131,8 @@ void main() {
 
     await windowManager.setSize(const Size(600, 900));
     await tester.pumpAndSettle();
-    expect(find.text("返回物品清單"), findsOneWidget);
-    await tester.tap(find.text("返回物品清單"));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key("item-narrow-sections")), findsOneWidget);
+    expect(find.text("物品清單"), findsOneWidget);
     expect(find.text("搜尋物品"), findsOneWidget);
     await tester.tap(find.widgetWithText(TextField, "搜尋物品"));
     await tester.enterText(find.widgetWithText(TextField, "搜尋物品"), "驗收");

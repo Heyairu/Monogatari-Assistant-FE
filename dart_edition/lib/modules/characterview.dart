@@ -39,6 +39,7 @@ import "package:logging/logging.dart";
 import "../models/character_data.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
 import "../application/items/legacy_character_possession_conversion.dart";
+import "../application/items/item_assignment_operations.dart";
 import "../models/character_snapshot_data.dart";
 import "../models/world_settings_data.dart";
 import "../models/timeline_data.dart";
@@ -57,6 +58,8 @@ final _log = Logger("CharacterView");
 class _LinkedCharacterItem {
   final String id;
   final String classId;
+  final String itemId;
+  final ItemReferenceKind itemKind;
   final String name;
   final String quantity;
   final String description;
@@ -64,6 +67,8 @@ class _LinkedCharacterItem {
   const _LinkedCharacterItem({
     required this.id,
     required this.classId,
+    required this.itemId,
+    required this.itemKind,
     required this.name,
     required this.quantity,
     required this.description,
@@ -3008,8 +3013,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               ),
             ),
             const SizedBox(height: 16),
-            _buildPossessionTableSection(),
-            const SizedBox(height: 16),
+            if (possessions.isNotEmpty) ...[
+              _buildLegacyPossessionMigrationSection(),
+              const SizedBox(height: 16),
+            ],
             _buildLinkedItemProjection(),
             const SizedBox(height: 8),
           ],
@@ -4698,6 +4705,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
+  // Kept temporarily for binary/source compatibility with draft restoration;
+  // the UI now exposes legacy possessions through the migration-only section.
+  // ignore: unused_element
   Widget _buildPossessionTableSection() {
     void clearSelection() {
       if (selectedPossessionIndex == null) return;
@@ -4869,6 +4879,59 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
+  Widget _buildLegacyPossessionMigrationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppNoticeBanner(
+          message: "以下是舊版擁有物品資料。請逐筆轉換為正式物品；此頁已不再新增舊格式資料。",
+          icon: Icons.move_down_outlined,
+          tone: AppFeedbackTone.warning,
+        ),
+        const SizedBox(height: 8),
+        ...possessions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final possession = entry.value;
+          return ListTile(
+            key: ValueKey("legacy-possession-$index"),
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(possession.name),
+            subtitle: Text(
+              [
+                if (possession.quantity.isNotEmpty) "數量：${possession.quantity}",
+                if (possession.description.isNotEmpty) possession.description,
+              ].join("・"),
+            ),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  key: ValueKey("legacy-possession-convert-$index"),
+                  tooltip: "轉換為正式物品",
+                  onPressed: () {
+                    setState(() => selectedPossessionIndex = index);
+                    _convertSelectedLegacyPossession();
+                  },
+                  icon: const Icon(Icons.sync_alt),
+                ),
+                IconButton(
+                  tooltip: "刪除舊資料",
+                  onPressed: () {
+                    setState(() {
+                      possessions.removeAt(index);
+                      selectedPossessionIndex = null;
+                      _saveCurrentCharacterData();
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildLinkedItemProjection() {
     final characterId = selectedCharacter;
     if (characterId == null) return const SizedBox.shrink();
@@ -4916,6 +4979,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             _LinkedCharacterItem(
               id: allocation.allocationId,
               classId: itemClass.classId,
+              itemId: itemClass.classId,
+              itemKind: ItemReferenceKind.itemClass,
               name: state.name.isEmpty ? itemClass.name : state.name,
               quantity: allocation.quantity == null
                   ? "未知"
@@ -4943,6 +5008,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           _LinkedCharacterItem(
             id: instance.instanceId,
             classId: itemClass.classId,
+            itemId: instance.instanceId,
+            itemKind: ItemReferenceKind.instance,
             name: state.name.isEmpty
                 ? (instance.name.isEmpty ? itemClass.name : instance.name)
                 : state.name,
@@ -5015,12 +5082,27 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             ),
           ),
         const SizedBox(height: 16),
-        const SmallTitle(icon: Icons.inventory_2_outlined, text: "目前持有物品"),
+        Row(
+          children: [
+            const Expanded(
+              child: SmallTitle(
+                icon: Icons.inventory_2_outlined,
+                text: "目前持有物品",
+              ),
+            ),
+            FilledButton.tonalIcon(
+              key: const Key("character-assign-item"),
+              onPressed: () => _assignItemToCharacter(characterId),
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text("分配物品"),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         if (entries.isEmpty)
           const AppEmptyState(
             title: "目前沒有已連結物品",
-            description: "在物品頁設定持有人或聚合分配後會顯示於此",
+            description: "按「分配物品」即可在此頁設定持有人或聚合數量",
             icon: Icons.link_off_outlined,
             compact: true,
           )
@@ -5033,6 +5115,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                 DataColumn(label: Text("物品")),
                 DataColumn(label: Text("數量"), numeric: true),
                 DataColumn(label: Text("狀態／備註")),
+                DataColumn(label: Text("操作")),
               ],
               rows: entries
                   .map(
@@ -5051,6 +5134,19 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                         ),
                         DataCell(Text(entry.quantity)),
                         DataCell(Text(entry.description)),
+                        DataCell(
+                          IconButton(
+                            key: ValueKey(
+                              "character-unassign-item-${entry.id}",
+                            ),
+                            tooltip: "清除預設分配",
+                            onPressed: () => _clearCharacterItemAssignment(
+                              characterId,
+                              entry,
+                            ),
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                        ),
                       ],
                     ),
                   )
@@ -5059,6 +5155,116 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           ),
       ],
     );
+  }
+
+  Future<void> _assignItemToCharacter(String characterId) async {
+    final selected = await showProjectObjectSelector(
+      context: context,
+      title: "選擇要分配給角色的物品",
+      allowedKinds: const {
+        ProjectObjectKind.itemClass,
+        ProjectObjectKind.itemInstance,
+      },
+    );
+    final itemKind = selected?.itemReferenceKind;
+    if (!mounted || selected == null || itemKind == null) return;
+    int? quantity = 1;
+    final workspace = ref.read(itemWorkspaceProvider);
+    final itemClass = workspace.itemClasses[selected.classId ?? selected.id];
+    if (itemKind == ItemReferenceKind.itemClass &&
+        itemClass != null &&
+        itemClass.mode != ItemMode.dedicated) {
+      var quantityText = "1";
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("分配「${selected.label}」"),
+          content: TextFormField(
+            key: const Key("character-assignment-quantity"),
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            initialValue: quantityText,
+            decoration: const InputDecoration(
+              labelText: "數量",
+              helperText: "留空代表數量未知",
+            ),
+            onChanged: (value) => quantityText = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              key: const Key("character-assignment-confirm"),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("分配"),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      quantity = quantityText.trim().isEmpty
+          ? null
+          : int.tryParse(quantityText.trim());
+      if (quantityText.trim().isNotEmpty &&
+          (quantity == null || quantity < 0)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("數量必須是零或正整數。")));
+        return;
+      }
+    }
+    try {
+      final current = ref.read(itemWorkspaceProvider);
+      final result = assignItemDefault(
+        itemClasses: current.itemClasses,
+        itemInstances: current.itemInstances,
+        itemKind: itemKind,
+        itemId: selected.id,
+        targetKind: ItemRelationTargetKind.character,
+        targetId: characterId,
+        allocationId: const Uuid().v4(),
+        quantity: quantity,
+      );
+      ref
+          .read(itemWorkspaceProvider.notifier)
+          .setWorkspace(
+            current.copyWith(
+              itemClasses: result.itemClasses,
+              itemInstances: result.itemInstances,
+            ),
+          );
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("無法分配物品：$error")));
+      }
+    }
+  }
+
+  void _clearCharacterItemAssignment(
+    String characterId,
+    _LinkedCharacterItem entry,
+  ) {
+    final current = ref.read(itemWorkspaceProvider);
+    final result = clearItemDefaultAssignment(
+      itemClasses: current.itemClasses,
+      itemInstances: current.itemInstances,
+      itemKind: entry.itemKind,
+      itemId: entry.itemId,
+      targetKind: ItemRelationTargetKind.character,
+      targetId: characterId,
+    );
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .setWorkspace(
+          current.copyWith(
+            itemClasses: result.itemClasses,
+            itemInstances: result.itemInstances,
+          ),
+        );
   }
 
   Future<void> _convertSelectedLegacyPossession() async {

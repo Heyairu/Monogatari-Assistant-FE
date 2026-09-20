@@ -50,6 +50,14 @@ void main() {
       expect(watchClass.description, "祖父留下");
       expect(watchClass.defaultState.properties, {"材質": "銀", "材質 (2)": "玻璃"});
       expect(watchClass.conversionSource?.sourcePath, "城鎮 / 懷錶");
+      expect(
+        result.itemInstances["watch"]!.defaultState.locationId?.value,
+        "city",
+      );
+      expect(
+        result.itemInstances["key"]!.defaultState.locationId?.value,
+        "city",
+      );
       expect(result.worldNodes.single.child.single.id, "room");
       expect(result.warnings, hasLength(1));
     },

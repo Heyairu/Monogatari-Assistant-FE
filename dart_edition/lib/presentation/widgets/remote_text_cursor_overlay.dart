@@ -300,13 +300,13 @@ class _CollaborativeProjectTextFieldRegionState
   bool _textSyncScheduled = false;
   bool _applyingCollaborativeText = false;
   late final CollaborationNotifier _collaborationNotifier;
-  late TextEditingValue _lastControllerValue;
+  late String _lastPublishedText;
 
   @override
   void initState() {
     super.initState();
     _collaborationNotifier = ref.read(collaborationProvider.notifier);
-    _lastControllerValue = widget.controller.value;
+    _lastPublishedText = widget.controller.text;
     widget.controller.addListener(_handleControllerChanged);
     widget.focusNode.addListener(_handleFocusChange);
     if (widget.focusNode.hasFocus) {
@@ -323,7 +323,7 @@ class _CollaborativeProjectTextFieldRegionState
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller.removeListener(_handleControllerChanged);
-      _lastControllerValue = widget.controller.value;
+      _lastPublishedText = widget.controller.text;
       widget.controller.addListener(_handleControllerChanged);
     }
     if (!identical(oldWidget.focusNode, widget.focusNode)) {
@@ -367,12 +367,21 @@ class _CollaborativeProjectTextFieldRegionState
   }
 
   void _handleControllerChanged() {
-    final previous = _lastControllerValue;
     final current = widget.controller.value;
-    _lastControllerValue = current;
-    final delta = !_applyingCollaborativeText && previous.text != current.text
-        ? CollaborativeTextDelta.between(previous.text, current.text)
-        : null;
+    final isComposing =
+        current.composing.isValid && !current.composing.isCollapsed;
+    CollaborativeTextDelta? delta;
+    if (_applyingCollaborativeText) {
+      _lastPublishedText = current.text;
+    } else if (!isComposing && _lastPublishedText != current.text) {
+      if (widget.shouldPublishTextChanges?.call() != false) {
+        delta = CollaborativeTextDelta.between(
+          _lastPublishedText,
+          current.text,
+        );
+      }
+      _lastPublishedText = current.text;
+    }
     _publishSelection(delta);
   }
 
