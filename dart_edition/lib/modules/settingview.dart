@@ -16,6 +16,8 @@
  * 
  ************************************************************/
 
+import "dart:async";
+
 import "package:flutter/material.dart";
 import "../features/inline_annotations/alias_mention_updates.dart";
 import "package:flutter/services.dart";
@@ -25,7 +27,9 @@ import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
+import "../presentation/providers/mcp_providers.dart";
 import "../presentation/providers/p2p_sync_providers.dart";
+import "../features/mcp/application/mcp_bridge_server.dart";
 import "../services/android_background_execution.dart";
 
 class SettingView extends ConsumerStatefulWidget {
@@ -59,6 +63,12 @@ class _SettingViewState extends ConsumerState<SettingView>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshBackgroundExecutionPermission();
+      return;
+    }
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(ref.read(mcpBridgeProvider.notifier).stop());
     }
   }
 
@@ -94,6 +104,24 @@ class _SettingViewState extends ConsumerState<SettingView>
       if (mounted) {
         setState(() => _isLoadingBackgroundPermission = false);
       }
+    }
+  }
+
+  Future<void> _copyMcpHostConfiguration() async {
+    try {
+      final configuration = await ref
+          .read(mcpBridgeProvider.notifier)
+          .hostConfiguration();
+      await Clipboard.setData(ClipboardData(text: configuration));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("已複製 MCP Host 設定。請貼到 Host 的 MCP 設定中。")),
+      );
+    } on StateError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message.toString())));
     }
   }
 
@@ -270,6 +298,8 @@ class _SettingViewState extends ConsumerState<SettingView>
                     _buildAndroidBackgroundExecutionSetting(),
                     _buildPlaceholderSetting("語言設定", Icons.language),
                     _buildP2pSyncSetting(),
+                    const SizedBox(height: 16),
+                    _buildMcpSetting(),
                     _buildPlaceholderSetting("工具列項目編輯", Icons.bento_outlined),
                   ],
                 ),
@@ -277,6 +307,89 @@ class _SettingViewState extends ConsumerState<SettingView>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMcpSetting() {
+    final bridge = ref.watch(mcpBridgeProvider);
+    final notifier = ref.read(mcpBridgeProvider.notifier);
+    final active = bridge.status == McpBridgeStatus.active;
+    final busy = bridge.status == McpBridgeStatus.starting;
+    final status = switch (bridge.status) {
+      McpBridgeStatus.stopped => "未啟用",
+      McpBridgeStatus.starting => "正在建立本機授權…",
+      McpBridgeStatus.active => "已授權：${bridge.projectTitle ?? '目前專案'}（僅本機、唯讀）",
+      McpBridgeStatus.expired => "授權已到期",
+      McpBridgeStatus.failed => bridge.failure ?? "啟用失敗",
+    };
+    return Semantics(
+      container: true,
+      label: "MCP 唯讀整合",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchWithIconTitle(
+            key: const Key("mcp-readonly-setting"),
+            title: "MCP 唯讀整合",
+            icon: Icons.hub_outlined,
+            subtitle: "只公開目前授權專案的摘要、章節、角色、世界觀、大綱與詞語；不提供修改工具。$status",
+            value: active,
+            onChanged: (value) async {
+              if (busy || !notifier.isDesktopSupported) return;
+              await (value ? notifier.enable() : notifier.stop());
+            },
+          ),
+          if (!notifier.isDesktopSupported)
+            const Padding(
+              padding: EdgeInsets.only(left: 56, top: 4),
+              child: Text("MCP sidecar 僅支援 Windows、macOS 與 Linux。"),
+            ),
+          if (active)
+            Padding(
+              padding: const EdgeInsets.only(left: 56, top: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (bridge.descriptorAvailable &&
+                      bridge.descriptorPath != null) ...[
+                    SelectableText(
+                      "連線設定檔：${bridge.descriptorPath}",
+                      key: const Key("mcp-descriptor-path"),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        "MCP Host 已取得一次性授權；如要改連其他 Host，請停止後重新啟用。",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (bridge.descriptorAvailable)
+                        FilledButton.tonalIcon(
+                          key: const Key("mcp-copy-host-configuration"),
+                          onPressed: _copyMcpHostConfiguration,
+                          icon: const Icon(Icons.copy_outlined),
+                          label: const Text("複製 MCP Host 設定"),
+                        ),
+                      FilledButton.tonalIcon(
+                        key: const Key("mcp-stop-session"),
+                        onPressed: notifier.stop,
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: const Text("停止目前授權"),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

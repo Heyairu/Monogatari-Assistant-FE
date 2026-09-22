@@ -9,6 +9,7 @@ abstract final class MonoAshiMcpContract {
   static const String searchProjectEntities = "search_project_entities";
   static const String getProjectEntity = "get_project_entity";
   static const String getContextBundle = "get_context_bundle";
+  static const String validateReadonlyPlan = "validate_readonly_plan";
 
   static const List<String> readToolNames = <String>[
     getProjectSummary,
@@ -17,6 +18,7 @@ abstract final class MonoAshiMcpContract {
     searchProjectEntities,
     getProjectEntity,
     getContextBundle,
+    validateReadonlyPlan,
   ];
 }
 

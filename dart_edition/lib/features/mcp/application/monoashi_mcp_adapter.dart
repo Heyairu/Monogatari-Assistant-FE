@@ -1,16 +1,27 @@
 import "dart:convert";
+import "dart:collection";
 
 import "../../story_read/application/project_read_service.dart";
 import "../../story_read/domain/project_read_models.dart";
+import "../../story_read/domain/readonly_plan_validation.dart";
 import "../domain/mcp_gateway.dart";
 import "../domain/mcp_protocol_models.dart";
 import "mcp_cursor_codec.dart";
 
 typedef MonoAshiMcpCancellationCheck = bool Function();
 
+final class _PlanContextEntry {
+  final ReadonlyPlanContext context;
+  final String snapshotFingerprint;
+
+  const _PlanContextEntry(this.context, this.snapshotFingerprint);
+}
+
 final class MonoAshiMcpAdapter {
   final MonoAshiMcpGateway gateway;
   final MonoAshiMcpCursorCodec cursorCodec;
+  final LinkedHashMap<String, _PlanContextEntry> _planContexts =
+      LinkedHashMap<String, _PlanContextEntry>();
 
   MonoAshiMcpAdapter({
     required this.gateway,
@@ -38,6 +49,10 @@ final class MonoAshiMcpAdapter {
       ),
       MonoAshiMcpContract.getProjectEntity => _getEntity(session, arguments),
       MonoAshiMcpContract.getContextBundle => _getContextBundle(
+        session,
+        arguments,
+      ),
+      MonoAshiMcpContract.validateReadonlyPlan => _validateReadonlyPlan(
         session,
         arguments,
       ),
@@ -398,6 +413,27 @@ final class MonoAshiMcpAdapter {
         resourceRefs: refs,
         rejectMissing: true,
       );
+      _rememberPlanContext(
+        session,
+        ReadonlyPlanContext(
+          fingerprint: bundle.fingerprint,
+          targets: <ReadonlyPlanTarget>[
+            ReadonlyPlanTarget(
+              type: bundle.primary.resourceType,
+              id: bundle.primary.resourceId,
+              title: bundle.primary.title,
+            ),
+            for (final resource in bundle.supplementalResources)
+              ReadonlyPlanTarget(
+                type: resource.resourceType,
+                id: resource.resourceType == ProjectReadResourceType.project
+                    ? session.projectId
+                    : resource.resourceId,
+                title: resource.title,
+              ),
+          ],
+        ),
+      );
       return <String, dynamic>{
         ..._envelope(session),
         "primary": _resourceJson(session, bundle.primary),
@@ -425,6 +461,103 @@ final class MonoAshiMcpAdapter {
       );
     }
   }
+
+  Future<Map<String, dynamic>> _validateReadonlyPlan(
+    MonoAshiMcpSession session,
+    Map<String, dynamic> arguments,
+  ) async {
+    _expectKeys(arguments, const <String>{"plan", "contextFingerprint"});
+    final fingerprint = _requiredString(arguments, "contextFingerprint");
+    final rawPlan = arguments["plan"];
+    if (rawPlan is! Map) {
+      throw const MonoAshiMcpException(
+        MonoAshiMcpErrorCode.invalidArgument,
+        "plan 必須是 JSON object。",
+      );
+    }
+    final entry = _planContexts[_planContextKey(session, fingerprint)];
+    if (entry == null ||
+        entry.snapshotFingerprint != _snapshotFingerprint(session.snapshot)) {
+      return <String, dynamic>{
+        ..._envelope(session),
+        "valid": false,
+        "stale": true,
+        "errors": <Map<String, Object?>>[
+          const ReadonlyPlanValidationError(
+            code: ReadonlyPlanErrorCode.staleContext,
+            path: r"$.contextFingerprint",
+            message: "找不到目前 session 中對應的 context；請重新取得 context bundle。",
+          ).toJson(),
+        ],
+        "resolvedTargets": const <Object?>[],
+        "plan": null,
+      };
+    }
+    final result = ReadonlyPlanValidator.validate(
+      jsonEncode(Map<String, Object?>.from(rawPlan)),
+      context: entry.context,
+    );
+    return <String, dynamic>{
+      ..._envelope(session),
+      "valid": result.valid,
+      "stale": result.stale,
+      "errors": result.errors
+          .map((error) => error.toJson())
+          .toList(growable: false),
+      "resolvedTargets": result.resolvedTargets
+          .map((target) => target.toJson())
+          .toList(growable: false),
+      "plan": result.canonicalPlan,
+    };
+  }
+
+  void _rememberPlanContext(
+    MonoAshiMcpSession session,
+    ReadonlyPlanContext context,
+  ) {
+    _planContexts.removeWhere(
+      (key, value) =>
+          !key.startsWith("${session.sessionId}:${session.generation}:"),
+    );
+    final key = _planContextKey(session, context.fingerprint);
+    _planContexts.remove(key);
+    _planContexts[key] = _PlanContextEntry(
+      context,
+      _snapshotFingerprint(session.snapshot),
+    );
+    while (_planContexts.length > 8) {
+      _planContexts.remove(_planContexts.keys.first);
+    }
+  }
+
+  String _planContextKey(MonoAshiMcpSession session, String fingerprint) =>
+      "${session.sessionId}:${session.generation}:$fingerprint";
+
+  String _snapshotFingerprint(
+    ProjectReadSnapshot snapshot,
+  ) => projectReadFingerprint(
+    utf8.encode(
+      jsonEncode(<String, Object?>{
+        "project": snapshot.projectId,
+        "overview": snapshot.overview.fingerprint,
+        "chapters": <Object?>[
+          for (final chapter in snapshot.chapters)
+            <String, Object?>{
+              "id": chapter.chapterId,
+              "content": projectReadFingerprint(utf8.encode(chapter.content)),
+            },
+        ],
+        "entities": <Object?>[
+          for (final entity in snapshot.entities)
+            <String, Object?>{
+              "type": entity.resourceType,
+              "id": entity.resourceId,
+              "content": projectReadFingerprint(utf8.encode(entity.content)),
+            },
+        ],
+      }),
+    ),
+  );
 
   Future<MonoAshiMcpSession> _requireSession() async {
     final session = await gateway.currentSession();

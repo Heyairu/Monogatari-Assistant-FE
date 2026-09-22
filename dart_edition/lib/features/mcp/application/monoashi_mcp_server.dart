@@ -161,6 +161,20 @@ void _registerTools(McpServer server, MonoAshiMcpAdapter adapter) {
       required: const <String>["chapterId"],
     ),
   );
+  _registerTool(
+    server,
+    adapter,
+    MonoAshiMcpContract.validateReadonlyPlan,
+    description:
+        "Validate a proposed MonoAshi plan against a context bundle previously returned in this session. This is read-only and never applies changes.",
+    inputSchema: _strictObject(
+      properties: <String, JsonSchema>{
+        "plan": JsonSchema.object(additionalProperties: true),
+        "contextFingerprint": JsonSchema.string(minLength: 1, maxLength: 256),
+      },
+      required: const <String>["plan", "contextFingerprint"],
+    ),
+  );
 }
 
 void _registerTool(
@@ -323,6 +337,18 @@ final JsonObject _outputEnvelopeSchema = JsonSchema.object(
       JsonSchema.nullValue(),
     ]),
     "fingerprint": JsonSchema.string(),
+    "valid": JsonSchema.boolean(),
+    "stale": JsonSchema.boolean(),
+    "errors": JsonSchema.array(
+      items: JsonSchema.object(additionalProperties: true),
+    ),
+    "resolvedTargets": JsonSchema.array(
+      items: JsonSchema.object(additionalProperties: true),
+    ),
+    "plan": JsonSchema.anyOf(<JsonSchema>[
+      JsonSchema.object(additionalProperties: true),
+      JsonSchema.nullValue(),
+    ]),
     "error": JsonSchema.object(additionalProperties: true),
   },
   required: const <String>["schemaVersion"],

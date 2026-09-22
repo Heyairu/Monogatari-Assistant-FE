@@ -1,6 +1,7 @@
 import "dart:convert";
 
 import "../../story_read/domain/project_read_models.dart";
+import "../../story_read/domain/readonly_plan_validation.dart";
 
 enum CopilotMode { chat, ask, plan, agent }
 
@@ -365,27 +366,10 @@ final class CopilotCitation {
 }
 
 final class CopilotPlan {
-  static const Set<String> allowedTargetTypes = <String>{
-    "chapter",
-    "character",
-    "location",
-    "worldSetting",
-    "outlineEvent",
-    "glossaryTerm",
-    "foreshadow",
-    "updatePlan",
-    "project",
-  };
-  static const Set<String> allowedActions = <String>{
-    "review",
-    "revise",
-    "add",
-    "create",
-    "removeSuggestion",
-    "reorderSuggestion",
-    "clarify",
-    "research",
-  };
+  static const Set<String> allowedTargetTypes =
+      ReadonlyPlanValidator.allowedTargetTypes;
+  static const Set<String> allowedActions =
+      ReadonlyPlanValidator.allowedActions;
 
   final String schemaVersion;
   final String goal;
@@ -419,29 +403,32 @@ final class CopilotPlan {
     String source, {
     required CopilotContextSnapshot context,
   }) {
-    final normalized = _stripSingleJsonFence(source);
-    final decoded = jsonDecode(normalized);
-    if (decoded is! Map<String, Object?>) {
-      throw const FormatException("Plan 回覆必須是 JSON object。");
-    }
-    final schemaVersion = _requiredString(decoded, "schemaVersion");
-    if (schemaVersion != "1") {
-      throw FormatException("不支援的 Plan schema：$schemaVersion。");
-    }
-    final fingerprint = _requiredString(decoded, "contextFingerprint");
-    if (fingerprint != context.fingerprint) {
-      throw const FormatException("Plan 使用的章節版本與目前請求不一致。");
-    }
-    final rawSteps = decoded["steps"];
-    if (rawSteps is! List<Object?> ||
-        rawSteps.isEmpty ||
-        rawSteps.length > 50) {
-      throw const FormatException("Plan steps 必須包含 1～50 個步驟。");
-    }
+    final validationContext = ReadonlyPlanContext(
+      fingerprint: context.fingerprint,
+      targets: <ReadonlyPlanTarget>[
+        ReadonlyPlanTarget(
+          type: context.resourceType,
+          id: context.resourceId,
+          title: context.title,
+        ),
+        for (final resource in context.supplementalResources)
+          ReadonlyPlanTarget(
+            type: resource.resourceType,
+            id: resource.resourceId,
+            title: resource.title,
+          ),
+      ],
+    );
+    final decoded = ReadonlyPlanValidator.validateOrThrow(
+      source,
+      context: validationContext,
+    );
+    final schemaVersion = decoded["schemaVersion"]! as String;
+    final fingerprint = decoded["contextFingerprint"]! as String;
+    final rawSteps = decoded["steps"]! as List<Object?>;
     final steps = rawSteps
         .map((value) => CopilotPlanStep.fromJson(value, context: context))
         .toList(growable: false);
-    _validateSteps(steps);
     return CopilotPlan(
       schemaVersion: schemaVersion,
       goal: _requiredString(decoded, "goal", maxLength: 500),
@@ -451,48 +438,6 @@ final class CopilotPlan {
       risks: _stringList(decoded["risks"], "risks"),
       questions: _stringList(decoded["questions"], "questions"),
     );
-  }
-
-  static void _validateSteps(List<CopilotPlanStep> steps) {
-    final ids = <String>{};
-    final orders = <int>{};
-    for (final step in steps) {
-      if (!ids.add(step.id)) {
-        throw FormatException("Plan step id 重複：${step.id}。");
-      }
-      if (!orders.add(step.order)) {
-        throw FormatException("Plan step order 重複：${step.order}。");
-      }
-    }
-    final dependencies = <String, Set<String>>{
-      for (final step in steps) step.id: step.dependsOn.toSet(),
-    };
-    for (final entry in dependencies.entries) {
-      for (final dependency in entry.value) {
-        if (!ids.contains(dependency)) {
-          throw FormatException("Plan step ${entry.key} 引用了未知相依步驟。");
-        }
-      }
-    }
-    final visiting = <String>{};
-    final visited = <String>{};
-    bool visit(String id) {
-      if (visiting.contains(id)) return false;
-      if (visited.contains(id)) return true;
-      visiting.add(id);
-      for (final dependency in dependencies[id]!) {
-        if (!visit(dependency)) return false;
-      }
-      visiting.remove(id);
-      visited.add(id);
-      return true;
-    }
-
-    for (final id in ids) {
-      if (!visit(id)) {
-        throw const FormatException("Plan steps 不可包含循環相依。");
-      }
-    }
   }
 }
 

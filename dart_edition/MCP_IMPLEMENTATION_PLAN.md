@@ -1,7 +1,7 @@
 # MonoAshi MCP 唯讀整合實作計畫
 
 日期：2026-09-20  
-狀態：Phase 0、Phase 1、Phase 2 實作完成（外部 Inspector smoke pending）；Phase 3 尚未開始  
+狀態：Phase 0–4 實作完成；Phase 5 自動化與 Windows 驗收完成，macOS／Linux 打包及第二個外部 Host 人工驗收 pending
 適用範圍：`dart_edition/` 的 Windows、macOS、Linux 桌面版  
 關聯文件：[Copilot Ask／Plan 計畫](COPILOT_ASK_PLAN_IMPLEMENTATION_PLAN.md)、[Beta 8 開發計畫](BETA8_DEVELOPMENT_PLAN.md)、[P2P 同步設計](P2P_LAN_SYNC_DESIGN.md)
 
@@ -249,6 +249,8 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 3：App ↔ sidecar secure bridge（4–7 人日）
 
+執行結果與安全邊界見 [MCP_PHASE3_IMPLEMENTATION.md](MCP_PHASE3_IMPLEMENTATION.md)。
+
 1. 在 App 建立 session lifecycle notifier：啟用、停止、專案切換、App dispose、secret rotation。
 2. 實作 localhost IPC endpoint、app-private session descriptor 與 sidecar handshake；endpoint、token、project scope 都必須綁定同一 generation。
 3. 透過 bridge 取得 immutable `ProjectReadSnapshot`，禁止 sidecar 直接碰 `.mnproj` 或 provider 內部資料。
@@ -259,6 +261,8 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 4：Plan 驗證與 Copilot parity（3–4 人日）
 
+執行結果與唯讀保證見 [MCP_PHASE4_IMPLEMENTATION.md](MCP_PHASE4_IMPLEMENTATION.md)。
+
 1. 抽取或重用 `CopilotPlan` parser / semantic validator 為共用 readonly plan validator。
 2. 實作 `validate_readonly_plan`，回傳可機器讀取的 validation errors 與 resolved target metadata。
 3. 驗證 context 變更後的 stale plan 必定失敗或標記 stale，不可繼續當成可用提案。
@@ -267,6 +271,8 @@ monoashi://session/{sessionId}/{type}/{id}
 **完成條件：** MCP 不存在任何 write dispatcher；所有 valid plan 仍僅為 JSON 結果，無專案 dirty state 改動。
 
 ### Phase 5：安全、封裝與發布驗收（3–6 人日）
+
+執行結果、release check 與待驗收項目見 [MCP_PHASE5_IMPLEMENTATION.md](MCP_PHASE5_IMPLEMENTATION.md)。
 
 1. 建立 malformed JSON、oversize request、prompt injection text、cursor tampering、timeout、concurrent tool call、token replay 的測試矩陣。
 2. 確認 token / URL / project path / 正文不出現在 stdout、UI error、audit log、crash log fixture 或 release artifact。

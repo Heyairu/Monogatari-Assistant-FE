@@ -4,10 +4,13 @@ publish_to: 'none'
 version: 0.9.19
 
 environment:
-  sdk: ^3.9.2
+  # flutter_quill 11.6.0 requires Dart 3.12 and Flutter 3.44 or later.
+  sdk: ^3.12.0
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
@@ -28,7 +31,9 @@ dependencies:
   flutter_secure_storage: ^10.3.1
   characters: ^1.4.0
   ffi: ^2.2.0
-  flutter_quill: ^11.5.0
+  # 11.6.0 retains Flutter 3.44 TextInputClient support and fixes CJK
+  # whole-word search plus Android caret/IME synchronization.
+  flutter_quill: 11.6.0
   url_launcher: ^6.3.1
   code_text_field: ^1.1.0
   flutter_highlight: ^0.7.0
