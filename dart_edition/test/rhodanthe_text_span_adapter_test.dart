@@ -322,7 +322,7 @@ void main() {
     );
     expect(
       automatic.resolveColor("search.current.background"),
-      const Color(0xFF000000),
+      const Color(0xFFFFC7C7),
     );
   });
 }

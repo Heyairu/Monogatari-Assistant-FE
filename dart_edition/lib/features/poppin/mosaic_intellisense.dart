@@ -167,6 +167,7 @@ final class MosaicIntelliSenseEngine {
         category(InlineAnnotationKind.event, "#"),
         category(InlineAnnotationKind.foreshadowing, "?"),
         category(InlineAnnotationKind.plan, "&"),
+        category(InlineAnnotationKind.item, "*"),
       ],
     );
   }
@@ -176,7 +177,7 @@ final class MosaicIntelliSenseEngine {
     int caret,
     MosaicTargetCandidateLoader loadTargets,
   ) {
-    const symbols = "@!#?&";
+    const symbols = "@!#?&*";
     const maxQueryLength = 128;
     final scanStart = (caret - maxQueryLength - 1).clamp(0, caret);
     for (var index = caret - 1; index >= scanStart; index--) {
@@ -291,6 +292,14 @@ final class MosaicIntelliSenseEngine {
           submenuOnly: true,
         ),
         MosaicCompletionCandidate(
+          id: "manual-item",
+          label: "*",
+          detail: "物品候選",
+          insertText: "*",
+          children: targetChildren(InlineAnnotationKind.item),
+          submenuOnly: true,
+        ),
+        MosaicCompletionCandidate(
           id: "manual-highlight",
           label: "^",
           detail: "高亮色彩候選",
@@ -329,6 +338,12 @@ final class MosaicIntelliSenseEngine {
           insertText: "//&<",
         ),
         const MosaicCompletionCandidate(
+          id: "template-item",
+          label: "*<>",
+          detail: "物品標記骨架",
+          insertText: "//*<",
+        ),
+        const MosaicCompletionCandidate(
           id: "template-highlight",
           label: "^<>",
           detail: "高亮標記骨架",
@@ -357,7 +372,7 @@ final class MosaicIntelliSenseEngine {
     MosaicTargetCandidateLoader loadTargets,
   ) {
     final match = RegExp(
-      r"^//([@!#?&])([+-])?(?:\^([A-F0])([A-F0])?)?(?:<([^|<>]*))?$",
+      r"^//([@!#?&*])([+-])?(?:\^([A-F0])([A-F0])?)?(?:<([^|<>]*))?$",
     ).firstMatch(draft);
     if (match == null) return null;
     final kind = _kind(match.group(1)!);
@@ -698,7 +713,7 @@ final class MosaicIntelliSenseEngine {
   );
 
   MosaicCompletionSession? _colorSession(String draft, int caret) {
-    final match = RegExp(r"^//(?:[@!#?&])?[+-]?\^([A-F0]?)$").firstMatch(draft);
+    final match = RegExp(r"^//(?:[@!#?&*])?[+-]?\^([A-F0]?)$").firstMatch(draft);
     if (match == null) return null;
     final query = match.group(1) ?? "";
     return MosaicCompletionSession(
@@ -764,6 +779,7 @@ final class MosaicIntelliSenseEngine {
     "#" => InlineAnnotationKind.event,
     "?" => InlineAnnotationKind.foreshadowing,
     "&" => InlineAnnotationKind.plan,
+    "*" => InlineAnnotationKind.item,
     _ => throw StateError("Unsupported annotation kind: $symbol"),
   };
 
@@ -773,6 +789,7 @@ final class MosaicIntelliSenseEngine {
     InlineAnnotationKind.event => "事件",
     InlineAnnotationKind.foreshadowing => "伏筆",
     InlineAnnotationKind.plan => "計畫",
+    InlineAnnotationKind.item => "物品",
     InlineAnnotationKind.emphasis => "高亮",
   };
 }

@@ -41,6 +41,7 @@ final class InlineAnnotationSyntax {
       InlineAnnotationKind.event => "#",
       InlineAnnotationKind.foreshadowing => "?",
       InlineAnnotationKind.plan => "&",
+      InlineAnnotationKind.item => "*",
       InlineAnnotationKind.emphasis => "",
     };
     final stateSymbol = switch (state) {

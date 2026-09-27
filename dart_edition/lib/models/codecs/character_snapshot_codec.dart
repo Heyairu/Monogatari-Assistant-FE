@@ -150,6 +150,11 @@ class CharacterSnapshotCodec {
                       "Description",
                       item.relationship,
                     );
+                    XmlTextCodec.writeTextElement(
+                      builder,
+                      "InternalRelationship",
+                      item.internalRelationship,
+                    );
                   },
                 );
               }
@@ -283,6 +288,9 @@ class CharacterSnapshotCodec {
               ),
               relationship: XmlTextCodec.readElementText(
                 node.findElements("Description").firstOrNull,
+              ),
+              internalRelationship: XmlTextCodec.readElementText(
+                node.findElements("InternalRelationship").firstOrNull,
               ),
             ),
           )

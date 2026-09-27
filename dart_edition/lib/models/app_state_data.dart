@@ -28,6 +28,8 @@ class AppSettingsStateData with _$AppSettingsStateData {
     @Default(true) bool allowSingleDevicePairingConfirmation,
     @Default(false) bool allowPersistentP2pVerification,
     @Default(true) bool poppinEnabled,
+    @Default(2) int tabSpaceCount,
+    @Default(true) bool tabFullWidth,
     @Default(<RecentProjectEntry>[]) List<RecentProjectEntry> recentProjects,
   }) = _AppSettingsStateData;
 }

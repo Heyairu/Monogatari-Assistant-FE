@@ -27,12 +27,14 @@ class CharacterRelationshipEditorResult {
   final String sourceCharacterId;
   final String person;
   final String description;
+  final String internalRelationship;
   final bool bidirectional;
 
   const CharacterRelationshipEditorResult({
     required this.sourceCharacterId,
     required this.person,
     required this.description,
+    this.internalRelationship = "",
     this.bidirectional = false,
   });
 }
@@ -46,6 +48,7 @@ class CharacterRelationshipEditor {
     String? sourceCharacterId,
     String initialPerson = "",
     String initialDescription = "",
+    String initialInternalRelationship = "",
     bool allowSourceSelection = true,
     bool allowBidirectional = true,
     String title = "新增人物關係",
@@ -59,6 +62,7 @@ class CharacterRelationshipEditor {
         sourceCharacterId: sourceCharacterId,
         initialPerson: initialPerson,
         initialDescription: initialDescription,
+        initialInternalRelationship: initialInternalRelationship,
         allowSourceSelection: allowSourceSelection,
         allowBidirectional: allowBidirectional,
       ),
@@ -72,6 +76,7 @@ class _CharacterRelationshipEditorDialog extends StatefulWidget {
   final String? sourceCharacterId;
   final String initialPerson;
   final String initialDescription;
+  final String initialInternalRelationship;
   final bool allowSourceSelection;
   final bool allowBidirectional;
 
@@ -81,6 +86,7 @@ class _CharacterRelationshipEditorDialog extends StatefulWidget {
     required this.sourceCharacterId,
     required this.initialPerson,
     required this.initialDescription,
+    required this.initialInternalRelationship,
     required this.allowSourceSelection,
     required this.allowBidirectional,
   });
@@ -94,6 +100,7 @@ class _CharacterRelationshipEditorDialogState
     extends State<_CharacterRelationshipEditorDialog> {
   late final TextEditingController _personController;
   late final TextEditingController _descriptionController;
+  late final TextEditingController _internalController;
   late String? _sourceCharacterId;
   bool _bidirectional = false;
 
@@ -104,6 +111,9 @@ class _CharacterRelationshipEditorDialogState
     _descriptionController = TextEditingController(
       text: widget.initialDescription,
     );
+    _internalController = TextEditingController(
+      text: widget.initialInternalRelationship,
+    );
     _sourceCharacterId =
         widget.sourceCharacterId ?? widget.characters.keys.firstOrNull;
   }
@@ -112,6 +122,7 @@ class _CharacterRelationshipEditorDialogState
   void dispose() {
     _personController.dispose();
     _descriptionController.dispose();
+    _internalController.dispose();
     super.dispose();
   }
 
@@ -125,6 +136,7 @@ class _CharacterRelationshipEditorDialogState
         sourceCharacterId: _sourceCharacterId!,
         person: _personController.text.trim(),
         description: _descriptionController.text.trim(),
+        internalRelationship: _internalController.text.trim(),
         bidirectional: widget.allowBidirectional && _bidirectional,
       ),
     );
@@ -190,9 +202,17 @@ class _CharacterRelationshipEditorDialogState
             AppTextField(
               key: const ValueKey("relationship-description-field"),
               controller: _descriptionController,
-              labelText: "關係",
+              labelText: "外在關係",
               hintText: "例如：朋友、家人、競爭對手",
               maxLines: 1,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              key: const ValueKey("relationship-internal-field"),
+              controller: _internalController,
+              labelText: "內在關係",
+              hintText: "例如：信任、崇拜、嫉妒",
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
             ),

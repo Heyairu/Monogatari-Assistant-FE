@@ -48,12 +48,17 @@ List<CharacterRelationship> mergeDuplicateCharacterRelationships(
         relationship.copyWith(
           person: person,
           relationship: relationship.relationship.trim(),
+          internalRelationship: relationship.internalRelationship.trim(),
         ),
       );
       continue;
     }
     final existing = merged[existingIndex];
     merged[existingIndex] = existing.copyWith(
+      internalRelationship: appendRelationshipDescription(
+        existing.internalRelationship,
+        relationship.internalRelationship,
+      ),
       relationship: appendRelationshipDescription(
         existing.relationship,
         relationship.relationship,
@@ -67,6 +72,7 @@ List<CharacterRelationship> upsertCharacterRelationship({
   required Iterable<CharacterRelationship> relationships,
   required String person,
   required String description,
+  String internalRelationship = "",
   int? editingIndex,
 }) {
   final next = relationships.map((item) => item.copyWith()).toList();
@@ -76,6 +82,7 @@ List<CharacterRelationship> upsertCharacterRelationship({
   final value = CharacterRelationship(
     person: normalizedPerson,
     relationship: description.trim(),
+    internalRelationship: internalRelationship.trim(),
   );
   var duplicateIndex = -1;
   for (var index = 0; index < next.length; index++) {
@@ -89,6 +96,10 @@ List<CharacterRelationship> upsertCharacterRelationship({
   if (duplicateIndex >= 0) {
     final existing = next[duplicateIndex];
     next[duplicateIndex] = existing.copyWith(
+      internalRelationship: appendRelationshipDescription(
+        existing.internalRelationship,
+        value.internalRelationship,
+      ),
       relationship: appendRelationshipDescription(
         existing.relationship,
         value.relationship,

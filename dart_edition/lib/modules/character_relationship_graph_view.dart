@@ -1,4 +1,4 @@
-/************************************************************
+/* **********************************************************
  * 
  * Copyright 2025-2026 Heyairu（部屋伊琉）
  *
@@ -19,6 +19,7 @@
 import "dart:math" as math;
 
 import "package:flutter/material.dart";
+import "package:flutter/gestures.dart" show DragStartBehavior;
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
@@ -29,6 +30,9 @@ import "../presentation/providers/project_state_providers.dart";
 import "character_relationship_editor.dart";
 import "character_relationship_graph_controller.dart";
 import "character_relationship_graph_mapper.dart";
+import "character_relationship_graph_layout.dart";
+import "character_relationship_graph_routing.dart";
+import "character_relationship_graph_mutations.dart";
 import "character_relationship_operations.dart";
 import "character_relationship_resolver.dart";
 
@@ -47,49 +51,125 @@ class CharacterRelationshipGraphView extends ConsumerStatefulWidget {
       _CharacterRelationshipGraphViewState();
 }
 
-enum _CharacterLayoutLane {
-  other,
-  secondarySupporting,
-  importantSupporting,
-  protagonist,
-  mainVillain,
-  secondaryVillain,
-}
-
-class _EdgeLabelPlacement {
-  final Offset center;
-  final Size size;
-
-  const _EdgeLabelPlacement({required this.center, required this.size});
-}
-
-class _EdgeVisualLayout {
-  final _EdgeGeometry geometry;
-  final _EdgeLabelPlacement label;
-
-  const _EdgeVisualLayout({required this.geometry, required this.label});
-}
-
-class _RadialLayoutMetrics {
-  final Size canvasSize;
-  final double resolvedHeight;
-  final Offset protagonistCenter;
-  final Offset villainCenter;
-  final Map<_CharacterLayoutLane, double> radii;
-
-  const _RadialLayoutMetrics({
-    required this.canvasSize,
-    required this.resolvedHeight,
-    required this.protagonistCenter,
-    required this.villainCenter,
-    required this.radii,
-  });
-}
-
 class _CharacterRelationshipGraphViewState
     extends ConsumerState<CharacterRelationshipGraphView> {
   static const _mapper = CharacterRelationshipGraphMapper();
-  static const Size _nodeSize = Size.square(104);
+  Size get _nodeSize => Size.square(
+    104 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
+  );
+  Map<String, CharacterEntryData>? _mappedCharacters;
+  CharacterRelationshipGraphData? _cachedGraph;
+  CharacterRelationshipDisplayMode? _mappedMode;
+  bool? _mappedMerge;
+  CharacterGraphLayoutResult? _cachedLayout;
+  CharacterRelationshipGraphData? _layoutGraph;
+  CharacterGraphLayoutMode? _layoutMode;
+  Size? _layoutNodeSize;
+  int _layoutSessionRevision = -1;
+  String? _hoveredEdgeId;
+  bool _draggingNode = false;
+  Offset _dragPointerOrigin = Offset.zero;
+  Offset _dragNodeOrigin = Offset.zero;
+  bool _panelExpanded = true;
+  Map<String, EdgeVisualLayout>? _cachedRoutes;
+  Map<String, EdgeGeometry>? _cachedGeometries;
+  CharacterRelationshipGraphData? _geometryGraph;
+  CharacterGraphLayoutResult? _geometryLayout;
+  CharacterRelationshipGraphData? _routeGraph;
+  CharacterGraphLayoutResult? _routeLayout;
+  String _routeFocusKey = "";
+
+  CharacterRelationshipGraphData _mapGraph(
+    Map<String, CharacterEntryData> characters,
+  ) {
+    if (!identical(characters, _mappedCharacters) ||
+        _mappedMode != _displayMode ||
+        _mappedMerge != _controller.mergeOpposite) {
+      _mappedCharacters = characters;
+      _mappedMode = _displayMode;
+      _mappedMerge = _controller.mergeOpposite;
+      _cachedGraph = _mapper.map(
+        characters,
+        displayMode: _displayMode,
+        mergeOpposite: _controller.mergeOpposite,
+      );
+    }
+    return _cachedGraph!;
+  }
+
+  CharacterGraphLayoutResult _resolveLayout(
+    CharacterRelationshipGraphData graph,
+  ) {
+    if (!identical(graph, _layoutGraph) ||
+        _layoutMode != _controller.layoutMode ||
+        _layoutSessionRevision != _controller.layoutSession.revision ||
+        _layoutNodeSize != _nodeSize) {
+      if (_layoutNodeSize != null && _layoutNodeSize != _nodeSize) {
+        _controller.layoutSession.rearrange(_controller.layoutMode);
+      }
+      _cachedLayout = _controller.layoutSession.resolve(
+        graph,
+        _controller.layoutMode,
+        _nodeSize,
+        layoutRevision: _controller.layoutRevision,
+      );
+      _layoutGraph = graph;
+      _layoutMode = _controller.layoutMode;
+      _layoutNodeSize = _nodeSize;
+      _layoutSessionRevision = _controller.layoutSession.revision;
+    }
+    return _cachedLayout!;
+  }
+
+  Map<String, Offset> _layoutNodes(
+    CharacterRelationshipGraphData graph,
+    Set<String> visibleIds,
+  ) => _resolveLayout(graph).positions;
+  Size _canvasSize(
+    CharacterRelationshipGraphData graph,
+    Set<String> visibleIds,
+  ) => _resolveLayout(graph).canvasSize;
+
+  bool _focusedEdge(
+    CharacterRelationshipGraphEdge edge,
+    CharacterRelationshipGraphData graph,
+  ) {
+    final selected = graph.edgeById(_controller.selectedEdgeId ?? "");
+    if (selected != null) return selected.samePair(edge);
+    final nodeId = _controller.selectedNodeId;
+    return nodeId != null &&
+        (edge.sourceCharacterId == nodeId || edge.targetNodeId == nodeId);
+  }
+
+  String? _hitEdge(Offset point, Map<String, EdgeVisualLayout> routes) {
+    String? nearest;
+    var distance =
+        10 / _controller.transformationController.value.getMaxScaleOnAxis();
+    for (final entry in routes.entries) {
+      var previous = entry.value.geometry.start;
+      for (var sample = 1; sample <= 80; sample++) {
+        final g = entry.value.geometry;
+        final next = quadraticPoint(g.start, g.control, g.end, sample / 80);
+        final delta = next - previous;
+        final length = delta.dx * delta.dx + delta.dy * delta.dy;
+        final from = point - previous;
+        final t = length == 0
+            ? 0.0
+            : ((from.dx * delta.dx + from.dy * delta.dy) / length).clamp(
+                0.0,
+                1.0,
+              );
+        final d = (point - (previous + delta * t)).distance;
+        if (d < distance) {
+          distance = d;
+          nearest = entry.key;
+        }
+        previous = next;
+      }
+    }
+    return nearest;
+  }
+
   late final CharacterRelationshipGraphController _controller;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -97,6 +177,8 @@ class _CharacterRelationshipGraphViewState
   bool _initialGlobalPreviewScheduled = false;
   bool _toolbarExpanded = true;
   String? _selectedSnapshotEventId;
+  CharacterRelationshipDisplayMode _displayMode =
+      CharacterRelationshipDisplayMode.external;
 
   bool get _isViewingSnapshot => _selectedSnapshotEventId != null;
 
@@ -116,10 +198,15 @@ class _CharacterRelationshipGraphViewState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.projectSessionId == widget.projectSessionId) return;
     _searchController.clear();
-    _controller
-      ..setNeighborsOnly(false)
-      ..clearSelection();
+    _controller.resetSession();
+    _mappedCharacters = null;
+    _cachedLayout = null;
+    _layoutGraph = null;
+    _cachedRoutes = null;
+    _hoveredEdgeId = null;
+    _panelExpanded = true;
     _selectedSnapshotEventId = null;
+    _displayMode = CharacterRelationshipDisplayMode.external;
     _initialGlobalPreviewScheduled = false;
     _toolbarExpanded = true;
   }
@@ -145,7 +232,7 @@ class _CharacterRelationshipGraphViewState
               selectedSnapshotEvent.resolvedTick,
             ),
           );
-    final graph = _mapper.map(characters);
+    final graph = _mapGraph(characters);
     _discardMissingSelection(graph);
 
     if (characters.isEmpty) {
@@ -155,7 +242,19 @@ class _CharacterRelationshipGraphViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildToolbar(characters, graph, snapshotEvents, selectedSnapshotEvent),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .45,
+          ),
+          child: SingleChildScrollView(
+            child: _buildToolbar(
+              characters,
+              graph,
+              snapshotEvents,
+              selectedSnapshotEvent,
+            ),
+          ),
+        ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -255,6 +354,54 @@ class _CharacterRelationshipGraphViewState
                   ),
                 ),
                 if (_toolbarExpanded) ...[
+                  SizedBox(
+                    width: 240,
+                    child: AppDropdownField<CharacterRelationshipDisplayMode>(
+                      key: const ValueKey("relationship-display-selector"),
+                      value: _displayMode,
+                      labelText: "顯示關係",
+                      options: const [
+                        DropdownOption(
+                          value: CharacterRelationshipDisplayMode.internal,
+                          label: "內在關係",
+                        ),
+                        DropdownOption(
+                          value: CharacterRelationshipDisplayMode.external,
+                          label: "外在關係",
+                        ),
+                        DropdownOption(
+                          value: CharacterRelationshipDisplayMode.both,
+                          label: "全部",
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _displayMode = value);
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: AppDropdownField<CharacterGraphLayoutMode>(
+                      key: const ValueKey("relationship-layout-selector"),
+                      value: _controller.layoutMode,
+                      labelText: "角色排列",
+                      options: const [
+                        DropdownOption(
+                          value: CharacterGraphLayoutMode.roles,
+                          label: "角色定位",
+                        ),
+                        DropdownOption(
+                          value: CharacterGraphLayoutMode.clusters,
+                          label: "關係群集",
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) _controller.setLayoutMode(value);
+                      },
+                    ),
+                  ),
+                  const Text("外在 ━   內在 ┄   拖曳角色可調整位置"),
                   SizedBox(
                     width: constraints.maxWidth,
                     child: AppDropdownField<String>(
@@ -395,10 +542,7 @@ class _CharacterRelationshipGraphViewState
                     tooltip: "只顯示一階鄰居",
                     isSelected: _controller.neighborsOnly,
                     style: _controller.neighborsOnly
-                        ? IconButton.styleFrom(
-                            backgroundColor: scheme.primaryContainer,
-                            foregroundColor: scheme.onPrimaryContainer,
-                          )
+                        ? IconButton.styleFrom(foregroundColor: Colors.green)
                         : null,
                     onPressed: _controller.selectedNodeId == null
                         ? null
@@ -422,7 +566,7 @@ class _CharacterRelationshipGraphViewState
                   ),
                   IconButton(
                     tooltip: "自動重新排列",
-                    onPressed: _controller.rearrange,
+                    onPressed: () => _rearrangeGraph(graph),
                     icon: const Icon(Icons.auto_fix_high_outlined),
                   ),
                   IconButton(
@@ -440,6 +584,18 @@ class _CharacterRelationshipGraphViewState
                     onPressed: () => _controller.zoomBy(1.25, _viewportSize),
                     icon: const Icon(Icons.zoom_in),
                   ),
+                  IconButton(
+                    key: const ValueKey("relationship-merge-toggle"),
+                    tooltip: "合併相同的雙向關係",
+                    isSelected: _controller.mergeOpposite,
+                    style: _controller.mergeOpposite
+                        ? IconButton.styleFrom(foregroundColor: Colors.green)
+                        : null,
+                    onPressed: () => _controller.setMergeOpposite(
+                      !_controller.mergeOpposite,
+                    ),
+                    icon: const Icon(Icons.merge_rounded),
+                  ),
                 ],
               ],
             );
@@ -447,6 +603,30 @@ class _CharacterRelationshipGraphViewState
         ),
       ),
     );
+  }
+
+  void _rearrangeGraph(CharacterRelationshipGraphData graph) {
+    _controller.rearrange();
+    final selected =
+        _controller.selectedNodeId ??
+        graph.edgeById(_controller.selectedEdgeId ?? "")?.sourceCharacterId;
+    if (selected == null || _viewportSize.isEmpty) return;
+    final position = _resolveLayout(graph).positions[selected];
+    if (position == null) return;
+    final matrix = _controller.transformationController.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    final center = position + Offset(_nodeSize.width / 2, _nodeSize.height / 2);
+    final screen =
+        center * scale + Offset(matrix.storage[12], matrix.storage[13]);
+    if ((Offset.zero & _viewportSize).deflate(40).contains(screen)) return;
+    final shift =
+        Offset(_viewportSize.width / 2, _viewportSize.height / 2) - screen;
+    _controller.transformationController.value = matrix.clone()
+      ..setTranslationRaw(
+        matrix.storage[12] + shift.dx,
+        matrix.storage[13] + shift.dy,
+        0,
+      );
   }
 
   void _showGlobalPreview(
@@ -564,53 +744,163 @@ class _CharacterRelationshipGraphViewState
             visibleIds.contains(edge.targetNodeId),
       ),
     );
-    final edgeVisualLayouts = _edgeVisualLayouts(
-      visibleEdges,
-      positions,
-      canvasSize,
-    );
-    final connectedIds = _connectedNodeIds(graph, _controller.selectedNodeId);
+    final layout = _resolveLayout(graph);
+    if (!identical(_geometryGraph, graph) ||
+        !identical(_geometryLayout, layout)) {
+      _cachedGeometries = routeCharacterEdgeGeometries(
+        graph.edges,
+        positions,
+        canvasSize,
+        nodeSize: _nodeSize,
+      );
+      _geometryGraph = graph;
+      _geometryLayout = layout;
+    }
+    final focusKey =
+        "${_controller.selectedNodeId}:${_controller.selectedEdgeId}:$_hoveredEdgeId:${visibleIds.toList()..sort()}";
+    if (!identical(_routeGraph, graph) ||
+        !identical(_routeLayout, layout) ||
+        _routeFocusKey != focusKey) {
+      final labeled = visibleEdges
+          .where((e) => _focusedEdge(e, graph) || e.id == _hoveredEdgeId)
+          .map((e) => e.id)
+          .toSet();
+      final priorityEdges = [...visibleEdges]
+        ..sort((a, b) {
+          final aPriority = a.id == _controller.selectedEdgeId
+              ? 2
+              : labeled.contains(a.id)
+              ? 1
+              : 0;
+          final bPriority = b.id == _controller.selectedEdgeId
+              ? 2
+              : labeled.contains(b.id)
+              ? 1
+              : 0;
+          return bPriority.compareTo(aPriority);
+        });
+      _cachedRoutes = placeCharacterEdgeLabels(
+        priorityEdges,
+        _cachedGeometries!,
+        positions,
+        canvasSize,
+        nodeSize: _nodeSize,
+        labelSizes: {for (final e in priorityEdges) e.id: _edgeLabelSizeFor(e)},
+        labeledEdgeIds: labeled,
+      );
+      _routeGraph = graph;
+      _routeLayout = layout;
+      _routeFocusKey = focusKey;
+    }
+    final edgeVisualLayouts = _cachedRoutes!;
+    final selectedEdge = graph.edgeById(_controller.selectedEdgeId ?? "");
+    final connectedIds = selectedEdge != null
+        ? {selectedEdge.sourceCharacterId, selectedEdge.targetNodeId}
+        : _connectedNodeIds(graph, _controller.selectedNodeId);
 
     return Stack(
       children: [
         Positioned.fill(
-          child: ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            child: InteractiveViewer(
-              transformationController: _controller.transformationController,
-              constrained: false,
-              minScale: 0.2,
-              maxScale: 3,
-              boundaryMargin: const EdgeInsets.all(600),
-              child: SizedBox(
-                key: const ValueKey("relationship-graph-canvas"),
-                width: canvasSize.width,
-                height: canvasSize.height,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          key: const ValueKey("relationship-edge-layer"),
-                          painter: _RelationshipEdgesPainter(
-                            edges: visibleEdges,
-                            geometries: {
-                              for (final entry in edgeVisualLayouts.entries)
-                                entry.key: entry.value.geometry,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (event) {
+              final point = _controller.transformationController.toScene(
+                event.localPosition,
+              );
+              final id = _hitEdge(point, edgeVisualLayouts);
+              if (id == null) {
+                _controller.clearSelection();
+              } else {
+                _controller.selectEdge(id);
+              }
+            },
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
+              child: InteractiveViewer(
+                transformationController: _controller.transformationController,
+                constrained: false,
+                panEnabled: !_draggingNode,
+                minScale: 0.05,
+                maxScale: 3,
+                boundaryMargin: const EdgeInsets.all(600),
+                child: SizedBox(
+                  key: const ValueKey("relationship-graph-canvas"),
+                  width: canvasSize.width,
+                  height: canvasSize.height,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: MouseRegion(
+                          onHover: (event) {
+                            final id = _hitEdge(
+                              event.localPosition,
+                              edgeVisualLayouts,
+                            );
+                            if (id != _hoveredEdgeId) {
+                              setState(() => _hoveredEdgeId = id);
+                            }
+                          },
+                          onExit: (_) {
+                            if (_hoveredEdgeId != null) {
+                              setState(() => _hoveredEdgeId = null);
+                            }
+                          },
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapUp: (event) {
+                              final id = _hitEdge(
+                                event.localPosition,
+                                edgeVisualLayouts,
+                              );
+                              if (id == null) {
+                                _controller.clearSelection();
+                              } else {
+                                _controller.selectEdge(id);
+                                _panelExpanded = true;
+                              }
                             },
-                            selectedEdgeId: _controller.selectedEdgeId,
-                            selectedNodeId: _controller.selectedNodeId,
-                            colorScheme: Theme.of(context).colorScheme,
+                            child: const SizedBox.expand(),
                           ),
                         ),
                       ),
-                    ),
-                    for (final edge in visibleEdges)
-                      _buildEdgeLabel(edge, edgeVisualLayouts[edge.id]!.label),
-                    for (final node in graph.nodes)
-                      if (visibleIds.contains(node.id))
-                        _buildNode(node, positions[node.id]!, connectedIds),
-                  ],
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            key: const ValueKey("relationship-edge-layer"),
+                            painter: _RelationshipEdgesPainter(
+                              edges: visibleEdges,
+                              geometries: {
+                                for (final entry in edgeVisualLayouts.entries)
+                                  entry.key: entry.value.geometry,
+                              },
+                              selectedEdgeId: _controller.selectedEdgeId,
+                              selectedNodeId: _controller.selectedNodeId,
+                              focusedEdgeIds: visibleEdges
+                                  .where(
+                                    (e) =>
+                                        _focusedEdge(e, graph) ||
+                                        e.id == _hoveredEdgeId,
+                                  )
+                                  .map((e) => e.id)
+                                  .toSet(),
+                              colorScheme: Theme.of(context).colorScheme,
+                            ),
+                          ),
+                        ),
+                      ),
+                      for (final edge in visibleEdges)
+                        if ((_focusedEdge(edge, graph) ||
+                                edge.id == _hoveredEdgeId) &&
+                            edgeVisualLayouts[edge.id]!.label.visible)
+                          _buildEdgeLabel(
+                            edge,
+                            edgeVisualLayouts[edge.id]!.label,
+                          ),
+                      for (final node in graph.nodes)
+                        if (visibleIds.contains(node.id))
+                          _buildNode(node, positions[node.id]!, connectedIds),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -652,7 +942,9 @@ class _CharacterRelationshipGraphViewState
     Set<String> connectedIds,
   ) {
     final selected = node.id == _controller.selectedNodeId;
-    final hasSelection = _controller.selectedNodeId != null;
+    final hasSelection =
+        _controller.selectedNodeId != null ||
+        _controller.selectedEdgeId != null;
     final emphasized = selected || connectedIds.contains(node.id);
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
@@ -683,8 +975,29 @@ class _CharacterRelationshipGraphViewState
             ),
           ),
           clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => _controller.selectNode(node.id),
+          child: GestureDetector(
+            onTap: () {
+              _panelExpanded = true;
+              _controller.selectNode(node.id);
+            },
+            dragStartBehavior: DragStartBehavior.down,
+            onPanStart: (details) {
+              _dragPointerOrigin = details.globalPosition;
+              _dragNodeOrigin = _cachedLayout!.positions[node.id]!;
+              _controller.selectNode(node.id);
+              setState(() => _draggingNode = true);
+            },
+            onPanUpdate: (details) {
+              final scale = _controller.transformationController.value
+                  .getMaxScaleOnAxis();
+              _controller.moveNode(
+                node.id,
+                _dragNodeOrigin +
+                    (details.globalPosition - _dragPointerOrigin) / scale,
+              );
+            },
+            onPanEnd: (_) => setState(() => _draggingNode = false),
+            onPanCancel: () => setState(() => _draggingNode = false),
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -697,7 +1010,16 @@ class _CharacterRelationshipGraphViewState
                     size: 30,
                     color: node.isUnresolved ? scheme.error : scheme.primary,
                   ),
-                  const SizedBox(height: 8),
+                  if (_controller.layoutSession.pinned.contains(node.id))
+                    const Icon(Icons.push_pin, size: 12),
+                  if (node.character?.characterType.trim().isNotEmpty ?? false)
+                    Text(
+                      node.character!.characterType,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  const SizedBox(height: 4),
                   Flexible(
                     child: Text(
                       node.label,
@@ -721,9 +1043,9 @@ class _CharacterRelationshipGraphViewState
 
   Widget _buildEdgeLabel(
     CharacterRelationshipGraphEdge edge,
-    _EdgeLabelPlacement placement,
+    EdgeLabelPlacement placement,
   ) {
-    final label = edge.description.isEmpty ? "未填描述" : edge.description;
+    final label = "${edge.layerLabel}：${edge.description}";
     final selected = edge.id == _controller.selectedEdgeId;
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
@@ -789,16 +1111,32 @@ class _CharacterRelationshipGraphViewState
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: 380,
-            maxHeight: math.max(180, MediaQuery.sizeOf(context).height - 24),
+            maxHeight: math.max(60, _viewportSize.height * .6),
           ),
           child: Card(
             elevation: 10,
             child: SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: edge != null
-                    ? _buildEdgeDetails(characters, graph, edge)
-                    : _buildNodeDetails(characters, graph, node!),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      key: const ValueKey("relationship-panel-toggle"),
+                      onPressed: () =>
+                          setState(() => _panelExpanded = !_panelExpanded),
+                      icon: Icon(
+                        _panelExpanded ? Icons.expand_more : Icons.expand_less,
+                      ),
+                      label: Text(_panelExpanded ? "收合詳細資料" : "展開詳細資料"),
+                    ),
+                    if (_panelExpanded)
+                      edge != null
+                          ? _buildEdgeDetails(characters, graph, edge)
+                          : _buildNodeDetails(characters, graph, node!),
+                  ],
+                ),
               ),
             ),
           ),
@@ -859,7 +1197,7 @@ class _CharacterRelationshipGraphViewState
             ),
             IconButton(
               tooltip: "關閉",
-              onPressed: () => _showGlobalPreview(graph, _viewportSize),
+              onPressed: _controller.clearSelection,
               icon: const Icon(Icons.close),
               style: IconButton.styleFrom(foregroundColor: Colors.redAccent),
             ),
@@ -933,6 +1271,33 @@ class _CharacterRelationshipGraphViewState
         ],
         const SizedBox(height: 6),
         Text("相鄰關係：$adjacent"),
+        OutlinedButton.icon(
+          key: ValueKey("relationship-pin-${node.id}"),
+          onPressed: () => _controller.togglePin(node.id),
+          icon: const Icon(Icons.push_pin_outlined),
+          label: Text(
+            _controller.layoutSession.pinned.contains(node.id)
+                ? "解除釘選"
+                : "釘選位置",
+          ),
+        ),
+        if (_pinnedOverlap(node.id))
+          Text(
+            "釘選位置與其他釘選角色重疊，可拖曳調整。",
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        for (final related in graph.edges.where(
+          (e) => e.sourceCharacterId == node.id || e.targetNodeId == node.id,
+        ))
+          ListTile(
+            dense: true,
+            key: ValueKey("relationship-neighbor-${related.id}"),
+            title: Text(
+              "${graph.nodeById(related.sourceCharacterId)?.label} ${related.isBidirectional ? '↔' : '→'} ${graph.nodeById(related.targetNodeId)?.label}",
+            ),
+            subtitle: Text("${related.layerLabel}：${related.description}"),
+            onTap: () => _controller.selectEdge(related.id),
+          ),
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
@@ -961,84 +1326,290 @@ class _CharacterRelationshipGraphViewState
     );
   }
 
+  bool _pinnedOverlap(String id) {
+    final pins = _controller.layoutSession.pinned;
+    final positions = _cachedLayout?.positions;
+    if (!pins.contains(id) || positions == null || !positions.containsKey(id)) {
+      return false;
+    }
+    final rect = positions[id]! & _nodeSize;
+    return pins.any(
+      (other) =>
+          other != id &&
+          positions.containsKey(other) &&
+          rect.overlaps(positions[other]! & _nodeSize),
+    );
+  }
+
   Widget _buildEdgeDetails(
     Map<String, CharacterEntryData> characters,
     CharacterRelationshipGraphData graph,
     CharacterRelationshipGraphEdge edge,
   ) {
-    final source = graph.nodeById(edge.sourceCharacterId);
-    final target = graph.nodeById(edge.targetNodeId);
+    final channels = graph.edges.where(edge.samePair).toList();
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             Expanded(
               child: Text(
-                "${source?.label ?? edge.sourceCharacterId} ${edge.isBidirectional ? '↔' : '→'} ${target?.label ?? edge.rawTargetPerson}",
+                "${graph.nodeById(edge.canonicalSource)?.label} 與 ${graph.nodeById(edge.canonicalTarget)?.label}",
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             IconButton(
               tooltip: "關閉",
-              onPressed: () => _showGlobalPreview(graph, _viewportSize),
+              onPressed: _controller.clearSelection,
               icon: const Icon(Icons.close),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        Text(edge.description.isEmpty ? "尚未填寫關係描述" : edge.description),
+        Text(
+          "目前顯示：${_displayMode == CharacterRelationshipDisplayMode.both
+              ? '全部'
+              : _displayMode == CharacterRelationshipDisplayMode.external
+              ? '外在'
+              : '內在'}",
+        ),
+        if (_displayMode != CharacterRelationshipDisplayMode.both)
+          TextButton(
+            onPressed: () => setState(
+              () => _displayMode = CharacterRelationshipDisplayMode.both,
+            ),
+            child: const Text("顯示全部關係"),
+          ),
+        for (final channel in channels) ...[
+          _buildDirectionDetails(characters, graph, channel, channel.sources),
+          if (channel.isBidirectional)
+            _buildDirectionDetails(
+              characters,
+              graph,
+              channel,
+              channel.reverseSources,
+            ),
+        ],
         if (!edge.isResolved) ...[
-          const SizedBox(height: 8),
           Text(
             edge.resolutionKind == CharacterRelationshipResolutionKind.ambiguous
                 ? "有多位同名人物，請編輯並選擇含 NanoID 的人物。"
                 : "找不到對應人物，可修正名稱或建立新人物。",
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
-        ],
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton.tonalIcon(
+          if (edge.resolutionKind ==
+              CharacterRelationshipResolutionKind.unresolved)
+            OutlinedButton.icon(
               onPressed: _isViewingSnapshot
                   ? null
-                  : () => _editRelationship(characters, edge),
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text("編輯"),
+                  : () => _createCharacterForEdge(edge),
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text("建立人物"),
             ),
-            if (edge.resolutionKind ==
-                CharacterRelationshipResolutionKind.unresolved)
-              OutlinedButton.icon(
-                onPressed: _isViewingSnapshot
-                    ? null
-                    : () => _createCharacterForEdge(edge),
-                icon: const Icon(Icons.person_add_alt),
-                label: const Text("建立人物"),
-              ),
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-              ),
-              onPressed: _isViewingSnapshot
-                  ? null
-                  : () => _deleteRelationship(edge),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text("刪除"),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDirectionDetails(
+    Map<String, CharacterEntryData> characters,
+    CharacterRelationshipGraphData graph,
+    CharacterRelationshipGraphEdge edge,
+    List<CharacterRelationshipSource> sources,
+  ) {
+    final sourceId = sources.first.characterId;
+    final targetId = sourceId == edge.sourceCharacterId
+        ? edge.targetNodeId
+        : edge.sourceCharacterId;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              "${graph.nodeById(sourceId)?.label} → ${graph.nodeById(targetId)?.label} · ${edge.layerLabel}",
+            ),
+            Text(edge.description),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  key: ValueKey(
+                    "relationship-edit-$sourceId-${edge.layer.name}",
+                  ),
+                  onPressed: _isViewingSnapshot
+                      ? null
+                      : () => _editChannel(characters, edge, sources),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text("編輯"),
+                ),
+                TextButton(
+                  onPressed: _isViewingSnapshot
+                      ? null
+                      : () => _repairTarget(sources),
+                  child: const Text("修正目標人物"),
+                ),
+                TextButton.icon(
+                  key: ValueKey(
+                    "relationship-delete-$sourceId-${edge.layer.name}",
+                  ),
+                  onPressed: _isViewingSnapshot
+                      ? null
+                      : () => _deleteChannel(edge, sources),
+                  icon: const Icon(Icons.delete_outline),
+                  label: Text("刪除${edge.layerLabel}"),
+                ),
+                TextButton(
+                  onPressed: _isViewingSnapshot
+                      ? null
+                      : () => _deleteChannel(
+                          edge,
+                          sources,
+                          entireDirection: true,
+                        ),
+                  child: const Text("刪除此方向全部關係"),
+                ),
+              ],
             ),
           ],
         ),
-      ],
+      ),
     );
+  }
+
+  void _applyChannelChange(
+    List<CharacterRelationshipSource> sources,
+    CharacterRelationshipLayer layer,
+    String description, {
+    bool entireDirection = false,
+  }) {
+    final current = ref.read(characterDataProvider);
+    final next = updateCharacterRelationshipChannel(
+      current,
+      sources: sources,
+      layer: layer,
+      description: description,
+      deleteDirection: entireDirection,
+    );
+    if (next == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("關係已變更，請重新選取後再操作。")));
+      _controller.clearSelection();
+      return;
+    }
+    ref.read(characterDataProvider.notifier).setCharacterData(next);
+    _controller.clearSelection();
+  }
+
+  Future<void> _editChannel(
+    Map<String, CharacterEntryData> characters,
+    CharacterRelationshipGraphEdge edge,
+    List<CharacterRelationshipSource> sources,
+  ) async {
+    final session = widget.projectSessionId;
+    final sourceId = sources.first.characterId;
+    final result = await AppDialog.prompt(
+      context: context,
+      title:
+          "${characters[sourceId]?.displayName} → ${sources.first.value.person} · 編輯${edge.layerLabel}關係",
+      labelText: "${edge.layerLabel}關係",
+      initialValue: edge.description,
+      confirmLabel: "儲存",
+      allowEmpty: true,
+    );
+    if (result == null ||
+        !mounted ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
+    }
+    _applyChannelChange(sources, edge.layer, result.trim());
+  }
+
+  Future<void> _deleteChannel(
+    CharacterRelationshipGraphEdge edge,
+    List<CharacterRelationshipSource> sources, {
+    bool entireDirection = false,
+  }) async {
+    final session = widget.projectSessionId;
+    final confirmed = await AppDialog.confirm(
+      context: context,
+      title: "刪除人物關係",
+      message: entireDirection
+          ? "確定刪除此方向的外在與內在關係？反向關係會保留。"
+          : "確定刪除此方向的${edge.layerLabel}關係「${edge.description}」？另一類型與反向關係會保留。",
+      confirmLabel: "刪除",
+      destructive: true,
+      icon: Icons.delete_outline,
+    );
+    if (!confirmed ||
+        !mounted ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
+    }
+    _applyChannelChange(
+      sources,
+      edge.layer,
+      "",
+      entireDirection: entireDirection,
+    );
+  }
+
+  Future<void> _repairTarget(List<CharacterRelationshipSource> sources) async {
+    final session = widget.projectSessionId;
+    final characters = ref.read(characterDataProvider);
+    final person = await AppDialog.showCustom<String>(
+      context: context,
+      builder: (_) => _RelationshipTargetDialog(
+        initialPerson: sources.first.value.person,
+        options: [
+          for (final id in characters.keys)
+            CharacterRelationshipResolver.displayLabel(id, characters),
+        ],
+      ),
+    );
+    if (!mounted ||
+        person == null ||
+        person.isEmpty ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
+    }
+    final current = ref.read(characterDataProvider);
+    final resolution = CharacterRelationshipResolver(current).resolve(person);
+    if (!resolution.isResolved) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("請從清單選擇能唯一對應的現有人物。")));
+      return;
+    }
+    final next = updateCharacterRelationshipChannel(
+      current,
+      sources: sources,
+      layer: CharacterRelationshipLayer.external,
+      description: "",
+      targetPerson: CharacterRelationshipResolver.displayLabel(
+        resolution.characterId!,
+        current,
+      ),
+    );
+    if (next == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("關係已變更，請重新選取後再操作。")));
+    } else {
+      ref.read(characterDataProvider.notifier).setCharacterData(next);
+    }
+    _controller.clearSelection();
   }
 
   Future<void> _addRelationship(
     Map<String, CharacterEntryData> characters, {
     String? sourceCharacterId,
   }) async {
+    final session = widget.projectSessionId;
     final selectedSource =
         sourceCharacterId ??
         (characters.containsKey(_controller.selectedNodeId)
@@ -1050,33 +1621,16 @@ class _CharacterRelationshipGraphViewState
       sourceCharacterId: selectedSource,
       allowSourceSelection: selectedSource == null,
     );
-    if (result == null || !mounted) return;
+    if (result == null ||
+        !mounted ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
+    }
     _writeRelationship(result);
   }
 
-  Future<void> _editRelationship(
-    Map<String, CharacterEntryData> characters,
-    CharacterRelationshipGraphEdge edge,
-  ) async {
-    final result = await CharacterRelationshipEditor.show(
-      context: context,
-      characters: characters,
-      sourceCharacterId: edge.sourceCharacterId,
-      initialPerson: edge.rawTargetPerson,
-      initialDescription: edge.description,
-      allowSourceSelection: false,
-      allowBidirectional: false,
-      title: "編輯人物關係",
-    );
-    if (result == null || !mounted) return;
-    _writeRelationship(result, editingEdge: edge);
-    _controller.clearSelection();
-  }
-
-  void _writeRelationship(
-    CharacterRelationshipEditorResult result, {
-    CharacterRelationshipGraphEdge? editingEdge,
-  }) {
+  void _writeRelationship(CharacterRelationshipEditorResult result) {
     final next = Map<String, CharacterEntryData>.of(
       ref.read(characterDataProvider),
     );
@@ -1106,54 +1660,27 @@ class _CharacterRelationshipGraphViewState
       targetCharacterId,
       next,
     );
-    final editingIndex = editingEdge == null
-        ? null
-        : _findRelationshipIndex(source.relationships, editingEdge);
     next[result.sourceCharacterId] = source.copyWith(
       relationships: upsertCharacterRelationship(
         relationships: source.relationships,
         person: targetLabel,
         description: result.description,
-        editingIndex: editingIndex,
+        internalRelationship: result.internalRelationship,
       ),
     );
 
-    final preserveBidirectionalPair = editingEdge?.isBidirectional ?? false;
-    final writeReverse = result.bidirectional || preserveBidirectionalPair;
-    if (preserveBidirectionalPair &&
-        editingEdge!.targetNodeId != targetCharacterId) {
-      final oldTarget = next[editingEdge.targetNodeId];
-      final reverseIndex = editingEdge.reverseRelationshipIndex;
-      if (oldTarget != null &&
-          reverseIndex != null &&
-          reverseIndex >= 0 &&
-          reverseIndex < oldTarget.relationships.length) {
-        final relationships =
-            oldTarget.relationships.map((item) => item.copyWith()).toList()
-              ..removeAt(reverseIndex);
-        next[editingEdge.targetNodeId] = oldTarget.copyWith(
-          relationships: relationships,
-        );
-      }
-    }
-
-    if (writeReverse && targetCharacterId != result.sourceCharacterId) {
+    if (result.bidirectional && targetCharacterId != result.sourceCharacterId) {
       final target = next[targetCharacterId]!;
       final sourceLabel = CharacterRelationshipResolver.displayLabel(
         result.sourceCharacterId,
         next,
       );
-      final reverseEditingIndex =
-          preserveBidirectionalPair &&
-              editingEdge!.targetNodeId == targetCharacterId
-          ? editingEdge.reverseRelationshipIndex
-          : null;
       next[targetCharacterId] = target.copyWith(
         relationships: upsertCharacterRelationship(
           relationships: target.relationships,
           person: sourceLabel,
           description: result.description,
-          editingIndex: reverseEditingIndex,
+          internalRelationship: result.internalRelationship,
         ),
       );
     }
@@ -1161,70 +1688,10 @@ class _CharacterRelationshipGraphViewState
     ref.read(characterDataProvider.notifier).setCharacterData(next);
   }
 
-  int _findRelationshipIndex(
-    List<CharacterRelationship> relationships,
-    CharacterRelationshipGraphEdge edge,
-  ) {
-    final person = edge.rawTargetPerson.trim().toLowerCase();
-    final exact = relationships.indexWhere(
-      (item) =>
-          item.person.trim().toLowerCase() == person &&
-          item.relationship.trim() == edge.description,
-    );
-    if (exact >= 0) return exact;
-    return relationships.indexWhere(
-      (item) => item.person.trim().toLowerCase() == person,
-    );
-  }
-
-  Future<void> _deleteRelationship(CharacterRelationshipGraphEdge edge) async {
-    final confirmed = await AppDialog.confirm(
-      context: context,
-      title: "刪除人物關係",
-      message:
-          "確定要刪除「${edge.description.isEmpty ? edge.rawTargetPerson : edge.description}」嗎？",
-      confirmLabel: "刪除",
-      destructive: true,
-      icon: Icons.delete_outline,
-    );
-    if (!confirmed || !mounted) return;
-    final characters = Map<String, CharacterEntryData>.of(
-      ref.read(characterDataProvider),
-    );
-    final source = characters[edge.sourceCharacterId];
-    if (source != null) {
-      final index = _findRelationshipIndex(source.relationships, edge);
-      if (index >= 0) {
-        final relationships =
-            source.relationships.map((item) => item.copyWith()).toList()
-              ..removeAt(index);
-        characters[edge.sourceCharacterId] = source.copyWith(
-          relationships: relationships,
-        );
-      }
-    }
-    if (edge.isBidirectional) {
-      final target = characters[edge.targetNodeId];
-      final reverseIndex = edge.reverseRelationshipIndex;
-      if (target != null &&
-          reverseIndex != null &&
-          reverseIndex >= 0 &&
-          reverseIndex < target.relationships.length) {
-        final relationships =
-            target.relationships.map((item) => item.copyWith()).toList()
-              ..removeAt(reverseIndex);
-        characters[edge.targetNodeId] = target.copyWith(
-          relationships: relationships,
-        );
-      }
-    }
-    ref.read(characterDataProvider.notifier).setCharacterData(characters);
-    _controller.clearSelection();
-  }
-
   Future<void> _createCharacterForEdge(
     CharacterRelationshipGraphEdge edge,
   ) async {
+    final session = widget.projectSessionId;
     final rawName = edge.rawTargetPerson.trim();
     final name = await AppDialog.prompt(
       context: context,
@@ -1235,25 +1702,38 @@ class _CharacterRelationshipGraphViewState
       confirmLabel: "建立",
       icon: Icons.person_add_alt,
     );
-    if (name == null || !mounted) return;
-    final entry = CharacterEntryData.withName(name);
-    ref
-        .read(characterDataProvider.notifier)
-        .setCharacterEntry(characterId: entry.characterId, entry: entry);
-    if (name.trim().toLowerCase() != rawName.toLowerCase()) {
-      _writeRelationship(
-        CharacterRelationshipEditorResult(
-          sourceCharacterId: edge.sourceCharacterId,
-          person: name,
-          description: edge.description,
-        ),
-        editingEdge: edge,
-      );
+    if (name == null ||
+        !mounted ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
     }
+    final entry = CharacterEntryData.withName(name);
+    final current = Map<String, CharacterEntryData>.of(
+      ref.read(characterDataProvider),
+    )..[entry.characterId] = entry;
+    final next = updateCharacterRelationshipChannel(
+      current,
+      sources: edge.sources,
+      layer: edge.layer,
+      description: "",
+      targetPerson: CharacterRelationshipResolver.displayLabel(
+        entry.characterId,
+        current,
+      ),
+    );
+    if (next == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("關係已變更，請重新選取後再操作。")));
+      return;
+    }
+    ref.read(characterDataProvider.notifier).setCharacterData(next);
     _controller.selectNode(entry.characterId);
   }
 
   Future<void> _createTargetFromNode(String sourceCharacterId) async {
+    final session = widget.projectSessionId;
     final name = await AppDialog.prompt(
       context: context,
       title: "建立目標人物",
@@ -1262,7 +1742,12 @@ class _CharacterRelationshipGraphViewState
       confirmLabel: "下一步",
       icon: Icons.person_add_alt,
     );
-    if (name == null || !mounted) return;
+    if (name == null ||
+        !mounted ||
+        _isViewingSnapshot ||
+        session != widget.projectSessionId) {
+      return;
+    }
     final target = CharacterEntryData.withName(name);
     ref
         .read(characterDataProvider.notifier)
@@ -1278,7 +1763,12 @@ class _CharacterRelationshipGraphViewState
       allowSourceSelection: false,
       title: "設定新人物關係",
     );
-    if (result != null && mounted) _writeRelationship(result);
+    if (result != null &&
+        mounted &&
+        !_isViewingSnapshot &&
+        session == widget.projectSessionId) {
+      _writeRelationship(result);
+    }
   }
 
   Set<String> _connectedNodeIds(
@@ -1295,7 +1785,7 @@ class _CharacterRelationshipGraphViewState
   }
 
   Size _edgeLabelSizeFor(CharacterRelationshipGraphEdge edge) {
-    final label = edge.description.isEmpty ? "未填描述" : edge.description;
+    final label = "${edge.layerLabel}：${edge.description}";
     final painter = TextPainter(
       text: TextSpan(
         text: label,
@@ -1345,678 +1835,15 @@ class _CharacterRelationshipGraphViewState
       return left.id.compareTo(right.id);
     });
   }
-
-  Map<String, _EdgeVisualLayout> _edgeVisualLayouts(
-    List<CharacterRelationshipGraphEdge> edges,
-    Map<String, Offset> positions,
-    Size canvasSize,
-  ) {
-    final nodeRects = {
-      for (final entry in positions.entries)
-        entry.key: Rect.fromLTWH(
-          entry.value.dx,
-          entry.value.dy,
-          _nodeSize.width,
-          _nodeSize.height,
-        ),
-    };
-    final labelNodeObstacles = nodeRects.values
-        .map((rect) => rect.inflate(34))
-        .toList(growable: false);
-    final occupiedLabels = <Rect>[];
-    final result = <String, _EdgeVisualLayout>{};
-
-    double overlapArea(Rect candidate, Iterable<Rect> obstacles) {
-      var area = 0.0;
-      for (final obstacle in obstacles) {
-        final intersection = candidate.intersect(obstacle);
-        if (intersection.width > 0 && intersection.height > 0) {
-          area += intersection.width * intersection.height;
-        }
-      }
-      return area;
-    }
-
-    for (final edge in edges) {
-      final baseGeometry = _edgeGeometry(
-        edge,
-        edges,
-        positions,
-        nodeSize: _nodeSize,
-      );
-      final routeObstacles = nodeRects.entries
-          .where(
-            (entry) =>
-                entry.key != edge.sourceCharacterId &&
-                entry.key != edge.targetNodeId,
-          )
-          .map((entry) => entry.value.inflate(16))
-          .toList(growable: false);
-      final routeDelta = baseGeometry.end - baseGeometry.start;
-      final routeDistance = math.max(1.0, routeDelta.distance);
-      final routeNormal = Offset(
-        -routeDelta.dy / routeDistance,
-        routeDelta.dx / routeDistance,
-      );
-      final nodeCenterOffset = Offset(
-        _nodeSize.width / 2,
-        _nodeSize.height / 2,
-      );
-      final sourceCenter =
-          (positions[edge.sourceCharacterId] ?? Offset.zero) + nodeCenterOffset;
-      final targetCenter =
-          (positions[edge.targetNodeId] ?? Offset.zero) + nodeCenterOffset;
-      final maximumDetour = math.max(
-        288.0,
-        math.max(canvasSize.width, canvasSize.height) * 0.65,
-      );
-      final controlOffsets = <double>[0];
-      for (var offset = 72.0; offset <= maximumDetour; offset += 72) {
-        controlOffsets.addAll([offset, -offset]);
-      }
-      _EdgeGeometry? geometry;
-      var routeScore = double.infinity;
-      for (final controlOffset in controlOffsets) {
-        final control = baseGeometry.control + routeNormal * controlOffset;
-        final candidateStart =
-            sourceCenter +
-            _nodeBoundaryOffset(control - sourceCenter, _nodeSize);
-        final candidateEnd =
-            targetCenter +
-            _nodeBoundaryOffset(control - targetCenter, _nodeSize);
-        final estimatedLength =
-            (candidateStart - control).distance +
-            (candidateEnd - control).distance;
-        final sampleCount = math.max(28, (estimatedLength / 12).ceil());
-        var nodeCollisionSamples = 0;
-        var labelCollisionSamples = 0;
-        var boundarySamples = 0;
-        for (var sample = 1; sample < sampleCount; sample++) {
-          final point = _quadraticPoint(
-            candidateStart,
-            control,
-            candidateEnd,
-            sample / sampleCount,
-          );
-          if (routeObstacles.any((obstacle) => obstacle.contains(point))) {
-            nodeCollisionSamples++;
-          }
-          if (occupiedLabels.any((label) => label.contains(point))) {
-            labelCollisionSamples++;
-          }
-          if (point.dx < 8 ||
-              point.dy < 8 ||
-              point.dx > canvasSize.width - 8 ||
-              point.dy > canvasSize.height - 8) {
-            boundarySamples++;
-          }
-        }
-        final score =
-            boundarySamples * 1000000000 +
-            nodeCollisionSamples * 100000000 +
-            labelCollisionSamples * 1000000 +
-            controlOffset.abs() * 0.02;
-        if (score >= routeScore) continue;
-        routeScore = score;
-        geometry = _EdgeGeometry(
-          start: candidateStart,
-          control: control,
-          end: candidateEnd,
-          label: _quadraticPoint(candidateStart, control, candidateEnd, 0.5),
-        );
-      }
-      geometry ??= baseGeometry;
-
-      final labelSize = _edgeLabelSizeFor(edge);
-      final reverseExists = edges.any(
-        (candidate) =>
-            candidate.sourceCharacterId == edge.targetNodeId &&
-            candidate.targetNodeId == edge.sourceCharacterId,
-      );
-      final preferredT = reverseExists ? 0.34 : 0.5;
-      final candidateTs =
-          <double>[
-            preferredT,
-            for (var step = 4; step <= 21; step++) step / 25,
-          ]..sort(
-            (left, right) =>
-                (left - preferredT).abs().compareTo((right - preferredT).abs()),
-          );
-      Offset? selectedCenter;
-      var selectedScore = double.infinity;
-
-      for (final t in candidateTs) {
-        final center = _quadraticPoint(
-          geometry.start,
-          geometry.control,
-          geometry.end,
-          t,
-        );
-        final candidate = Rect.fromCenter(
-          center: center,
-          width: labelSize.width,
-          height: labelSize.height,
-        );
-        var boundaryPenalty = 0.0;
-        if (candidate.left < 8) boundaryPenalty += (8 - candidate.left) * 100;
-        if (candidate.top < 8) boundaryPenalty += (8 - candidate.top) * 100;
-        if (candidate.right > canvasSize.width - 8) {
-          boundaryPenalty += (candidate.right - canvasSize.width + 8) * 100;
-        }
-        if (candidate.bottom > canvasSize.height - 8) {
-          boundaryPenalty += (candidate.bottom - canvasSize.height + 8) * 100;
-        }
-        final score =
-            overlapArea(candidate, labelNodeObstacles) * 4 +
-            overlapArea(candidate, occupiedLabels) * 8 +
-            boundaryPenalty +
-            (t - preferredT).abs() * 4;
-        if (score < selectedScore) {
-          selectedScore = score;
-          selectedCenter = center;
-        }
-      }
-
-      final center = selectedCenter ?? geometry.label;
-      final label = _EdgeLabelPlacement(center: center, size: labelSize);
-      result[edge.id] = _EdgeVisualLayout(geometry: geometry, label: label);
-      occupiedLabels.add(
-        Rect.fromCenter(
-          center: center,
-          width: labelSize.width,
-          height: labelSize.height,
-        ).inflate(5),
-      );
-    }
-    return result;
-  }
-
-  _CharacterLayoutLane _layoutLane(CharacterRelationshipGraphNode node) {
-    return switch (node.character?.characterType.trim()) {
-      "主角" => _CharacterLayoutLane.protagonist,
-      "重要配角" => _CharacterLayoutLane.importantSupporting,
-      "主要反派" => _CharacterLayoutLane.mainVillain,
-      "次要反派" => _CharacterLayoutLane.secondaryVillain,
-      "其他" => _CharacterLayoutLane.other,
-      _ => _CharacterLayoutLane.secondarySupporting,
-    };
-  }
-
-  String _organizationSortKey(CharacterRelationshipGraphNode node) {
-    final organizations = node.character?.organizations ?? const [];
-    for (final organization in organizations) {
-      final name = organization.name.trim();
-      if (name.isNotEmpty) return name.toLowerCase();
-    }
-    return "~${node.label.toLowerCase()}";
-  }
-
-  String _layoutOrganizationKey(CharacterRelationshipGraphNode node) {
-    final organizations = node.character?.organizations ?? const [];
-    for (final organization in organizations) {
-      final name = organization.name.trim().toLowerCase();
-      if (name.isNotEmpty) return "organization:$name";
-    }
-    return "unaffiliated";
-  }
-
-  Map<_CharacterLayoutLane, List<CharacterRelationshipGraphNode>> _nodesByLane(
-    Iterable<CharacterRelationshipGraphNode> nodes,
-  ) {
-    final lanes = <_CharacterLayoutLane, List<CharacterRelationshipGraphNode>>{
-      for (final lane in _CharacterLayoutLane.values)
-        lane: <CharacterRelationshipGraphNode>[],
-    };
-    for (final node in nodes) {
-      if (!node.isUnresolved) lanes[_layoutLane(node)]!.add(node);
-    }
-    for (final laneNodes in lanes.values) {
-      laneNodes.sort((left, right) {
-        final organizationOrder = _organizationSortKey(
-          left,
-        ).compareTo(_organizationSortKey(right));
-        if (organizationOrder != 0) return organizationOrder;
-        return left.label.toLowerCase().compareTo(right.label.toLowerCase());
-      });
-      if (laneNodes.isNotEmpty) {
-        final shift = _controller.layoutRevision % laneNodes.length;
-        laneNodes.addAll(laneNodes.take(shift));
-        laneNodes.removeRange(0, shift);
-      }
-    }
-    return lanes;
-  }
-
-  Size _canvasSize(
-    CharacterRelationshipGraphData graph,
-    Set<String> visibleIds,
-  ) {
-    final visibleNodes = graph.nodes
-        .where((node) => visibleIds.contains(node.id))
-        .toList(growable: false);
-    return _radialLayoutMetrics(visibleNodes).canvasSize;
-  }
-
-  double _ringRadius(
-    int nodeCount, {
-    required double minimum,
-    bool allowSingleAtCenter = false,
-  }) {
-    if (nodeCount == 0) return 0;
-    if (allowSingleAtCenter && nodeCount == 1) return 0;
-    final minimumArc = _nodeSize.width + 36;
-    return math.max(minimum, nodeCount * minimumArc / (2 * math.pi));
-  }
-
-  _RadialLayoutMetrics _radialLayoutMetrics(
-    List<CharacterRelationshipGraphNode> visibleNodes,
-  ) {
-    final lanes = _nodesByLane(visibleNodes);
-    final protagonistRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.protagonist]!.length,
-      minimum: 82,
-      allowSingleAtCenter: true,
-    );
-    final importantRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.importantSupporting]!.length,
-      minimum: math.max(220, protagonistRadius + 180),
-    );
-    final secondaryRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.secondarySupporting]!.length,
-      minimum: math.max(400, importantRadius + 180),
-    );
-    final otherRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.other]!.length,
-      minimum: math.max(570, secondaryRadius + 170),
-    );
-    final mainVillainRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.mainVillain]!.length,
-      minimum: 82,
-      allowSingleAtCenter: true,
-    );
-    final secondaryVillainRadius = _ringRadius(
-      lanes[_CharacterLayoutLane.secondaryVillain]!.length,
-      minimum: math.max(250, mainVillainRadius + 180),
-    );
-    final radii = <_CharacterLayoutLane, double>{
-      _CharacterLayoutLane.protagonist: protagonistRadius,
-      _CharacterLayoutLane.importantSupporting: importantRadius,
-      _CharacterLayoutLane.secondarySupporting: secondaryRadius,
-      _CharacterLayoutLane.other: otherRadius,
-      _CharacterLayoutLane.mainVillain: mainVillainRadius,
-      _CharacterLayoutLane.secondaryVillain: secondaryVillainRadius,
-    };
-
-    double maximumRadius(Iterable<_CharacterLayoutLane> clusterLanes) {
-      var result = 0.0;
-      for (final lane in clusterLanes) {
-        if (lanes[lane]!.isNotEmpty) result = math.max(result, radii[lane]!);
-      }
-      return result;
-    }
-
-    final protagonistExtent = math.max(
-      310.0,
-      maximumRadius(const [
-            _CharacterLayoutLane.protagonist,
-            _CharacterLayoutLane.importantSupporting,
-            _CharacterLayoutLane.secondarySupporting,
-            _CharacterLayoutLane.other,
-          ]) +
-          _nodeSize.width / 2 +
-          64,
-    );
-    final villainExtent = math.max(
-      310.0,
-      maximumRadius(const [
-            _CharacterLayoutLane.mainVillain,
-            _CharacterLayoutLane.secondaryVillain,
-          ]) +
-          _nodeSize.width / 2 +
-          64,
-    );
-    const clusterGap = 180.0;
-    final rawWidth = protagonistExtent * 2 + clusterGap + villainExtent * 2;
-    final canvasWidth = math.max(1800.0, rawWidth);
-    final horizontalInset = (canvasWidth - rawWidth) / 2;
-    final resolvedHeight = math.max(
-      820.0,
-      math.max(protagonistExtent, villainExtent) * 2,
-    );
-    final protagonistCenter = Offset(
-      horizontalInset + protagonistExtent,
-      resolvedHeight / 2,
-    );
-    final villainCenter = Offset(
-      horizontalInset + protagonistExtent * 2 + clusterGap + villainExtent,
-      resolvedHeight / 2,
-    );
-
-    final unresolvedCount = visibleNodes
-        .where((node) => node.isUnresolved)
-        .length;
-    final unresolvedColumns = math.max(
-      1,
-      ((canvasWidth - 48) / (_nodeSize.width + 28)).floor(),
-    );
-    final unresolvedRows = (unresolvedCount / unresolvedColumns).ceil();
-    final unresolvedHeight = unresolvedRows == 0
-        ? 0.0
-        : unresolvedRows * (_nodeSize.height + 24) + 28;
-
-    return _RadialLayoutMetrics(
-      canvasSize: Size(canvasWidth, resolvedHeight + unresolvedHeight),
-      resolvedHeight: resolvedHeight,
-      protagonistCenter: protagonistCenter,
-      villainCenter: villainCenter,
-      radii: radii,
-    );
-  }
-
-  Map<String, Offset> _layoutNodes(
-    CharacterRelationshipGraphData graph,
-    Set<String> visibleIds,
-  ) {
-    final visibleNodes = graph.nodes
-        .where((node) => visibleIds.contains(node.id))
-        .toList(growable: false);
-    if (visibleNodes.isEmpty) return const {};
-    final lanes = _nodesByLane(visibleNodes);
-    final metrics = _radialLayoutMetrics(visibleNodes);
-    final canvasSize = metrics.canvasSize;
-    final unresolved = visibleNodes.where((node) => node.isUnresolved).toList();
-    final positions = <String, Offset>{};
-    final connectionCounts = <String, int>{};
-    for (final edge in graph.edges) {
-      if (!visibleIds.contains(edge.sourceCharacterId) ||
-          !visibleIds.contains(edge.targetNodeId)) {
-        continue;
-      }
-      connectionCounts[edge.sourceCharacterId] =
-          (connectionCounts[edge.sourceCharacterId] ?? 0) + 1;
-      connectionCounts[edge.targetNodeId] =
-          (connectionCounts[edge.targetNodeId] ?? 0) + 1;
-    }
-    final unresolvedColumns = math.max(
-      1,
-      ((canvasSize.width - 48) / (_nodeSize.width + 28)).floor(),
-    );
-
-    Map<String, double> organizationAnglesFor(
-      List<_CharacterLayoutLane> clusterLanes,
-      double startAngle,
-    ) {
-      final groupedNodes = <String, List<CharacterRelationshipGraphNode>>{};
-      for (final lane in clusterLanes) {
-        if ((metrics.radii[lane] ?? 0) <= 0) continue;
-        for (final node in lanes[lane]!) {
-          groupedNodes
-              .putIfAbsent(
-                _layoutOrganizationKey(node),
-                () => <CharacterRelationshipGraphNode>[],
-              )
-              .add(node);
-        }
-      }
-      if (groupedNodes.isEmpty) return const {};
-      if (groupedNodes.length == 1 &&
-          groupedNodes.containsKey("unaffiliated")) {
-        return const {};
-      }
-
-      final groupWeights = <String, int>{};
-      for (final entry in groupedNodes.entries) {
-        var maximumInLane = 1;
-        for (final lane in clusterLanes) {
-          maximumInLane = math.max(
-            maximumInLane,
-            entry.value.where((node) => _layoutLane(node) == lane).length,
-          );
-        }
-        groupWeights[entry.key] = maximumInLane;
-      }
-      final orderedKeys = groupedNodes.keys.toList()
-        ..sort((left, right) {
-          final leftUnaffiliated = left == "unaffiliated";
-          final rightUnaffiliated = right == "unaffiliated";
-          if (leftUnaffiliated != rightUnaffiliated) {
-            return leftUnaffiliated ? 1 : -1;
-          }
-          final countOrder = groupedNodes[left]!.length.compareTo(
-            groupedNodes[right]!.length,
-          );
-          if (countOrder != 0) return countOrder;
-          return left.compareTo(right);
-        });
-      final totalWeight = orderedKeys.fold<int>(
-        0,
-        (sum, key) => sum + groupWeights[key]!,
-      );
-      final sectorGap = orderedKeys.length <= 1
-          ? 0.0
-          : math.min(0.24, math.pi / (orderedKeys.length * 4));
-      final availableSpan = math.max(
-        math.pi,
-        2 * math.pi - sectorGap * orderedKeys.length,
-      );
-      final result = <String, double>{};
-      var cursor = startAngle;
-      for (final key in orderedKeys) {
-        final sectorSpan = availableSpan * groupWeights[key]! / totalWeight;
-        final sectorCenter = cursor + sectorSpan / 2;
-        for (final lane in clusterLanes) {
-          final laneMembers = groupedNodes[key]!
-              .where((node) => _layoutLane(node) == lane)
-              .toList(growable: false);
-          if (laneMembers.isEmpty) continue;
-          final radius = metrics.radii[lane]!;
-          final minimumGap = radius <= 0
-              ? 0.0
-              : 2 *
-                    math.asin(
-                      math.min(0.95, (_nodeSize.width + 18) / (2 * radius)),
-                    );
-          final spread = laneMembers.length <= 1
-              ? 0.0
-              : math.min(
-                  sectorSpan * 0.68,
-                  minimumGap * (laneMembers.length - 1),
-                );
-          for (var index = 0; index < laneMembers.length; index++) {
-            final angle = laneMembers.length == 1
-                ? sectorCenter
-                : sectorCenter -
-                      spread / 2 +
-                      spread * index / (laneMembers.length - 1);
-            result[laneMembers[index].id] = angle;
-          }
-        }
-        cursor += sectorSpan + sectorGap;
-      }
-      return result;
-    }
-
-    final organizationAngles = <String, double>{
-      ...organizationAnglesFor(const [
-        _CharacterLayoutLane.protagonist,
-        _CharacterLayoutLane.importantSupporting,
-        _CharacterLayoutLane.secondarySupporting,
-        _CharacterLayoutLane.other,
-      ], -math.pi),
-      ...organizationAnglesFor(const [
-        _CharacterLayoutLane.mainVillain,
-        _CharacterLayoutLane.secondaryVillain,
-      ], -math.pi),
-    };
-
-    void placeRing(
-      _CharacterLayoutLane lane,
-      Offset center, {
-      double startAngle = -math.pi / 2,
-    }) {
-      final nodes = lanes[lane]!;
-      if (nodes.isEmpty) return;
-      final radius = metrics.radii[lane]!;
-      final angleStep = 2 * math.pi / nodes.length;
-      final maximumConnections = nodes.fold<int>(
-        1,
-        (maximum, node) => math.max(maximum, connectionCounts[node.id] ?? 0),
-      );
-      for (var index = 0; index < nodes.length; index++) {
-        final angle =
-            organizationAngles[nodes[index].id] ??
-            startAngle + index * angleStep;
-        final connectionRatio =
-            (connectionCounts[nodes[index].id] ?? 0) / maximumConnections;
-        final relativeOffset = radius == 0
-            ? Offset.zero
-            : Offset.fromDirection(
-                    angle + math.pi / 2,
-                    8 + connectionRatio * 22,
-                  ) +
-                  Offset.fromDirection(angle, connectionRatio * 12);
-        final nodeCenter =
-            center + Offset.fromDirection(angle, radius) + relativeOffset;
-        positions[nodes[index].id] =
-            nodeCenter - Offset(_nodeSize.width / 2, _nodeSize.height / 2);
-      }
-    }
-
-    placeRing(_CharacterLayoutLane.protagonist, metrics.protagonistCenter);
-    placeRing(
-      _CharacterLayoutLane.importantSupporting,
-      metrics.protagonistCenter,
-    );
-    placeRing(
-      _CharacterLayoutLane.secondarySupporting,
-      metrics.protagonistCenter,
-      startAngle: -math.pi / 2 + math.pi / 8,
-    );
-    placeRing(
-      _CharacterLayoutLane.other,
-      metrics.protagonistCenter,
-      startAngle: math.pi / 2,
-    );
-    placeRing(_CharacterLayoutLane.mainVillain, metrics.villainCenter);
-    placeRing(
-      _CharacterLayoutLane.secondaryVillain,
-      metrics.villainCenter,
-      startAngle: -math.pi / 2 + math.pi / 6,
-    );
-
-    for (var index = 0; index < unresolved.length; index++) {
-      final column = index % unresolvedColumns;
-      final row = index ~/ unresolvedColumns;
-      positions[unresolved[index].id] = Offset(
-        24 + column * (_nodeSize.width + 28),
-        metrics.resolvedHeight + row * (_nodeSize.height + 24) + 12,
-      );
-    }
-    return positions;
-  }
-}
-
-class _EdgeGeometry {
-  final Offset start;
-  final Offset control;
-  final Offset end;
-  final Offset label;
-
-  const _EdgeGeometry({
-    required this.start,
-    required this.control,
-    required this.end,
-    required this.label,
-  });
-}
-
-Offset _nodeBoundaryOffset(Offset direction, Size nodeSize) {
-  final distance = math.max(0.0001, direction.distance);
-  final normalized = direction / distance;
-  final horizontalScale = normalized.dx.abs() < 0.0001
-      ? double.infinity
-      : nodeSize.width / 2 / normalized.dx.abs();
-  final verticalScale = normalized.dy.abs() < 0.0001
-      ? double.infinity
-      : nodeSize.height / 2 / normalized.dy.abs();
-  return normalized * math.min(horizontalScale, verticalScale);
-}
-
-_EdgeGeometry _edgeGeometry(
-  CharacterRelationshipGraphEdge edge,
-  List<CharacterRelationshipGraphEdge> edges,
-  Map<String, Offset> positions, {
-  required Size nodeSize,
-}) {
-  final sourceTopLeft = positions[edge.sourceCharacterId] ?? Offset.zero;
-  final targetTopLeft = positions[edge.targetNodeId] ?? Offset.zero;
-  final nodeCenterOffset = Offset(nodeSize.width / 2, nodeSize.height / 2);
-  final source = sourceTopLeft + nodeCenterOffset;
-  final target = targetTopLeft + nodeCenterOffset;
-  final reverseExists = edges.any(
-    (candidate) =>
-        candidate.sourceCharacterId == edge.targetNodeId &&
-        candidate.targetNodeId == edge.sourceCharacterId,
-  );
-
-  final centerDelta = target - source;
-  final centerDistance = math.max(1.0, centerDelta.distance);
-  final centerDirection = centerDelta / centerDistance;
-
-  var start = source + _nodeBoundaryOffset(centerDirection, nodeSize);
-  var end = target - _nodeBoundaryOffset(centerDirection, nodeSize);
-  var bendNormal = Offset.zero;
-  if (reverseExists) {
-    final sourceIsCanonical =
-        edge.sourceCharacterId.compareTo(edge.targetNodeId) <= 0;
-    final canonicalStart = sourceIsCanonical ? source : target;
-    final canonicalEnd = sourceIsCanonical ? target : source;
-    final canonicalDirection =
-        (canonicalEnd - canonicalStart) /
-        math.max(1.0, (canonicalEnd - canonicalStart).distance);
-    bendNormal = Offset(-canonicalDirection.dy, canonicalDirection.dx);
-
-    // Keep both curves bending toward the same side while assigning each
-    // direction its own parallel lane.
-    const laneOffset = 32.0;
-    final laneSign = sourceIsCanonical ? 1.0 : -1.0;
-    final laneShift = bendNormal * (laneOffset * laneSign);
-    start += laneShift;
-    end += laneShift;
-  }
-
-  final midpoint = (start + end) / 2;
-  final control = midpoint + bendNormal * (reverseExists ? 50.0 : 0.0);
-
-  // Opposite directions use the same t value from their own source, placing
-  // the two labels toward opposite ends instead of stacking at the midpoint.
-  final label = _quadraticPoint(
-    start,
-    control,
-    end,
-    reverseExists ? 0.34 : 0.5,
-  );
-  return _EdgeGeometry(start: start, control: control, end: end, label: label);
-}
-
-Offset _quadraticPoint(Offset start, Offset control, Offset end, double t) {
-  final inverse = 1 - t;
-  return Offset(
-    inverse * inverse * start.dx +
-        2 * inverse * t * control.dx +
-        t * t * end.dx,
-    inverse * inverse * start.dy +
-        2 * inverse * t * control.dy +
-        t * t * end.dy,
-  );
 }
 
 class _RelationshipEdgesPainter extends CustomPainter {
   final List<CharacterRelationshipGraphEdge> edges;
-  final Map<String, _EdgeGeometry> geometries;
+  final Map<String, EdgeGeometry> geometries;
   final String? selectedEdgeId;
   final String? selectedNodeId;
   final ColorScheme colorScheme;
+  final Set<String> focusedEdgeIds;
 
   const _RelationshipEdgesPainter({
     required this.edges,
@@ -2024,6 +1851,7 @@ class _RelationshipEdgesPainter extends CustomPainter {
     required this.selectedEdgeId,
     required this.selectedNodeId,
     required this.colorScheme,
+    required this.focusedEdgeIds,
   });
 
   @override
@@ -2032,17 +1860,16 @@ class _RelationshipEdgesPainter extends CustomPainter {
       final geometry = geometries[edge.id];
       if (geometry == null) continue;
       final selected = edge.id == selectedEdgeId;
-      final connected =
-          selectedNodeId == null ||
-          edge.sourceCharacterId == selectedNodeId ||
-          edge.targetNodeId == selectedNodeId;
+      final connected = focusedEdgeIds.contains(edge.id);
       final color = !edge.isResolved
           ? colorScheme.error
           : selected
           ? colorScheme.secondary
+          : edge.layer == CharacterRelationshipLayer.internal
+          ? colorScheme.tertiary
           : colorScheme.outline;
       final paint = Paint()
-        ..color = color.withValues(alpha: connected ? 1 : 0.22)
+        ..color = color.withValues(alpha: connected ? 1 : 0.20)
         ..style = PaintingStyle.stroke
         ..strokeWidth = selected ? 3.5 : 2
         ..strokeCap = StrokeCap.round
@@ -2066,7 +1893,18 @@ class _RelationshipEdgesPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
-      canvas.drawPath(path, paint);
+      if (edge.layer == CharacterRelationshipLayer.internal) {
+        for (final metric in path.computeMetrics()) {
+          for (var offset = 0.0; offset < metric.length; offset += 14) {
+            canvas.drawPath(
+              metric.extractPath(offset, math.min(offset + 8, metric.length)),
+              paint,
+            );
+          }
+        }
+      } else {
+        canvas.drawPath(path, paint);
+      }
 
       _drawArrowHead(
         canvas,
@@ -2124,7 +1962,7 @@ class _RelationshipEdgesPainter extends CustomPainter {
     for (final geometry in geometries.values) {
       var previous = geometry.start;
       for (var sample = 1; sample <= 120; sample++) {
-        final point = _quadraticPoint(
+        final point = quadraticPoint(
           geometry.start,
           geometry.control,
           geometry.end,
@@ -2139,10 +1977,59 @@ class _RelationshipEdgesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RelationshipEdgesPainter oldDelegate) {
-    return oldDelegate.edges != edges ||
+    return oldDelegate.focusedEdgeIds != focusedEdgeIds ||
+        oldDelegate.edges != edges ||
         oldDelegate.geometries != geometries ||
         oldDelegate.selectedEdgeId != selectedEdgeId ||
         oldDelegate.selectedNodeId != selectedNodeId ||
         oldDelegate.colorScheme != colorScheme;
   }
+}
+
+class _RelationshipTargetDialog extends StatefulWidget {
+  final String initialPerson;
+  final List<String> options;
+  const _RelationshipTargetDialog({
+    required this.initialPerson,
+    required this.options,
+  });
+  @override
+  State<_RelationshipTargetDialog> createState() =>
+      _RelationshipTargetDialogState();
+}
+
+class _RelationshipTargetDialogState extends State<_RelationshipTargetDialog> {
+  late final TextEditingController _input = TextEditingController(
+    text: widget.initialPerson,
+  );
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text("修正此方向的目標人物"),
+    content: SizedBox(
+      width: 360,
+      child: AppComboBoxField(
+        key: const ValueKey("relationship-repair-target"),
+        controller: _input,
+        labelText: "目標人物",
+        options: widget.options,
+        hintText: "選擇現有人物；內外關係將一起移至該人物",
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text("取消"),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _input.text.trim()),
+        child: const Text("儲存"),
+      ),
+    ],
+  );
 }

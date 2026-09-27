@@ -1,5 +1,6 @@
 import "package:flutter/material.dart";
 import "package:flutter_quill/flutter_quill.dart";
+import "plain_text_quill_geometry.dart";
 
 import "../../presentation/providers/collaboration_providers.dart";
 
@@ -27,11 +28,13 @@ class PlainTextQuillRemoteCursorOverlay extends StatefulWidget {
     required this.controller,
     required this.scrollController,
     required this.cursors,
+    this.offsetMapper,
   });
 
   final QuillController controller;
   final ScrollController scrollController;
   final List<RemoteCursorState> cursors;
+  final int Function(int offset)? offsetMapper;
 
   @override
   State<PlainTextQuillRemoteCursorOverlay> createState() =>
@@ -92,11 +95,14 @@ class _PlainTextQuillRemoteCursorOverlayState
         .toInt();
     final positions = <PlainTextQuillRemoteCursorPosition>[];
     for (final cursor in widget.cursors) {
-      final offset = cursor.focusOffset.clamp(0, editableLength).toInt();
-      final caretRect = editor.getLocalRectForCaret(
+      final mappedOffset =
+          widget.offsetMapper?.call(cursor.focusOffset) ?? cursor.focusOffset;
+      final offset = mappedOffset.clamp(0, editableLength).toInt();
+      final caretRect = quillCaretGlobalRect(
+        editor,
         TextPosition(offset: offset),
       );
-      final global = editor.localToGlobal(caretRect.topLeft);
+      final global = caretRect.topLeft;
       final local = layerBox.globalToLocal(global);
       if (local.dx < -1 ||
           local.dx > layerBox.size.width + 1 ||

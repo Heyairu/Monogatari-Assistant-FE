@@ -88,6 +88,7 @@ class CharacterRelationship with _$CharacterRelationship {
   const factory CharacterRelationship({
     @Default("") String person,
     @Default("") String relationship,
+    @Default("") String internalRelationship,
   }) = _CharacterRelationship;
 }
 

@@ -8,6 +8,8 @@ import "package:code_text_field/code_text_field.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
+import "../editor/editor_input_rules.dart";
+
 import "inline_annotation.dart";
 import "inline_annotation_palette.dart";
 import "inline_annotation_parser.dart";
@@ -51,6 +53,20 @@ class MosaicEditingController extends CodeController {
   /// Lets the editor consume Tab for IntelliSense before CodeController
   /// inserts a literal tab character.
   bool Function()? onTabKeyPressed;
+  bool overwriteEnabled = false;
+  bool _suppressOverwrite = false;
+  T withoutOverwrite<T>(T Function() operation) {
+    final previous = _suppressOverwrite;
+    _suppressOverwrite = true;
+    try {
+      return operation();
+    } finally {
+      _suppressOverwrite = previous;
+    }
+  }
+
+  Iterable<TextRange> get _overwriteProtectedRanges =>
+      _projection.projectedAnnotations.map((entry) => entry.displayRange);
 
   String get rawText => _rawText;
   String get displayText => text;
@@ -65,7 +81,21 @@ class MosaicEditingController extends CodeController {
   // code_text_field 1.1.0 still exposes its keyboard hook with RawKeyEvent.
   // ignore: deprecated_member_use
   KeyEventResult onKey(RawKeyEvent event) {
+    final keyboard = HardwareKeyboard.instance;
     if (event.logicalKey == LogicalKeyboardKey.tab &&
+        (keyboard.isShiftPressed ||
+            keyboard.isControlPressed ||
+            keyboard.isAltPressed ||
+            keyboard.isMetaPressed)) {
+      return KeyEventResult.ignored;
+    }
+    // ignore: deprecated_member_use
+    if (event is RawKeyDownEvent &&
+        !keyboard.isShiftPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isMetaPressed &&
+        event.logicalKey == LogicalKeyboardKey.tab &&
         (onTabKeyPressed?.call() ?? false)) {
       return KeyEventResult.handled;
     }
@@ -498,6 +528,13 @@ class MosaicEditingController extends CodeController {
       return;
     }
 
+    if (overwriteEnabled && !_suppressOverwrite) {
+      newValue = applyOverwrite(
+        oldValue,
+        newValue,
+        protectedRanges: _overwriteProtectedRanges,
+      );
+    }
     final edit = _diff(oldValue.text, newValue.text);
     final rawRange = _projection.displayRangeToRaw(
       TextRange(start: edit.oldStart, end: edit.oldEnd),
@@ -572,6 +609,15 @@ class MosaicEditingController extends CodeController {
     final baseProjection = _compositionBaseProjection!;
     final baseRawText = _compositionBaseRawText!;
     final previousPublishedValue = super.value;
+    if (overwriteEnabled && !_suppressOverwrite) {
+      committedValue = applyOverwrite(
+        baseValue,
+        committedValue,
+        protectedRanges: baseProjection.projectedAnnotations.map(
+          (entry) => entry.displayRange,
+        ),
+      );
+    }
     final edit = _diff(baseValue.text, committedValue.text);
     final rawRange = baseProjection.displayRangeToRaw(
       TextRange(start: edit.oldStart, end: edit.oldEnd),

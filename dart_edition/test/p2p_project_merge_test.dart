@@ -128,6 +128,52 @@ void main() {
     },
   );
 
+  test(
+    "merge preserves independent internal and external relationship edits",
+    () {
+      const baseCharacter = CharacterEntryData(
+        characterId: "alice",
+        displayName: "Alice",
+        relationships: [
+          CharacterRelationship(
+            person: "Bob",
+            relationship: "同事",
+            internalRelationship: "戒備",
+          ),
+        ],
+      );
+      final local = baseCharacter.copyWith(
+        relationships: [
+          baseCharacter.relationships.single.copyWith(relationship: "朋友"),
+        ],
+      );
+      final remote = baseCharacter.copyWith(
+        relationships: [
+          baseCharacter.relationships.single.copyWith(
+            internalRelationship: "信任",
+          ),
+        ],
+      );
+      final plan = const P2pProjectMergeEngine().createPlan(
+        sessionId: "relationship-layers",
+        baseRevision: baseRevision,
+        localRevision: localRevision,
+        remoteRevision: remoteRevision,
+        base: _project(baseCharacter),
+        local: _project(local),
+        remote: _project(remote),
+      );
+      expect(plan.conflicts, isEmpty);
+      final result = plan.apply(
+        P2pConflictResolutionResult(<String, P2pConflictSide>{}),
+      );
+      final relationship =
+          result.characterData.values.single.relationships.single;
+      expect(relationship.relationship, "朋友");
+      expect(relationship.internalRelationship, "信任");
+    },
+  );
+
   test("merge rejects duplicate normalized relationship keys", () {
     const character = CharacterEntryData(
       characterId: "character-lia",

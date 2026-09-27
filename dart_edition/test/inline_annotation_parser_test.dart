@@ -42,6 +42,15 @@ void main() {
     expect(annotation.targetStatus, InlineAnnotationTargetStatus.missing);
   });
 
+  test("parses an item Mention", () {
+    final annotation = parser.parse("//*<$uuid|短劍>{入鞘}//").single;
+
+    expect(annotation.kind, InlineAnnotationKind.item);
+    expect(annotation.targetId, uuid);
+    expect(annotation.displayText, "短劍");
+    expect(annotation.note, "入鞘");
+  });
+
   test("keeps malformed syntax visible and recovers later", () {
     const source = "//^G<非法>//正文 //^<合法>// 尾端//@<未完成";
     final annotations = parser.parse(source);

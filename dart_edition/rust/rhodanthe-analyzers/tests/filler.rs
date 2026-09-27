@@ -2,7 +2,7 @@ use rhodanthe_analyzers::{
     analyze_document, AnalysisError, DocumentAnalysisRequest, FillerBudget, FillerMatcher,
     FillerRequest, SearchRequest,
 };
-use rhodanthe_core::{RhodantheEngine, RhodantheError, Ring, Utf16Range};
+use rhodanthe_core::{DecorationStyle, RhodantheEngine, RhodantheError, Ring, Utf16Range};
 
 fn words(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
@@ -107,7 +107,13 @@ fn filler_annotations_use_ring_six_and_stable_semantic_tokens() {
         Some("filler.foreground")
     );
     assert_eq!(annotation.style.interaction.as_deref(), Some("filler:11:0"));
-    assert!(annotation.style.decoration.is_some());
+    let decoration = annotation
+        .style
+        .decoration
+        .as_ref()
+        .expect("filler annotation should be underlined");
+    assert_eq!(decoration.style, DecorationStyle::Double);
+    assert_eq!(decoration.color, "filler.decoration");
 }
 
 #[test]

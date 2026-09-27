@@ -1,4 +1,4 @@
-/************************************************************
+/* ==========================================================
  * Copyright 2025-2026 Heyairu（部屋伊琉）
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,9 @@ import "package:flutter/material.dart";
 import "package:flutter/rendering.dart";
 import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:uuid/uuid.dart";
 
+import "../application/items/item_operations.dart";
 import "../models/character_data.dart" as character_model;
 import "../models/outline_data.dart" as outline_model;
 import "../models/plan_data.dart" as plan_model;
@@ -40,6 +42,31 @@ import "../features/inline_annotations/mosaic_editing_controller.dart";
 import "../features/poppin/poppin.dart";
 import "../features/inline_annotations/inline_annotation_parser.dart";
 import "../features/inline_annotations/inline_annotation_edit_dialog.dart";
+import "../features/inline_annotations/inline_annotation_projection.dart";
+import "../features/editor/plain_text_quill_editor_poc.dart";
+import "../features/editor/editor_input_rules.dart";
+import "../features/editor/plain_text_quill_mention_overlay.dart";
+
+/// Defaults to the plain-text Quill editor. Set
+/// `--dart-define=MONOGATARI_PLAIN_TEXT_QUILL_EDITOR=false` to return to the
+/// legacy CodeField while the rollout is in progress.
+const bool _usePlainTextQuillEditor = bool.fromEnvironment(
+  "MONOGATARI_PLAIN_TEXT_QUILL_EDITOR",
+  defaultValue: true,
+);
+
+// Keep Mosaic's one-code-unit placeholder for offset compatibility while
+// using a visible-width blank in Quill so the painted badge owns a real slot.
+const String _quillMosaicPlaceholder = "\u2003";
+
+String _mosaicDisplayToQuill(String text) =>
+    text.replaceAll(inlineAnnotationPlaceholder, _quillMosaicPlaceholder);
+
+String _quillToMosaicDisplay(String text) =>
+    text.replaceAll(_quillMosaicPlaceholder, inlineAnnotationPlaceholder);
+
+String _quillMosaicClipboardText(String text) =>
+    text.replaceAll(_quillMosaicPlaceholder, "");
 
 final class EditorTextInteraction {
   final int displayOffset;
@@ -57,6 +84,8 @@ class EditorTextBox extends ConsumerStatefulWidget {
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
   final ValueChanged<EditorTextInteraction>? onInteractionOffset;
+  final bool usePlainTextQuillEditor;
+  final PlainTextQuillSearchController? quillSearchController;
 
   const EditorTextBox({
     super.key,
@@ -65,6 +94,8 @@ class EditorTextBox extends ConsumerStatefulWidget {
     this.onUndo,
     this.onRedo,
     this.onInteractionOffset,
+    this.usePlainTextQuillEditor = _usePlainTextQuillEditor,
+    this.quillSearchController,
   });
 
   @override
@@ -74,11 +105,15 @@ class EditorTextBox extends ConsumerStatefulWidget {
 class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   static const _intelliSenseEngine = MosaicIntelliSenseEngine();
   static const _targetResolver = InlineAnnotationTargetResolver();
+  static const _uuid = Uuid();
   final GlobalKey<RemoteTextCursorOverlayState> _remoteCursorLayerKey =
       GlobalKey<RemoteTextCursorOverlayState>();
   final GlobalKey<InlineAnnotationSymbolOverlayState>
   _annotationSymbolLayerKey = GlobalKey<InlineAnnotationSymbolOverlayState>();
   final GlobalKey _editorStackKey = GlobalKey();
+  final PlainTextQuillEditorCommands _quillCommands =
+      PlainTextQuillEditorCommands();
+  TextSelection _quillSelection = const TextSelection.collapsed(offset: 0);
   MosaicCompletionSession? _completionSession;
   Offset? _completionAnchor;
   bool _completionMeasurementScheduled = false;
@@ -92,10 +127,17 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   List<MosaicCompletionCandidate>? get _activeCompletionCandidates =>
       _poppin.activeItems;
 
+  bool get _usesPlainTextQuillEditor => widget.usePlainTextQuillEditor;
+
   @override
   void initState() {
     super.initState();
-    _attachControllerKeyHandler(widget.controller);
+    if (_usesPlainTextQuillEditor) {
+      _quillSelection = _currentDisplaySelection();
+    }
+    if (!_usesPlainTextQuillEditor) {
+      _attachControllerKeyHandler(widget.controller);
+    }
     widget.focusNode.addListener(_handleFocusChange);
     widget.controller.addListener(_handleControllerChange);
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCompletion());
@@ -106,10 +148,17 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.controller != widget.controller) {
-      _detachControllerKeyHandler(oldWidget.controller);
+      if (!_usesPlainTextQuillEditor) {
+        _detachControllerKeyHandler(oldWidget.controller);
+      }
       oldWidget.controller.removeListener(_handleControllerChange);
-      _attachControllerKeyHandler(widget.controller);
+      if (!_usesPlainTextQuillEditor) {
+        _attachControllerKeyHandler(widget.controller);
+      }
       widget.controller.addListener(_handleControllerChange);
+      if (_usesPlainTextQuillEditor) {
+        _quillSelection = _currentDisplaySelection();
+      }
       _refreshCompletion();
     }
 
@@ -121,13 +170,33 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 
   @override
   void dispose() {
-    _detachControllerKeyHandler(widget.controller);
+    if (!_usesPlainTextQuillEditor) {
+      _detachControllerKeyHandler(widget.controller);
+    }
     widget.focusNode.removeListener(_handleFocusChange);
     widget.controller.removeListener(_handleControllerChange);
     super.dispose();
   }
 
   void _handleControllerChange() {
+    if (_usesPlainTextQuillEditor) {
+      final displaySelection = _currentDisplaySelection();
+      if (displaySelection.isValid) {
+        _quillSelection = _clampRawSelection(
+          displaySelection,
+          widget.controller.text.length,
+        );
+      }
+      if (mounted) setState(() {});
+      if (!_completionRefreshScheduled) {
+        _completionRefreshScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _completionRefreshScheduled = false;
+          if (mounted) _refreshCompletion();
+        });
+      }
+      return;
+    }
     _refreshCompletion();
     if (_completionRefreshScheduled) return;
     _completionRefreshScheduled = true;
@@ -137,9 +206,11 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     });
   }
 
+  TextSelection _currentDisplaySelection() => widget.controller.selection;
+
   void _attachControllerKeyHandler(CodeController controller) {
     if (controller case final MosaicEditingController mosaicController) {
-      mosaicController.onTabKeyPressed = _acceptCompletionFromTab;
+      mosaicController.onTabKeyPressed = _insertTabSpaces;
     }
   }
 
@@ -147,6 +218,54 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     if (controller case final MosaicEditingController mosaicController) {
       mosaicController.onTabKeyPressed = null;
     }
+  }
+
+  String get _tabSpaces {
+    final settings = ref.read(settingsStateProvider).valueOrNull;
+    return editorTabSpaces(
+      settings?.tabSpaceCount ?? 2,
+      settings?.tabFullWidth ?? true,
+    );
+  }
+
+  void _toggleOverwrite() {
+    final mode = ref.read(editorOverwriteProvider.notifier);
+    mode.state = !mode.state;
+  }
+
+  bool _insertTabSpaces() {
+    if (_hasActiveComposition(widget.controller.value)) return true;
+    if (_acceptCompletionFromTab()) return true;
+    _replaceSelectionWithoutOverwrite(_tabSpaces);
+    return true;
+  }
+
+  void _replaceSelectionWithoutOverwrite(String text) {
+    final controller = widget.controller;
+    final selection = controller.selection;
+    if (!selection.isValid) return;
+    void insert() => controller.value = controller.value.copyWith(
+      text: controller.text.replaceRange(selection.start, selection.end, text),
+      selection: TextSelection.collapsed(offset: selection.start + text.length),
+      composing: TextRange.empty,
+    );
+    if (controller is MosaicEditingController) {
+      controller.withoutOverwrite(insert);
+    } else {
+      insert();
+    }
+  }
+
+  Future<void> _pastePlainText() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted ||
+        data?.text == null ||
+        _hasActiveComposition(widget.controller.value)) {
+      return;
+    }
+    _replaceSelectionWithoutOverwrite(
+      data!.text!.replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
+    );
   }
 
   bool _acceptCompletionFromTab() {
@@ -189,6 +308,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           outline: ref.read(outlineDataProvider),
           foreshadows: ref.read(foreshadowDataProvider),
           plans: ref.read(updatePlanDataProvider),
+          itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
         ),
       );
     }
@@ -211,6 +331,14 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       if (!mounted || _completionSession == null) return;
       final stackBox = _editorStackKey.currentContext?.findRenderObject();
       if (stackBox is! RenderBox || !stackBox.hasSize) return;
+      if (_usesPlainTextQuillEditor) {
+        final global = _quillCommands.caretGlobalBottomLeft();
+        if (global == null) return;
+        final local = stackBox.globalToLocal(global);
+        if (_completionAnchor == local) return;
+        setState(() => _completionAnchor = local);
+        return;
+      }
       final editable = _findRenderEditable(stackBox);
       if (editable == null || !editable.hasSize) return;
       final offset = widget.controller.selection.extentOffset
@@ -426,6 +554,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       InlineAnnotationKind.event => "事件",
       InlineAnnotationKind.foreshadowing => "伏筆",
       InlineAnnotationKind.plan => "計畫",
+      InlineAnnotationKind.item => "物品",
       InlineAnnotationKind.emphasis => "重點",
     };
     return showDialog<String>(
@@ -603,6 +732,23 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           displayName: item.title,
           displayNameIsAlias: false,
         );
+      case InlineAnnotationKind.item:
+        final creation = createDedicatedItem(
+          request: DedicatedItemCreationRequest(
+            classId: _uuid.v4(),
+            instanceId: _uuid.v4(),
+            name: name,
+          ),
+        );
+        final workspace = ref.read(itemWorkspaceProvider.notifier);
+        workspace.putClass(creation.itemClass);
+        workspace.putInstance(creation.instance);
+        return InlineAnnotationTargetInfo(
+          id: creation.itemClass.classId,
+          primaryName: creation.itemClass.name,
+          displayName: creation.itemClass.name,
+          displayNameIsAlias: false,
+        );
       case InlineAnnotationKind.emphasis:
         return null;
     }
@@ -677,6 +823,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     if (!mounted) {
       return;
     }
+    if (_usesPlainTextQuillEditor) {
+      setState(() {});
+      return;
+    }
     if (widget.focusNode.hasFocus) {
       final chapterId = ref.read(editorSelectionProvider).selectedChapID;
       final displaySelection = widget.controller.selection;
@@ -734,8 +884,244 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     );
   }
 
+  void _handleQuillChanged(String content) {
+    final controller = widget.controller;
+    if (controller is MosaicEditingController) {
+      final displayContent = _quillToMosaicDisplay(content);
+      final selection = _clampRawSelection(
+        _quillSelection,
+        displayContent.length,
+      );
+      if (controller.displayText != displayContent ||
+          controller.selection != selection) {
+        controller.value = controller.value.copyWith(
+          text: displayContent,
+          selection: selection,
+          composing: TextRange.empty,
+        );
+      }
+      return;
+    }
+    if (controller.text == content) return;
+    controller.value = controller.value.copyWith(
+      text: content,
+      selection: _clampRawSelection(_quillSelection, content.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _handleQuillCursor({
+    required int anchorOffset,
+    required int focusOffset,
+  }) {
+    final contentLength = widget.controller.text.length;
+    _quillSelection = _clampRawSelection(
+      TextSelection(baseOffset: anchorOffset, extentOffset: focusOffset),
+      contentLength,
+    );
+    final controller = widget.controller;
+    if (controller is MosaicEditingController) {
+      if (controller.selection != _quillSelection) {
+        controller.value = controller.value.copyWith(
+          selection: _quillSelection,
+          composing: TextRange.empty,
+        );
+      }
+    }
+    final chapterId = ref.read(editorSelectionProvider).selectedChapID;
+    if (chapterId != null && widget.focusNode.hasFocus) {
+      final collaborationSelection = controller is MosaicEditingController
+          ? controller.projection.displaySelectionToRaw(_quillSelection)
+          : _quillSelection;
+      ref
+          .read(collaborationProvider.notifier)
+          .updateLocalCursor(
+            chapterId: chapterId,
+            anchorOffset: collaborationSelection.baseOffset,
+            focusOffset: collaborationSelection.extentOffset,
+          );
+    }
+  }
+
+  TextSelection _clampRawSelection(TextSelection selection, int length) {
+    return TextSelection(
+      baseOffset: selection.baseOffset.clamp(0, length).toInt(),
+      extentOffset: selection.extentOffset.clamp(0, length).toInt(),
+    );
+  }
+
+  Widget _buildPlainTextQuillEditor(BuildContext context) {
+    final remoteCursors = ref.watch(activeChapterRemoteCursorsProvider);
+    final poppinEnabled = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.poppinEnabled ?? true,
+      ),
+    );
+    final content = widget.controller is MosaicEditingController
+        ? _mosaicDisplayToQuill(
+            (widget.controller as MosaicEditingController).displayText,
+          )
+        : widget.controller.text;
+    final mosaicController = widget.controller is MosaicEditingController
+        ? widget.controller as MosaicEditingController
+        : null;
+    final completionCandidates = poppinEnabled
+        ? _activeCompletionCandidates ?? const <MosaicCompletionCandidate>[]
+        : const <MosaicCompletionCandidate>[];
+    final hasCompletionCandidates = completionCandidates.isNotEmpty;
+    if (poppinEnabled &&
+        _completionSession != null &&
+        _completionAnchor == null) {
+      _scheduleCompletionAnchorMeasurement();
+    }
+    final completionAnchor = _completionAnchor ?? const Offset(8, 8);
+    final shortcuts = <ShortcutActivator, Intent>{
+      if (hasCompletionCandidates) ...{
+        const SingleActivator(LogicalKeyboardKey.arrowUp):
+            const PoppinMoveIntent(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowDown):
+            const PoppinMoveIntent(1),
+        if (_poppin.canGoBack)
+          const SingleActivator(LogicalKeyboardKey.arrowLeft):
+              const PoppinLevelIntent(-1),
+        if (_poppin.canEnterSelected)
+          const SingleActivator(LogicalKeyboardKey.arrowRight):
+              const PoppinLevelIntent(1),
+        const SingleActivator(LogicalKeyboardKey.enter):
+            const PoppinAcceptIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab):
+            const PoppinAcceptIntent(),
+        const SingleActivator(LogicalKeyboardKey.escape):
+            const PoppinDismissIntent(),
+      },
+    };
+    return RepaintBoundary(
+      child: Shortcuts(
+        shortcuts: shortcuts,
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            PoppinMoveIntent: CallbackAction<PoppinMoveIntent>(
+              onInvoke: (intent) => _moveCompletion(intent.delta),
+            ),
+            PoppinAcceptIntent: CallbackAction<PoppinAcceptIntent>(
+              onInvoke: (_) => _selectCompletion(_poppin.selectedIndex),
+            ),
+            PoppinLevelIntent: CallbackAction<PoppinLevelIntent>(
+              onInvoke: (intent) => intent.direction < 0
+                  ? _exitCompletionLevel()
+                  : _enterCompletionLevel(),
+            ),
+            PoppinDismissIntent: CallbackAction<PoppinDismissIntent>(
+              onInvoke: (_) => _dismissCompletion(),
+            ),
+          },
+          child: LayoutBuilder(
+            builder: (context, constraints) => ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
+              child: Stack(
+                key: _editorStackKey,
+                clipBehavior: Clip.hardEdge,
+                children: <Widget>[
+                  Positioned.fill(
+                    child: PlainTextQuillEditorPoc(
+                      key: const ValueKey<String>(
+                        "main-plain-text-quill-editor",
+                      ),
+                      content: content,
+                      overwriteMode: ref.watch(editorOverwriteProvider),
+                      tabSpaces: _tabSpaces,
+                      onTabPressed: _acceptCompletionFromTab,
+                      onToggleOverwrite: _toggleOverwrite,
+                      overwriteProtectedRanges:
+                          mosaicController?.projection.projectedAnnotations
+                              .map((entry) => entry.displayRange)
+                              .toList() ??
+                          const [],
+                      selection: _quillSelection,
+                      clipboardTextTransform: mosaicController == null
+                          ? null
+                          : _quillMosaicClipboardText,
+                      focusNode: widget.focusNode,
+                      commands: _quillCommands,
+                      searchController: widget.quillSearchController,
+                      mentionMarkers: mosaicController == null
+                          ? const <PlainTextQuillMentionMarker>[]
+                          : <PlainTextQuillMentionMarker>[
+                              for (final entry
+                                  in mosaicController
+                                      .projection
+                                      .projectedAnnotations)
+                                if (!entry.isExpanded)
+                                  PlainTextQuillMentionMarker(
+                                    offset: entry.badgeRange.start,
+                                    annotation: entry.annotation,
+                                  ),
+                            ],
+                      remoteCursors: remoteCursors,
+                      remoteOffsetMapper:
+                          mosaicController?.projection.rawOffsetToDisplay,
+                      onChanged: _handleQuillChanged,
+                      onLocalCursorChanged: _handleQuillCursor,
+                      onInteraction:
+                          ({required offset, required globalPosition}) {
+                            widget.onInteractionOffset?.call(
+                              EditorTextInteraction(
+                                displayOffset: offset,
+                                globalPosition: globalPosition,
+                              ),
+                            );
+                          },
+                    ),
+                  ),
+                  if (poppinEnabled && _completionSession != null)
+                    Positioned(
+                      key: const ValueKey("mosaic-completion-panel"),
+                      left: math.max(
+                        8,
+                        math.min(
+                          completionAnchor.dx,
+                          constraints.maxWidth -
+                              math.min(360, constraints.maxWidth - 16) -
+                              8,
+                        ),
+                      ),
+                      top: completionAnchor.dy + 268 <= constraints.maxHeight
+                          ? completionAnchor.dy + 4
+                          : math.max(8, completionAnchor.dy - 264),
+                      width: math.min(360, constraints.maxWidth - 16),
+                      child: PoppinPanel<MosaicCompletionCandidate>(
+                        items: completionCandidates,
+                        selectedIndex: _poppin.selectedIndex,
+                        parentLabel: _poppin.parentPath,
+                        keyPrefix: "mosaic-completion",
+                        idOf: (candidate) => candidate.id,
+                        labelOf: (candidate) => candidate.label,
+                        detailOf: (candidate) => candidate.detail,
+                        hasChildren: (candidate) =>
+                            candidate.children.isNotEmpty,
+                        onBack: _exitCompletionLevel,
+                        onExpanded: _enterCompletionLevel,
+                        onSelected: _selectCompletion,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final overwrite = ref.watch(editorOverwriteProvider);
+    if (widget.controller case final MosaicEditingController controller) {
+      controller.overwriteEnabled = overwrite && !_usesPlainTextQuillEditor;
+    }
+    if (_usesPlainTextQuillEditor) {
+      return _buildPlainTextQuillEditor(context);
+    }
     final fontSize = ref.watch(
       settingsStateProvider.select(
         (state) => state.valueOrNull?.fontSize ?? 12.0,
@@ -795,6 +1181,15 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           backward: false,
         );
     final shortcuts = <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.tab):
+          const InsertEditorSpacesIntent(),
+      const SingleActivator(LogicalKeyboardKey.insert, includeRepeats: false):
+          const ToggleEditorOverwriteIntent(),
+      SingleActivator(
+        LogicalKeyboardKey.keyV,
+        control: !isApple,
+        meta: isApple,
+      ): const _EditorPasteIntent(),
       SingleActivator(
         LogicalKeyboardKey.keyZ,
         control: !isApple,
@@ -853,6 +1248,16 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
         shortcuts: shortcuts,
         child: Actions(
           actions: <Type, Action<Intent>>{
+            InsertEditorSpacesIntent: CallbackAction<InsertEditorSpacesIntent>(
+              onInvoke: (_) => _insertTabSpaces(),
+            ),
+            ToggleEditorOverwriteIntent:
+                CallbackAction<ToggleEditorOverwriteIntent>(
+                  onInvoke: (_) => _toggleOverwrite(),
+                ),
+            _EditorPasteIntent: CallbackAction<_EditorPasteIntent>(
+              onInvoke: (_) => _pastePlainText(),
+            ),
             _EditorUndoIntent: CallbackAction<_EditorUndoIntent>(
               onInvoke: (intent) {
                 widget.onUndo?.call();
@@ -975,6 +1380,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                     () => unawaited(_mentionFromSelection()),
                                     (cut) =>
                                         unawaited(_copySelection(cut: cut)),
+                                    () => unawaited(_pastePlainText()),
                                   ),
                                   controller: widget.controller,
                                   focusNode: widget.focusNode,
@@ -1024,6 +1430,9 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                         foreshadowDataProvider,
                                       ),
                                       plans: ref.read(updatePlanDataProvider),
+                                      itemClasses: ref
+                                          .read(itemWorkspaceProvider)
+                                          .itemClasses,
                                     );
                                     final name =
                                         target?.primaryName ??
@@ -1090,7 +1499,8 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 class _MentionSelectionControls extends MaterialTextSelectionControls {
   final VoidCallback onMention;
   final void Function(bool cut) onCopy;
-  _MentionSelectionControls(this.onMention, this.onCopy);
+  final VoidCallback onPaste;
+  _MentionSelectionControls(this.onMention, this.onCopy, this.onPaste);
 
   @override
   Widget buildToolbar(
@@ -1129,7 +1539,10 @@ class _MentionSelectionControls extends MaterialTextSelectionControls {
         if (canPaste(delegate))
           ContextMenuButtonItem(
             label: "貼上",
-            onPressed: () => handlePaste(delegate),
+            onPressed: () {
+              delegate.hideToolbar();
+              onPaste();
+            },
           ),
         if (canSelectAll(delegate))
           ContextMenuButtonItem(
@@ -1175,4 +1588,8 @@ class _AtomicMentionDeleteIntent extends Intent {
   final bool backward;
 
   const _AtomicMentionDeleteIntent({required this.backward});
+}
+
+class _EditorPasteIntent extends Intent {
+  const _EditorPasteIntent();
 }

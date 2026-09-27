@@ -14,6 +14,8 @@ class SettingsSnapshot {
   final bool allowSingleDevicePairingConfirmation;
   final bool allowPersistentP2pVerification;
   final bool poppinEnabled;
+  final int tabSpaceCount;
+  final bool tabFullWidth;
   final List<RecentProjectEntry> recentProjects;
 
   const SettingsSnapshot({
@@ -28,6 +30,8 @@ class SettingsSnapshot {
     required this.allowSingleDevicePairingConfirmation,
     required this.allowPersistentP2pVerification,
     required this.poppinEnabled,
+    this.tabSpaceCount = 2,
+    this.tabFullWidth = true,
     required this.recentProjects,
   });
 }
@@ -56,6 +60,9 @@ abstract class SettingsRepository {
   Future<void> saveAllowPersistentP2pVerification(bool value);
 
   Future<void> savePoppinEnabled(bool value);
+
+  Future<void> saveTabSpaceCount(int value);
+  Future<void> saveTabFullWidth(bool value);
 
   Future<void> saveRecentProjects(List<RecentProjectEntry> projects);
 }
@@ -161,6 +168,8 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
           allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: allowPersistentP2pVerification,
       poppinEnabled: poppinEnabled,
+      tabSpaceCount: (prefs.getInt("editor_tab_space_count") ?? 2).clamp(1, 8),
+      tabFullWidth: prefs.getBool("editor_tab_full_width") ?? true,
       recentProjects: trimmedProjects,
     );
   }
@@ -238,6 +247,18 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   Future<void> savePoppinEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_poppinEnabledKey, value);
+  }
+
+  @override
+  Future<void> saveTabSpaceCount(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt("editor_tab_space_count", value.clamp(1, 8));
+  }
+
+  @override
+  Future<void> saveTabFullWidth(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("editor_tab_full_width", value);
   }
 
   @override

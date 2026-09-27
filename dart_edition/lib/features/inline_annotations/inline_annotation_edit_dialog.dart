@@ -302,6 +302,7 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
     InlineAnnotationKind.event => "事件",
     InlineAnnotationKind.foreshadowing => "伏筆",
     InlineAnnotationKind.plan => "計畫",
+    InlineAnnotationKind.item => "物品",
     InlineAnnotationKind.emphasis => "高亮",
   };
 

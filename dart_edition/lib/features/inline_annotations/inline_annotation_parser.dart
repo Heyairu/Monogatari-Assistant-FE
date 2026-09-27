@@ -188,6 +188,7 @@ final class InlineAnnotationParser {
       0x23 => InlineAnnotationKind.event,
       0x3f => InlineAnnotationKind.foreshadowing,
       0x26 => InlineAnnotationKind.plan,
+      0x2a => InlineAnnotationKind.item,
       _ => null,
     };
   }

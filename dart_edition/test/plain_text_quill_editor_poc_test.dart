@@ -16,6 +16,7 @@ void main() {
     PlainTextQuillSearchController? searchController,
     List<RemoteCursorState> remoteCursors = const <RemoteCursorState>[],
     PlainTextQuillCursorReporter? onLocalCursorChanged,
+    FocusNode? focusNode,
     int selectionOffset = 0,
   }) {
     return MaterialApp(
@@ -37,6 +38,7 @@ void main() {
             searchController: searchController,
             remoteCursors: remoteCursors,
             onLocalCursorChanged: onLocalCursorChanged,
+            focusNode: focusNode,
             selectionOffset: selectionOffset,
           ),
         ),
@@ -63,11 +65,15 @@ void main() {
     );
 
     final controller = controllerOf(tester);
+    final editor = tester.widget<QuillEditor>(
+      find.byKey(const ValueKey<String>("plain-text-quill-editor")),
+    );
     expect(
       PlainTextQuillAdapter.toPlainText(controller.document),
       "甲\n乙//^<重點>//",
     );
     expect(controller.selection.baseOffset, 2);
+    expect(editor.config.customStyles?.paragraph?.style.height, 1.15);
     expect(changes, isEmpty);
   });
 
@@ -109,6 +115,54 @@ void main() {
     );
     expect(changes, isEmpty);
   });
+
+  testWidgets("uses a host-owned focus node for existing commands", (
+    tester,
+  ) async {
+    final focusNode = FocusNode(debugLabel: "production-editor-focus");
+    final commands = PlainTextQuillEditorCommands();
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      buildPoc(
+        content: "正文",
+        onChanged: (_) {},
+        commands: commands,
+        focusNode: focusNode,
+      ),
+    );
+
+    commands.requestFocus();
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+    expect(commands.hasFocus, isTrue);
+  });
+
+  testWidgets(
+    "keeps undo history when a host mirrors a local plain-text edit",
+    (tester) async {
+      final commands = PlainTextQuillEditorCommands();
+      await tester.pumpWidget(
+        buildPoc(content: "原文", onChanged: (_) {}, commands: commands),
+      );
+      controllerOf(
+        tester,
+      ).replaceText(0, 2, "修改後", const TextSelection.collapsed(offset: 3));
+      await tester.pump();
+
+      // This is the normal editorContentProvider -> host-widget echo.
+      await tester.pumpWidget(
+        buildPoc(content: "修改後", onChanged: (_) {}, commands: commands),
+      );
+      commands.undo();
+      await tester.pump();
+
+      expect(
+        PlainTextQuillAdapter.toPlainText(controllerOf(tester).document),
+        "原文",
+      );
+    },
+  );
 
   testWidgets("command bridge selects text and performs local undo and redo", (
     tester,

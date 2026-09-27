@@ -68,6 +68,8 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
           snapshot.allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: snapshot.allowPersistentP2pVerification,
       poppinEnabled: snapshot.poppinEnabled,
+      tabSpaceCount: snapshot.tabSpaceCount,
+      tabFullWidth: snapshot.tabFullWidth,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -153,6 +155,19 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     await ref.read(settingsRepositoryProvider).savePoppinEnabled(value);
   }
 
+  Future<void> setTabSpaceCount(int value) async {
+    final count = value.clamp(1, 8);
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(tabSpaceCount: count));
+    await ref.read(settingsRepositoryProvider).saveTabSpaceCount(count);
+  }
+
+  Future<void> setTabFullWidth(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(tabFullWidth: value));
+    await ref.read(settingsRepositoryProvider).saveTabFullWidth(value);
+  }
+
   Future<void> addRecentProject({
     required String fileName,
     String? filePath,
@@ -201,6 +216,9 @@ final themeStateProvider =
     AsyncNotifierProvider<ThemeStateNotifier, AppThemeStateData>(
       ThemeStateNotifier.new,
     );
+
+// Session state: retained across chapters, reset when the app restarts.
+final editorOverwriteProvider = StateProvider<bool>((ref) => false);
 
 final settingsStateProvider =
     AsyncNotifierProvider<SettingsStateNotifier, AppSettingsStateData>(

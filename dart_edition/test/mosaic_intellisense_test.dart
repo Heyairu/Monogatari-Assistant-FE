@@ -1,11 +1,13 @@
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/features/inline_annotations/inline_annotation.dart";
+import "package:monogatari_assistant/features/inline_annotations/inline_annotation_parser.dart";
 import "package:monogatari_assistant/features/inline_annotations/inline_annotation_target_resolver.dart";
 import "package:monogatari_assistant/features/inline_annotations/mosaic_editing_controller.dart";
 import "package:monogatari_assistant/features/inline_annotations/inline_annotation_projection.dart";
 import "package:monogatari_assistant/features/poppin/poppin.dart";
 import "package:monogatari_assistant/models/character_data.dart";
+import "package:monogatari_assistant/models/item_data.dart";
 import "package:monogatari_assistant/models/outline_data.dart";
 import "package:monogatari_assistant/models/plan_data.dart";
 import "package:monogatari_assistant/models/world_settings_data.dart";
@@ -151,6 +153,45 @@ void main() {
     );
     expect(searching?.candidates.single.detail, contains("第一卷 › 王都篇"));
   });
+
+  test(
+    "items list active Classes and retain archived targets for resolution",
+    () {
+      const activeId = "b2a65ea0-40fe-4e31-8dd8-da8dff633410";
+      const archivedId = "3837044f-9a59-47f4-a917-d80765577861";
+      final classes = {
+        activeId: ItemClassData(
+          classId: activeId,
+          name: "短劍",
+          category: "武器",
+          unit: "把",
+        ),
+        archivedId: ItemClassData(
+          classId: archivedId,
+          name: "舊鑰匙",
+          archived: true,
+        ),
+      };
+      const resolver = InlineAnnotationTargetResolver();
+
+      final candidates = resolver.candidates(
+        kind: InlineAnnotationKind.item,
+        itemClasses: classes,
+      );
+      final resolved = resolver.resolve(
+        annotation: const InlineAnnotationParser()
+            .parse("//*<$archivedId|舊鑰匙>//")
+            .single,
+        itemClasses: classes,
+      );
+
+      expect(candidates, hasLength(1));
+      expect(candidates.single.id, activeId);
+      expect(candidates.single.path, "武器 · 專用 · 把");
+      expect(resolved?.id, archivedId);
+      expect(resolved?.path, contains("已封存"));
+    },
+  );
 
   test("locations browse parent and child levels", () {
     const cityId = "da268faa-95d6-477d-b2c9-6a4d6c1cb06d";
@@ -403,20 +444,22 @@ void main() {
       "#",
       "?",
       "&",
+      "*",
       "^",
       "@<>",
       "!<>",
       "#<>",
       "?<>",
       "&<>",
+      "*<>",
       "^<>",
     ];
     expect(
-      slash?.candidates.take(12).map((item) => item.label),
+      slash?.candidates.take(14).map((item) => item.label),
       expectedManualLabels,
     );
     expect(
-      backslash?.candidates.take(12).map((item) => item.label),
+      backslash?.candidates.take(14).map((item) => item.label),
       expectedManualLabels,
     );
     expect(
@@ -520,8 +563,9 @@ void main() {
       "# 事件",
       "? 伏筆",
       "& 計畫",
+      "* 物品",
     ]);
-    expect(loadedKinds, InlineAnnotationKind.values.take(5));
+    expect(loadedKinds, InlineAnnotationKind.values.take(6));
     final characters = session?.candidates.first;
     expect(characters?.submenuOnly, isTrue);
     expect(characters?.children.first.id, uuid);
@@ -534,6 +578,7 @@ void main() {
       "#": InlineAnnotationKind.event,
       "?": InlineAnnotationKind.foreshadowing,
       "&": InlineAnnotationKind.plan,
+      "*": InlineAnnotationKind.item,
     };
 
     for (final entry in expectedKinds.entries) {

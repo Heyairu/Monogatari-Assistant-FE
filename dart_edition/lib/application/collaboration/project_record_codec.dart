@@ -895,6 +895,7 @@ abstract final class ProjectRecordCodec {
             (item) => <String, Object?>{
               "person": item.person,
               "relationship": item.relationship,
+              "internalRelationship": item.internalRelationship,
             },
           )
           .toList(),
@@ -993,6 +994,7 @@ abstract final class ProjectRecordCodec {
           (item) => CharacterRelationship(
             person: _string(item, "person"),
             relationship: _string(item, "relationship"),
+            internalRelationship: _string(item, "internalRelationship"),
           ),
         )
         .toList(),
@@ -1070,6 +1072,7 @@ abstract final class ProjectRecordCodec {
               (item) => <String, Object?>{
                 "person": item.person,
                 "relationship": item.relationship,
+                "internalRelationship": item.internalRelationship,
               },
             )
             .toList(),
@@ -1096,6 +1099,7 @@ abstract final class ProjectRecordCodec {
           (item) => CharacterRelationship(
             person: _string(item, "person"),
             relationship: _string(item, "relationship"),
+            internalRelationship: _string(item, "internalRelationship"),
           ),
         ),
         organizations: _nullableObjectList(

@@ -31,6 +31,7 @@ import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
 import "../presentation/widgets/project_object_selector.dart";
+import "../presentation/widgets/scene_range_view.dart";
 
 export "../models/outline_data.dart";
 
@@ -799,12 +800,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         );
         if (storylineIndex < 0) return current;
         final originalStoryline = current[storylineIndex];
-        var updatedStoryline = originalStoryline.copyWith(
-          storylineName: storylineName,
-          storylineType: storylineType,
-          conflictPoint: storylineConflict,
-          memo: storylineMemo,
-        );
+        var updatedStoryline =
+            originalStoryline.storylineName == storylineName &&
+                originalStoryline.storylineType == storylineType &&
+                originalStoryline.conflictPoint == storylineConflict &&
+                originalStoryline.memo == storylineMemo
+            ? originalStoryline
+            : originalStoryline.copyWith(
+                storylineName: storylineName,
+                storylineType: storylineType,
+                conflictPoint: storylineConflict,
+                memo: storylineMemo,
+              );
 
         if (eventId != null) {
           final eventIndex = updatedStoryline.scenes.indexWhere(
@@ -812,16 +819,30 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
           );
           if (eventIndex >= 0) {
             final originalEvent = updatedStoryline.scenes[eventIndex];
-            var updatedEvent = originalEvent.copyWith(
-              storyEvent: eventName,
-              conflictPoint: eventConflict,
-              memo: eventMemo,
-            );
+            var updatedEvent =
+                originalEvent.storyEvent == eventName &&
+                    originalEvent.conflictPoint == eventConflict &&
+                    originalEvent.memo == eventMemo
+                ? originalEvent
+                : originalEvent.copyWith(
+                    storyEvent: eventName,
+                    conflictPoint: eventConflict,
+                    memo: eventMemo,
+                  );
             if (sceneId != null) {
               final sceneIndex = updatedEvent.scenes.indexWhere(
                 (item) => item.sceneUUID == sceneId,
               );
-              if (sceneIndex >= 0) {
+              if (sceneIndex >= 0 &&
+                  (updatedEvent.scenes[sceneIndex].sceneName != sceneName ||
+                      updatedEvent.scenes[sceneIndex].time != sceneTime ||
+                      updatedEvent.scenes[sceneIndex].location !=
+                          sceneLocation ||
+                      updatedEvent.scenes[sceneIndex].focusPoint !=
+                          sceneFocus ||
+                      updatedEvent.scenes[sceneIndex].conflictPoint !=
+                          sceneConflict ||
+                      updatedEvent.scenes[sceneIndex].memo != sceneMemo)) {
                 final scenes = [...updatedEvent.scenes];
                 scenes[sceneIndex] = scenes[sceneIndex].copyWith(
                   sceneName: sceneName,
@@ -834,13 +855,16 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 updatedEvent = updatedEvent.copyWith(scenes: scenes);
               }
             }
-            final events = [...updatedStoryline.scenes];
-            events[eventIndex] = updatedEvent;
-            updatedStoryline = updatedStoryline.copyWith(scenes: events);
+            if (!identical(updatedEvent, originalEvent)) {
+              final events = [...updatedStoryline.scenes];
+              events[eventIndex] = updatedEvent;
+              updatedStoryline = updatedStoryline.copyWith(scenes: events);
+            }
           }
         }
 
-        if (updatedStoryline == originalStoryline) return current;
+        // Outline equality represents UUID identity, not editable field values.
+        if (identical(updatedStoryline, originalStoryline)) return current;
         final next = [...current];
         next[storylineIndex] = updatedStoryline;
         return next;
@@ -1699,6 +1723,8 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 child: LargeTitle(icon: Icons.account_tree, text: "大綱調整"),
               ),
               const SizedBox(height: 32),
+              SceneRangeView(storylines: outlineStorylines),
+              const SizedBox(height: 24),
               ResponsiveSplitView(
                 breakpoint: 980,
                 spacing: 24,
@@ -2198,6 +2224,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         deleteTooltip: "刪除故事線",
       ),
       onClicked: () {
+        _flushOutlineDraft();
         setState(() {
           selectedStorylineID = storyline.chapterUUID;
           _updateSelectionAfterStorylineChange();
@@ -2309,6 +2336,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         deleteTooltip: "刪除事件",
       ),
       onClicked: () {
+        _flushOutlineDraft();
         setState(() {
           selectedEventID = event.storyEventUUID;
           _updateSelectionAfterEventChange();
@@ -3347,6 +3375,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         deleteTooltip: "刪除場景",
       ),
       onClicked: () {
+        _flushOutlineDraft();
         setState(() {
           selectedSceneID = scene.sceneUUID;
           _syncAllControllers();

@@ -341,6 +341,7 @@ abstract class _CharacterConflict implements CharacterConflict {
 mixin _$CharacterRelationship {
   String get person => throw _privateConstructorUsedError;
   String get relationship => throw _privateConstructorUsedError;
+  String get internalRelationship => throw _privateConstructorUsedError;
 
   /// Create a copy of CharacterRelationship
   /// with the given fields replaced by the non-null parameter values.
@@ -356,7 +357,7 @@ abstract class $CharacterRelationshipCopyWith<$Res> {
     $Res Function(CharacterRelationship) then,
   ) = _$CharacterRelationshipCopyWithImpl<$Res, CharacterRelationship>;
   @useResult
-  $Res call({String person, String relationship});
+  $Res call({String person, String relationship, String internalRelationship});
 }
 
 /// @nodoc
@@ -376,7 +377,11 @@ class _$CharacterRelationshipCopyWithImpl<
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? person = null, Object? relationship = null}) {
+  $Res call({
+    Object? person = null,
+    Object? relationship = null,
+    Object? internalRelationship = null,
+  }) {
     return _then(
       _value.copyWith(
             person: null == person
@@ -386,6 +391,10 @@ class _$CharacterRelationshipCopyWithImpl<
             relationship: null == relationship
                 ? _value.relationship
                 : relationship // ignore: cast_nullable_to_non_nullable
+                      as String,
+            internalRelationship: null == internalRelationship
+                ? _value.internalRelationship
+                : internalRelationship // ignore: cast_nullable_to_non_nullable
                       as String,
           )
           as $Val,
@@ -402,7 +411,7 @@ abstract class _$$CharacterRelationshipImplCopyWith<$Res>
   ) = __$$CharacterRelationshipImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String person, String relationship});
+  $Res call({String person, String relationship, String internalRelationship});
 }
 
 /// @nodoc
@@ -419,7 +428,11 @@ class __$$CharacterRelationshipImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? person = null, Object? relationship = null}) {
+  $Res call({
+    Object? person = null,
+    Object? relationship = null,
+    Object? internalRelationship = null,
+  }) {
     return _then(
       _$CharacterRelationshipImpl(
         person: null == person
@@ -430,6 +443,10 @@ class __$$CharacterRelationshipImplCopyWithImpl<$Res>
             ? _value.relationship
             : relationship // ignore: cast_nullable_to_non_nullable
                   as String,
+        internalRelationship: null == internalRelationship
+            ? _value.internalRelationship
+            : internalRelationship // ignore: cast_nullable_to_non_nullable
+                  as String,
       ),
     );
   }
@@ -438,7 +455,11 @@ class __$$CharacterRelationshipImplCopyWithImpl<$Res>
 /// @nodoc
 
 class _$CharacterRelationshipImpl implements _CharacterRelationship {
-  const _$CharacterRelationshipImpl({this.person = "", this.relationship = ""});
+  const _$CharacterRelationshipImpl({
+    this.person = "",
+    this.relationship = "",
+    this.internalRelationship = "",
+  });
 
   @override
   @JsonKey()
@@ -446,10 +467,13 @@ class _$CharacterRelationshipImpl implements _CharacterRelationship {
   @override
   @JsonKey()
   final String relationship;
+  @override
+  @JsonKey()
+  final String internalRelationship;
 
   @override
   String toString() {
-    return 'CharacterRelationship(person: $person, relationship: $relationship)';
+    return 'CharacterRelationship(person: $person, relationship: $relationship, internalRelationship: $internalRelationship)';
   }
 
   @override
@@ -459,11 +483,14 @@ class _$CharacterRelationshipImpl implements _CharacterRelationship {
             other is _$CharacterRelationshipImpl &&
             (identical(other.person, person) || other.person == person) &&
             (identical(other.relationship, relationship) ||
-                other.relationship == relationship));
+                other.relationship == relationship) &&
+            (identical(other.internalRelationship, internalRelationship) ||
+                other.internalRelationship == internalRelationship));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, person, relationship);
+  int get hashCode =>
+      Object.hash(runtimeType, person, relationship, internalRelationship);
 
   /// Create a copy of CharacterRelationship
   /// with the given fields replaced by the non-null parameter values.
@@ -482,12 +509,15 @@ abstract class _CharacterRelationship implements CharacterRelationship {
   const factory _CharacterRelationship({
     final String person,
     final String relationship,
+    final String internalRelationship,
   }) = _$CharacterRelationshipImpl;
 
   @override
   String get person;
   @override
   String get relationship;
+  @override
+  String get internalRelationship;
 
   /// Create a copy of CharacterRelationship
   /// with the given fields replaced by the non-null parameter values.

@@ -10,12 +10,20 @@ import "package:flutter_quill/flutter_quill.dart";
 
 import "../../presentation/providers/collaboration_providers.dart";
 import "plain_text_quill_adapter.dart";
+import "editor_input_rules.dart";
+import "plain_text_quill_geometry.dart";
+import "plain_text_quill_mention_overlay.dart";
+import "plain_text_quill_range_overlay.dart";
+import "plain_text_quill_render_range.dart";
 import "plain_text_quill_remote_cursor_overlay.dart";
 
 /// Reports a local plain-text selection to the existing collaboration layer.
 /// The callback offsets exclude Quill's final document sentinel newline.
 typedef PlainTextQuillCursorReporter =
     void Function({required int anchorOffset, required int focusOffset});
+
+typedef PlainTextQuillInteractionReporter =
+    void Function({required int offset, required Offset globalPosition});
 
 /// Commands that a host AppBar or keyboard binding can invoke on the focused
 /// plain-text Quill editor.
@@ -37,6 +45,7 @@ final class PlainTextQuillEditorCommands {
   Future<void> copy() => _state?._copy() ?? Future<void>.value();
   Future<void> cut() => _state?._cut() ?? Future<void>.value();
   Future<void> paste() => _state?._paste() ?? Future<void>.value();
+  Offset? caretGlobalBottomLeft() => _state?._caretGlobalBottomLeft();
 
   /// Replaces the current selection with known plain text.
   ///
@@ -86,24 +95,28 @@ class PlainTextQuillSearchState {
     this.matches = const <TextRange>[],
     this.currentMatchIndex = -1,
     this.proofreadingRanges = const <TextRange>[],
+    this.renderRanges = const <PlainTextQuillRenderRange>[],
   });
 
   final String query;
   final List<TextRange> matches;
   final int currentMatchIndex;
   final List<TextRange> proofreadingRanges;
+  final List<PlainTextQuillRenderRange> renderRanges;
 
   PlainTextQuillSearchState copyWith({
     String? query,
     List<TextRange>? matches,
     int? currentMatchIndex,
     List<TextRange>? proofreadingRanges,
+    List<PlainTextQuillRenderRange>? renderRanges,
   }) {
     return PlainTextQuillSearchState(
       query: query ?? this.query,
       matches: matches ?? this.matches,
       currentMatchIndex: currentMatchIndex ?? this.currentMatchIndex,
       proofreadingRanges: proofreadingRanges ?? this.proofreadingRanges,
+      renderRanges: renderRanges ?? this.renderRanges,
     );
   }
 }
@@ -122,6 +135,58 @@ final class PlainTextQuillSearchController extends ChangeNotifier {
   bool _useRegexp = false;
 
   PlainTextQuillSearchState get state => _state;
+
+  /// Mirrors results produced by the host's full Find/Replace engine.
+  ///
+  /// This keeps advanced host options (width, punctuation and whitespace
+  /// matching) while making their ranges visible in the Quill input surface.
+  void showHostResults({
+    required String query,
+    required Iterable<TextRange> matches,
+    required int currentMatchIndex,
+    bool selectCurrent = true,
+  }) {
+    _generation += 1;
+    final editor = _editor;
+    final normalized = <TextRange>[
+      for (final range in matches)
+        if (range.start >= 0 && range.end > range.start)
+          if (editor == null)
+            range
+          else if (range.end <= editor._hostContentLength)
+            editor._hostRangeToDocument(range),
+    ]..sort((left, right) => left.start.compareTo(right.start));
+    final normalizedIndex = normalized.isEmpty
+        ? -1
+        : currentMatchIndex < 0
+        ? -1
+        : currentMatchIndex.clamp(0, normalized.length - 1).toInt();
+    _state = _state.copyWith(
+      query: query,
+      matches: normalized,
+      currentMatchIndex: normalizedIndex,
+    );
+    if (selectCurrent) _selectCurrentMatch();
+    notifyListeners();
+  }
+
+  void clearSearchResults() {
+    _generation += 1;
+    _state = _state.copyWith(
+      query: "",
+      matches: const <TextRange>[],
+      currentMatchIndex: -1,
+    );
+    notifyListeners();
+  }
+
+  void clearProofreadingRanges() {
+    _state = _state.copyWith(
+      proofreadingRanges: const <TextRange>[],
+      renderRanges: const <PlainTextQuillRenderRange>[],
+    );
+    notifyListeners();
+  }
 
   Future<void> find(
     String query, {
@@ -282,15 +347,30 @@ final class PlainTextQuillSearchController extends ChangeNotifier {
   }
 
   void setProofreadingRanges(Iterable<TextRange> ranges) {
-    final maxOffset = _editor?._editableContentLength ?? 0;
+    final editor = _editor;
     final normalized = <TextRange>[
       for (final range in ranges)
         if (range.start >= 0 &&
             range.end > range.start &&
-            range.end <= maxOffset)
-          range,
+            editor != null &&
+            range.end <= editor._hostContentLength)
+          editor._hostRangeToDocument(range),
     ]..sort((left, right) => left.start.compareTo(right.start));
     _state = _state.copyWith(proofreadingRanges: normalized);
+    notifyListeners();
+  }
+
+  void setRenderRanges(Iterable<PlainTextQuillRenderRange> ranges) {
+    final editor = _editor;
+    final normalized = <PlainTextQuillRenderRange>[
+      for (final range in ranges)
+        if (range.range.start >= 0 &&
+            range.range.end > range.range.start &&
+            editor != null &&
+            range.range.end <= editor._hostContentLength)
+          range.copyWithRange(editor._hostRangeToDocument(range.range)),
+    ];
+    _state = _state.copyWith(renderRanges: normalized);
     notifyListeners();
   }
 
@@ -302,11 +382,16 @@ final class PlainTextQuillSearchController extends ChangeNotifier {
 
   void _handleDocumentChanged() {
     _generation += 1;
-    if (_state.matches.isEmpty && _state.proofreadingRanges.isEmpty) return;
+    if (_state.matches.isEmpty &&
+        _state.proofreadingRanges.isEmpty &&
+        _state.renderRanges.isEmpty) {
+      return;
+    }
     _state = _state.copyWith(
       matches: const <TextRange>[],
       currentMatchIndex: -1,
       proofreadingRanges: const <TextRange>[],
+      renderRanges: const <PlainTextQuillRenderRange>[],
     );
     notifyListeners();
   }
@@ -399,9 +484,20 @@ class PlainTextQuillEditorPoc extends StatefulWidget {
     this.commands,
     this.searchController,
     this.remoteCursors = const <RemoteCursorState>[],
+    this.remoteOffsetMapper,
     this.onLocalCursorChanged,
+    this.onInteraction,
+    this.focusNode,
     this.selectionOffset = 0,
+    this.selection,
+    this.clipboardTextTransform,
+    this.mentionMarkers = const <PlainTextQuillMentionMarker>[],
     this.placeholder = "開始撰寫正文…",
+    this.overwriteMode = false,
+    this.tabSpaces = "\u3000\u3000",
+    this.onTabPressed,
+    this.onToggleOverwrite,
+    this.overwriteProtectedRanges = const [],
   });
 
   /// Plain text supplied by the host. Changing this value simulates selecting
@@ -421,14 +517,40 @@ class PlainTextQuillEditorPoc extends StatefulWidget {
   /// These offsets map directly to this adapter's canonical plain text.
   final List<RemoteCursorState> remoteCursors;
 
+  /// Maps collaboration offsets into the visible plain-text projection.
+  final int Function(int offset)? remoteOffsetMapper;
+
   /// Emits local plain-text selection changes while this editor has focus.
   /// A Phase 7 host forwards this to `updateLocalCursor` without Delta data.
   final PlainTextQuillCursorReporter? onLocalCursorChanged;
 
+  /// Reports pointer interactions in the host [content] offset space.
+  final PlainTextQuillInteractionReporter? onInteraction;
+
+  /// An optional host-owned focus node.  The production editor uses this so
+  /// existing Find/Replace and command entry points continue to focus Quill.
+  final FocusNode? focusNode;
+
   /// A raw-text offset in [content]. It is mapped through the adapter when a
   /// new document is loaded.
   final int selectionOffset;
+
+  /// Optional full host-owned selection. This takes precedence over
+  /// [selectionOffset] so Find/Replace can retain a visible selected range.
+  final TextSelection? selection;
+
+  /// Optional display-to-reader-text transform used only for clipboard data.
+  final String Function(String text)? clipboardTextTransform;
+  final List<PlainTextQuillMentionMarker> mentionMarkers;
   final String placeholder;
+  final bool overwriteMode;
+  final String tabSpaces;
+  final bool Function()? onTabPressed;
+  final VoidCallback? onToggleOverwrite;
+  final List<TextRange> overwriteProtectedRanges;
+
+  TextSelection get _hostSelection =>
+      selection ?? TextSelection.collapsed(offset: selectionOffset);
 
   @override
   State<PlainTextQuillEditorPoc> createState() =>
@@ -439,11 +561,116 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
   late PlainTextQuillDocument _plainTextDocument;
   late QuillController _controller;
   late FocusNode _focusNode;
+  late bool _ownsFocusNode;
   late ScrollController _scrollController;
   late String _lastEmittedText;
   late TextSelection _lastReportedSelection;
   int _textRevision = 0;
   bool _isApplyingExternalContent = false;
+  bool _nonTypingEdit = false;
+  final _editorKey = GlobalKey<EditorState>();
+  QuillRawEditorState? _inputState;
+  TextEditingValue? _compositionBefore;
+  List<TextRange> _compositionProtectedRanges = const [];
+  int _compositionGeneration = 0;
+
+  void _attachCompositionListener() {
+    final state = _editorKey.currentState;
+    if (state is! QuillRawEditorState || identical(state, _inputState)) return;
+    _inputState?.composingRange.removeListener(_handleCompositionChanged);
+    _inputState = state;
+    state.composingRange.addListener(_handleCompositionChanged);
+  }
+
+  void _handleCompositionChanged() {
+    if (_isApplyingExternalContent || _nonTypingEdit) return;
+    final range = _inputState?.composingRange.value ?? TextRange.empty;
+    if (range.isValid && !range.isCollapsed) {
+      if (widget.overwriteMode && _compositionBefore == null) {
+        _compositionBefore = _controller.plainTextEditingValue;
+        _compositionProtectedRanges = List.of(widget.overwriteProtectedRanges);
+      }
+      _compositionGeneration++;
+      return;
+    }
+    final before = _compositionBefore;
+    if (before == null) return;
+    final generation = ++_compositionGeneration;
+    // Quill publishes composing changes before replacing its document. Wait
+    // until that synchronous replacement finishes, including composition-only commits.
+    Future<void>.microtask(() {
+      if (!mounted || generation != _compositionGeneration) return;
+      _compositionBefore = null;
+      if (!widget.overwriteMode) return;
+      final after = _controller.plainTextEditingValue;
+      final adjusted = applyOverwrite(
+        before,
+        after,
+        protectedRanges: _compositionProtectedRanges,
+      );
+      final removed = after.text.length - adjusted.text.length;
+      if (removed <= 0) return;
+      _nonTypingEdit = true;
+      try {
+        _controller.replaceText(
+          adjusted.selection.start,
+          removed,
+          "",
+          adjusted.selection,
+        );
+      } finally {
+        _nonTypingEdit = false;
+      }
+    });
+  }
+
+  bool _handleReplaceText(int index, int length, Object? data) {
+    _attachCompositionListener();
+    if (!widget.overwriteMode ||
+        _nonTypingEdit ||
+        _isApplyingExternalContent ||
+        _compositionBefore != null ||
+        data is! String ||
+        length != 0 ||
+        !_controller.selection.isCollapsed ||
+        index != _controller.selection.start) {
+      return true;
+    }
+    final input = _inputState?.currentTextEditingValue;
+    // Commands/paste do not arrive as a new platform editing value.
+    final before = _controller.plainTextEditingValue;
+    if (input == null ||
+        input.composing.isValid && !input.composing.isCollapsed ||
+        input.text != before.text.replaceRange(index, index, data)) {
+      return true;
+    }
+    final end = overwriteEnd(
+      _plainText,
+      index,
+      data,
+      protectedRanges: widget.overwriteProtectedRanges,
+    );
+    if (end == index) return true;
+    _nonTypingEdit = true;
+    try {
+      _controller.replaceText(
+        index,
+        end - index,
+        data,
+        TextSelection.collapsed(offset: index + data.length),
+      );
+    } finally {
+      _nonTypingEdit = false;
+    }
+    return false;
+  }
+
+  void _insertTabSpaces() {
+    final range = _inputState?.composingRange.value ?? TextRange.empty;
+    if (range.isValid && !range.isCollapsed) return;
+    if (widget.onTabPressed?.call() ?? false) return;
+    _replaceSelectionWith(widget.tabSpaces);
+  }
 
   @override
   void initState() {
@@ -452,55 +679,82 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     _lastEmittedText = PlainTextQuillAdapter.toPlainText(
       _plainTextDocument.document,
     );
-    _controller = _newController(_plainTextDocument, widget.selectionOffset);
+    _controller = _newController(_plainTextDocument, widget._hostSelection);
+    _controller.onReplaceText = _handleReplaceText;
     _controller.addListener(_handleControllerChanged);
-    _focusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _attachCompositionListener();
+    });
+    _ownsFocusNode = widget.focusNode == null;
+    _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(_handleFocusChanged);
     _scrollController = ScrollController();
     _lastReportedSelection = _editableSelection;
     widget.commands?._attach(this);
-    widget.searchController?._attach(this);
+    widget.searchController
+      ?.._attach(this)
+      ..addListener(_handleSearchStateChanged);
   }
 
   @override
   void didUpdateWidget(covariant PlainTextQuillEditorPoc oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.content != widget.content ||
-        oldWidget.selectionOffset != widget.selectionOffset) {
-      _applyExternalContent(widget.content, widget.selectionOffset);
+    // A production host immediately mirrors a local Quill edit back through
+    // its plain-text provider. Do not replace our own document for that echo:
+    // doing so would clear Quill undo history after every keystroke.
+    final isLocalPlainTextEcho = widget.content == _lastEmittedText;
+    if (oldWidget.content != widget.content && !isLocalPlainTextEcho) {
+      _applyExternalContent(widget.content, widget._hostSelection);
+    } else if (oldWidget._hostSelection != widget._hostSelection) {
+      _applyExternalSelection(widget._hostSelection);
     }
     if (oldWidget.commands != widget.commands) {
       oldWidget.commands?._detach(this);
       widget.commands?._attach(this);
     }
     if (oldWidget.searchController != widget.searchController) {
-      oldWidget.searchController?._detach(this);
-      widget.searchController?._attach(this);
+      oldWidget.searchController
+        ?..removeListener(_handleSearchStateChanged)
+        .._detach(this);
+      widget.searchController
+        ?.._attach(this)
+        ..addListener(_handleSearchStateChanged);
     }
+  }
+
+  void _handleSearchStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     widget.commands?._detach(this);
-    widget.searchController?._detach(this);
+    widget.searchController
+      ?..removeListener(_handleSearchStateChanged)
+      .._detach(this);
+    _inputState?.composingRange.removeListener(_handleCompositionChanged);
     _controller
       ..removeListener(_handleControllerChanged)
       ..dispose();
-    _focusNode
-      ..removeListener(_handleFocusChanged)
-      ..dispose();
+    _focusNode.removeListener(_handleFocusChanged);
+    if (_ownsFocusNode) _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   QuillController _newController(
     PlainTextQuillDocument document,
-    int rawSelectionOffset,
+    TextSelection rawSelection,
   ) {
     return QuillController(
       document: document.document,
-      selection: TextSelection.collapsed(
-        offset: document.rawOffsetToDocumentOffset(rawSelectionOffset),
+      selection: TextSelection(
+        baseOffset: document.rawOffsetToDocumentOffset(rawSelection.baseOffset),
+        extentOffset: document.rawOffsetToDocumentOffset(
+          rawSelection.extentOffset,
+        ),
+        affinity: rawSelection.affinity,
+        isDirectional: rawSelection.isDirectional,
       ),
       config: const QuillControllerConfig(
         // Do not convert HTML/Markdown clipboard content into a Delta. The
@@ -510,9 +764,11 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     );
   }
 
-  void _applyExternalContent(String rawText, int rawSelectionOffset) {
+  void _applyExternalContent(String rawText, TextSelection rawSelection) {
     final nextDocument = PlainTextQuillAdapter.fromPlainText(rawText);
     final previousDocument = _controller.document;
+    _compositionGeneration++;
+    _compositionBefore = null;
     _isApplyingExternalContent = true;
     try {
       _plainTextDocument = nextDocument;
@@ -521,8 +777,15 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
       );
       _controller.document = nextDocument.document;
       _controller.updateSelection(
-        TextSelection.collapsed(
-          offset: nextDocument.rawOffsetToDocumentOffset(rawSelectionOffset),
+        TextSelection(
+          baseOffset: nextDocument.rawOffsetToDocumentOffset(
+            rawSelection.baseOffset,
+          ),
+          extentOffset: nextDocument.rawOffsetToDocumentOffset(
+            rawSelection.extentOffset,
+          ),
+          affinity: rawSelection.affinity,
+          isDirectional: rawSelection.isDirectional,
         ),
         ChangeSource.silent,
       );
@@ -535,21 +798,66 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     }
   }
 
+  void _applyExternalSelection(TextSelection rawSelection) {
+    _isApplyingExternalContent = true;
+    try {
+      _controller.updateSelection(
+        TextSelection(
+          baseOffset: _plainTextDocument.rawOffsetToDocumentOffset(
+            rawSelection.baseOffset,
+          ),
+          extentOffset: _plainTextDocument.rawOffsetToDocumentOffset(
+            rawSelection.extentOffset,
+          ),
+          affinity: rawSelection.affinity,
+          isDirectional: rawSelection.isDirectional,
+        ),
+        ChangeSource.silent,
+      );
+      _lastReportedSelection = _editableSelection;
+    } finally {
+      _isApplyingExternalContent = false;
+    }
+  }
+
   void _handleControllerChanged() {
     if (_isApplyingExternalContent) return;
-
-    _reportLocalSelectionIfNeeded();
-
     final nextText = PlainTextQuillAdapter.toPlainText(_controller.document);
-    if (_lastEmittedText == nextText) return;
-    _lastEmittedText = nextText;
-    _textRevision += 1;
-    widget.searchController?._handleDocumentChanged();
-    widget.onChanged(nextText);
+    if (_lastEmittedText != nextText) {
+      _lastEmittedText = nextText;
+      final nextMapping = PlainTextQuillAdapter.fromPlainText(nextText);
+      nextMapping.document.close();
+      _plainTextDocument = nextMapping;
+      _textRevision += 1;
+      widget.searchController?._handleDocumentChanged();
+      widget.onChanged(nextText);
+    }
+    _reportLocalSelectionIfNeeded();
   }
 
   void _requestFocus() {
     _focusNode.requestFocus();
+  }
+
+  Offset? _caretGlobalBottomLeft() {
+    final root = context.findRenderObject();
+    final editor = _findRenderEditor(root);
+    if (editor == null || !editor.hasSize) return null;
+    final offset = _controller.selection.extentOffset
+        .clamp(0, _editableContentLength)
+        .toInt();
+    return quillCaretGlobalRect(
+      editor,
+      TextPosition(offset: offset),
+    ).bottomLeft;
+  }
+
+  RenderEditor? _findRenderEditor(RenderObject? root) {
+    if (root == null) return null;
+    if (root is RenderEditor) return root;
+    RenderEditor? result;
+    root.visitChildren((child) => result ??= _findRenderEditor(child));
+    return result;
   }
 
   void _handleFocusChanged() {
@@ -562,21 +870,48 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     _lastReportedSelection = selection;
     if (!_focusNode.hasFocus || !selection.isValid) return;
     widget.onLocalCursorChanged?.call(
-      anchorOffset: selection.baseOffset,
-      focusOffset: selection.extentOffset,
+      anchorOffset: _plainTextDocument.documentOffsetToRawOffset(
+        selection.baseOffset,
+      ),
+      focusOffset: _plainTextDocument.documentOffsetToRawOffset(
+        selection.extentOffset,
+      ),
     );
   }
 
+  void _reportInteraction(Offset globalPosition) {
+    final editor = _findRenderEditor(context.findRenderObject());
+    if (editor == null || !editor.hasSize) return;
+    final hitOffset = editor.getPositionForOffset(globalPosition).offset;
+    final hostOffset = _plainTextDocument.documentOffsetToRawOffset(hitOffset);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.onInteraction == null) return;
+      widget.onInteraction!(offset: hostOffset, globalPosition: globalPosition);
+    });
+  }
+
   int get _editableContentLength => _controller.document.length - 1;
+
+  int get _hostContentLength => _plainTextDocument.rawText.length;
+
+  TextRange _hostRangeToDocument(TextRange range) => TextRange(
+    start: _plainTextDocument.rawOffsetToDocumentOffset(range.start),
+    end: _plainTextDocument.rawOffsetToDocumentOffset(range.end),
+  );
 
   String get _plainText =>
       PlainTextQuillAdapter.toPlainText(_controller.document);
 
   TextSelection get _editableSelection {
     final selection = _controller.selection;
-    final start = selection.start.clamp(0, _editableContentLength).toInt();
-    final end = selection.end.clamp(0, _editableContentLength).toInt();
-    return TextSelection(baseOffset: start, extentOffset: end);
+    return TextSelection(
+      baseOffset: selection.baseOffset.clamp(0, _editableContentLength).toInt(),
+      extentOffset: selection.extentOffset
+          .clamp(0, _editableContentLength)
+          .toInt(),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
   }
 
   void _undo() {
@@ -604,8 +939,11 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
       return;
     }
     final plainText = PlainTextQuillAdapter.toPlainText(_controller.document);
+    final selectedText = plainText.substring(selection.start, selection.end);
     await Clipboard.setData(
-      ClipboardData(text: plainText.substring(selection.start, selection.end)),
+      ClipboardData(
+        text: widget.clipboardTextTransform?.call(selectedText) ?? selectedText,
+      ),
     );
     _requestFocus();
   }
@@ -630,12 +968,17 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
   void _replaceSelectionWith(String text) {
     final selection = _editableSelection;
     final canonicalText = _canonicalizeLineEndings(text);
-    _controller.replaceText(
-      selection.start,
-      selection.end - selection.start,
-      canonicalText,
-      TextSelection.collapsed(offset: selection.start + canonicalText.length),
-    );
+    _nonTypingEdit = true;
+    try {
+      _controller.replaceText(
+        selection.start,
+        selection.end - selection.start,
+        canonicalText,
+        TextSelection.collapsed(offset: selection.start + canonicalText.length),
+      );
+    } finally {
+      _nonTypingEdit = false;
+    }
     _requestFocus();
   }
 
@@ -670,6 +1013,10 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
   Map<ShortcutActivator, Intent> get _plainTextShortcuts {
     final isApple = _isApplePlatform;
     return <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.tab):
+          const InsertEditorSpacesIntent(),
+      const SingleActivator(LogicalKeyboardKey.insert, includeRepeats: false):
+          const ToggleEditorOverwriteIntent(),
       SingleActivator(
         LogicalKeyboardKey.keyZ,
         control: !isApple,
@@ -709,6 +1056,12 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
 
   Map<Type, Action<Intent>> get _plainTextActions {
     return <Type, Action<Intent>>{
+      InsertEditorSpacesIntent: CallbackAction<InsertEditorSpacesIntent>(
+        onInvoke: (_) => _insertTabSpaces(),
+      ),
+      ToggleEditorOverwriteIntent: CallbackAction<ToggleEditorOverwriteIntent>(
+        onInvoke: (_) => widget.onToggleOverwrite?.call(),
+      ),
       _PlainTextUndoIntent: CallbackAction<_PlainTextUndoIntent>(
         onInvoke: (_) => _undo(),
       ),
@@ -732,28 +1085,93 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
 
   @override
   Widget build(BuildContext context) {
+    final defaultParagraph = DefaultStyles.getInstance(context).paragraph!;
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        QuillEditor.basic(
-          key: const ValueKey<String>("plain-text-quill-editor"),
-          controller: _controller,
-          focusNode: _focusNode,
-          scrollController: _scrollController,
-          config: QuillEditorConfig(
-            expands: true,
-            padding: const EdgeInsets.all(16),
-            placeholder: widget.placeholder,
-            customShortcuts: _plainTextShortcuts,
-            customActions: _plainTextActions,
+        // Highlights belong behind glyphs: translucent foreground overlays
+        // tint the text itself and reduce its contrast.
+        if (widget.searchController case final searchController?)
+          Positioned.fill(
+            child: PlainTextQuillRangeOverlay(
+              controller: _controller,
+              scrollController: _scrollController,
+              matches: searchController.state.matches,
+              currentMatchIndex: searchController.state.currentMatchIndex,
+              proofreadingRanges: searchController.state.proofreadingRanges,
+              renderRanges: searchController.state.renderRanges,
+            ),
+          ),
+        Listener(
+          key: const ValueKey<String>("plain-text-quill-interaction-listener"),
+          onPointerUp: (event) => _reportInteraction(event.position),
+          child: QuillEditor.basic(
+            key: const ValueKey<String>("plain-text-quill-editor"),
+            controller: _controller,
+            focusNode: _focusNode,
+            scrollController: _scrollController,
+            config: QuillEditorConfig(
+              editorKey: _editorKey,
+              onKeyPressed: (event, node) {
+                final keyboard = HardwareKeyboard.instance;
+                if (keyboard.isControlPressed ||
+                    keyboard.isAltPressed ||
+                    keyboard.isMetaPressed) {
+                  return null;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.tab) {
+                  if (keyboard.isShiftPressed) return KeyEventResult.ignored;
+                  if (event is KeyDownEvent || event is KeyRepeatEvent) {
+                    _insertTabSpaces();
+                  }
+                  return KeyEventResult.handled;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.insert &&
+                    !keyboard.isShiftPressed) {
+                  if (event is KeyDownEvent) widget.onToggleOverwrite?.call();
+                  return KeyEventResult.handled;
+                }
+                return null;
+              },
+              expands: true,
+              padding: const EdgeInsets.all(16),
+              placeholder: widget.placeholder,
+              customStyles: DefaultStyles(
+                paragraph: defaultParagraph.copyWith(
+                  style: defaultParagraph.style.copyWith(height: 1.15),
+                ),
+              ),
+              customShortcuts: _plainTextShortcuts,
+              customActions: _plainTextActions,
+            ),
           ),
         ),
+        if (widget.mentionMarkers.isNotEmpty)
+          Positioned.fill(
+            child: PlainTextQuillMentionOverlay(
+              controller: _controller,
+              scrollController: _scrollController,
+              markers: <PlainTextQuillMentionMarker>[
+                for (final marker in widget.mentionMarkers)
+                  PlainTextQuillMentionMarker(
+                    offset: _plainTextDocument.rawOffsetToDocumentOffset(
+                      marker.offset,
+                    ),
+                    annotation: marker.annotation,
+                  ),
+              ],
+            ),
+          ),
         if (widget.remoteCursors.isNotEmpty)
           Positioned.fill(
             child: PlainTextQuillRemoteCursorOverlay(
               controller: _controller,
               scrollController: _scrollController,
               cursors: widget.remoteCursors,
+              offsetMapper: (offset) =>
+                  _plainTextDocument.rawOffsetToDocumentOffset(
+                    widget.remoteOffsetMapper?.call(offset) ?? offset,
+                  ),
             ),
           ),
       ],

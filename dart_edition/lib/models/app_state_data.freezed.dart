@@ -188,6 +188,8 @@ mixin _$AppSettingsStateData {
       throw _privateConstructorUsedError;
   bool get allowPersistentP2pVerification => throw _privateConstructorUsedError;
   bool get poppinEnabled => throw _privateConstructorUsedError;
+  int get tabSpaceCount => throw _privateConstructorUsedError;
+  bool get tabFullWidth => throw _privateConstructorUsedError;
   List<RecentProjectEntry> get recentProjects =>
       throw _privateConstructorUsedError;
 
@@ -217,6 +219,8 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
     bool poppinEnabled,
+    int tabSpaceCount,
+    bool tabFullWidth,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -250,6 +254,8 @@ class _$AppSettingsStateDataCopyWithImpl<
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
     Object? poppinEnabled = null,
+    Object? tabSpaceCount = null,
+    Object? tabFullWidth = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -300,6 +306,14 @@ class _$AppSettingsStateDataCopyWithImpl<
                 ? _value.poppinEnabled
                 : poppinEnabled // ignore: cast_nullable_to_non_nullable
                       as bool,
+            tabSpaceCount: null == tabSpaceCount
+                ? _value.tabSpaceCount
+                : tabSpaceCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            tabFullWidth: null == tabFullWidth
+                ? _value.tabFullWidth
+                : tabFullWidth // ignore: cast_nullable_to_non_nullable
+                      as bool,
             recentProjects: null == recentProjects
                 ? _value.recentProjects
                 : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -331,6 +345,8 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
     bool poppinEnabled,
+    int tabSpaceCount,
+    bool tabFullWidth,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -360,6 +376,8 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
     Object? poppinEnabled = null,
+    Object? tabSpaceCount = null,
+    Object? tabFullWidth = null,
     Object? recentProjects = null,
   }) {
     return _then(
@@ -409,6 +427,14 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
             ? _value.poppinEnabled
             : poppinEnabled // ignore: cast_nullable_to_non_nullable
                   as bool,
+        tabSpaceCount: null == tabSpaceCount
+            ? _value.tabSpaceCount
+            : tabSpaceCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        tabFullWidth: null == tabFullWidth
+            ? _value.tabFullWidth
+            : tabFullWidth // ignore: cast_nullable_to_non_nullable
+                  as bool,
         recentProjects: null == recentProjects
             ? _value._recentProjects
             : recentProjects // ignore: cast_nullable_to_non_nullable
@@ -433,6 +459,8 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     this.allowSingleDevicePairingConfirmation = true,
     this.allowPersistentP2pVerification = false,
     this.poppinEnabled = true,
+    this.tabSpaceCount = 2,
+    this.tabFullWidth = true,
     final List<RecentProjectEntry> recentProjects =
         const <RecentProjectEntry>[],
   }) : _recentProjects = recentProjects;
@@ -470,6 +498,12 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   @override
   @JsonKey()
   final bool poppinEnabled;
+  @override
+  @JsonKey()
+  final int tabSpaceCount;
+  @override
+  @JsonKey()
+  final bool tabFullWidth;
   final List<RecentProjectEntry> _recentProjects;
   @override
   @JsonKey()
@@ -481,7 +515,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
   @override
   String toString() {
-    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, poppinEnabled: $poppinEnabled, recentProjects: $recentProjects)';
+    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, poppinEnabled: $poppinEnabled, tabSpaceCount: $tabSpaceCount, tabFullWidth: $tabFullWidth, recentProjects: $recentProjects)';
   }
 
   @override
@@ -525,6 +559,10 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
                     allowPersistentP2pVerification) &&
             (identical(other.poppinEnabled, poppinEnabled) ||
                 other.poppinEnabled == poppinEnabled) &&
+            (identical(other.tabSpaceCount, tabSpaceCount) ||
+                other.tabSpaceCount == tabSpaceCount) &&
+            (identical(other.tabFullWidth, tabFullWidth) ||
+                other.tabFullWidth == tabFullWidth) &&
             const DeepCollectionEquality().equals(
               other._recentProjects,
               _recentProjects,
@@ -545,6 +583,8 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     allowSingleDevicePairingConfirmation,
     allowPersistentP2pVerification,
     poppinEnabled,
+    tabSpaceCount,
+    tabFullWidth,
     const DeepCollectionEquality().hash(_recentProjects),
   );
 
@@ -574,6 +614,8 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
     final bool allowSingleDevicePairingConfirmation,
     final bool allowPersistentP2pVerification,
     final bool poppinEnabled,
+    final int tabSpaceCount,
+    final bool tabFullWidth,
     final List<RecentProjectEntry> recentProjects,
   }) = _$AppSettingsStateDataImpl;
 
@@ -599,6 +641,10 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
   bool get allowPersistentP2pVerification;
   @override
   bool get poppinEnabled;
+  @override
+  int get tabSpaceCount;
+  @override
+  bool get tabFullWidth;
   @override
   List<RecentProjectEntry> get recentProjects;
 

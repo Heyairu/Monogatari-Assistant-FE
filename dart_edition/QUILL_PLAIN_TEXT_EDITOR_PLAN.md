@@ -38,8 +38,8 @@
 | 🟡 4. 搜尋與校稿 | PoC 已將搜尋、取代與校稿範圍改接 Quill 文件 offset；持續多範圍視覺高亮需改用替代實作。 | 全取代、非同步搜尋取消與校稿標記均不錯位；高亮 UI 經多段落驗證後再接入。 | 3–5 天 |
 | ✅ 5. Mosaic 標註 | 已採資料相容優先的第一版：Quill 顯示並編輯原始 Mosaic 語法；隱藏語法視覺投影保留為後續獨立工作。 | 標註儲存仍為原始語法；閱讀與匯出結果不變。 | 1 天／4–7 天 |
 | 🟡 6. 協作與游標 | PoC 已將遠端游標量測與本機 selection callback 改接 Quill render tree；正式協作宿主接線待 Phase 7。 | 兩端編輯、游標、章節切換與斷線重連不出現偏移。 | 3–5 天 |
-| 7. 主編輯器替換 | 以 Quill 接替 `EditorTextBox` 內的 `CodeField`；維持 provider、debounce、存檔與字數計算。 | 建立、開啟、切換、儲存、重開專案後正文完全一致。 | 3–4 天 |
-| 8. 回歸與發布 | 補單元、Widget、整合測試；壓測長章節；以 feature flag 灰度開放。 | XML、Markdown、P2P、閱讀模式與歷史復原皆通過回歸。 | 3–5 天 |
+| 🟡 7. 主編輯器替換 | 已以 Quill 接替 `EditorTextBox` 內的 `CodeField`，並保留編譯期回退開關；實機完整生命週期驗收待 Phase 8。 | 建立、開啟、切換、儲存、重開專案後正文完全一致。 | 3–4 天 |
+| 🟡 8. 回歸與發布 | 已補主宿主、資料鏈路與回退模式回歸，並加入可重複執行的 release check；實機 IME／雙端驗收待完成。 | XML、Markdown、P2P、閱讀模式與歷史復原皆通過回歸。 | 3–5 天 |
 
 ### Phase 1 實作紀錄
 
@@ -79,6 +79,22 @@
 - `PlainTextQuillEditorPoc` 現可接收既有協作層的 `RemoteCursorState`，並以 `PlainTextQuillRemoteCursorOverlay` 將遠端的 canonical plain-text UTF-16 offset 量測為 Quill caret 位置。它使用 Quill 的 `RenderEditor.getLocalRectForCaret`，不假設 Quill 使用 Flutter 的 `RenderEditable`，且會在文字、selection 或捲動後重測。
 - PoC 在取得焦點或本機 selection 改變時，會以 `PlainTextQuillCursorReporter` 回送不含 Quill sentinel newline 的 anchor／focus offset。Phase 7 的正式宿主可直接轉交至現有 `CollaborationNotifier.updateLocalCursor`；協作內容本身仍僅由 `onChanged(String)` 的純文字流程處理。
 - 已補 Widget 測試覆蓋本機選取 offset 回報，以及遠端 cursor 在 Quill render tree 的 caret 量測。實際雙端文字合併、章節切換與斷線重連需在 Phase 7 將 PoC 接入 Provider／P2P 後做端對端驗收。
+
+### Phase 7 實作紀錄
+
+- `EditorTextBox` 預設改以 `PlainTextQuillEditorPoc` 作為正式正文輸入 UI。Quill 每次輸出都回寫既有 `MosaicEditingController.rawText`，因此既有 `TextChangeDebouncer`、`editorContentProvider`、章節持久化、字數與 P2P 純文字 delta 仍沿用原本資料流；不會保存 Quill Delta。
+- 主編輯器沿用既有 `editorFocusNode`，供 Find/Replace 與其他既有命令要求焦點；Quill selection 會同步回舊 controller 的 raw offset，並以 `updateLocalCursor` 發送本機協作游標。遠端游標改由 `PlainTextQuillRemoteCursorOverlay` 在 Quill render tree 上繪製。
+- 已在主 `MaterialApp` 加入 `FlutterQuillLocalizations.delegate` 與中、日、韓等支援語系，避免正文區缺少 Quill 本地化資源。
+- 可用 `--dart-define=MONOGATARI_PLAIN_TEXT_QUILL_EDITOR=false` 在發布期間回退舊 `CodeField`。因 Quill 第一版採 Mosaic 原始語法可見策略，舊 editor 的標註視覺投影、點擊詳情與 Poppin 自動完成只會在回退模式啟用。
+- 已補外部 focus node 與「provider 回寫不清除 Quill Undo 歷史」的回歸測試；專案建立／開啟／切章／儲存／重開與雙端 P2P 的完整實機驗收留待 Phase 8。
+
+### Phase 8 實作紀錄
+
+- 新增 `test/editor_text_box_quill_integration_test.dart`，驗證正式 `EditorTextBox` 預設呈現 Quill、Mosaic 原始語法無損，且 Quill 編輯會回寫既有 raw controller；也驗證既有宿主的 raw selection 可同步至 Quill。
+- 原有 Mosaic IntelliSense 與剪貼簿測試明確指定 `usePlainTextQuillEditor: false`，將它們定位為 feature flag 回退模式的回歸，不再與預設 Quill 行為混用。
+- 已執行 Quill adapter／PoC、正式宿主、Mosaic 回退、XML 讀寫、Markdown 匯出、協作 CRDT／presence、章節協調器與專案歷史測試；自動化範圍內均通過。
+- 新增 `tool/quill_release_check.ps1`：預設執行 analyzer、Quill focused tests、完整 Flutter suite 與 Windows debug build；可用 `-SkipFullSuite`、`-SkipBuild` 作本機快速檢查。
+- 發布前仍須在 Windows 與 Android 以中文、日文、韓文 IME 手動輸入；並以兩台裝置驗證同章節輸入、遠端游標、切章、斷線重連，以及建立／儲存／關閉／重開的真實專案生命週期。完成後才可將 Phase 8 標示為完成並考慮預設長期啟用。
 
 ## 技術設計要點
 

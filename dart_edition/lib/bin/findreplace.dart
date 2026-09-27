@@ -2699,6 +2699,11 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   }
 
   void _onFindTextChanged() {
+    final composing = widget.findController.value.composing;
+    if (composing.isValid && !composing.isCollapsed) {
+      _debounceTimer?.cancel();
+      return;
+    }
     // 當搜尋框內容變化時，檢查是否需要禁用某些選項
     final findText = widget.findController.text;
     final hasFullWidth = _containsFullWidth(findText);
@@ -3206,6 +3211,11 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
   }
 
   void _onFindTextChanged() {
+    final composing = widget.findController.value.composing;
+    if (composing.isValid && !composing.isCollapsed) {
+      _debounceTimer?.cancel();
+      return;
+    }
     // 當搜尋框內容變化時，檢查是否需要禁用某些選項
     final findText = widget.findController.text;
     final hasFullWidth = _containsFullWidth(findText);

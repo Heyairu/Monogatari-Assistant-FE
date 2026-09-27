@@ -269,6 +269,7 @@ class _AnnotationKindBadge extends StatelessWidget {
     InlineAnnotationKind.event => "事件",
     InlineAnnotationKind.foreshadowing => "伏筆",
     InlineAnnotationKind.plan => "計畫",
+    InlineAnnotationKind.item => "物品",
     InlineAnnotationKind.emphasis => "高亮",
   };
 
@@ -278,6 +279,7 @@ class _AnnotationKindBadge extends StatelessWidget {
     InlineAnnotationKind.event => "#",
     InlineAnnotationKind.foreshadowing => "?",
     InlineAnnotationKind.plan => "&",
+    InlineAnnotationKind.item => "*",
     InlineAnnotationKind.emphasis => "^",
   };
 }

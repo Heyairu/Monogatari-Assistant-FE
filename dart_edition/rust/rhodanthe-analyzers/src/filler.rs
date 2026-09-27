@@ -350,7 +350,7 @@ impl FillerMatcher {
                 foreground: Some("filler.foreground".to_owned()),
                 decoration: Some(DecorationSpec {
                     lines: vec![DecorationLine::Underline],
-                    style: DecorationStyle::Wavy,
+                    style: DecorationStyle::Double,
                     color: "filler.decoration".to_owned(),
                     thickness: 1.0,
                 }),

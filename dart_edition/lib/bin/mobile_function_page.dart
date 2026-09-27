@@ -152,14 +152,14 @@ class _MobileNavigationChip extends StatelessWidget {
       {"icon": Icons.person, "label": "角色設定"},
       {"icon": Icons.group, "label": "關係設定"},
       {"icon": Icons.public, "label": "世界設定"},
-      {"icon": Icons.assessment, "label": "計畫規劃"},
-      {"icon": Icons.library_books, "label": "詞語參考"},
-      {"icon": Icons.palette_rounded, "label": "文字色票"},
+      {"icon": Icons.inventory_2_outlined, "label": "物品設定"},
+      {"icon": Icons.assessment_outlined, "label": "計畫規劃"},
+      {"icon": Icons.library_books_outlined, "label": "詞語參考"},
+      {"icon": Icons.palette_outlined, "label": "文字色票"},
       {"icon": Icons.spellcheck, "label": "文本校正"},
       {"icon": Icons.auto_awesome, "label": "Copilot"},
       {"icon": Icons.settings, "label": "設定"},
       {"icon": Icons.info, "label": "關於"},
-      {"icon": Icons.inventory_2_outlined, "label": "物品設定"},
     ];
 
     final function = functions[index];

@@ -130,6 +130,7 @@ ProjectData _complexProject() {
   const relationship = CharacterRelationship(
     person: "friend",
     relationship: "ally",
+    internalRelationship: "trust",
   );
   const profile = CharacterProfileTableEntry(
     name: "guild",

@@ -1,4 +1,4 @@
-/************************************************************
+/* **********************************************************
  * 
  * Copyright 2025-2026 Heyairu（部屋伊琉）
  *
@@ -21,6 +21,7 @@ import "dart:math" as math;
 import "package:flutter/material.dart";
 
 import "character_relationship_graph_mapper.dart";
+import "character_relationship_graph_layout.dart";
 
 class CharacterRelationshipGraphController extends ChangeNotifier {
   final TransformationController transformationController =
@@ -29,6 +30,43 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
   String? selectedEdgeId;
   bool neighborsOnly = false;
   int layoutRevision = 0;
+  final layoutSession = CharacterGraphLayoutSession();
+  CharacterGraphLayoutMode layoutMode = CharacterGraphLayoutMode.roles;
+  bool mergeOpposite = true;
+
+  void setMergeOpposite(bool value) {
+    if (mergeOpposite == value) return;
+    mergeOpposite = value;
+    selectedEdgeId = null;
+    notifyListeners();
+  }
+
+  void setLayoutMode(CharacterGraphLayoutMode value) {
+    if (layoutMode == value) return;
+    layoutMode = value;
+    notifyListeners();
+  }
+
+  void moveNode(String id, Offset position) {
+    layoutSession.move(layoutMode, id, position);
+    notifyListeners();
+  }
+
+  void togglePin(String id) {
+    layoutSession.togglePin(id);
+    notifyListeners();
+  }
+
+  void resetSession() {
+    layoutSession.clear();
+    selectedNodeId = null;
+    selectedEdgeId = null;
+    neighborsOnly = false;
+    layoutMode = CharacterGraphLayoutMode.roles;
+    mergeOpposite = true;
+    layoutRevision = 0;
+    notifyListeners();
+  }
 
   void selectNode(String? nodeId) {
     if (selectedNodeId == nodeId && selectedEdgeId == null) return;
@@ -40,6 +78,10 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
   void selectEdge(String? edgeId) {
     if (selectedEdgeId == edgeId) return;
     selectedEdgeId = edgeId;
+    if (edgeId != null) {
+      selectedNodeId = null;
+      neighborsOnly = false;
+    }
     notifyListeners();
   }
 
@@ -51,13 +93,17 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
 
   void rearrange() {
     layoutRevision++;
+    layoutSession.rearrange(layoutMode);
     notifyListeners();
   }
 
   void clearSelection() {
-    if (selectedNodeId == null && selectedEdgeId == null) return;
+    if (selectedNodeId == null && selectedEdgeId == null && !neighborsOnly) {
+      return;
+    }
     selectedNodeId = null;
     selectedEdgeId = null;
+    neighborsOnly = false;
     notifyListeners();
   }
 
@@ -74,7 +120,7 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
   void zoomBy(double factor, Size viewportSize) {
     final current = transformationController.value;
     final currentScale = current.getMaxScaleOnAxis();
-    final targetScale = (currentScale * factor).clamp(0.25, 3.0);
+    final targetScale = (currentScale * factor).clamp(0.05, 3.0);
     final ratio = targetScale / currentScale;
     final center = Offset(viewportSize.width / 2, viewportSize.height / 2);
     transformationController.value = Matrix4.identity()
@@ -96,7 +142,7 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
           viewportSize.width / canvasSize.width,
           viewportSize.height / canvasSize.height,
         )
-        .clamp(0.25, 1.0);
+        .clamp(0.05, 1.0);
     final dx = (viewportSize.width - canvasSize.width * scale) / 2;
     final dy = (viewportSize.height - canvasSize.height * scale) / 2;
     transformationController.value = Matrix4.identity()
@@ -112,7 +158,7 @@ class CharacterRelationshipGraphController extends ChangeNotifier {
       return graph.nodes.map((node) => node.id).toSet();
     }
     final ids = <String>{selected};
-    for (final edge in graph.edges) {
+    for (final edge in graph.topologyEdges) {
       if (edge.sourceCharacterId == selected) ids.add(edge.targetNodeId);
       if (edge.targetNodeId == selected) ids.add(edge.sourceCharacterId);
     }

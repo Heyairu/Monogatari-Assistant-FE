@@ -1,6 +1,67 @@
 import "../../models/item_data.dart";
 import "../../models/item_snapshot_data.dart";
 
+class DedicatedItemCreationRequest {
+  final String classId;
+  final String instanceId;
+  final String name;
+
+  const DedicatedItemCreationRequest({
+    required this.classId,
+    required this.instanceId,
+    required this.name,
+  });
+}
+
+class DedicatedItemCreationResult {
+  final ItemClassData itemClass;
+  final ItemInstanceData instance;
+
+  const DedicatedItemCreationResult({
+    required this.itemClass,
+    required this.instance,
+  });
+}
+
+/// Creates the Class and its initial one-to-one instance together.
+///
+/// Keeping the pair in one operation prevents entry points such as ItemView
+/// and Mosaic's quick-create action from producing different initial data.
+DedicatedItemCreationResult createDedicatedItem({
+  required DedicatedItemCreationRequest request,
+}) {
+  final classId = request.classId.trim();
+  final instanceId = request.instanceId.trim();
+  final name = request.name.trim();
+  if (classId.isEmpty) {
+    throw ArgumentError.value(request.classId, "classId", "is empty");
+  }
+  if (instanceId.isEmpty) {
+    throw ArgumentError.value(request.instanceId, "instanceId", "is empty");
+  }
+  if (name.isEmpty) {
+    throw ArgumentError.value(request.name, "name", "is empty");
+  }
+  if (classId == instanceId) {
+    throw ArgumentError("classId and instanceId must be distinct");
+  }
+
+  final itemClass = ItemClassData(
+    classId: classId,
+    name: name,
+    mode: ItemMode.dedicated,
+    defaultState: ItemSnapshotState(name: name),
+  );
+  return DedicatedItemCreationResult(
+    itemClass: itemClass,
+    instance: ItemInstanceData(
+      instanceId: instanceId,
+      classId: classId,
+      name: name,
+    ),
+  );
+}
+
 class AggregateItemTransferRequest {
   final String sourceAllocationId;
   final String? destinationCharacterId;

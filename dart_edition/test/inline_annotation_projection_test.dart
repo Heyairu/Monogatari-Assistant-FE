@@ -23,6 +23,16 @@ void main() {
     expect(InlineAnnotationProjection.readerTextFromRaw(raw), "她看見 艾莉絲。");
   });
 
+  test(
+    "reader projection renders an item Class label without Mosaic syntax",
+    () {
+      const itemId = "1a251fc2-1e2b-4f78-93da-91f8c76d9a92";
+      const raw = "她把 //*<$itemId|短劍>{裝備}// 收回鞘中。";
+
+      expect(InlineAnnotationProjection.readerTextFromRaw(raw), "她把 短劍 收回鞘中。");
+    },
+  );
+
   const uuid = "4e251fc2-1e2b-4f78-93da-91f8c76d9a92";
 
   test("collapses valid annotations and preserves malformed source", () {

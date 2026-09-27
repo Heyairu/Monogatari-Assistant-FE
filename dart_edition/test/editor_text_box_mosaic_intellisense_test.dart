@@ -38,7 +38,11 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: EditorTextBox(controller: controller, focusNode: focusNode),
+              body: EditorTextBox(
+                controller: controller,
+                focusNode: focusNode,
+                usePlainTextQuillEditor: false,
+              ),
             ),
           ),
         ),
@@ -81,7 +85,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -128,7 +136,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -179,7 +191,11 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: EditorTextBox(controller: controller, focusNode: focusNode),
+              body: EditorTextBox(
+                controller: controller,
+                focusNode: focusNode,
+                usePlainTextQuillEditor: false,
+              ),
             ),
           ),
         ),
@@ -248,7 +264,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -290,7 +310,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -324,7 +348,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -379,7 +407,11 @@ void main() {
         ],
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -406,7 +438,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -498,7 +534,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -547,7 +587,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -594,7 +638,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -632,7 +680,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -673,7 +725,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -710,7 +766,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -747,7 +807,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -776,7 +840,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -821,7 +889,11 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: EditorTextBox(controller: controller, focusNode: focusNode),
+              body: EditorTextBox(
+                controller: controller,
+                focusNode: focusNode,
+                usePlainTextQuillEditor: false,
+              ),
             ),
           ),
         ),
@@ -884,7 +956,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -938,7 +1014,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -999,7 +1079,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -1056,7 +1140,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -1123,7 +1211,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -1182,7 +1274,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),
@@ -1241,6 +1337,7 @@ void main() {
               controller: controller,
               focusNode: focusNode,
               onInteractionOffset: (value) => interaction = value,
+              usePlainTextQuillEditor: false,
             ),
           ),
         ),
@@ -1279,7 +1376,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),

@@ -28,6 +28,12 @@ class MonogatariStatusBar extends StatelessWidget {
   final int currentWords;
   final int totalWords;
   final double iconSize;
+  final int tabSpaceCount;
+  final bool tabFullWidth;
+  final ValueChanged<int>? onTabSpaceCountChanged;
+  final ValueChanged<bool>? onTabFullWidthChanged;
+  final bool overwriteMode;
+  final VoidCallback? onToggleOverwrite;
 
   const MonogatariStatusBar({
     super.key,
@@ -38,10 +44,26 @@ class MonogatariStatusBar extends StatelessWidget {
     required this.currentWords,
     required this.totalWords,
     required this.iconSize,
+    this.tabSpaceCount = 2,
+    this.tabFullWidth = true,
+    this.onTabSpaceCountChanged,
+    this.onTabFullWidthChanged,
+    this.overwriteMode = false,
+    this.onToggleOverwrite,
   });
 
   @override
   Widget build(BuildContext context) {
+    final statusTextStyle = Theme.of(
+      context,
+    ).textTheme.labelSmall?.copyWith(height: 1.2);
+    final statusButtonStyle = TextButton.styleFrom(
+      textStyle: statusTextStyle,
+      minimumSize: const Size(0, 24),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.standard,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
@@ -69,7 +91,7 @@ class MonogatariStatusBar extends StatelessWidget {
                 Expanded(
                   child: _ScrollingText(
                     text: displayText,
-                    style: Theme.of(context).textTheme.labelSmall,
+                    style: statusTextStyle,
                   ),
                 ),
               ],
@@ -82,7 +104,7 @@ class MonogatariStatusBar extends StatelessWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 4),
-          Text(saveTimeText, style: Theme.of(context).textTheme.labelSmall),
+          Text(saveTimeText, style: statusTextStyle),
           const SizedBox(width: 12),
           Icon(
             Icons.pin_drop_outlined,
@@ -90,11 +112,28 @@ class MonogatariStatusBar extends StatelessWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 4),
-          Text(
-            "$cursorLine:$cursorColumn",
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
+          Text("$cursorLine:$cursorColumn", style: statusTextStyle),
           const SizedBox(width: 12),
+          _TabSpacesMenu(
+            buttonStyle: statusButtonStyle,
+            count: tabSpaceCount,
+            fullWidth: tabFullWidth,
+            onCountChanged: onTabSpaceCountChanged,
+            onFullWidthChanged: onTabFullWidthChanged,
+          ),
+          Tooltip(
+            message: overwriteMode ? "Overtype Mode (Ins)" : "Default Mode (Ins)",
+            child: Focus(
+              canRequestFocus: false,
+              descendantsAreFocusable: false,
+              child: TextButton(
+                style: statusButtonStyle,
+                onPressed: onToggleOverwrite,
+                child: Text(overwriteMode ? "[OVR]" : "[DEF]"),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -103,7 +142,7 @@ class MonogatariStatusBar extends StatelessWidget {
             ),
             child: Text(
               "$currentWords / $totalWords 字",
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              style: statusTextStyle?.copyWith(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.bold,
               ),
@@ -113,6 +152,109 @@ class MonogatariStatusBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Two-column menu: space width on the left, insertion count on the right.
+class _TabSpacesMenu extends StatelessWidget {
+  const _TabSpacesMenu({
+    required this.buttonStyle,
+    required this.count,
+    required this.fullWidth,
+    this.onCountChanged,
+    this.onFullWidthChanged,
+  });
+
+  final ButtonStyle buttonStyle;
+  final int count;
+  final bool fullWidth;
+  final ValueChanged<int>? onCountChanged;
+  final ValueChanged<bool>? onFullWidthChanged;
+
+  Widget _choice({
+    required Key key,
+    required String label,
+    required bool selected,
+    required VoidCallback? onPressed,
+  }) => MenuItemButton(
+    key: key,
+    onPressed: onPressed,
+    leadingIcon: selected
+        ? const Icon(Icons.check, size: 16)
+        : const SizedBox(width: 16),
+    style: const ButtonStyle(fixedSize: WidgetStatePropertyAll(Size(100, 48))),
+    child: Text(label),
+  );
+
+  @override
+  Widget build(BuildContext context) => MenuAnchor(
+    alignmentOffset: const Offset(0, -8),
+    menuChildren: [
+      // MenuItemButton labels contain flex children, so both columns must
+      // receive finite horizontal constraints rather than shrink-wrap in a Row.
+      SizedBox(
+        width: 201,
+        height: 384,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _choice(
+                    key: const Key("tab-full-width-choice"),
+                    label: "全形",
+                    selected: fullWidth,
+                    onPressed: onFullWidthChanged == null
+                        ? null
+                        : () => onFullWidthChanged!(true),
+                  ),
+                  _choice(
+                    key: const Key("tab-half-width-choice"),
+                    label: "半形",
+                    selected: !fullWidth,
+                    onPressed: onFullWidthChanged == null
+                        ? null
+                        : () => onFullWidthChanged!(false),
+                  ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var value = 1; value <= 8; value++)
+                    _choice(
+                      key: ValueKey("tab-space-count-$value"),
+                      label: "$value",
+                      selected: count == value,
+                      onPressed: onCountChanged == null
+                          ? null
+                          : () => onCountChanged!(value),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+    builder: (context, controller, child) => Tooltip(
+      message: "Tab 插入空格",
+      child: TextButton(
+        key: const Key("statusbar-tab-spaces"),
+        style: buttonStyle,
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+        child: Text("[${fullWidth ? '全形' : '半形'}:$count]"),
+      ),
+    ),
+  );
 }
 
 class _ScrollingText extends StatefulWidget {

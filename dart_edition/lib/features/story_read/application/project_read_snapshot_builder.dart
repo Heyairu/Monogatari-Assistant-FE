@@ -246,6 +246,7 @@ final class ProjectReadSnapshotBuilder {
                   (relationship) => <String, String>{
                     "person": relationship.person,
                     "relationship": relationship.relationship,
+                    "internalRelationship": relationship.internalRelationship,
                   },
                 )
                 .toList(growable: false),

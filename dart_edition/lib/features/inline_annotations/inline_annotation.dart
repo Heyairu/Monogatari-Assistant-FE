@@ -12,6 +12,7 @@ enum InlineAnnotationKind {
   event,
   foreshadowing,
   plan,
+  item,
   emphasis,
 }
 

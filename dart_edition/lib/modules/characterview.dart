@@ -1120,6 +1120,11 @@ class CharacterCodec {
                     "Description",
                     relationship.relationship,
                   );
+                  _writeTextElement(
+                    builder,
+                    "InternalRelationship",
+                    relationship.internalRelationship,
+                  );
                 },
               );
             }
@@ -1293,6 +1298,9 @@ class CharacterCodec {
             ),
             relationship: _readElementText(
               relationship.findElements("Description").firstOrNull,
+            ),
+            internalRelationship: _readElementText(
+              relationship.findElements("InternalRelationship").firstOrNull,
             ),
           ),
         );
@@ -1985,6 +1993,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   List<CharacterRelationship> characterRelationships = [];
   final TextEditingController _relationshipPersonController =
       TextEditingController();
+  final TextEditingController _relationshipInternalController =
+      TextEditingController();
   final TextEditingController _relationshipDescriptionController =
       TextEditingController();
   int? selectedCharacterRelationshipIndex;
@@ -2210,6 +2220,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         selectedCharacterRelationshipIndex = null;
         _relationshipPersonController.clear();
         _relationshipDescriptionController.clear();
+        _relationshipInternalController.clear();
         _loadedCharacterEntrySnapshot =
             (_loadedCharacterEntrySnapshot ?? nextEntry).copyWith(
               relationships: nextEntry.relationships
@@ -2313,6 +2324,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _solveController.dispose();
     _relationshipPersonController.dispose();
     _relationshipDescriptionController.dispose();
+    _relationshipInternalController.dispose();
     _organizationNameController.dispose();
     _organizationDescriptionController.dispose();
     _possessionNameController.dispose();
@@ -2738,6 +2750,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _solveController.clear();
     _relationshipPersonController.clear();
     _relationshipDescriptionController.clear();
+    _relationshipInternalController.clear();
     _organizationNameController.clear();
     _organizationDescriptionController.clear();
     _statusNameController.clear();
@@ -2860,39 +2873,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             const SizedBox(height: 16),
             _buildTextField("人物關係簡述：", _controllers["relationshipSummary"]!),
             const SizedBox(height: 16),
-            _buildProfileTableSection<CharacterRelationship>(
-              title: "人物關係",
-              icon: Icons.people_outline,
-              firstHeader: "人物",
-              secondHeader: "關係",
-              emptyDescription: "在下方輸入人物與關係後新增",
-              keyPrefix: "relationship",
-              entries: characterRelationships,
-              firstValueOf: (entry) => entry.person,
-              secondValueOf: (entry) => entry.relationship,
-              selectedIndex: selectedCharacterRelationshipIndex,
-              firstController: _relationshipPersonController,
-              secondController: _relationshipDescriptionController,
-              firstHint: "選擇角色或自行輸入",
-              secondFieldLabel: "關係",
-              onSelectedIndexChanged: (value) =>
-                  selectedCharacterRelationshipIndex = value,
-              firstFieldBuilder: (context, controller) => AppComboBoxField(
-                controller: controller,
-                options: _relationshipCharacterOptions,
-                labelText: "人物",
-                hintText: "選擇角色或自行輸入",
-                onSelected: (value) {
-                  controller.text = _characterNameFromLabel(value);
-                },
-              ),
-              onSubmit: _addCharacterRelationship,
-              onDelete: _deleteCharacterRelationship,
-              onFirstSubmitted: (index, value) =>
-                  _updateCharacterRelationshipCell(index, person: value),
-              onSecondSubmitted: (index, value) =>
-                  _updateCharacterRelationshipCell(index, relationship: value),
-            ),
+            _buildCharacterRelationshipsTable(),
             const SizedBox(height: 16),
             _buildProfileTableSection(
               title: "所屬組織",
@@ -4601,6 +4582,185 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     );
   }
 
+  Widget _buildCharacterRelationshipsTable() {
+    void clearSelection() {
+      setState(() {
+        selectedCharacterRelationshipIndex = null;
+        _relationshipPersonController.clear();
+        _relationshipDescriptionController.clear();
+        _relationshipInternalController.clear();
+      });
+    }
+
+    void select(int index) {
+      final entry = characterRelationships[index];
+      setState(() {
+        selectedCharacterRelationshipIndex = index;
+        _relationshipPersonController.text = entry.person;
+        _relationshipDescriptionController.text = entry.relationship;
+        _relationshipInternalController.text = entry.internalRelationship;
+      });
+    }
+
+    Widget cell(
+      int index,
+      String suffix,
+      String value,
+      ValueChanged<String> onSubmitted,
+    ) {
+      return AppEditableTableCell(
+        key: ValueKey("relationship-$suffix-$index"),
+        value: value,
+        selected: selectedCharacterRelationshipIndex == index,
+        onEditStarted: () => select(index),
+        onEditCanceled: clearSelection,
+        onSubmitted: onSubmitted,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SmallTitle(icon: Icons.people_outline, text: "人物關係"),
+        const SizedBox(height: 8),
+        AppThreeColumnTable(
+          key: const ValueKey("character-relationships-table"),
+          firstHeader: "人物",
+          secondHeader: "外在關係",
+          thirdHeader: "內在關係",
+          bodyHeight: 200,
+          onSelectionCleared: clearSelection,
+          emptyState: const AppEmptyState(
+            title: "尚無人物關係",
+            description: "在下方輸入人物、外在關係與內在關係後新增",
+            icon: Icons.people_outline,
+            compact: true,
+          ),
+          rows: [
+            for (var index = 0; index < characterRelationships.length; index++)
+              AppThreeColumnTableRow(
+                selected: selectedCharacterRelationshipIndex == index,
+                showDivider: index != characterRelationships.length - 1,
+                firstCell: cell(
+                  index,
+                  "name",
+                  characterRelationships[index].person,
+                  (value) =>
+                      _updateCharacterRelationshipCell(index, person: value),
+                ),
+                secondCell: cell(
+                  index,
+                  "description",
+                  characterRelationships[index].relationship,
+                  (value) => _updateCharacterRelationshipCell(
+                    index,
+                    relationship: value,
+                  ),
+                ),
+                thirdCell: cell(
+                  index,
+                  "internal",
+                  characterRelationships[index].internalRelationship,
+                  (value) => _updateCharacterRelationshipCell(
+                    index,
+                    internalRelationship: value,
+                  ),
+                ),
+                onTap: () => select(index),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ListenableBuilder(
+          listenable: Listenable.merge([
+            _relationshipPersonController,
+            _relationshipDescriptionController,
+            _relationshipInternalController,
+          ]),
+          builder: (context, child) {
+            final fields = <Widget>[
+              AppComboBoxField(
+                controller: _relationshipPersonController,
+                options: _relationshipCharacterOptions,
+                labelText: "人物",
+                hintText: "選擇角色或自行輸入",
+                onSelected: (value) {
+                  _relationshipPersonController.text = _characterNameFromLabel(
+                    value,
+                  );
+                },
+              ),
+              AppTextField(
+                controller: _relationshipDescriptionController,
+                labelText: "外在關係（可留空）",
+              ),
+              AppTextField(
+                controller: _relationshipInternalController,
+                labelText: "內在關係（可留空）",
+                onSubmitted: (_) => _addCharacterRelationship(),
+              ),
+            ];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 600) {
+                      return Column(
+                        children: [
+                          for (final field in fields)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: field,
+                            ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        for (final field in fields)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: field,
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                ItemActionBar(
+                  actions: [
+                    ItemAction.edit(
+                      icon: selectedCharacterRelationshipIndex == null
+                          ? Icons.add
+                          : Icons.save_outlined,
+                      tooltip: selectedCharacterRelationshipIndex == null
+                          ? "新增"
+                          : "更新",
+                      onPressed:
+                          _relationshipPersonController.text.trim().isEmpty
+                          ? null
+                          : _addCharacterRelationship,
+                    ),
+                    ItemAction.delete(
+                      tooltip: "刪除",
+                      onPressed: selectedCharacterRelationshipIndex == null
+                          ? null
+                          : _deleteCharacterRelationship,
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildProfileTableSection<T>({
     required String title,
     required IconData icon,
@@ -6154,6 +6314,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     selectedCharacterRelationshipIndex = null;
     _relationshipPersonController.clear();
     _relationshipDescriptionController.clear();
+    _relationshipInternalController.clear();
     selectedCharacterType = characterTypeOptions.contains(data.characterType)
         ? data.characterType
         : defaultCharacterType;
@@ -6272,6 +6433,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     _solveController.clear();
     _relationshipPersonController.clear();
     _relationshipDescriptionController.clear();
+    _relationshipInternalController.clear();
     _organizationNameController.clear();
     _organizationDescriptionController.clear();
     _possessionNameController.clear();
@@ -6550,11 +6712,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
   void _addCharacterRelationship() {
     final person = _relationshipPersonController.text.trim();
     final relationship = _relationshipDescriptionController.text.trim();
+    final internalRelationship = _relationshipInternalController.text.trim();
     if (person.isEmpty) return;
     setState(() {
       final value = CharacterRelationship(
         person: person,
         relationship: relationship,
+        internalRelationship: internalRelationship,
       );
       final selectedIndex = selectedCharacterRelationshipIndex;
       final duplicateIndex = _findCharacterRelationshipIndex(
@@ -6564,6 +6728,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       if (duplicateIndex >= 0) {
         final existing = characterRelationships[duplicateIndex];
         characterRelationships[duplicateIndex] = existing.copyWith(
+          internalRelationship: _appendRelationshipDescription(
+            existing.internalRelationship,
+            internalRelationship,
+          ),
           relationship: _appendRelationshipDescription(
             existing.relationship,
             relationship,
@@ -6585,6 +6753,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       selectedCharacterRelationshipIndex = null;
       _relationshipPersonController.clear();
       _relationshipDescriptionController.clear();
+      _relationshipInternalController.clear();
       _saveCurrentCharacterData();
     });
   }
@@ -6620,6 +6789,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
     int index, {
     String? person,
     String? relationship,
+    String? internalRelationship,
   }) {
     if (index < 0 || index >= characterRelationships.length) return;
     final current = characterRelationships[index];
@@ -6630,6 +6800,8 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characterRelationships[index] = current.copyWith(
         person: nextPerson,
         relationship: relationship?.trim() ?? current.relationship,
+        internalRelationship:
+            internalRelationship?.trim() ?? current.internalRelationship,
       );
       characterRelationships = _mergeDuplicateCharacterRelationships(
         characterRelationships,
@@ -6641,10 +6813,13 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             characterRelationships[index].person;
         _relationshipDescriptionController.text =
             characterRelationships[index].relationship;
+        _relationshipInternalController.text =
+            characterRelationships[index].internalRelationship;
       } else {
         selectedCharacterRelationshipIndex = null;
         _relationshipPersonController.clear();
         _relationshipDescriptionController.clear();
+        _relationshipInternalController.clear();
       }
       _saveCurrentCharacterData();
     });
@@ -6660,6 +6835,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       selectedCharacterRelationshipIndex = null;
       _relationshipPersonController.clear();
       _relationshipDescriptionController.clear();
+      _relationshipInternalController.clear();
       _saveCurrentCharacterData();
     });
   }

@@ -65,24 +65,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
     final name = requestedName?.trim().isNotEmpty == true
         ? requestedName!.trim()
         : "新物品";
-    final itemClass = ItemClassData(
-      classId: _uuid.v4(),
-      name: name,
-      mode: ItemMode.dedicated,
-      defaultState: ItemSnapshotState(name: name),
+    final creation = createDedicatedItem(
+      request: DedicatedItemCreationRequest(
+        classId: _uuid.v4(),
+        instanceId: _uuid.v4(),
+        name: name,
+      ),
     );
-    ref.read(itemWorkspaceProvider.notifier).putClass(itemClass);
-    ref
-        .read(itemWorkspaceProvider.notifier)
-        .putInstance(
-          ItemInstanceData(
-            instanceId: _uuid.v4(),
-            classId: itemClass.classId,
-            name: itemClass.name,
-          ),
-        );
+    final workspace = ref.read(itemWorkspaceProvider.notifier);
+    workspace.putClass(creation.itemClass);
+    workspace.putInstance(creation.instance);
     setState(() {
-      _selectedClassId = itemClass.classId;
+      _selectedClassId = creation.itemClass.classId;
       _selectedClassSnapshotId = null;
       _selectedInstanceSnapshotIds.clear();
     });

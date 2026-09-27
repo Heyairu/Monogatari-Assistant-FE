@@ -1,4 +1,5 @@
 import "../../models/character_data.dart";
+import "../../models/item_data.dart";
 import "../../models/outline_data.dart";
 import "../../models/plan_data.dart";
 import "../../models/world_settings_data.dart";
@@ -34,6 +35,7 @@ final class InlineAnnotationTargetResolver {
     List<StorylineData> outline = const [],
     List<ForeshadowItem> foreshadows = const [],
     List<UpdatePlanItem> plans = const [],
+    Map<String, ItemClassData> itemClasses = const {},
   }) {
     final results = switch (kind) {
       InlineAnnotationKind.character => <InlineAnnotationTargetInfo>[
@@ -58,6 +60,15 @@ final class InlineAnnotationTargetResolver {
         for (final item in plans)
           _info(item.id, item.title, item.isDone ? "已完成" : "進行中"),
       ],
+      InlineAnnotationKind.item => <InlineAnnotationTargetInfo>[
+        for (final item in itemClasses.values)
+          if (!item.archived)
+            _info(
+              item.classId,
+              item.name,
+              _itemPath(item),
+            ),
+      ],
       InlineAnnotationKind.emphasis => const <InlineAnnotationTargetInfo>[],
     };
     results.sort((left, right) {
@@ -76,6 +87,7 @@ final class InlineAnnotationTargetResolver {
     List<StorylineData> outline = const [],
     List<ForeshadowItem> foreshadows = const [],
     List<UpdatePlanItem> plans = const [],
+    Map<String, ItemClassData> itemClasses = const {},
   }) {
     final id = annotation.targetId;
     if (id == null) return null;
@@ -89,6 +101,7 @@ final class InlineAnnotationTargetResolver {
       InlineAnnotationKind.event => _event(id, outline),
       InlineAnnotationKind.foreshadowing => _foreshadow(id, foreshadows),
       InlineAnnotationKind.plan => _plan(id, plans),
+      InlineAnnotationKind.item => _item(id, itemClasses),
       InlineAnnotationKind.emphasis => null,
     };
   }
@@ -279,6 +292,29 @@ final class InlineAnnotationTargetResolver {
       }
     }
     return null;
+  }
+
+  InlineAnnotationTargetInfo? _item(
+    String id,
+    Map<String, ItemClassData> itemClasses,
+  ) {
+    final item = itemClasses[id];
+    if (item == null) return null;
+    return _info(item.classId, item.name, _itemPath(item));
+  }
+
+  String _itemPath(ItemClassData item) {
+    final details = <String>[
+      if (item.category.trim().isNotEmpty) item.category.trim(),
+      switch (item.mode) {
+        ItemMode.dedicated => "專用",
+        ItemMode.semiDedicated => "半專用",
+        ItemMode.generic => "非專用",
+      },
+      if (item.unit.trim().isNotEmpty) item.unit.trim(),
+      if (item.archived) "已封存",
+    ];
+    return details.isEmpty ? item.classId : details.join(" · ");
   }
 
   InlineAnnotationTargetInfo _info(String id, String name, String? path) {

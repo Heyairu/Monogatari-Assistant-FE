@@ -815,6 +815,7 @@ Map<String, Object?> _characterToMap(CharacterEntryData value) {
       rowOf: (item) => <String, Object?>{
         "人物": item.person,
         "關係": item.relationship,
+        "內在關係": item.internalRelationship,
       },
       tableLabel: "人物關係",
     ),
@@ -941,6 +942,7 @@ CharacterEntryData _characterFromMap(String id, Map<String, Object?> value) {
           (row) => CharacterRelationship(
             person: row["人物"]! as String,
             relationship: row["關係"]! as String,
+            internalRelationship: row["內在關係"] as String? ?? "",
           ),
         )
         .toList(growable: false),

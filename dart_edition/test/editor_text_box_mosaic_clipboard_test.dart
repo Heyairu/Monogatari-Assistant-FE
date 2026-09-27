@@ -40,7 +40,11 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: EditorTextBox(controller: controller, focusNode: focusNode),
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
           ),
         ),
       ),

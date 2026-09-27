@@ -21,6 +21,9 @@ import "dart:async"; // Added for Timer
 import "dart:convert";
 
 import "package:flutter/material.dart";
+import "package:flutter_localizations/flutter_localizations.dart";
+import "package:flutter_quill/flutter_quill.dart"
+    show FlutterQuillLocalizations;
 import "package:flutter/services.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
@@ -48,6 +51,7 @@ import "infrastructure/rhodanthe/rhodanthe_protocol.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_cohort.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_guard.dart";
 import "infrastructure/rhodanthe/rhodanthe_rollout_store.dart";
+import "infrastructure/rhodanthe/rhodanthe_theme.dart";
 import "features/inline_annotations/inline_annotation_rhodanthe_adapter.dart";
 import "features/inline_annotations/inline_annotation_details_dialog.dart";
 import "features/inline_annotations/inline_annotation_edit_dialog.dart";
@@ -57,6 +61,8 @@ import "features/inline_annotations/inline_annotation_target_resolver.dart";
 import "features/inline_annotations/inline_annotation_projection.dart";
 import "features/inline_annotations/mosaic_editing_controller.dart";
 import "features/inline_annotations/alias_mention_updates.dart";
+import "features/editor/plain_text_quill_editor_poc.dart";
+import "features/editor/plain_text_quill_render_range.dart";
 import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
@@ -268,6 +274,19 @@ class _MainAppState extends ConsumerState<MainApp> {
       theme: AppTheme.getLightTheme(theme.fontSize, theme.color),
       darkTheme: AppTheme.getDarkTheme(theme.fontSize, theme.color),
       themeMode: _convertThemeMode(theme.mode),
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        FlutterQuillLocalizations.delegate,
+      ],
+      supportedLocales: const <Locale>[
+        Locale("en"),
+        Locale("zh"),
+        Locale("zh", "TW"),
+        Locale("ja"),
+        Locale("ko"),
+      ],
       home: const ContentView(),
     );
   }
@@ -444,6 +463,19 @@ class _EditorStatusBarState extends ConsumerState<_EditorStatusBar> {
       saveTimeText: saveTimeText,
       cursorLine: cursor.line,
       cursorColumn: cursor.column,
+      tabSpaceCount:
+          ref.watch(settingsStateProvider).valueOrNull?.tabSpaceCount ?? 2,
+      tabFullWidth:
+          ref.watch(settingsStateProvider).valueOrNull?.tabFullWidth ?? true,
+      onTabSpaceCountChanged: (count) =>
+          ref.read(settingsStateProvider.notifier).setTabSpaceCount(count),
+      onTabFullWidthChanged: (fullWidth) =>
+          ref.read(settingsStateProvider.notifier).setTabFullWidth(fullWidth),
+      overwriteMode: ref.watch(editorOverwriteProvider),
+      onToggleOverwrite: () {
+        final mode = ref.read(editorOverwriteProvider.notifier);
+        mode.state = !mode.state;
+      },
       currentWords: currentWords,
       totalWords: totalWords,
       iconSize: widget.iconSize,
@@ -528,6 +560,8 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   final HighlightTextEditingController textController =
       HighlightTextEditingController();
+  final PlainTextQuillSearchController _quillSearchController =
+      PlainTextQuillSearchController();
   String _lastObservedEditorText = "";
   RhodantheEditorSession? _rhodantheSession;
   final RhodantheRolloutEvidenceController _rhodantheRolloutEvidence =
@@ -876,6 +910,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       onPlan: (renderPlan) {
         if (!mounted) return;
         textController.publishRhodantheRenderPlan(renderPlan);
+        _syncRhodantheRangesToQuill(renderPlan);
       },
       onShadowReport: (report) {
         if (!report.isExactMatch) {
@@ -894,6 +929,7 @@ class _ContentViewState extends ConsumerState<ContentView>
         if (health.status == RhodantheSessionStatus.circuitOpen ||
             health.status == RhodantheSessionStatus.degraded) {
           textController.clearRhodantheRenderPlan();
+          _quillSearchController.clearProofreadingRanges();
         }
       },
       onObservation: (observation) {
@@ -949,6 +985,56 @@ class _ContentViewState extends ConsumerState<ContentView>
     } catch (_) {
       // The session reports the structured failure and remains off the input path.
     }
+  }
+
+  void _syncRhodantheRangesToQuill(RhodantheVersionedRenderPlan renderPlan) {
+    if (renderPlan.documentId != selectedChapID ||
+        renderPlan.revision != textController.textRevision ||
+        renderPlan.plan.textLenUtf16 != textController.text.length) {
+      return;
+    }
+    final rhodantheTheme = RhodantheTheme.resolve(context);
+    _quillSearchController.setRenderRanges(<PlainTextQuillRenderRange>[
+      for (final run in renderPlan.plan.runs)
+        if (run.styleTokenSetId >= 0 &&
+            run.styleTokenSetId < renderPlan.plan.tokenSets.length)
+          if (renderPlan.plan.tokenSets[run.styleTokenSetId]
+              case final tokenSet)
+            if (tokenSet.background != null || tokenSet.decoration != null)
+              PlainTextQuillRenderRange(
+                range: TextRange(start: run.range.start, end: run.range.end),
+                // Find/Replace already paints these ranges. Applying the
+                // analyzer's background again darkens the same glyph boxes.
+                backgroundColor:
+                    tokenSet.background == null ||
+                        tokenSet.background!.startsWith("search.")
+                    ? null
+                    : rhodantheTheme.resolveColor(tokenSet.background!),
+                decorationColor: tokenSet.decoration == null
+                    ? null
+                    : rhodantheTheme.resolveColor(tokenSet.decoration!.color),
+                decorationThickness:
+                    tokenSet.decoration?.thickness.clamp(1.0, 3.0) ?? 1,
+                doubleUnderline:
+                    tokenSet.foreground == "filler.foreground" ||
+                    tokenSet.decoration?.color == "filler.decoration",
+              ),
+    ]);
+  }
+
+  void _syncFindRangesToQuill(String query, {bool selectCurrent = true}) {
+    if (query.isEmpty) {
+      _quillSearchController.clearSearchResults();
+      return;
+    }
+    _quillSearchController.showHostResults(
+      query: query,
+      matches: _searchMatches.map(
+        (match) => TextRange(start: match.start, end: match.end),
+      ),
+      currentMatchIndex: _currentMatchIndex,
+      selectCurrent: selectCurrent,
+    );
   }
 
   Future<void> _analyzeRhodantheSearch(
@@ -1063,6 +1149,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       outline: ref.read(outlineDataProvider),
       foreshadows: ref.read(foreshadowDataProvider),
       plans: ref.read(updatePlanDataProvider),
+      itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
     );
 
     final anchor = Rect.fromCircle(
@@ -1123,6 +1210,7 @@ class _ContentViewState extends ConsumerState<ContentView>
           outline: ref.read(outlineDataProvider),
           foreshadows: ref.read(foreshadowDataProvider),
           plans: ref.read(updatePlanDataProvider),
+          itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
         );
         if (candidates.isEmpty) {
           await AppDialog.message(
@@ -1188,7 +1276,8 @@ class _ContentViewState extends ConsumerState<ContentView>
       InlineAnnotationKind.character => 5,
       InlineAnnotationKind.event => 3,
       InlineAnnotationKind.location => 7,
-      InlineAnnotationKind.foreshadowing || InlineAnnotationKind.plan => 8,
+      InlineAnnotationKind.foreshadowing || InlineAnnotationKind.plan => 9,
+      InlineAnnotationKind.item => 8,
       InlineAnnotationKind.emphasis => null,
     };
     if (pageIndex == null) return;
@@ -1211,6 +1300,9 @@ class _ContentViewState extends ConsumerState<ContentView>
             ? PlanModule.PlanSelectionTarget.foreshadow
             : PlanModule.PlanSelectionTarget.updatePlan;
         _planSelectionRequestId++;
+      } else if (kind == InlineAnnotationKind.item) {
+        _requestedItemClassId = targetId;
+        _itemSelectionRequestId++;
       }
       slidePageIndexNow = pageIndex;
     });
@@ -1311,6 +1403,7 @@ class _ContentViewState extends ConsumerState<ContentView>
             _currentMatchIndex = -1;
             textController.clearAllHighlights();
           });
+          _quillSearchController.clearSearchResults();
         }
       } else if (_cursorOffset != normalizedOffset) {
         _editorCoordinatorNotifier.updateCursorOffset(normalizedOffset);
@@ -1621,6 +1714,7 @@ class _ContentViewState extends ConsumerState<ContentView>
     unawaited(rhodantheSession?.dispose() ?? Future<void>.value());
     unawaited(_rhodantheRolloutEvidence.dispose());
     textController.dispose();
+    _quillSearchController.dispose();
     findController.dispose();
     replaceController.dispose();
     editorFocusNode.dispose();
@@ -2460,31 +2554,31 @@ class _ContentViewState extends ConsumerState<ContentView>
         page = _buildWorldSettingsView();
         break;
       case 8:
-        page = _buildPlanView();
-        break;
-      case 9:
-        page = _buildGlossaryView();
-        break;
-      case 10:
-        page = _buildPalettesView();
-        break;
-      case 11:
-        page = _buildProofreadingView();
-        break;
-      case 12:
-        page = _buildCopilotView();
-        break;
-      case 13:
-        page = _buildSettingView();
-        break;
-      case 14:
-        page = _buildAboutView();
-        break;
-      case 15:
         page = ItemView(
           initialClassId: _requestedItemClassId,
           selectionRequestId: _itemSelectionRequestId,
         );
+        break;
+      case 9:
+        page = _buildPlanView();
+        break;
+      case 10:
+        page = _buildGlossaryView();
+        break;
+      case 11:
+        page = _buildPalettesView();
+        break;
+      case 12:
+        page = _buildProofreadingView();
+        break;
+      case 13:
+        page = _buildCopilotView();
+        break;
+      case 14:
+        page = _buildSettingView();
+        break;
+      case 15:
+        page = _buildAboutView();
         break;
       default:
         page = Center(child: Text("Page ${pageIndex + 1}"));
@@ -2691,6 +2785,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                   },
                   forward: true,
                 );
+                _syncFindRangesToQuill(findText);
                 await _analyzeRhodantheSearch(
                   findText,
                   options,
@@ -2714,6 +2809,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                   },
                   forward: false,
                 );
+                _syncFindRangesToQuill(findText);
                 await _analyzeRhodantheSearch(
                   findText,
                   options,
@@ -2746,6 +2842,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                     });
                   },
                 );
+                _syncFindRangesToQuill(findText);
                 await _analyzeRhodantheSearch(
                   findText,
                   options,
@@ -2775,6 +2872,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                     });
                   },
                 );
+                _syncFindRangesToQuill(findText);
                 await _analyzeRhodantheSearch(
                   findText,
                   options,
@@ -2821,6 +2919,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                         );
                       }
                     });
+                    _syncFindRangesToQuill(findText, selectCurrent: false);
                     unawaited(
                       _analyzeRhodantheSearch(
                         findText,
@@ -2838,6 +2937,8 @@ class _ContentViewState extends ConsumerState<ContentView>
                     textController.clearAllHighlights();
                     textController.clearRhodantheRenderPlan(notify: false);
                   });
+                  _quillSearchController.clearSearchResults();
+                  _quillSearchController.clearProofreadingRanges();
                 }
               },
               onClose: () {
@@ -2852,6 +2953,8 @@ class _ContentViewState extends ConsumerState<ContentView>
                   textController.clearRhodantheRenderPlan(notify: false);
                   // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                 });
+                _quillSearchController.clearSearchResults();
+                _quillSearchController.clearProofreadingRanges();
               },
             ),
 
@@ -2863,6 +2966,7 @@ class _ContentViewState extends ConsumerState<ContentView>
               onUndo: _undoProjectHistory,
               onRedo: _redoProjectHistory,
               onInteractionOffset: _handleInlineAnnotationInteraction,
+              quillSearchController: _quillSearchController,
             ),
           ),
         ],
@@ -3410,11 +3514,11 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   void _openItemClass(String classId) {
     _syncEditorToSelectedChapter();
-    _recordPageTransitionIfNeeded(15);
+    _recordPageTransitionIfNeeded(8);
     setState(() {
       _requestedItemClassId = classId;
       _itemSelectionRequestId++;
-      slidePageIndexNow = 15;
+      slidePageIndexNow = 8;
     });
   }
 
@@ -4259,6 +4363,7 @@ class _ContentViewState extends ConsumerState<ContentView>
     _searchMatches = const <TextSelection>[];
     _currentMatchIndex = -1;
     textController.clearAllHighlights(notify: false);
+    _quillSearchController.clear();
     showFindReplaceWindow = false;
   }
 

@@ -33,6 +33,17 @@ void main() {
     );
   });
 
+  test("formats canonical item syntax", () {
+    final source = InlineAnnotationSyntax.format(
+      kind: InlineAnnotationKind.item,
+      targetId: uuid,
+      displayText: "短劍",
+    );
+
+    expect(source, "//*<$uuid|短劍>//");
+    expect(parser.parse(source).single.kind, InlineAnnotationKind.item);
+  });
+
   test("rejects semantic annotations without a valid UUID", () {
     expect(
       () => InlineAnnotationSyntax.format(

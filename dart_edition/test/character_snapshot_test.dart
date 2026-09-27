@@ -297,7 +297,11 @@ void main() {
                 CharacterConflict(obstacle: "遭伏擊", resolution: "撤退"),
               ],
               relationships: const [
-                CharacterRelationship(person: "守衛", relationship: "敵對"),
+                CharacterRelationship(
+                  person: "守衛",
+                  relationship: "敵對",
+                  internalRelationship: "戒備",
+                ),
               ],
               organizations: const [
                 CharacterProfileTableEntry(name: "調查局", description: "探員"),
@@ -337,6 +341,7 @@ void main() {
       expect(change.sourcePlacementUUID, "placement-a");
       expect(change.patch.conflicts!.single.obstacle, "遭伏擊");
       expect(change.patch.relationships!.single.person, "守衛");
+      expect(change.patch.relationships!.single.internalRelationship, "戒備");
       expect(change.patch.organizations!.single.name, "調查局");
       expect(change.patch.statusEntries!.single.description, "受傷");
       expect(change.patch.possessions!.single.name, "短劍");
@@ -496,13 +501,15 @@ void main() {
         isTrue,
       );
 
-      container.read(itemWorkspaceProvider.notifier).putClass(
-        ItemClassData(
-          classId: "rations",
-          name: "乾糧",
-          mode: ItemMode.generic,
-        ),
-      );
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(
+            ItemClassData(
+              classId: "rations",
+              name: "乾糧",
+              mode: ItemMode.generic,
+            ),
+          );
       await tester.pumpAndSettle();
       final assignButton = find.byKey(const Key("character-assign-item"));
       await tester.ensureVisible(assignButton);
@@ -514,9 +521,7 @@ void main() {
         find.byKey(const Key("character-assignment-quantity")),
         "3",
       );
-      await tester.tap(
-        find.byKey(const Key("character-assignment-confirm")),
-      );
+      await tester.tap(find.byKey(const Key("character-assignment-confirm")));
       await tester.pumpAndSettle();
       final rations = container
           .read(itemWorkspaceProvider)

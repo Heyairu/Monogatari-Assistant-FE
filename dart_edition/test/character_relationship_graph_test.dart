@@ -14,6 +14,19 @@ import "package:monogatari_assistant/presentation/providers/project_state_provid
 import "package:monogatari_assistant/ui_library/forms.dart";
 
 void main() {
+  void focusNode(WidgetTester tester, String id) {
+    tester
+        .widget<GestureDetector>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey("relationship-node-$id")),
+                matching: find.byType(GestureDetector),
+              )
+              .first,
+        )
+        .onTap!();
+  }
+
   CharacterEntryData character(
     String id,
     String name,
@@ -559,6 +572,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    focusNode(tester, "hero");
+    await tester.pumpAndSettle();
 
     final edgeLayer = find.byKey(const ValueKey("relationship-edge-layer"));
     final edgePainter = tester.widget<CustomPaint>(edgeLayer).painter!;
@@ -579,24 +594,20 @@ void main() {
       }
     }
 
-    final heroCenter = tester
-        .getRect(find.byKey(const ValueKey("relationship-node-hero")))
-        .center;
-    final targetCenter = tester
-        .getRect(find.byKey(const ValueKey("relationship-node-target")))
-        .center;
-    final labelCenter = tester
-        .getRect(
-          find.byKey(const ValueKey("relationship-edge-label-hero::0::target")),
+    // A crowded route may omit its label; the description stays accessible.
+    tester
+        .widget<ListTile>(
+          find.byKey(
+            const ValueKey("relationship-neighbor-hero::0::target::external"),
+          ),
         )
-        .center;
-    final directLine = targetCenter - heroCenter;
-    final labelVector = labelCenter - heroCenter;
-    final labelDistanceFromDirectLine =
-        (directLine.dx * labelVector.dy - directLine.dy * labelVector.dx)
-            .abs() /
-        directLine.distance;
-    expect(labelDistanceFromDirectLine, greaterThan(4));
+        .onTap!();
+    await tester.pumpAndSettle();
+    expect(find.text("Hero → Target · 外在"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey("relationship-edit-hero-external")),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -628,12 +639,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    focusNode(tester, "alice");
+    await tester.pumpAndSettle();
 
-    expect(find.text("Alice"), findsOneWidget);
+    expect(find.text("Alice"), findsNWidgets(2));
     expect(find.text("Bob"), findsOneWidget);
-    expect(find.text("信任"), findsOneWidget);
+    expect(find.text("外在：信任"), findsNWidgets(2));
     final relationshipLabelRect = tester.getRect(
-      find.byKey(const ValueKey("relationship-edge-label-alice::0::bob")),
+      find.byKey(
+        const ValueKey("relationship-edge-label-alice::0::bob::external"),
+      ),
     );
     expect(
       relationshipLabelRect.overlaps(
@@ -649,25 +664,43 @@ void main() {
     );
 
     final edgeInkWell = tester.widget<InkWell>(
-      find.ancestor(of: find.text("信任"), matching: find.byType(InkWell)).first,
+      find
+          .ancestor(
+            of: find.text("外在：信任").first,
+            matching: find.byType(InkWell),
+          )
+          .first,
     );
     edgeInkWell.onTap!();
     await tester.pumpAndSettle();
-    expect(find.text("Alice → Bob"), findsOneWidget);
+    expect(find.text("Alice → Bob · 外在"), findsOneWidget);
 
-    final canvasRect = tester.getRect(
-      find.byKey(const ValueKey("relationship-graph-canvas")),
+    await tester.tapAt(
+      tester.getTopLeft(find.byType(InteractiveViewer)) + const Offset(4, 4),
     );
-    await tester.tapAt(canvasRect.bottomLeft + const Offset(8, -8));
     await tester.pumpAndSettle();
-    expect(find.text("Alice → Bob"), findsOneWidget);
-
-    await tester.tap(find.text("編輯"));
+    expect(find.text("Alice → Bob · 外在"), findsNothing);
+    focusNode(tester, "alice");
+    await tester.pumpAndSettle();
+    tester
+        .widget<ListTile>(
+          find.byKey(
+            const ValueKey("relationship-neighbor-alice::0::bob::external"),
+          ),
+        )
+        .onTap!();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey("relationship-edit-alice-external")),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey("relationship-edit-alice-external")),
+    );
     await tester.pumpAndSettle();
     expect(find.text("雙向關係"), findsNothing);
     final descriptionField = find.descendant(
-      of: find.byKey(const ValueKey("relationship-description-field")),
-      matching: find.byType(TextFormField),
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
     );
     await tester.enterText(descriptionField, "摯友");
     await tester.tap(find.text("儲存"));
@@ -681,7 +714,7 @@ void main() {
           .relationship,
       "摯友",
     );
-    expect(find.text("摯友"), findsOneWidget);
+    expect(find.text("摯友"), findsNothing); // returns to overview after editing
   });
 
   testWidgets("crowded relationship labels avoid nodes and each other", (
@@ -719,6 +752,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    focusNode(tester, "hero");
+    await tester.pumpAndSettle();
 
     final labelFinder = find.byWidgetPredicate((widget) {
       final key = widget.key;
@@ -734,10 +769,14 @@ void main() {
     expect(nodeFinder, findsNWidgets(5));
 
     final shortLabelRect = tester.getRect(
-      find.byKey(const ValueKey("relationship-edge-label-hero::0::alpha")),
+      find.byKey(
+        const ValueKey("relationship-edge-label-hero::0::alpha::external"),
+      ),
     );
     final longLabelRect = tester.getRect(
-      find.byKey(const ValueKey("relationship-edge-label-hero::1::beta")),
+      find.byKey(
+        const ValueKey("relationship-edge-label-hero::1::beta::external"),
+      ),
     );
     expect(longLabelRect.width, greaterThan(shortLabelRect.width));
 
@@ -754,7 +793,10 @@ void main() {
                 heroToAlpha.dy * heroToShortLabel.dx)
             .abs() /
         heroToAlpha.distance;
-    expect(labelDistanceFromLine, lessThan(1));
+    expect(
+      labelDistanceFromLine,
+      greaterThan(1),
+    ); // each type reserves its own curved lane
 
     final labelRects = [
       for (var index = 0; index < 4; index++)
@@ -824,6 +866,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    focusNode(tester, "hub");
+    await tester.pumpAndSettle();
 
     final edgeLabels = tester
         .widgetList<Widget>(
@@ -835,9 +879,15 @@ void main() {
         )
         .map((widget) => (widget.key! as ValueKey<String>).value)
         .toList(growable: false);
-    expect(edgeLabels, hasLength(4));
+    expect(
+      edgeLabels,
+      hasLength(3),
+    ); // only the selected hub's relations are labeled
     expect(edgeLabels.first, startsWith("relationship-edge-label-hub::"));
-    expect(edgeLabels.last, startsWith("relationship-edge-label-sparse::"));
+    expect(
+      edgeLabels.every((id) => id.startsWith("relationship-edge-label-hub::")),
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -876,9 +926,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    focusNode(tester, "alice");
+    await tester.pumpAndSettle();
 
-    final trustRect = tester.getRect(find.text("信任"));
-    final rivalryRect = tester.getRect(find.text("競爭"));
+    final trustRect = tester.getRect(find.text("外在：信任").first);
+    final rivalryRect = tester.getRect(find.text("外在：競爭").first);
     expect(trustRect.overlaps(rivalryRect), isFalse);
     expect((trustRect.center - rivalryRect.center).distance, greaterThan(40));
     expect(tester.takeException(), isNull);
@@ -965,16 +1017,15 @@ void main() {
       final graph = const CharacterRelationshipGraphMapper().map(characters);
       expect(graph.edges, hasLength(1));
       expect(graph.edges.single.isBidirectional, isTrue);
-      expect(find.text("朋友"), findsOneWidget);
-
-      final relationshipLabel = tester.widget<InkWell>(
-        find
-            .ancestor(of: find.text("朋友"), matching: find.byType(InkWell))
-            .first,
-      );
-      relationshipLabel.onTap!();
+      focusNode(tester, "alice");
       await tester.pumpAndSettle();
-      expect(find.text("Alice ↔ Carol"), findsOneWidget);
+      final neighbor = find.byKey(
+        ValueKey("relationship-neighbor-${graph.edges.single.id}"),
+      );
+      tester.widget<ListTile>(neighbor).onTap!();
+      await tester.pumpAndSettle();
+      expect(find.text("Alice → Carol · 外在"), findsOneWidget);
+      expect(find.text("Carol → Alice · 外在"), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -1039,6 +1090,10 @@ void main() {
       lessThan(1),
     );
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey("relationship-search-field")),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey("relationship-search-field")));
     await tester.enterText(
       find.byKey(const ValueKey("relationship-search-field")),
@@ -1066,6 +1121,8 @@ void main() {
     expect(neighborsButton.isSelected, isFalse);
     expect(neighborsButton.style, isNull);
 
+    await tester.ensureVisible(neighborsToggle);
+    await tester.pumpAndSettle();
     await tester.tap(neighborsToggle);
     await tester.pumpAndSettle();
     neighborsButton = tester.widget<IconButton>(neighborsToggle);
@@ -1080,6 +1137,8 @@ void main() {
       scheme.onPrimaryContainer,
     );
 
+    final focusedTransform = viewer.transformationController!.value.clone();
+    await tester.ensureVisible(find.byTooltip("關閉"));
     await tester.tap(find.byTooltip("關閉"));
     await tester.pumpAndSettle();
     neighborsButton = tester.widget<IconButton>(neighborsToggle);
@@ -1094,22 +1153,16 @@ void main() {
       find.descendant(of: graphCanvas, matching: find.text("Bob")),
       findsOneWidget,
     );
-    expect(
-      viewer.transformationController!.value.getMaxScaleOnAxis(),
-      lessThan(1),
+    expect(viewer.transformationController!.value, focusedTransform);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey("relationship-search-button")),
     );
-    expect(
-      viewerRect.overlaps(
-        tester.getRect(
-          find.descendant(of: graphCanvas, matching: find.text("Alice")),
-        ),
-      ),
-      isTrue,
-    );
-
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey("relationship-search-button")));
     await tester.pumpAndSettle();
     expect(find.text("相鄰關係：1"), findsOneWidget);
+    await tester.ensureVisible(neighborsToggle);
+    await tester.pumpAndSettle();
     await tester.tap(neighborsToggle);
     await tester.pumpAndSettle();
     expect(tester.widget<IconButton>(neighborsToggle).isSelected, isTrue);
@@ -1146,10 +1199,18 @@ void main() {
     );
     expect(tester.takeException(), isNull);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey("relationship-toolbar-toggle")),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey("relationship-toolbar-toggle")));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey("global-preview-button")), findsNothing);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey("relationship-toolbar-toggle")),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey("relationship-toolbar-toggle")));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey("global-preview-button")), findsOneWidget);

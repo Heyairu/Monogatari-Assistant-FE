@@ -108,15 +108,19 @@ class MonogatariNavigationSidebar extends StatelessWidget {
               label: Text("世界設定"),
             ),
             NavigationRailDestination(
-              icon: Icon(Icons.assessment),
+              icon: Icon(Icons.inventory_2_outlined),
+              label: Text("物品設定"),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.assessment_outlined),
               label: Text("計畫規劃"),
             ),
             NavigationRailDestination(
-              icon: Icon(Icons.library_books),
+              icon: Icon(Icons.library_books_outlined),
               label: Text("詞語參考"),
             ),
             NavigationRailDestination(
-              icon: Icon(Icons.palette_rounded),
+              icon: Icon(Icons.palette_outlined),
               label: Text("文字色票"),
             ),
             NavigationRailDestination(
@@ -134,10 +138,6 @@ class MonogatariNavigationSidebar extends StatelessWidget {
             NavigationRailDestination(
               icon: Icon(Icons.info),
               label: Text("關於"),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.inventory_2_outlined),
-              label: Text("物品設定"),
             ),
           ],
         ),
