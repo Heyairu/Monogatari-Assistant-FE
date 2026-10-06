@@ -3,6 +3,7 @@ import "package:freezed_annotation/freezed_annotation.dart";
 
 import "../bin/settings_manager.dart";
 import "../bin/ui_library.dart";
+import "navigation_style.dart";
 
 part "app_state_data.freezed.dart";
 
@@ -17,6 +18,7 @@ class AppThemeStateData with _$AppThemeStateData {
 @freezed
 class AppSettingsStateData with _$AppSettingsStateData {
   const factory AppSettingsStateData({
+    @Default(NavigationStyle.railLabel) NavigationStyle navigationStyle,
     @Default(true) bool showExitWarning,
     @Default(12.0) double fontSize,
     @Default(WordCountMode.wordsAndCharacters) WordCountMode wordCountMode,
@@ -28,8 +30,10 @@ class AppSettingsStateData with _$AppSettingsStateData {
     @Default(true) bool allowSingleDevicePairingConfirmation,
     @Default(false) bool allowPersistentP2pVerification,
     @Default(true) bool poppinEnabled,
+    @Default(true) bool overwriteModeEnabled,
     @Default(2) int tabSpaceCount,
     @Default(true) bool tabFullWidth,
+    @Default(false) bool autoIndentLineStart,
     @Default(<RecentProjectEntry>[]) List<RecentProjectEntry> recentProjects,
   }) = _AppSettingsStateData;
 }

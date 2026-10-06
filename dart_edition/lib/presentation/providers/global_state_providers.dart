@@ -4,6 +4,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../bin/settings_manager.dart";
 import "../../bin/ui_library.dart";
 import "../../models/app_state_data.dart";
+import "../../models/navigation_style.dart";
 import "repository_providers.dart";
 
 export "../../models/app_state_data.dart";
@@ -56,6 +57,7 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     final snapshot = await repository.load();
 
     return AppSettingsStateData(
+      navigationStyle: snapshot.navigationStyle,
       showExitWarning: snapshot.showExitWarning,
       fontSize: snapshot.fontSize,
       wordCountMode: snapshot.wordCountMode,
@@ -68,8 +70,10 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
           snapshot.allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: snapshot.allowPersistentP2pVerification,
       poppinEnabled: snapshot.poppinEnabled,
+      overwriteModeEnabled: snapshot.overwriteModeEnabled,
       tabSpaceCount: snapshot.tabSpaceCount,
       tabFullWidth: snapshot.tabFullWidth,
+      autoIndentLineStart: snapshot.autoIndentLineStart,
       recentProjects: snapshot.recentProjects,
     );
   }
@@ -78,6 +82,12 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     final current = state.valueOrNull ?? const AppSettingsStateData();
     state = AsyncData(current.copyWith(showExitWarning: value));
     await ref.read(settingsRepositoryProvider).saveShowExitWarning(value);
+  }
+
+  Future<void> setNavigationStyle(NavigationStyle value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(navigationStyle: value));
+    await ref.read(settingsRepositoryProvider).saveNavigationStyle(value);
   }
 
   Future<void> setFontSize(double value) async {
@@ -155,6 +165,13 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     await ref.read(settingsRepositoryProvider).savePoppinEnabled(value);
   }
 
+  Future<void> setOverwriteModeEnabled(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(overwriteModeEnabled: value));
+    if (!value) ref.read(editorOverwriteProvider.notifier).state = false;
+    await ref.read(settingsRepositoryProvider).saveOverwriteModeEnabled(value);
+  }
+
   Future<void> setTabSpaceCount(int value) async {
     final count = value.clamp(1, 8);
     final current = state.valueOrNull ?? const AppSettingsStateData();
@@ -166,6 +183,12 @@ class SettingsStateNotifier extends AsyncNotifier<AppSettingsStateData> {
     final current = state.valueOrNull ?? const AppSettingsStateData();
     state = AsyncData(current.copyWith(tabFullWidth: value));
     await ref.read(settingsRepositoryProvider).saveTabFullWidth(value);
+  }
+
+  Future<void> setAutoIndentLineStart(bool value) async {
+    final current = state.valueOrNull ?? const AppSettingsStateData();
+    state = AsyncData(current.copyWith(autoIndentLineStart: value));
+    await ref.read(settingsRepositoryProvider).saveAutoIndentLineStart(value);
   }
 
   Future<void> addRecentProject({
@@ -219,6 +242,12 @@ final themeStateProvider =
 
 // Session state: retained across chapters, reset when the app restarts.
 final editorOverwriteProvider = StateProvider<bool>((ref) => false);
+final editorEffectiveOverwriteProvider = Provider<bool>((ref) {
+  final enabled =
+      ref.watch(settingsStateProvider).valueOrNull?.overwriteModeEnabled ??
+      true;
+  return enabled && ref.watch(editorOverwriteProvider);
+});
 
 final settingsStateProvider =
     AsyncNotifierProvider<SettingsStateNotifier, AppSettingsStateData>(
@@ -258,7 +287,7 @@ final appThemeSettingsProvider = Provider<AppThemeSettings>((ref) {
   );
   final fontSize = ref.watch(
     settingsStateProvider.select(
-      (state) => state.valueOrNull?.fontSize ?? 12.0,
+      (state) => state.valueOrNull?.fontSize ?? 14.0,
     ),
   );
 

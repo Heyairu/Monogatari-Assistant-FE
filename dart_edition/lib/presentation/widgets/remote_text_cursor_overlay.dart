@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter/rendering.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
+import "../../ui_library/spacing.dart";
 import "../../domain/collaboration/collaborative_text.dart";
 import "../providers/collaboration_providers.dart";
 
@@ -179,15 +180,15 @@ class _RemoteCaretMarker extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.tertiaryContainer,
                   borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    topRight: Radius.circular(4),
-                    bottomRight: Radius.circular(4),
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
                   ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.xs,
                   ),
                   child: Text(
                     position.cursor.ipAddress,
@@ -220,7 +221,7 @@ class ChapterRemotePresenceBadges extends ConsumerWidget {
     if (cursors.isEmpty) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
@@ -234,13 +235,10 @@ class ChapterRemotePresenceBadges extends ConsumerWidget {
                   key: ValueKey(
                     "chapter-presence-$chapterId-${cursor.replicaId}",
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
+                  padding: AppSpacing.badgePadding,
                   decoration: BoxDecoration(
                     color: colorScheme.tertiaryContainer,
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

@@ -1,8 +1,11 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
+import "control_size.dart";
+import "spacing.dart";
 import "collections.dart";
 import "forms.dart";
+import "surface_shape.dart";
 
 /// A consistent two-column table surface for compact editor data.
 ///
@@ -37,14 +40,14 @@ class AppTwoColumnTable extends StatelessWidget {
     this.firstFlex = 1,
     this.secondFlex = 1,
     this.bodyHeight,
-    this.headerPadding = const EdgeInsets.all(12),
+    this.headerPadding = AppSpacing.cellPadding,
     this.headerStyle,
     this.headerColor,
     this.backgroundColor,
     this.borderColor,
-    this.borderRadius = 4,
+    this.borderRadius = AppSurfaceShape.radius,
     this.hasTrailingColumn = false,
-    this.trailingColumnWidth = 48,
+    this.trailingColumnWidth = AppControlSize.height,
     this.controller,
     this.showScrollbar = false,
     this.onSelectionCleared,
@@ -193,8 +196,8 @@ class AppTwoColumnTableRow extends StatelessWidget {
     this.selected = false,
     this.firstFlex = 1,
     this.secondFlex = 1,
-    this.cellPadding = const EdgeInsets.all(12),
-    this.trailingColumnWidth = 48,
+    this.cellPadding = AppSpacing.cellPadding,
+    this.trailingColumnWidth = AppControlSize.height,
     this.selectedColor,
     this.backgroundColor,
     this.dividerColor,
@@ -211,6 +214,9 @@ class AppTwoColumnTableRow extends StatelessWidget {
         : backgroundColor ?? Colors.transparent;
 
     final content = Container(
+      constraints: BoxConstraints(
+        minHeight: AppControlSize.heightForContext(context),
+      ),
       decoration: BoxDecoration(
         border: showDivider
             ? Border(
@@ -320,7 +326,7 @@ class AppThreeColumnTable extends StatelessWidget {
     final table = Container(
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: AppSurfaceShape.borderRadius,
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -330,7 +336,7 @@ class AppThreeColumnTable extends StatelessWidget {
           ColoredBox(
             color: theme.colorScheme.surfaceContainerHighest,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: AppSpacing.cellPadding,
               child: Row(
                 children: [
                   Expanded(
@@ -405,6 +411,9 @@ class AppThreeColumnTableRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Container(
+      constraints: BoxConstraints(
+        minHeight: AppControlSize.heightForContext(context),
+      ),
       decoration: BoxDecoration(
         border: showDivider
             ? Border(bottom: BorderSide(color: Colors.grey.shade300))
@@ -414,18 +423,15 @@ class AppThreeColumnTableRow extends StatelessWidget {
         children: [
           Expanded(
             flex: firstFlex,
-            child: Padding(padding: const EdgeInsets.all(12), child: firstCell),
+            child: Padding(padding: AppSpacing.cellPadding, child: firstCell),
           ),
           Expanded(
             flex: secondFlex,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: secondCell,
-            ),
+            child: Padding(padding: AppSpacing.cellPadding, child: secondCell),
           ),
           Expanded(
             flex: thirdFlex,
-            child: Padding(padding: const EdgeInsets.all(12), child: thirdCell),
+            child: Padding(padding: AppSpacing.cellPadding, child: thirdCell),
           ),
         ],
       ),

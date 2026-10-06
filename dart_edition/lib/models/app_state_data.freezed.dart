@@ -176,6 +176,7 @@ abstract class _AppThemeStateData implements AppThemeStateData {
 
 /// @nodoc
 mixin _$AppSettingsStateData {
+  NavigationStyle get navigationStyle => throw _privateConstructorUsedError;
   bool get showExitWarning => throw _privateConstructorUsedError;
   double get fontSize => throw _privateConstructorUsedError;
   WordCountMode get wordCountMode => throw _privateConstructorUsedError;
@@ -188,8 +189,10 @@ mixin _$AppSettingsStateData {
       throw _privateConstructorUsedError;
   bool get allowPersistentP2pVerification => throw _privateConstructorUsedError;
   bool get poppinEnabled => throw _privateConstructorUsedError;
+  bool get overwriteModeEnabled => throw _privateConstructorUsedError;
   int get tabSpaceCount => throw _privateConstructorUsedError;
   bool get tabFullWidth => throw _privateConstructorUsedError;
+  bool get autoIndentLineStart => throw _privateConstructorUsedError;
   List<RecentProjectEntry> get recentProjects =>
       throw _privateConstructorUsedError;
 
@@ -208,6 +211,7 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
   ) = _$AppSettingsStateDataCopyWithImpl<$Res, AppSettingsStateData>;
   @useResult
   $Res call({
+    NavigationStyle navigationStyle,
     bool showExitWarning,
     double fontSize,
     WordCountMode wordCountMode,
@@ -219,8 +223,10 @@ abstract class $AppSettingsStateDataCopyWith<$Res> {
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
     bool poppinEnabled,
+    bool overwriteModeEnabled,
     int tabSpaceCount,
     bool tabFullWidth,
+    bool autoIndentLineStart,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -243,6 +249,7 @@ class _$AppSettingsStateDataCopyWithImpl<
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? navigationStyle = null,
     Object? showExitWarning = null,
     Object? fontSize = null,
     Object? wordCountMode = null,
@@ -254,12 +261,18 @@ class _$AppSettingsStateDataCopyWithImpl<
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
     Object? poppinEnabled = null,
+    Object? overwriteModeEnabled = null,
     Object? tabSpaceCount = null,
     Object? tabFullWidth = null,
+    Object? autoIndentLineStart = null,
     Object? recentProjects = null,
   }) {
     return _then(
       _value.copyWith(
+            navigationStyle: null == navigationStyle
+                ? _value.navigationStyle
+                : navigationStyle // ignore: cast_nullable_to_non_nullable
+                      as NavigationStyle,
             showExitWarning: null == showExitWarning
                 ? _value.showExitWarning
                 : showExitWarning // ignore: cast_nullable_to_non_nullable
@@ -306,6 +319,10 @@ class _$AppSettingsStateDataCopyWithImpl<
                 ? _value.poppinEnabled
                 : poppinEnabled // ignore: cast_nullable_to_non_nullable
                       as bool,
+            overwriteModeEnabled: null == overwriteModeEnabled
+                ? _value.overwriteModeEnabled
+                : overwriteModeEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
             tabSpaceCount: null == tabSpaceCount
                 ? _value.tabSpaceCount
                 : tabSpaceCount // ignore: cast_nullable_to_non_nullable
@@ -313,6 +330,10 @@ class _$AppSettingsStateDataCopyWithImpl<
             tabFullWidth: null == tabFullWidth
                 ? _value.tabFullWidth
                 : tabFullWidth // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            autoIndentLineStart: null == autoIndentLineStart
+                ? _value.autoIndentLineStart
+                : autoIndentLineStart // ignore: cast_nullable_to_non_nullable
                       as bool,
             recentProjects: null == recentProjects
                 ? _value.recentProjects
@@ -334,6 +355,7 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
   @override
   @useResult
   $Res call({
+    NavigationStyle navigationStyle,
     bool showExitWarning,
     double fontSize,
     WordCountMode wordCountMode,
@@ -345,8 +367,10 @@ abstract class _$$AppSettingsStateDataImplCopyWith<$Res>
     bool allowSingleDevicePairingConfirmation,
     bool allowPersistentP2pVerification,
     bool poppinEnabled,
+    bool overwriteModeEnabled,
     int tabSpaceCount,
     bool tabFullWidth,
+    bool autoIndentLineStart,
     List<RecentProjectEntry> recentProjects,
   });
 }
@@ -365,6 +389,7 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? navigationStyle = null,
     Object? showExitWarning = null,
     Object? fontSize = null,
     Object? wordCountMode = null,
@@ -376,12 +401,18 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
     Object? allowSingleDevicePairingConfirmation = null,
     Object? allowPersistentP2pVerification = null,
     Object? poppinEnabled = null,
+    Object? overwriteModeEnabled = null,
     Object? tabSpaceCount = null,
     Object? tabFullWidth = null,
+    Object? autoIndentLineStart = null,
     Object? recentProjects = null,
   }) {
     return _then(
       _$AppSettingsStateDataImpl(
+        navigationStyle: null == navigationStyle
+            ? _value.navigationStyle
+            : navigationStyle // ignore: cast_nullable_to_non_nullable
+                  as NavigationStyle,
         showExitWarning: null == showExitWarning
             ? _value.showExitWarning
             : showExitWarning // ignore: cast_nullable_to_non_nullable
@@ -427,6 +458,10 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
             ? _value.poppinEnabled
             : poppinEnabled // ignore: cast_nullable_to_non_nullable
                   as bool,
+        overwriteModeEnabled: null == overwriteModeEnabled
+            ? _value.overwriteModeEnabled
+            : overwriteModeEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
         tabSpaceCount: null == tabSpaceCount
             ? _value.tabSpaceCount
             : tabSpaceCount // ignore: cast_nullable_to_non_nullable
@@ -434,6 +469,10 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
         tabFullWidth: null == tabFullWidth
             ? _value.tabFullWidth
             : tabFullWidth // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        autoIndentLineStart: null == autoIndentLineStart
+            ? _value.autoIndentLineStart
+            : autoIndentLineStart // ignore: cast_nullable_to_non_nullable
                   as bool,
         recentProjects: null == recentProjects
             ? _value._recentProjects
@@ -448,6 +487,7 @@ class __$$AppSettingsStateDataImplCopyWithImpl<$Res>
 
 class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   const _$AppSettingsStateDataImpl({
+    this.navigationStyle = NavigationStyle.railLabel,
     this.showExitWarning = true,
     this.fontSize = 12.0,
     this.wordCountMode = WordCountMode.wordsAndCharacters,
@@ -459,12 +499,17 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     this.allowSingleDevicePairingConfirmation = true,
     this.allowPersistentP2pVerification = false,
     this.poppinEnabled = true,
+    this.overwriteModeEnabled = true,
     this.tabSpaceCount = 2,
     this.tabFullWidth = true,
+    this.autoIndentLineStart = false,
     final List<RecentProjectEntry> recentProjects =
         const <RecentProjectEntry>[],
   }) : _recentProjects = recentProjects;
 
+  @override
+  @JsonKey()
+  final NavigationStyle navigationStyle;
   @override
   @JsonKey()
   final bool showExitWarning;
@@ -500,10 +545,16 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   final bool poppinEnabled;
   @override
   @JsonKey()
+  final bool overwriteModeEnabled;
+  @override
+  @JsonKey()
   final int tabSpaceCount;
   @override
   @JsonKey()
   final bool tabFullWidth;
+  @override
+  @JsonKey()
+  final bool autoIndentLineStart;
   final List<RecentProjectEntry> _recentProjects;
   @override
   @JsonKey()
@@ -515,7 +566,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
   @override
   String toString() {
-    return 'AppSettingsStateData(showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, poppinEnabled: $poppinEnabled, tabSpaceCount: $tabSpaceCount, tabFullWidth: $tabFullWidth, recentProjects: $recentProjects)';
+    return 'AppSettingsStateData(navigationStyle: $navigationStyle, showExitWarning: $showExitWarning, fontSize: $fontSize, wordCountMode: $wordCountMode, autoSaveEnabled: $autoSaveEnabled, autoSaveIntervalMinutes: $autoSaveIntervalMinutes, autoBackupEnabled: $autoBackupEnabled, autoBackupIntervalMinutes: $autoBackupIntervalMinutes, autoBackupMaxSizeMb: $autoBackupMaxSizeMb, allowSingleDevicePairingConfirmation: $allowSingleDevicePairingConfirmation, allowPersistentP2pVerification: $allowPersistentP2pVerification, poppinEnabled: $poppinEnabled, overwriteModeEnabled: $overwriteModeEnabled, tabSpaceCount: $tabSpaceCount, tabFullWidth: $tabFullWidth, autoIndentLineStart: $autoIndentLineStart, recentProjects: $recentProjects)';
   }
 
   @override
@@ -523,6 +574,8 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$AppSettingsStateDataImpl &&
+            (identical(other.navigationStyle, navigationStyle) ||
+                other.navigationStyle == navigationStyle) &&
             (identical(other.showExitWarning, showExitWarning) ||
                 other.showExitWarning == showExitWarning) &&
             (identical(other.fontSize, fontSize) ||
@@ -559,10 +612,14 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
                     allowPersistentP2pVerification) &&
             (identical(other.poppinEnabled, poppinEnabled) ||
                 other.poppinEnabled == poppinEnabled) &&
+            (identical(other.overwriteModeEnabled, overwriteModeEnabled) ||
+                other.overwriteModeEnabled == overwriteModeEnabled) &&
             (identical(other.tabSpaceCount, tabSpaceCount) ||
                 other.tabSpaceCount == tabSpaceCount) &&
             (identical(other.tabFullWidth, tabFullWidth) ||
                 other.tabFullWidth == tabFullWidth) &&
+            (identical(other.autoIndentLineStart, autoIndentLineStart) ||
+                other.autoIndentLineStart == autoIndentLineStart) &&
             const DeepCollectionEquality().equals(
               other._recentProjects,
               _recentProjects,
@@ -572,6 +629,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
   @override
   int get hashCode => Object.hash(
     runtimeType,
+    navigationStyle,
     showExitWarning,
     fontSize,
     wordCountMode,
@@ -583,8 +641,10 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
     allowSingleDevicePairingConfirmation,
     allowPersistentP2pVerification,
     poppinEnabled,
+    overwriteModeEnabled,
     tabSpaceCount,
     tabFullWidth,
+    autoIndentLineStart,
     const DeepCollectionEquality().hash(_recentProjects),
   );
 
@@ -603,6 +663,7 @@ class _$AppSettingsStateDataImpl implements _AppSettingsStateData {
 
 abstract class _AppSettingsStateData implements AppSettingsStateData {
   const factory _AppSettingsStateData({
+    final NavigationStyle navigationStyle,
     final bool showExitWarning,
     final double fontSize,
     final WordCountMode wordCountMode,
@@ -614,11 +675,15 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
     final bool allowSingleDevicePairingConfirmation,
     final bool allowPersistentP2pVerification,
     final bool poppinEnabled,
+    final bool overwriteModeEnabled,
     final int tabSpaceCount,
     final bool tabFullWidth,
+    final bool autoIndentLineStart,
     final List<RecentProjectEntry> recentProjects,
   }) = _$AppSettingsStateDataImpl;
 
+  @override
+  NavigationStyle get navigationStyle;
   @override
   bool get showExitWarning;
   @override
@@ -642,9 +707,13 @@ abstract class _AppSettingsStateData implements AppSettingsStateData {
   @override
   bool get poppinEnabled;
   @override
+  bool get overwriteModeEnabled;
+  @override
   int get tabSpaceCount;
   @override
   bool get tabFullWidth;
+  @override
+  bool get autoIndentLineStart;
   @override
   List<RecentProjectEntry> get recentProjects;
 

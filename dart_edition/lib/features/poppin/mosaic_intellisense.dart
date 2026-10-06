@@ -3,8 +3,9 @@ import "package:flutter/services.dart";
 import "../inline_annotations/inline_annotation.dart";
 import "../inline_annotations/inline_annotation_syntax.dart";
 import "../inline_annotations/inline_annotation_target_resolver.dart";
+import "../phrases/phrase_search_index.dart";
 
-enum MosaicCompletionKind { target, color, literal }
+enum MosaicCompletionKind { target, color, literal, phrase }
 
 final class MosaicCompletionCandidate {
   final String id;
@@ -18,6 +19,8 @@ final class MosaicCompletionCandidate {
   final int createDepth;
   final bool customDisplayText;
   final String? createAliasForCharacterId;
+  final String? phraseId;
+  final bool phraseMenu;
 
   const MosaicCompletionCandidate({
     required this.id,
@@ -31,6 +34,8 @@ final class MosaicCompletionCandidate {
     this.createDepth = 0,
     this.customDisplayText = false,
     this.createAliasForCharacterId,
+    this.phraseId,
+    this.phraseMenu = false,
   });
 }
 
@@ -48,6 +53,8 @@ final class MosaicCompletionSession {
 
 typedef MosaicTargetCandidateLoader =
     List<InlineAnnotationTargetInfo> Function(InlineAnnotationKind kind);
+typedef MosaicPhraseTargetExists =
+    bool Function(InlineAnnotationKind kind, String id);
 
 final class MosaicIntelliSenseEngine {
   static const int maxCandidatesPerLevel = 100;
@@ -68,6 +75,10 @@ final class MosaicIntelliSenseEngine {
     required String rawText,
     required int rawCaret,
     required MosaicTargetCandidateLoader loadTargets,
+    PhraseSearchIndex? phraseIndex,
+    MosaicPhraseTargetExists? phraseTargetExists,
+    int? phraseMenuTriggerStart,
+    int? phraseMenuQueryStart,
   }) {
     final caret = rawCaret.clamp(0, rawText.length);
     final prefix = rawText.substring(0, caret);
@@ -80,9 +91,53 @@ final class MosaicIntelliSenseEngine {
       if (color != null) return color;
     }
     if (caret == 0) return null;
+    if (phraseMenuTriggerStart != null && phraseMenuQueryStart != null) {
+      final trigger = rawText.substring(
+        phraseMenuTriggerStart,
+        phraseMenuQueryStart,
+      );
+      if (phraseMenuQueryStart <= caret &&
+          phraseMenuTriggerStart >= 0 &&
+          (trigger == '/' ||
+              trigger == r'\' ||
+              trigger == '//' ||
+              trigger == r'\//')) {
+        final query = rawText.substring(phraseMenuQueryStart, caret);
+        if (_isPhraseQuery(query)) {
+          return _phraseSession(
+            phraseMenuTriggerStart,
+            caret,
+            query,
+            phraseIndex,
+            phraseTargetExists,
+          );
+        }
+      }
+      return null;
+    }
+    final phraseStart = prefix.lastIndexOf(';;');
+    if (phraseStart >= 0 &&
+        _precedingBackslashCount(prefix, phraseStart).isEven &&
+        (phraseStart == 0 ||
+            !_isPhraseCodeUnit(prefix.codeUnitAt(phraseStart - 1))) &&
+        _isPhraseQuery(prefix.substring(phraseStart + 2))) {
+      return _phraseSession(
+        phraseStart,
+        caret,
+        prefix.substring(phraseStart + 2),
+        phraseIndex,
+        phraseTargetExists,
+      );
+    }
     final directTarget = _directTargetDraftSession(prefix, caret, loadTargets);
     if (directTarget != null) return directTarget;
-    final manual = _manualTriggerSession(prefix, caret, loadTargets);
+    final manual = _manualTriggerSession(
+      prefix,
+      caret,
+      loadTargets,
+      phraseIndex,
+      phraseTargetExists,
+    );
     if (manual != null) return manual;
     final followsManualSlash =
         caret >= 2 && prefix.codeUnitAt(caret - 2) == 0x2f;
@@ -97,12 +152,26 @@ final class MosaicIntelliSenseEngine {
     String prefix,
     int caret,
     MosaicTargetCandidateLoader loadTargets,
+    PhraseSearchIndex? phraseIndex,
+    MosaicPhraseTargetExists? phraseTargetExists,
   ) {
     if (prefix.endsWith(r"\//")) {
-      return _manualSession(caret, loadTargets, replacementStart: caret - 3);
+      return _manualSession(
+        caret,
+        loadTargets,
+        phraseIndex,
+        phraseTargetExists,
+        replacementStart: caret - 3,
+      );
     }
     if (prefix.endsWith("//")) {
-      return _manualSession(caret, loadTargets, replacementStart: caret - 2);
+      return _manualSession(
+        caret,
+        loadTargets,
+        phraseIndex,
+        phraseTargetExists,
+        replacementStart: caret - 2,
+      );
     }
     final last = prefix.codeUnitAt(caret - 1);
     if (last == 0x2f) {
@@ -112,12 +181,22 @@ final class MosaicIntelliSenseEngine {
       // single visible backslash; the hidden raw unit must not turn the slash
       // into a fresh manual trigger.
       if (precedingBackslashes > 0) return null;
-      return _manualSession(caret, loadTargets);
+      return _manualSession(
+        caret,
+        loadTargets,
+        phraseIndex,
+        phraseTargetExists,
+      );
     }
     if (last == 0x5c) {
       if (caret >= 2 && prefix.codeUnitAt(caret - 2) == 0x2f) return null;
       if (_precedingBackslashCount(prefix, caret).isEven) return null;
-      return _manualSession(caret, loadTargets);
+      return _manualSession(
+        caret,
+        loadTargets,
+        phraseIndex,
+        phraseTargetExists,
+      );
     }
     return null;
   }
@@ -229,7 +308,9 @@ final class MosaicIntelliSenseEngine {
 
   MosaicCompletionSession _manualSession(
     int caret,
-    MosaicTargetCandidateLoader loadTargets, {
+    MosaicTargetCandidateLoader loadTargets,
+    PhraseSearchIndex? phraseIndex,
+    MosaicPhraseTargetExists? phraseTargetExists, {
     int? replacementStart,
   }) {
     List<MosaicCompletionCandidate> targetChildren(InlineAnnotationKind kind) =>
@@ -257,6 +338,15 @@ final class MosaicIntelliSenseEngine {
           detail: "人物候選",
           insertText: "@",
           children: targetChildren(InlineAnnotationKind.character),
+          submenuOnly: true,
+        ),
+        MosaicCompletionCandidate(
+          id: "manual-phrases",
+          label: "短語",
+          detail: "搜尋並插入專案短語",
+          insertText: "",
+          phraseMenu: true,
+          children: _phraseCandidates(phraseIndex, "", phraseTargetExists),
           submenuOnly: true,
         ),
         MosaicCompletionCandidate(
@@ -364,6 +454,57 @@ final class MosaicIntelliSenseEngine {
       ],
     );
   }
+
+  MosaicCompletionSession _phraseSession(
+    int start,
+    int caret,
+    String query,
+    PhraseSearchIndex? index,
+    MosaicPhraseTargetExists? targetExists,
+  ) => MosaicCompletionSession(
+    kind: MosaicCompletionKind.phrase,
+    rawReplacementRange: TextRange(start: start, end: caret),
+    candidates: _phraseCandidates(index, query, targetExists),
+  );
+
+  List<MosaicCompletionCandidate> _phraseCandidates(
+    PhraseSearchIndex? index,
+    String query,
+    MosaicPhraseTargetExists? targetExists,
+  ) => [
+    for (final result
+        in index?.search(query, limit: maxCandidatesPerLevel) ??
+            const <PhraseSearchResult>[])
+      MosaicCompletionCandidate(
+        id: 'phrase-${result.phrase.id}',
+        phraseId: result.phrase.id,
+        label:
+            '${result.phrase.shortcut} · ${result.preview.replaceAll('\n', ' ').trim()}',
+        detail: [
+          result.preview.replaceAll('\n', ' ').trim(),
+          if (result.annotations.any(
+            (annotation) => annotation.targetId != null,
+          ))
+            'Mention ${result.annotations.where((annotation) => annotation.targetId != null).length}',
+          if (result.annotations.any(
+                (annotation) => annotation.targetId != null,
+              ) &&
+              targetExists != null)
+            '待連結 ${result.annotations.where((annotation) => annotation.targetId != null && (result.phrase.requiresRelink || !targetExists(annotation.kind, annotation.targetId!))).length}',
+        ].where((part) => part.isNotEmpty).join(' · '),
+        insertText: '',
+      ),
+  ];
+
+  bool _isPhraseQuery(String query) =>
+      query.length <= 128 && !query.contains(RegExp(r'[\s\\/;]'));
+
+  bool _isPhraseCodeUnit(int codeUnit) =>
+      (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+      (codeUnit >= 0x41 && codeUnit <= 0x5a) ||
+      (codeUnit >= 0x61 && codeUnit <= 0x7a) ||
+      codeUnit == 0x5f ||
+      codeUnit == 0x2d;
 
   MosaicCompletionSession? _targetSession(
     String draft,
@@ -713,7 +854,9 @@ final class MosaicIntelliSenseEngine {
   );
 
   MosaicCompletionSession? _colorSession(String draft, int caret) {
-    final match = RegExp(r"^//(?:[@!#?&*])?[+-]?\^([A-F0]?)$").firstMatch(draft);
+    final match = RegExp(
+      r"^//(?:[@!#?&*])?[+-]?\^([A-F0]?)$",
+    ).firstMatch(draft);
     if (match == null) return null;
     final query = match.group(1) ?? "";
     return MosaicCompletionSession(

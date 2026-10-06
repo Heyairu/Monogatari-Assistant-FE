@@ -14,6 +14,7 @@ import "../../models/world_settings_data.dart";
 import "../../models/item_data.dart";
 import "../../models/item_snapshot_data.dart";
 import "../../models/location_snapshot_data.dart";
+import "../../features/phrases/phrase_entry.dart";
 
 /// Converts ProjectData models to versioned, stable-id collaboration records.
 /// Chapter content is intentionally absent; it belongs exclusively to CRDT.
@@ -421,6 +422,13 @@ abstract final class ProjectRecordCodec {
         },
       );
     }
+    for (final phrase in data.phrases) {
+      put(
+        kind: ProjectRecordKind.phrase,
+        id: phrase.id,
+        fields: phrase.toJson(),
+      );
+    }
     return records;
   }
 
@@ -470,6 +478,23 @@ abstract final class ProjectRecordCodec {
       intro: _string(fields, "intro"),
       tags: _stringList(fields, "tags"),
     );
+  }
+
+  static List<PhraseEntry> decodePhrases(
+    Map<ProjectRecordKey, ProjectRecordOperation> records,
+  ) {
+    final entries = _recordsOf(records, ProjectRecordKind.phrase)
+        .map((record) {
+          final fields = Map<String, Object?>.from(record.fields)
+            ..remove('schemaVersion');
+          if (fields['id'] != record.recordId) {
+            throw const FormatException('phrase record ID mismatch');
+          }
+          return PhraseEntry.fromJson(fields);
+        })
+        .toList(growable: false);
+    validatePhraseLibrary(entries);
+    return List<PhraseEntry>.unmodifiable(entries);
   }
 
   static List<SegmentData> decodeSegments(

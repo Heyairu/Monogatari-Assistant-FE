@@ -1,10 +1,13 @@
 import "package:flutter/material.dart";
 
+import "../../ui_library/spacing.dart";
 import "../../ui_library/dialogs.dart";
 import "inline_annotation.dart";
 import "inline_annotation_anchored_popup.dart";
 import "inline_annotation_parser.dart";
 import "inline_annotation_syntax.dart";
+import "../../ui_library/forms.dart";
+import "../../ui_library/control_size.dart";
 
 abstract final class InlineAnnotationEditDialog {
   static Future<String?> show({
@@ -151,10 +154,22 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<InlineAnnotationKind>(
+              isDense: true,
+              isExpanded: true,
+              iconSize: AppControlSize.smallIcon,
+              itemHeight: appDropdownItemHeight(context),
+              menuMaxHeight: AppControlSize.menuMaxHeight,
               key: const ValueKey("inline-annotation-kind"),
               initialValue: _kind,
-              style: Theme.of(context).textTheme.bodyMedium,
-              decoration: _decoration("類型"),
+              style: appDropdownTextStyle(
+                context,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              decoration: appDropdownFieldDecoration(
+                context,
+                textStyle: Theme.of(context).textTheme.bodyMedium,
+                decoration: _decoration("類型"),
+              ),
               items: [
                 for (final kind in InlineAnnotationKind.values)
                   DropdownMenuItem(value: kind, child: Text(_kindLabel(kind))),
@@ -173,10 +188,22 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
             const SizedBox(height: 8),
             if (_kind != InlineAnnotationKind.emphasis) ...[
               DropdownButtonFormField<InlineAnnotationState>(
+                isDense: true,
+                isExpanded: true,
+                iconSize: AppControlSize.smallIcon,
+                itemHeight: appDropdownItemHeight(context),
+                menuMaxHeight: AppControlSize.menuMaxHeight,
                 key: const ValueKey("inline-annotation-state"),
                 initialValue: _annotationState,
-                style: Theme.of(context).textTheme.bodyMedium,
-                decoration: _decoration("狀態"),
+                style: appDropdownTextStyle(
+                  context,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                decoration: appDropdownFieldDecoration(
+                  context,
+                  textStyle: Theme.of(context).textTheme.bodyMedium,
+                  decoration: _decoration("狀態"),
+                ),
                 items: [
                   for (final state in InlineAnnotationState.values)
                     DropdownMenuItem(
@@ -192,7 +219,10 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
               TextField(
                 key: const ValueKey("inline-annotation-target"),
                 controller: _targetController,
-                decoration: _decoration("UUID"),
+                decoration: appFieldDecoration(
+                  context,
+                  decoration: _decoration("UUID"),
+                ),
                 autocorrect: false,
                 enableSuggestions: false,
               ),
@@ -201,17 +231,32 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
             TextField(
               key: const ValueKey("inline-annotation-display-text"),
               controller: _displayController,
-              decoration: _decoration("顯示文字"),
+              decoration: appFieldDecoration(
+                context,
+                decoration: _decoration("顯示文字"),
+              ),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isDense: true,
+                    isExpanded: true,
+                    iconSize: AppControlSize.smallIcon,
+                    itemHeight: appDropdownItemHeight(context),
+                    menuMaxHeight: AppControlSize.menuMaxHeight,
                     key: const ValueKey("inline-annotation-background"),
                     initialValue: _background,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    decoration: _decoration("背景色碼"),
+                    style: appDropdownTextStyle(
+                      context,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    decoration: appDropdownFieldDecoration(
+                      context,
+                      textStyle: Theme.of(context).textTheme.bodyMedium,
+                      decoration: _decoration("背景色碼"),
+                    ),
                     items: _colorItems,
                     onChanged: (value) {
                       if (value != null) setState(() => _background = value);
@@ -221,10 +266,22 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isDense: true,
+                    isExpanded: true,
+                    iconSize: AppControlSize.smallIcon,
+                    itemHeight: appDropdownItemHeight(context),
+                    menuMaxHeight: AppControlSize.menuMaxHeight,
                     key: const ValueKey("inline-annotation-foreground"),
                     initialValue: _foreground,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    decoration: _decoration("文字色碼"),
+                    style: appDropdownTextStyle(
+                      context,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    decoration: appDropdownFieldDecoration(
+                      context,
+                      textStyle: Theme.of(context).textTheme.bodyMedium,
+                      decoration: _decoration("文字色碼"),
+                    ),
                     items: _colorItems,
                     onChanged: (value) {
                       if (value != null) setState(() => _foreground = value);
@@ -237,7 +294,10 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
             TextField(
               key: const ValueKey("inline-annotation-note"),
               controller: _noteController,
-              decoration: _decoration("備註（可留空）"),
+              decoration: appFieldDecoration(
+                context,
+                decoration: _decoration("備註（可留空）"),
+              ),
               minLines: 2,
               maxLines: 4,
             ),
@@ -245,7 +305,11 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
             TextField(
               key: const ValueKey("inline-annotation-raw-syntax-editor"),
               controller: _rawSyntaxController,
-              decoration: _decoration("完整語法", helperText: "直接修改此欄會優先套用完整語法。"),
+              decoration: appFieldDecoration(
+                context,
+                textStyle: const TextStyle(fontFamily: "monospace"),
+                decoration: _decoration("完整語法", helperText: "直接修改此欄會優先套用完整語法。"),
+              ),
               minLines: 2,
               maxLines: 4,
               autocorrect: false,
@@ -292,7 +356,10 @@ class _InlineAnnotationEditFormState extends State<_InlineAnnotationEditForm> {
       labelText: label,
       helperText: helperText,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
     );
   }
 

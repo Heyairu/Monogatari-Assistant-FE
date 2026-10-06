@@ -2,6 +2,8 @@ import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter_svg/flutter_svg.dart";
 
+import "../../ui_library/spacing.dart";
+
 /// Startup screen shown while local preferences are restored.
 ///
 /// The layout intentionally keeps the desktop composition at the 3:2 ratio
@@ -57,7 +59,12 @@ class _DesktopSplashLayout extends StatelessWidget {
         const SizedBox(width: 120, child: _DesktopAccentPanel()),
         Expanded(
           child: _SplashCanvas(
-            contentPadding: const EdgeInsets.fromLTRB(18, 16, 22, 24),
+            contentPadding: const EdgeInsets.fromLTRB(
+              AppSpacing.space20,
+              AppSpacing.lg,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
             child: const _SplashContent(compact: false),
           ),
         ),
@@ -122,7 +129,12 @@ class SplachScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: _SplashCanvas(
-        contentPadding: EdgeInsets.fromLTRB(32, 48, 32, 32),
+        contentPadding: EdgeInsets.fromLTRB(
+          AppSpacing.xxl,
+          48,
+          AppSpacing.xxl,
+          AppSpacing.xxl,
+        ),
         child: _SplashContent(compact: true),
       ),
     );

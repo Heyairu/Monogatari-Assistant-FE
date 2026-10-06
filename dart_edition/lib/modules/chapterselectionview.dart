@@ -24,6 +24,10 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 import "../models/chapter_selection_data.dart";
+import "../domain/collaboration/collaboration_operation.dart"
+    show ProjectRecordKind;
+import "../domain/collaboration/typed_operation_log.dart" show ProjectRecordKey;
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
@@ -1034,9 +1038,9 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         },
         onPointerUp: (_) => _stopAutoScroll(),
         onPointerCancel: (_) => _stopAutoScroll(),
-        child: SingleChildScrollView(
+        child: AppPageScrollView(
           controller: _pageScrollController,
-          padding: const EdgeInsets.all(24.0),
+
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1047,14 +1051,14 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
                     ),
                     decoration: BoxDecoration(
                       color: Theme.of(
                         context,
                       ).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
@@ -1129,13 +1133,19 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
   }) {
     final scheme = Theme.of(context).colorScheme;
     final isSelected = _createType == type;
+    final controlHeight = AppControlSize.heightForContext(context);
     return IconButton(
       key: ValueKey("chapter-create-type-${type.name}"),
       tooltip: tooltip,
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-      visualDensity: VisualDensity.compact,
+      constraints: BoxConstraints.tightFor(
+        width: controlHeight,
+        height: controlHeight,
+      ),
       onPressed: () => setState(() => _createType = type),
       style: IconButton.styleFrom(
+        minimumSize: Size.square(controlHeight),
+        visualDensity: VisualDensity.standard,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         foregroundColor: isSelected ? Colors.blue : scheme.onSurfaceVariant,
       ),
       icon: Icon(icon),
@@ -1215,7 +1225,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                         color: Theme.of(context).colorScheme.primary,
                         width: 2,
                       ),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppSurfaceShape.borderRadius,
                     )
                   : null,
               child: CollectionPanel.builder(
@@ -1225,7 +1235,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
                 maxHeight: 560,
                 controller: _treeScrollController,
                 showScrollbar: true,
-                listPadding: const EdgeInsets.all(8),
+                listPadding: const EdgeInsets.all(AppSpacing.sm),
                 itemCount: rows.length,
                 emptyTitle: "尚無章節",
                 emptyDescription: "請新增第一個資料夾",
@@ -1256,7 +1266,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
         ),
         const SizedBox(height: 16),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: AddItemInput(
@@ -1287,7 +1297,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
               ),
             ),
             SizedBox(
-              width: 128,
+              width: AppControlSize.heightForContext(context) * 3,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -1416,21 +1426,38 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       isSelected: isSelected,
       indent: depth * 24.0,
 
-      title: InlineEditableText(
-        value: segment.segmentName,
-        controller: _renameController,
-        isEditing: isEditing,
-        onEdit: () => _startEditingSegment(segment),
-        onSubmitted: (_) => _submitEditingSegment(),
-        onCanceled: _cancelEditing,
-        emptyText: "（未命名資料夾）",
-        style: isSelected
-            ? TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontSize: 16,
-              )
-            : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      title: Row(
+        children: [
+          Flexible(
+            child: InlineEditableText(
+              value: segment.segmentName,
+              controller: _renameController,
+              isEditing: isEditing,
+              onEdit: () => _startEditingSegment(segment),
+              onSubmitted: (_) => _submitEditingSegment(),
+              onCanceled: _cancelEditing,
+              emptyText: "（未命名資料夾）",
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : null,
+              ),
+            ),
+          ),
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.chapterFolder,
+              recordId: segment.segmentUUID,
+            ),
+          ),
+          RevisionFieldMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.chapterFolder,
+              recordId: segment.segmentUUID,
+            ),
+            field: 'name',
+          ),
+        ],
       ),
       subtitle: Text(
         "${subtreeChapters.length} 章 • ${segment.childSegments.length} 個子資料夾 • $segmentWordCount 字",
@@ -1444,7 +1471,7 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
             Tooltip(
               message: isExpanded ? "收合資料夾" : "展開資料夾",
               child: InkWell(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
                 onTap: () {
                   setState(() {
                     if (isExpanded) {
@@ -1572,21 +1599,38 @@ class _ChapterSelectionViewState extends ConsumerState<ChapterSelectionView> {
       isThisDragging: _currentDragData?.id == chapter.chapterUUID,
       isSelected: isSelected,
 
-      title: InlineEditableText(
-        value: chapter.chapterName,
-        controller: _renameController,
-        isEditing: isEditing,
-        onEdit: () => _startEditingChapter(chapter),
-        onSubmitted: (_) => _submitEditingChapter(folder.segmentUUID),
-        onCanceled: _cancelEditing,
-        emptyText: "（Untitled）",
-        style: isSelected
-            ? TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontSize: 16,
-              )
-            : const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      title: Row(
+        children: [
+          Flexible(
+            child: InlineEditableText(
+              value: chapter.chapterName,
+              controller: _renameController,
+              isEditing: isEditing,
+              onEdit: () => _startEditingChapter(chapter),
+              onSubmitted: (_) => _submitEditingChapter(folder.segmentUUID),
+              onCanceled: _cancelEditing,
+              emptyText: "（Untitled）",
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : null,
+              ),
+            ),
+          ),
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.chapterMetadata,
+              recordId: chapter.chapterUUID,
+            ),
+          ),
+          RevisionFieldMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.chapterMetadata,
+              recordId: chapter.chapterUUID,
+            ),
+            field: 'name',
+          ),
+        ],
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

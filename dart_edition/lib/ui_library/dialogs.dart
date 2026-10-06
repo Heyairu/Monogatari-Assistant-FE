@@ -1,5 +1,7 @@
 import "package:flutter/material.dart";
 
+import "control_size.dart";
+import "spacing.dart";
 import "feedback.dart";
 import "forms.dart";
 
@@ -25,12 +27,9 @@ class AppDialog extends StatelessWidget {
     this.content,
     this.actions = const [],
     this.scrollable = false,
-    this.maxWidth = 520,
-    this.insetPadding = const EdgeInsets.symmetric(
-      horizontal: 40,
-      vertical: 24,
-    ),
-    this.contentPadding = const EdgeInsets.fromLTRB(24, 20, 24, 0),
+    this.maxWidth = AppControlSize.dialogMaxWidth,
+    this.insetPadding = AppSpacing.dialogInset,
+    this.contentPadding = AppSpacing.dialogContent,
   }) : assert(
          title == null || titleWidget == null,
          "Use either title or titleWidget, not both.",
@@ -49,7 +48,7 @@ class AppDialog extends StatelessWidget {
     return Row(
       children: [
         Icon(icon ?? visuals.icon, color: visuals.foregroundColor),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Text(title!, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
@@ -70,7 +69,10 @@ class AppDialog extends StatelessWidget {
       actions: actions,
       scrollable: scrollable,
       insetPadding: insetPadding,
+      titlePadding: AppSpacing.dialogTitle,
       contentPadding: contentPadding,
+      actionsPadding: AppSpacing.dialogActions,
+      buttonPadding: const EdgeInsets.only(left: AppSpacing.sm),
     );
   }
 
@@ -84,7 +86,7 @@ class AppDialog extends StatelessWidget {
     List<Widget> Function(BuildContext dialogContext)? actionsBuilder,
     bool barrierDismissible = true,
     bool scrollable = false,
-    double maxWidth = 520,
+    double maxWidth = AppControlSize.dialogMaxWidth,
   }) {
     assert(
       message == null || content == null,

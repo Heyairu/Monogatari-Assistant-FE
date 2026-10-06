@@ -1241,7 +1241,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1259,7 +1259,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                       compact: true,
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(AppSpacing.sm),
                       itemCount: items.length,
                       itemBuilder: (context, index) {
                         final item = items[index];
@@ -1357,7 +1357,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                 description: "選取後即可編輯內容",
                 icon: Icons.touch_app_outlined,
                 compact: true,
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
               )
             else
               Column(
@@ -1366,7 +1366,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     controller: foreshadowTitleController,
                     decoration: const InputDecoration(
                       labelText: "伏筆名稱",
-                      border: OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
@@ -1375,7 +1374,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     controller: foreshadowNoteController,
                     decoration: const InputDecoration(
                       labelText: "說明",
-                      border: OutlineInputBorder(),
                       isDense: true,
                     ),
                     minLines: 2,
@@ -1406,7 +1404,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1424,7 +1422,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                       compact: true,
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(AppSpacing.sm),
                       itemCount: items.length,
                       itemBuilder: (context, index) {
                         final item = items[index];
@@ -1519,7 +1517,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                 description: "選取後即可編輯內容",
                 icon: Icons.touch_app_outlined,
                 compact: true,
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
               )
             else
               Column(
@@ -1528,7 +1526,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     controller: updatePlanTitleController,
                     decoration: const InputDecoration(
                       labelText: "計畫名稱",
-                      border: OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
@@ -1537,7 +1534,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
                     controller: updatePlanNoteController,
                     decoration: const InputDecoration(
                       labelText: "說明",
-                      border: OutlineInputBorder(),
                       isDense: true,
                     ),
                     minLines: 2,
@@ -1578,7 +1574,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
                   compact: true,
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   itemCount: entries.length + (_showRootDirectory ? 1 : 0),
                   itemBuilder: (BuildContext context, int index) {
                     if (_showRootDirectory && index == 0) {
@@ -1724,7 +1720,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
         description: "選取後即可編輯內容",
         icon: Icons.touch_app_outlined,
         compact: true,
-        padding: EdgeInsets.symmetric(vertical: 12),
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
       );
     }
 
@@ -1734,21 +1730,13 @@ class _PlanViewState extends ConsumerState<PlanView> {
         AppTextField(
           controller: inspirationTitleController,
           focusNode: _inspirationTitleFocusNode,
-          decoration: const InputDecoration(
-            labelText: "靈感標題",
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
+          decoration: const InputDecoration(labelText: "靈感標題", isDense: true),
         ),
         const SizedBox(height: 8),
         AppTextField(
           controller: inspirationContentController,
           focusNode: _inspirationContentFocusNode,
-          decoration: const InputDecoration(
-            labelText: "內容",
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
+          decoration: const InputDecoration(labelText: "內容", isDense: true),
           minLines: 4,
           maxLines: 8,
         ),
@@ -1763,7 +1751,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1823,8 +1811,7 @@ class _PlanViewState extends ConsumerState<PlanView> {
     }
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

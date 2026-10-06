@@ -22,17 +22,42 @@ import "package:flutter/material.dart";
 import "package:flutter/scheduler.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
+import "../ui_library/spacing.dart";
+import "../ui_library/control_shape.dart";
+import "../ui_library/control_size.dart";
+import "../ui_library/surface_shape.dart";
 import "../ui_library/forms.dart";
+import "../ui_library/collections.dart";
+import "../ui_library/list_style.dart";
 
 export "../ui_library/collections.dart";
+export "../ui_library/control_shape.dart";
+export "../ui_library/control_size.dart";
+export "../ui_library/spacing.dart";
 export "../ui_library/dialogs.dart";
 export "../ui_library/feedback.dart";
 export "../ui_library/forms.dart";
 export "../ui_library/layout.dart";
+export "../ui_library/list_style.dart";
+export "../ui_library/mini_timeline.dart";
+export "../ui_library/surface_shape.dart";
 export "../ui_library/tables.dart";
 
 /// 主題模式枚舉
 enum AppThemeMode { light, dark, system }
+
+/// App-specific compact labels below Material 3's smallest `labelSmall` role.
+/// They inherit its color, font, weight and the user's preferred font scale.
+extension AppTextTheme on TextTheme {
+  TextStyle? get labelTiny => _compactLabel(10);
+  TextStyle? get labelNano => _compactLabel(9);
+
+  TextStyle? _compactLabel(double baseSize) {
+    final base = labelSmall;
+    if (base == null) return null;
+    return base.copyWith(fontSize: (base.fontSize ?? 11) * baseSize / 11);
+  }
+}
 
 /// 主題管理器 - 管理應用的主題狀態
 class UILibrary extends ChangeNotifier {
@@ -153,6 +178,30 @@ class UILibrary extends ChangeNotifier {
 
 /// 主題配色方案
 class AppTheme {
+  static const _controlShape = RoundedRectangleBorder(
+    borderRadius: AppControlShape.borderRadius,
+  );
+
+  static OutlinedBorder _iconButtonShape(Set<WidgetState> states) =>
+      states.contains(WidgetState.hovered)
+      ? const CircleBorder()
+      : _controlShape;
+
+  static ButtonStyle _buttonStyle(double baseFontSize) => ButtonStyle(
+    visualDensity: VisualDensity.standard,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+      AppSpacing.buttonPadding,
+    ),
+    shape: const WidgetStatePropertyAll<OutlinedBorder>(_controlShape),
+    minimumSize: WidgetStatePropertyAll<Size>(
+      Size(
+        AppControlSize.buttonMinWidth,
+        AppControlSize.heightForFontSize(baseFontSize),
+      ),
+    ),
+  );
+
   /// 根據當前系統語言決定字體
   static String get _primaryFontFamily {
     final locale = ui.PlatformDispatcher.instance.locale;
@@ -184,103 +233,47 @@ class AppTheme {
     "NotoSansThai",
   ];
 
-  /// 生成 TextTheme
-  static TextTheme _buildTextTheme(double baseSize) {
-    if (defaultTargetPlatform == TargetPlatform.macOS ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
-      return TextTheme(
-        // H1
-        titleLarge: TextStyle(
-          fontSize: baseSize + 12,
-          fontWeight: FontWeight.w800,
-        ),
-        // H2
-        titleMedium: TextStyle(
-          fontSize: baseSize + 8,
-          fontWeight: FontWeight.w700,
-        ),
-        // H3
-        titleSmall: TextStyle(
-          fontSize: baseSize + 4,
-          fontWeight: FontWeight.w600,
-        ),
-        // Large Text
-        labelLarge: TextStyle(
-          fontSize: baseSize + 2,
-          fontWeight: FontWeight.w500,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: baseSize + 2,
-          fontWeight: FontWeight.w400,
-        ),
-        // Medium Text
-        labelMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w400),
-        bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w400),
-        // Small Text
-        labelSmall: TextStyle(
-          fontSize: baseSize - 2,
-          fontWeight: FontWeight.w400,
-        ),
-        bodySmall: TextStyle(
-          fontSize: baseSize - 2,
-          fontWeight: FontWeight.w400,
-        ),
-        // Nano Text
-        displaySmall: TextStyle(
-          fontSize: baseSize - 4,
-          fontWeight: FontWeight.w400,
-        ),
-      );
-    } else {
-      return TextTheme(
-        // H1
-        titleLarge: TextStyle(
-          fontSize: baseSize + 12,
-          fontWeight: FontWeight.w900,
-        ),
-        // H2
-        titleMedium: TextStyle(
-          fontSize: baseSize + 8,
-          fontWeight: FontWeight.w800,
-        ),
-        // H3
-        titleSmall: TextStyle(
-          fontSize: baseSize + 4,
-          fontWeight: FontWeight.w700,
-        ),
-        // Large Text
-        labelLarge: TextStyle(
-          fontSize: baseSize + 2,
-          fontWeight: FontWeight.w600,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: baseSize + 2,
-          fontWeight: FontWeight.w600,
-        ),
-        // Medium Text
-        labelMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
-        bodyMedium: TextStyle(fontSize: baseSize, fontWeight: FontWeight.w600),
-        // Small Text
-        labelSmall: TextStyle(
-          fontSize: baseSize - 2,
-          fontWeight: FontWeight.w600,
-        ),
-        bodySmall: TextStyle(
-          fontSize: baseSize - 2,
-          fontWeight: FontWeight.w600,
-        ),
-        // Nano Text
-        displaySmall: TextStyle(
-          fontSize: baseSize - 4,
-          fontWeight: FontWeight.w600,
-        ),
-      );
-    }
+  /// Scale Material 3 type roles around its 14sp bodyMedium size.
+  /// ThemeData supplies each role's Material 3 weight, line height and spacing.
+  static TextTheme _buildTextTheme(double bodyMediumSize) {
+    final scale = bodyMediumSize / 14.0;
+    return TextTheme(
+      displayLarge: TextStyle(fontSize: 57 * scale),
+      displayMedium: TextStyle(fontSize: 45 * scale),
+      displaySmall: TextStyle(fontSize: 36 * scale),
+      headlineLarge: TextStyle(fontSize: 32 * scale),
+      headlineMedium: TextStyle(fontSize: 28 * scale),
+      headlineSmall: TextStyle(fontSize: 24 * scale),
+      titleLarge: TextStyle(fontSize: 22 * scale),
+      titleMedium: TextStyle(fontSize: 16 * scale),
+      titleSmall: TextStyle(fontSize: 14 * scale),
+      bodyLarge: TextStyle(fontSize: 16 * scale),
+      bodyMedium: TextStyle(fontSize: 14 * scale),
+      bodySmall: TextStyle(fontSize: 12 * scale),
+      labelLarge: TextStyle(fontSize: 14 * scale),
+      labelMedium: TextStyle(fontSize: 12 * scale),
+      labelSmall: TextStyle(fontSize: 11 * scale),
+    );
   }
 
-  static IconButtonThemeData _buildIconButtonTheme(ColorScheme colorScheme) {
+  static IconButtonThemeData _buildIconButtonTheme(
+    ColorScheme colorScheme,
+    double baseFontSize,
+  ) {
     return IconButtonThemeData(
       style: ButtonStyle(
+        visualDensity: VisualDensity.standard,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+          AppSpacing.iconButtonPadding,
+        ),
+        iconSize: const WidgetStatePropertyAll<double>(AppControlSize.icon),
+        shape: WidgetStateProperty.resolveWith<OutlinedBorder>(
+          _iconButtonShape,
+        ),
+        minimumSize: WidgetStatePropertyAll<Size>(
+          Size.square(AppControlSize.heightForFontSize(baseFontSize)),
+        ),
         foregroundColor: WidgetStateProperty.resolveWith((states) {
           final color = colorScheme.onSurface;
           return states.contains(WidgetState.disabled)
@@ -321,27 +314,92 @@ class AppTheme {
       );
     }
 
-    return ThemeData(
+    final buttonStyle = _buttonStyle(baseFontSize);
+    final theme = ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       colorScheme: colorScheme,
       fontFamily: _primaryFontFamily,
       fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
-      iconTheme: IconThemeData(size: baseFontSize + 10),
-      cardTheme: const CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+      iconTheme: IconThemeData(
+        size: AppControlSize.icon,
+        color: colorScheme.onSurface,
+      ),
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      appBarTheme: const AppBarTheme(
+        toolbarHeight: AppControlSize.appBarHeight,
+      ),
+      dataTableTheme: const DataTableThemeData(
+        headingRowHeight: AppControlSize.height,
+        dataRowMinHeight: AppControlSize.height,
+        dataRowMaxHeight: double.infinity,
+        horizontalMargin: AppSpacing.lg,
+        columnSpacing: AppSpacing.xl,
+      ),
+      iconButtonTheme: _buildIconButtonTheme(colorScheme, baseFontSize),
+      filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+      textButtonTheme: TextButtonThemeData(style: buttonStyle),
+      segmentedButtonTheme: SegmentedButtonThemeData(style: buttonStyle),
+      chipTheme: const ChipThemeData(
+        shape: _controlShape,
+        padding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
         ),
       ),
-      inputDecorationTheme: const InputDecorationTheme(
+      dialogTheme: const DialogThemeData(shape: AppSurfaceShape.shape),
+      popupMenuTheme: const PopupMenuThemeData(shape: _controlShape),
+      menuTheme: const MenuThemeData(
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll<OutlinedBorder>(_controlShape),
+        ),
+      ),
+      snackBarTheme: const SnackBarThemeData(shape: _controlShape),
+      navigationBarTheme: const NavigationBarThemeData(
+        height: AppControlSize.navigationBarHeight,
+        indicatorShape: _controlShape,
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        minWidth: AppControlSize.navigationRailWidth,
+        indicatorShape: _controlShape,
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        shape: _controlShape,
+        sizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.fab,
+          height: AppControlSize.fab,
+        ),
+        smallSizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.smallFab,
+          height: AppControlSize.smallFab,
+        ),
+        largeSizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.largeFab,
+          height: AppControlSize.largeFab,
+        ),
+      ),
+      cardTheme: const CardThemeData(
+        elevation: 0,
+        shape: AppSurfaceShape.shape,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        isDense: true,
         filled: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+        fillColor: colorScheme.surfaceContainerLowest,
+        contentPadding: AppSpacing.fieldPadding,
+        constraints: BoxConstraints(
+          minHeight: AppControlSize.heightForFontSize(baseFontSize),
+        ),
+        border: const OutlineInputBorder(
+          borderRadius: AppControlShape.borderRadius,
         ),
       ),
     );
+    return theme.copyWith(listTileTheme: AppListStyle.themeFor(theme));
   }
 
   /// 獲取深色主題
@@ -374,28 +432,92 @@ class AppTheme {
       );
     }
 
-    return ThemeData(
+    final buttonStyle = _buttonStyle(baseFontSize);
+    final theme = ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: colorScheme,
       fontFamily: _primaryFontFamily,
       fontFamilyFallback: _fontFamilyFallback,
       textTheme: _buildTextTheme(baseFontSize),
-      iconTheme: IconThemeData(size: baseFontSize + 10),
-      iconButtonTheme: _buildIconButtonTheme(colorScheme),
-      cardTheme: const CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+      iconTheme: IconThemeData(
+        size: AppControlSize.icon,
+        color: colorScheme.onSurface,
+      ),
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      appBarTheme: const AppBarTheme(
+        toolbarHeight: AppControlSize.appBarHeight,
+      ),
+      dataTableTheme: const DataTableThemeData(
+        headingRowHeight: AppControlSize.height,
+        dataRowMinHeight: AppControlSize.height,
+        dataRowMaxHeight: double.infinity,
+        horizontalMargin: AppSpacing.lg,
+        columnSpacing: AppSpacing.xl,
+      ),
+      iconButtonTheme: _buildIconButtonTheme(colorScheme, baseFontSize),
+      filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+      textButtonTheme: TextButtonThemeData(style: buttonStyle),
+      segmentedButtonTheme: SegmentedButtonThemeData(style: buttonStyle),
+      chipTheme: const ChipThemeData(
+        shape: _controlShape,
+        padding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
         ),
       ),
-      inputDecorationTheme: const InputDecorationTheme(
+      dialogTheme: const DialogThemeData(shape: AppSurfaceShape.shape),
+      popupMenuTheme: const PopupMenuThemeData(shape: _controlShape),
+      menuTheme: const MenuThemeData(
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll<OutlinedBorder>(_controlShape),
+        ),
+      ),
+      snackBarTheme: const SnackBarThemeData(shape: _controlShape),
+      navigationBarTheme: const NavigationBarThemeData(
+        height: AppControlSize.navigationBarHeight,
+        indicatorShape: _controlShape,
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        minWidth: AppControlSize.navigationRailWidth,
+        indicatorShape: _controlShape,
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        shape: _controlShape,
+        sizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.fab,
+          height: AppControlSize.fab,
+        ),
+        smallSizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.smallFab,
+          height: AppControlSize.smallFab,
+        ),
+        largeSizeConstraints: BoxConstraints.tightFor(
+          width: AppControlSize.largeFab,
+          height: AppControlSize.largeFab,
+        ),
+      ),
+      cardTheme: const CardThemeData(
+        elevation: 0,
+        shape: AppSurfaceShape.shape,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        isDense: true,
         filled: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+        fillColor: colorScheme.surfaceContainerLowest,
+        contentPadding: AppSpacing.fieldPadding,
+        constraints: BoxConstraints(
+          minHeight: AppControlSize.heightForFontSize(baseFontSize),
+        ),
+        border: const OutlineInputBorder(
+          borderRadius: AppControlShape.borderRadius,
         ),
       ),
     );
+    return theme.copyWith(listTileTheme: AppListStyle.themeFor(theme));
   }
 }
 
@@ -422,12 +544,14 @@ class _TitleWithIcon extends StatelessWidget {
       children: [
         Icon(icon, color: iconColor),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: textStyle,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
+        Flexible(
+          child: Text(
+            text,
+            style: textStyle,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         // Keep title-adjacent actions from crowding the heading when a Row
         // uses Spacer between this widget and its trailing controls.
@@ -499,7 +623,7 @@ class SwitchWithTitle extends StatelessWidget {
     this.subtitle,
     required this.value,
     required this.onChanged,
-    this.padding = const EdgeInsets.symmetric(vertical: 4.0),
+    this.padding = AppSpacing.formPadding,
   });
 
   @override
@@ -509,9 +633,9 @@ class SwitchWithTitle extends StatelessWidget {
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         dense: true,
-        title: Text(title, style: Theme.of(context).textTheme.labelMedium),
+        title: Text(title, style: Theme.of(context).textTheme.titleMedium),
         subtitle: subtitle != null && subtitle!.isNotEmpty
-            ? Text(subtitle!, style: Theme.of(context).textTheme.displaySmall)
+            ? Text(subtitle!, style: Theme.of(context).textTheme.labelTiny)
             : null,
         trailing: Switch(
           value: value,
@@ -539,7 +663,7 @@ class SwitchWithIconTitle extends StatelessWidget {
     this.subtitle,
     required this.value,
     required this.onChanged,
-    this.padding = const EdgeInsets.symmetric(vertical: 4.0),
+    this.padding = AppSpacing.formPadding,
   });
 
   @override
@@ -550,9 +674,9 @@ class SwitchWithIconTitle extends StatelessWidget {
         contentPadding: EdgeInsets.zero,
         dense: true,
         leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(title, style: Theme.of(context).textTheme.labelMedium),
+        title: Text(title, style: Theme.of(context).textTheme.titleMedium),
         subtitle: subtitle != null && subtitle!.isNotEmpty
-            ? Text(subtitle!, style: Theme.of(context).textTheme.displaySmall)
+            ? Text(subtitle!, style: Theme.of(context).textTheme.labelTiny)
             : null,
         trailing: Switch(
           value: value,
@@ -689,23 +813,13 @@ class AppDropdownField<T> extends StatelessWidget {
     this.labelText,
     this.hintText,
     this.isExpanded = true,
-    this.menuMaxHeight = 320,
+    this.menuMaxHeight = AppControlSize.menuMaxHeight,
     this.textStyle,
   });
 
-  TextStyle _normalizeStyle(BuildContext context) {
-    final base =
-        textStyle ??
-        Theme.of(context).textTheme.bodyMedium ??
-        const TextStyle(fontSize: 14);
-    final baseSize = base.fontSize ?? 14;
-    final normalizedSize = baseSize.clamp(12.0, 16.0);
-    return base.copyWith(fontSize: normalizedSize, height: 1.2);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final effectiveStyle = _normalizeStyle(context);
+    final effectiveStyle = appDropdownTextStyle(context, style: textStyle);
 
     return DropdownButtonFormField<T>(
       key: ValueKey(value),
@@ -713,10 +827,12 @@ class AppDropdownField<T> extends StatelessWidget {
       isExpanded: isExpanded,
       isDense: true,
       menuMaxHeight: menuMaxHeight,
+      itemHeight: appDropdownItemHeight(context),
       style: effectiveStyle,
-      iconSize: 18,
-      decoration: appFieldDecoration(
+      iconSize: AppControlSize.smallIcon,
+      decoration: appDropdownFieldDecoration(
         context,
+        textStyle: effectiveStyle,
         decoration: InputDecoration(labelText: labelText, hintText: hintText),
       ),
       items: options.map((option) {
@@ -802,8 +918,8 @@ class CardList extends StatelessWidget {
                       ),
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
+                        minWidth: AppControlSize.height,
+                        minHeight: AppControlSize.height,
                       ),
                       padding: EdgeInsets.zero,
                       tooltip: "轉為正式物品關聯",
@@ -890,28 +1006,15 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 卡片本體
-    Widget cardContent = Card(
-      elevation: 0,
-      margin: EdgeInsets.all(0),
-      color: isSelected
-          ? (selectedColor ??
-                Theme.of(
-                  context,
-                ).colorScheme.primaryContainer.withValues(alpha: 0.3))
-          : (baseColor ?? Theme.of(context).colorScheme.surfaceContainerLowest),
-      child: ListTile(
-        dense: true,
-        // ListTile 預設 padding 可能導致對齊問題，這裡根據需求微調
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12.0,
-          vertical: 0.0,
-        ),
-        leading: leading,
-        title: title,
-        subtitle: subtitle,
-        trailing: trailing,
-        onTap: onClicked,
-      ),
+    Widget cardContent = AppListCard(
+      selected: isSelected,
+      selectedColor: selectedColor,
+      backgroundColor: baseColor,
+      leading: leading,
+      title: title,
+      subtitle: subtitle,
+      trailing: trailing,
+      onTap: onClicked,
     );
 
     // 拖曳包裝
@@ -922,27 +1025,21 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
       onDraggableCanceled: (_, __) => onDragEnd?.call(),
       feedback: Material(
         elevation: 8,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppSurfaceShape.borderRadius,
         child: Container(
           width: 280,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary,
-              width: 2,
-            ),
+            borderRadius: AppSurfaceShape.borderRadius,
           ),
           child: Row(
             children: [
               if (leading != null) ...[leading!, const SizedBox(width: 12)],
               Expanded(
                 child: DefaultTextStyle(
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.titleMedium!.copyWith(
                     color: Theme.of(context).colorScheme.primary,
-                    fontSize: 16,
                   ),
                   child: title,
                 ),
@@ -974,7 +1071,10 @@ class DraggableCardNode<T extends Object> extends StatelessWidget {
 
     // 縮排處理
     return Container(
-      margin: EdgeInsets.only(left: indent, bottom: 4.0),
+      margin: EdgeInsetsDirectional.only(
+        start: indent,
+        bottom: AppListStyle.cardGap,
+      ),
       child: contentWithDropZones,
     );
   }

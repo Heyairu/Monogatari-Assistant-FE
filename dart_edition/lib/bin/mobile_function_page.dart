@@ -1,4 +1,4 @@
-/************************************************************
+/*
  * Copyright 2025-2026 Heyairu（部屋伊琉）
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,7 @@
 
 import "package:flutter/material.dart";
 
+import "slidebar.dart";
 import "punctuation_panel.dart";
 
 class MonogatariMobileLayout extends StatelessWidget {
@@ -94,103 +95,46 @@ class MonogatariMobileFunctionPage extends StatelessWidget {
             onClose: onClosePunctuationPanel,
           ),
 
-        Container(
-          height: 60,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
+        Expanded(
+          child: MonogatariNavigationLayout(
+            modal: true,
+            selectedIndex: selectedIndex.clamp(0, pageCount - 1),
+            onDestinationSelected: (index) {
+              onBeforePageSwitch();
+              onPageSelected(index);
+            },
+            child: Column(
               children: [
-                for (int i = 0; i < pageCount; i++)
-                  _MobileNavigationChip(
-                    index: i,
-                    selectedIndex: selectedIndex,
-                    fontSize: fontSize,
-                    onBeforeSelected: onBeforePageSwitch,
-                    onSelected: onPageSelected,
+                SizedBox(
+                  height: 48,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 56, right: 16),
+                      child: Text(
+                        monogatariNavigationDestinations[selectedIndex.clamp(
+                              0,
+                              pageCount - 1,
+                            )]
+                            .label,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
                   ),
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: selectedIndex.clamp(0, pageCount - 1),
+                    children: [
+                      for (var i = 0; i < pageCount; i++) pageBuilder(i),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
-
-        Expanded(
-          child: IndexedStack(
-            index: selectedIndex.clamp(0, (pageCount - 1)),
-            children: [for (int i = 0; i < pageCount; i++) pageBuilder(i)],
-          ),
-        ),
       ],
-    );
-  }
-}
-
-class _MobileNavigationChip extends StatelessWidget {
-  final int index;
-  final int selectedIndex;
-  final double fontSize;
-  final VoidCallback onBeforeSelected;
-  final ValueChanged<int> onSelected;
-
-  const _MobileNavigationChip({
-    required this.index,
-    required this.selectedIndex,
-    required this.fontSize,
-    required this.onBeforeSelected,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> functions = [
-      {"icon": Icons.home, "label": "主頁"},
-      {"icon": Icons.book, "label": "故事設定"},
-      {"icon": Icons.menu_book, "label": "章節選擇"},
-      {"icon": Icons.list, "label": "大綱調整"},
-      {"icon": Icons.view_timeline_outlined, "label": "時間軸"},
-      {"icon": Icons.person, "label": "角色設定"},
-      {"icon": Icons.group, "label": "關係設定"},
-      {"icon": Icons.public, "label": "世界設定"},
-      {"icon": Icons.inventory_2_outlined, "label": "物品設定"},
-      {"icon": Icons.assessment_outlined, "label": "計畫規劃"},
-      {"icon": Icons.library_books_outlined, "label": "詞語參考"},
-      {"icon": Icons.palette_outlined, "label": "文字色票"},
-      {"icon": Icons.spellcheck, "label": "文本校正"},
-      {"icon": Icons.auto_awesome, "label": "Copilot"},
-      {"icon": Icons.settings, "label": "設定"},
-      {"icon": Icons.info, "label": "關於"},
-    ];
-
-    final function = functions[index];
-    final bool isSelected = selectedIndex == index;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: FilterChip(
-        selected: isSelected,
-        onSelected: (selected) {
-          if (!selected) return;
-          onBeforeSelected();
-          onSelected(index);
-        },
-        avatar: Icon(
-          function["icon"] as IconData,
-          size: fontSize + 4,
-          color: isSelected
-              ? Theme.of(context).colorScheme.onSecondaryContainer
-              : Theme.of(context).colorScheme.onSurface,
-        ),
-        label: Text(
-          function["label"] as String,
-          style: Theme.of(context).textTheme.labelSmall,
-        ),
-        backgroundColor: isSelected
-            ? Theme.of(context).colorScheme.secondaryContainer
-            : null,
-        selectedColor: Theme.of(context).colorScheme.secondaryContainer,
-        checkmarkColor: Theme.of(context).colorScheme.onSecondaryContainer,
-      ),
     );
   }
 }

@@ -15,8 +15,12 @@
  * limitations under the License.
  * 
  ************************************************************/
- 
+
 import "package:flutter/material.dart";
+
+import "../ui_library/layout.dart";
+import "../ui_library/spacing.dart";
+import "../ui_library/surface_shape.dart";
 
 class AboutView extends StatelessWidget {
   const AboutView({super.key});
@@ -24,17 +28,16 @@ class AboutView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+      child: AppPageScrollView(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // 應用圖標
             Container(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(AppSpacing.xxl),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
                   "assets/icon/Title.png",
 
@@ -59,7 +62,10 @@ class AboutView extends StatelessWidget {
             const SizedBox(height: 8),
 
             // Codename
-            Text("Codename Hana", style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              "Codename Hana",
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
 
             // 版本狀態
             Text("Beta 8", style: Theme.of(context).textTheme.titleSmall),
@@ -86,10 +92,10 @@ class AboutView extends StatelessWidget {
             // 功能特點
             Container(
               constraints: const BoxConstraints(maxWidth: 600),
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(AppSpacing.xl),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppSurfaceShape.borderRadius,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,7 +126,7 @@ class AboutView extends StatelessWidget {
 
   Widget _buildFeatureItem(BuildContext context, IconData icon, String text) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         children: [
           Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),

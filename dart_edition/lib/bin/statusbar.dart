@@ -20,6 +20,8 @@ import "dart:ui" as ui;
 
 import "package:flutter/material.dart";
 
+import "../ui_library/spacing.dart";
+
 class MonogatariStatusBar extends StatelessWidget {
   final String displayText;
   final String saveTimeText;
@@ -30,6 +32,8 @@ class MonogatariStatusBar extends StatelessWidget {
   final double iconSize;
   final int tabSpaceCount;
   final bool tabFullWidth;
+  final bool autoIndentLineStart;
+  final ValueChanged<bool>? onAutoIndentLineStartChanged;
   final ValueChanged<int>? onTabSpaceCountChanged;
   final ValueChanged<bool>? onTabFullWidthChanged;
   final bool overwriteMode;
@@ -46,6 +50,8 @@ class MonogatariStatusBar extends StatelessWidget {
     required this.iconSize,
     this.tabSpaceCount = 2,
     this.tabFullWidth = true,
+    this.autoIndentLineStart = false,
+    this.onAutoIndentLineStartChanged,
     this.onTabSpaceCountChanged,
     this.onTabFullWidthChanged,
     this.overwriteMode = false,
@@ -60,12 +66,15 @@ class MonogatariStatusBar extends StatelessWidget {
     final statusButtonStyle = TextButton.styleFrom(
       textStyle: statusTextStyle,
       minimumSize: const Size(0, 24),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.standard,
     );
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         border: Border(
@@ -118,11 +127,15 @@ class MonogatariStatusBar extends StatelessWidget {
             buttonStyle: statusButtonStyle,
             count: tabSpaceCount,
             fullWidth: tabFullWidth,
+            autoIndentLineStart: autoIndentLineStart,
+            onAutoIndentLineStartChanged: onAutoIndentLineStartChanged,
             onCountChanged: onTabSpaceCountChanged,
             onFullWidthChanged: onTabFullWidthChanged,
           ),
           Tooltip(
-            message: overwriteMode ? "Overtype Mode (Ins)" : "Default Mode (Ins)",
+            message: overwriteMode
+                ? "Overtype Mode (Ins)"
+                : "Default Mode (Ins)",
             child: Focus(
               canRequestFocus: false,
               descendantsAreFocusable: false,
@@ -135,10 +148,10 @@ class MonogatariStatusBar extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: AppSpacing.badgePadding,
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               "$currentWords / $totalWords 字",
@@ -154,12 +167,14 @@ class MonogatariStatusBar extends StatelessWidget {
   }
 }
 
-/// Two-column menu: space width on the left, insertion count on the right.
+/// Space width and count appear in columns, with auto-indent across the bottom.
 class _TabSpacesMenu extends StatelessWidget {
   const _TabSpacesMenu({
     required this.buttonStyle,
     required this.count,
     required this.fullWidth,
+    required this.autoIndentLineStart,
+    this.onAutoIndentLineStartChanged,
     this.onCountChanged,
     this.onFullWidthChanged,
   });
@@ -167,6 +182,8 @@ class _TabSpacesMenu extends StatelessWidget {
   final ButtonStyle buttonStyle;
   final int count;
   final bool fullWidth;
+  final bool autoIndentLineStart;
+  final ValueChanged<bool>? onAutoIndentLineStartChanged;
   final ValueChanged<int>? onCountChanged;
   final ValueChanged<bool>? onFullWidthChanged;
 
@@ -193,51 +210,74 @@ class _TabSpacesMenu extends StatelessWidget {
       // receive finite horizontal constraints rather than shrink-wrap in a Row.
       SizedBox(
         width: 201,
-        height: 384,
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            SizedBox(
+              height: 384,
+              child: Row(
                 children: [
-                  _choice(
-                    key: const Key("tab-full-width-choice"),
-                    label: "全形",
-                    selected: fullWidth,
-                    onPressed: onFullWidthChanged == null
-                        ? null
-                        : () => onFullWidthChanged!(true),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _choice(
+                          key: const Key("tab-full-width-choice"),
+                          label: "全形",
+                          selected: fullWidth,
+                          onPressed: onFullWidthChanged == null
+                              ? null
+                              : () => onFullWidthChanged!(true),
+                        ),
+                        _choice(
+                          key: const Key("tab-half-width-choice"),
+                          label: "半形",
+                          selected: !fullWidth,
+                          onPressed: onFullWidthChanged == null
+                              ? null
+                              : () => onFullWidthChanged!(false),
+                        ),
+                      ],
+                    ),
                   ),
-                  _choice(
-                    key: const Key("tab-half-width-choice"),
-                    label: "半形",
-                    selected: !fullWidth,
-                    onPressed: onFullWidthChanged == null
-                        ? null
-                        : () => onFullWidthChanged!(false),
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var value = 1; value <= 8; value++)
+                          _choice(
+                            key: ValueKey("tab-space-count-$value"),
+                            label: "$value",
+                            selected: count == value,
+                            onPressed: onCountChanged == null
+                                ? null
+                                : () => onCountChanged!(value),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            const VerticalDivider(width: 1),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var value = 1; value <= 8; value++)
-                    _choice(
-                      key: ValueKey("tab-space-count-$value"),
-                      label: "$value",
-                      selected: count == value,
-                      onPressed: onCountChanged == null
-                          ? null
-                          : () => onCountChanged!(value),
-                    ),
-                ],
+            const Divider(height: 1),
+            SizedBox(
+              width: 201,
+              height: 48,
+              child: MenuItemButton(
+                key: const Key("auto-indent-line-start-choice"),
+                onPressed: onAutoIndentLineStartChanged == null
+                    ? null
+                    : () => onAutoIndentLineStartChanged!(!autoIndentLineStart),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("行首留空"),
+                    Text(autoIndentLineStart ? "ON" : "OFF"),
+                  ],
+                ),
               ),
             ),
           ],

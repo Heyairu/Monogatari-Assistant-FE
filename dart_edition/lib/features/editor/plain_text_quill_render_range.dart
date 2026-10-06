@@ -1,6 +1,13 @@
 import "package:flutter/material.dart";
 
 @immutable
+final class PlainTextQuillRevisionMarker {
+  const PlainTextQuillRevisionMarker(this.offset, this.label);
+  final int offset;
+  final String label;
+}
+
+@immutable
 final class PlainTextQuillRenderRange {
   const PlainTextQuillRenderRange({
     required this.range,

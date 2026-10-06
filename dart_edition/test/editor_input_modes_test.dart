@@ -15,6 +15,36 @@ import "package:monogatari_assistant/features/editor/plain_text_quill_editor_poc
 import "package:monogatari_assistant/features/inline_annotations/mosaic_editing_controller.dart";
 
 void main() {
+  test(
+    "overwrite enable switch persists and immediately resets active OVR",
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final settings = await container.read(settingsStateProvider.future);
+      expect(settings.overwriteModeEnabled, isTrue);
+      container.read(editorOverwriteProvider.notifier).state = true;
+      expect(container.read(editorEffectiveOverwriteProvider), isTrue);
+      await container
+          .read(settingsStateProvider.notifier)
+          .setOverwriteModeEnabled(false);
+      expect(container.read(editorOverwriteProvider), isFalse);
+      expect(container.read(editorEffectiveOverwriteProvider), isFalse);
+      expect(
+        (await SharedPreferencesSettingsRepository().load())
+            .overwriteModeEnabled,
+        isFalse,
+      );
+      // Re-enabling permits future toggles without silently restoring OVR.
+      await container
+          .read(settingsStateProvider.notifier)
+          .setOverwriteModeEnabled(true);
+      expect(container.read(editorEffectiveOverwriteProvider), isFalse);
+      container.read(editorOverwriteProvider.notifier).state = true;
+      expect(container.read(editorEffectiveOverwriteProvider), isTrue);
+    },
+  );
+
   test("Tab defaults and settings persist with bounded counts", () async {
     SharedPreferences.setMockInitialValues({});
     final repository = SharedPreferencesSettingsRepository();
@@ -82,9 +112,57 @@ void main() {
     expect(controller.rawText, "貼上新文句//^<重點>//尾");
   });
 
+  test("auto-indent defaults off and persists beside Tab settings", () async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final initial = await container.read(settingsStateProvider.future);
+    expect(initial.autoIndentLineStart, isFalse);
+    await container
+        .read(settingsStateProvider.notifier)
+        .setAutoIndentLineStart(true);
+    expect(
+      (await SharedPreferencesSettingsRepository().load()).autoIndentLineStart,
+      isTrue,
+    );
+    await container.read(settingsStateProvider.notifier).setTabSpaceCount(4);
+    await container.read(settingsStateProvider.notifier).setTabFullWidth(false);
+    final changed = container.read(settingsStateProvider).valueOrNull!;
+    expect(
+      editorTabSpaces(changed.tabSpaceCount, changed.tabFullWidth),
+      "    ",
+    );
+    expect(changed.autoIndentLineStart, isTrue);
+  });
+
+  test(
+    "Mosaic newline uses configured spaces and plain newline bypasses them",
+    () {
+      final controller = MosaicEditingController(rawText: "甲乙")
+        ..autoIndentLineStart = true
+        ..indentation = "  ";
+      addTearDown(controller.dispose);
+      controller.selection = const TextSelection.collapsed(offset: 1);
+      controller.value = controller.value.copyWith(
+        text: "甲\n乙",
+        selection: const TextSelection.collapsed(offset: 2),
+      );
+      expect(controller.rawText, "甲\n  乙");
+      expect(controller.selection.start, 4);
+      controller.withoutAutoIndent(() {
+        controller.value = controller.value.copyWith(
+          text: "甲\n  \n乙",
+          selection: const TextSelection.collapsed(offset: 5),
+        );
+      });
+      expect(controller.rawText, "甲\n  \n乙");
+    },
+  );
+
   Widget editor({
     String content = "甲乙丙",
     bool overwrite = true,
+    bool autoIndent = false,
     PlainTextQuillEditorCommands? commands,
     VoidCallback? toggle,
     bool Function()? acceptTab,
@@ -102,6 +180,7 @@ void main() {
         content: content,
         onChanged: (_) {},
         overwriteMode: overwrite,
+        autoIndentLineStart: autoIndent,
         commands: commands,
         onToggleOverwrite: toggle,
         onTabPressed: acceptTab,
@@ -325,4 +404,184 @@ void main() {
       expect(textOf(tester), "新文丙");
     },
   );
+  for (final useQuill in [true, false]) {
+    testWidgets(
+      "disabled overwrite blocks Ins and keeps insertion in ${useQuill ? 'Quill' : 'CodeField'}",
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          "editor_overwrite_mode_enabled": false,
+        });
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        await container.read(settingsStateProvider.future);
+        final controller = HighlightTextEditingController(text: "甲乙");
+        final focusNode = FocusNode();
+        addTearDown(controller.dispose);
+        addTearDown(focusNode.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                FlutterQuillLocalizations.delegate,
+              ],
+              home: Scaffold(
+                body: EditorTextBox(
+                  controller: controller,
+                  focusNode: focusNode,
+                  usePlainTextQuillEditor: useQuill,
+                ),
+              ),
+            ),
+          ),
+        );
+        focusNode.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.insert);
+        await tester.pump();
+        expect(container.read(editorOverwriteProvider), isFalse);
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: useQuill ? "新甲乙\n" : "新甲乙",
+            selection: const TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pump();
+        expect(controller.rawText, "新甲乙");
+      },
+    );
+  }
+  testWidgets(
+    "Quill Enter indents, Shift+Enter stays plain, and Undo restores",
+    (tester) async {
+      final commands = PlainTextQuillEditorCommands();
+      await tester.pumpWidget(
+        editor(
+          content: "甲乙",
+          overwrite: false,
+          autoIndent: true,
+          spaces: "  ",
+          commands: commands,
+        ),
+      );
+      await focus(tester, commands);
+      controllerOf(tester).updateSelection(
+        const TextSelection.collapsed(offset: 1),
+        ChangeSource.local,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(textOf(tester), "甲\n  乙");
+      expect(controllerOf(tester).selection.start, 4);
+      commands.undo();
+      await tester.pump();
+      expect(textOf(tester), "甲乙");
+      commands.redo();
+      await tester.pump();
+      expect(textOf(tester), "甲\n  乙");
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(textOf(tester), "甲\n  \n乙");
+    },
+  );
+
+  testWidgets(
+    "Quill virtual newline indents; disabled mode keeps plain newline",
+    (tester) async {
+      final commands = PlainTextQuillEditorCommands();
+      await tester.pumpWidget(
+        editor(
+          content: "甲乙",
+          overwrite: false,
+          autoIndent: true,
+          commands: commands,
+        ),
+      );
+      await focus(tester, commands);
+      controllerOf(tester).updateSelection(
+        const TextSelection.collapsed(offset: 1),
+        ChangeSource.local,
+      );
+      input(tester, "甲\n乙", 2);
+      await tester.pump();
+      expect(textOf(tester), "甲\n\u3000\u3000乙");
+      await tester.pumpWidget(
+        editor(
+          content: "甲\n\u3000\u3000乙",
+          overwrite: false,
+          autoIndent: false,
+          commands: commands,
+        ),
+      );
+      input(tester, "甲\n\u3000\u3000\n乙", 5);
+      await tester.pump();
+      expect(textOf(tester), "甲\n\u3000\u3000\n乙");
+    },
+  );
+
+  testWidgets("Quill completion retains Enter priority", (tester) async {
+    final commands = PlainTextQuillEditorCommands();
+    var accepted = 0;
+    await tester.pumpWidget(
+      editor(
+        content: "甲乙",
+        autoIndent: true,
+        commands: commands,
+        acceptTab: () {
+          accepted++;
+          return true;
+        },
+      ),
+    );
+    await focus(tester, commands);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(accepted, 1);
+    expect(textOf(tester), "甲乙");
+  });
+
+  testWidgets("CodeField Enter indents and Shift+Enter stays plain", (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      "editor_auto_indent_line_start": true,
+      "editor_tab_full_width": false,
+      "editor_tab_space_count": 2,
+      "poppin_enabled": false,
+    });
+    final controller = HighlightTextEditingController(text: "甲乙");
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: EditorTextBox(
+              controller: controller,
+              focusNode: focusNode,
+              usePlainTextQuillEditor: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    focusNode.requestFocus();
+    controller.selection = const TextSelection.collapsed(offset: 1);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(controller.rawText, "甲\n  乙");
+    expect(controller.selection.start, 4);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(controller.rawText, "甲\n  \n乙");
+  });
 }

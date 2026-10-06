@@ -1,10 +1,14 @@
 import "package:flutter/material.dart";
 
+import "../../ui_library/spacing.dart";
+import "../../ui_library/surface_shape.dart";
+
 import "inline_annotation.dart";
 import "inline_annotation_anchored_popup.dart";
 import "inline_annotation_parser.dart";
 import "inline_annotation_syntax.dart";
 import "inline_annotation_target_resolver.dart";
+import "../../ui_library/forms.dart";
 
 enum InlineAnnotationDetailsAction {
   applyDisplayText,
@@ -149,11 +153,11 @@ class _InlineAnnotationQuickEditorState
       key: const ValueKey("inline-annotation-quick-editor"),
       elevation: 10,
       color: colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: AppSurfaceShape.borderRadius,
       clipBehavior: Clip.antiAlias,
       child: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -183,21 +187,24 @@ class _InlineAnnotationQuickEditorState
                 controller: _noteController,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: "備註",
-                  isDense: true,
+                decoration: appFieldDecoration(
+                  context,
+                  decoration: const InputDecoration(
+                    labelText: "備註",
+                    isDense: true,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               Container(
                 key: const ValueKey("inline-annotation-basic-info"),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
                 ),
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: AppSurfaceShape.borderRadius,
                 ),
                 child: Column(
                   children: [
@@ -336,10 +343,16 @@ class _InlineAnnotationQuickEditorState
       key: const ValueKey("inline-annotation-quick-display-text"),
       controller: _displayController,
       autofocus: true,
-      decoration: const InputDecoration(
-        labelText: "顯示文字",
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: appFieldDecoration(
+        context,
+        decoration: const InputDecoration(
+          labelText: "顯示文字",
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.md,
+          ),
+        ),
       ),
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => _apply(),
@@ -356,22 +369,31 @@ class _InlineAnnotationQuickEditorState
       style: Theme.of(
         context,
       ).textTheme.bodySmall?.copyWith(fontFamily: "monospace", fontSize: 11),
-      decoration: InputDecoration(
-        labelText: "完整語法",
-        errorText: _syntaxError,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        suffixIcon: IconButton(
-          key: const ValueKey("inline-annotation-copy-syntax"),
-          tooltip: "複製語法",
-          visualDensity: VisualDensity.compact,
-          onPressed: () => Navigator.of(context).pop(
-            InlineAnnotationDetailsResult(
-              InlineAnnotationDetailsAction.copySyntax,
-              rawSyntax: _rawSyntaxController.text,
-            ),
+      decoration: appFieldDecoration(
+        context,
+        textStyle: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontFamily: "monospace", fontSize: 11),
+        decoration: InputDecoration(
+          labelText: "完整語法",
+          errorText: _syntaxError,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
           ),
-          icon: const Icon(Icons.copy_outlined, size: 16),
+          suffixIcon: IconButton(
+            key: const ValueKey("inline-annotation-copy-syntax"),
+            tooltip: "複製語法",
+            visualDensity: VisualDensity.compact,
+            onPressed: () => Navigator.of(context).pop(
+              InlineAnnotationDetailsResult(
+                InlineAnnotationDetailsAction.copySyntax,
+                rawSyntax: _rawSyntaxController.text,
+              ),
+            ),
+            icon: const Icon(Icons.copy_outlined, size: 16),
+          ),
         ),
       ),
       onChanged: (_) {

@@ -956,7 +956,12 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
             setState(() => _modelPanelExpanded = expanded),
         leading: const Icon(Icons.tune),
         title: Text("模型選擇", style: Theme.of(context).textTheme.titleMedium),
-        childrenPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          0,
+          AppSpacing.xl,
+          AppSpacing.xl,
+        ),
         children: [
           Column(
             children: [
@@ -1124,7 +1129,12 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
         key: const ValueKey<String>("copilot-privacy-limitations-panel"),
         leading: const Icon(Icons.privacy_tip_outlined),
         title: const Text("隱私、第三方服務與已知限制"),
-        childrenPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          0,
+          AppSpacing.xl,
+          AppSpacing.xl,
+        ),
         children: const [
           SizedBox(height: 8),
           _CopilotDisclosureItem(
@@ -1157,7 +1167,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1189,7 +1199,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
                     )
                   : ListView.separated(
                       controller: _conversationScrollController,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(AppSpacing.lg),
                       itemCount: _messages.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, index) =>
@@ -1247,10 +1257,10 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
             color: bubbleColor,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppSurfaceShape.borderRadius,
           ),
           child: Column(
             crossAxisAlignment: isUser
@@ -1463,10 +1473,10 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
       ..sort((left, right) => left.order.compareTo(right.order));
     final isStale = _isContextStale(originalContext);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppSurfaceShape.borderRadius,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1509,7 +1519,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
           const SizedBox(height: 8),
           for (final step in orderedSteps)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: Text(
                 "${step.order}. ${step.proposal}\n${step.reason}",
                 style: Theme.of(
@@ -1564,7 +1574,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1662,7 +1672,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
             const SizedBox(height: 16),
             Text(
               "Shift+Enter 換行、Enter 發送",
-              style: Theme.of(context).textTheme.displaySmall,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -1797,9 +1807,12 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
                       "copilot-resource-search-field",
                     ),
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: "搜尋角色、世界觀、大綱或詞語",
-                      prefixIcon: Icon(Icons.search),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(
+                        labelText: "搜尋角色、世界觀、大綱或詞語",
+                        prefixIcon: Icon(Icons.search),
+                      ),
                     ),
                     onChanged: (value) => setDialogState(() => query = value),
                   ),
@@ -1910,8 +1923,7 @@ class _CopilotViewState extends ConsumerState<CopilotView> {
     ref.watch(segmentsDataProvider);
     ref.watch(selectedChapterStoredContentProvider);
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1945,7 +1957,7 @@ class _CopilotDisclosureItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(top: AppSpacing.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

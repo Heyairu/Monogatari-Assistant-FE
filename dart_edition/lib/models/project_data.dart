@@ -1,5 +1,7 @@
 import "package:uuid/uuid.dart";
 
+import "../features/phrases/phrase_entry.dart";
+
 import "base_info_data.dart";
 import "chapter_selection_data.dart";
 import "character_data.dart";
@@ -39,6 +41,13 @@ class ProjectData {
   List<OutlineChapterLinkData> outlineChapterLinks;
   int totalWords;
   String contentText;
+  List<PhraseEntry> phrases;
+
+  /// Preserved verbatim when a newer or damaged phrase payload cannot be read.
+  String? phrasesRecoveryPayload;
+
+  /// Versioned revision session JSON, stored separately from story content.
+  String? revisionTrackingJson;
   bool isDirty;
 
   ProjectData({
@@ -63,6 +72,9 @@ class ProjectData {
     List<OutlineChapterLinkData>? outlineChapterLinks,
     this.totalWords = 0,
     this.contentText = "",
+    this.phrases = const <PhraseEntry>[],
+    this.phrasesRecoveryPayload,
+    this.revisionTrackingJson,
     this.isDirty = false,
   }) : projectUUID = isValidProjectUUID(projectUUID)
            ? projectUUID!.trim()

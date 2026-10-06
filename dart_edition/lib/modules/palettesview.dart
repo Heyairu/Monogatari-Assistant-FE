@@ -399,7 +399,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             child: AppNoticeBanner(
               title: "調色盤載入失敗",
               message: _loadError!,
@@ -417,7 +417,12 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
     final String searchQuery = _searchController.text.trim();
     final List<_PaletteSearchHit> hits = _searchHits(state);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.space20,
+        AppSpacing.space20,
+        AppSpacing.space20,
+        0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -519,10 +524,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
                       ),
                     ),
                   ],
-              icon: Icon(
-                Icons.import_export_outlined,
-                color: menuIconColor,
-              ),
+              icon: Icon(Icons.import_export_outlined, color: menuIconColor),
             ),
           ],
         ),
@@ -556,7 +558,12 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
               subtitle: const Text("S 0% · V 0 / 20 / 50 / 80 / 100%"),
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    0,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
                   child: _buildSlotWrap(paletteGraySlots, state),
                 ),
               ],
@@ -571,7 +578,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
   Widget _buildHuePicker() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -614,14 +621,15 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
                               children: <Widget>[
                                 Text(
                                   "Hue",
-                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
                                         color: HSVColor.fromAHSV(
                                           1,
                                           _selectedHue.toDouble(),
                                           0.6,
                                           0.8,
                                         ).toColor(),
-                                  ),
+                                      ),
                                 ),
                                 Text(
                                   "$_selectedHue°",
@@ -790,7 +798,7 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
             height: 28,
             decoration: BoxDecoration(
               color: pureColor,
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
           ),
@@ -820,7 +828,12 @@ class _PalettesViewState extends ConsumerState<PalettesView> {
               const Icon(Icons.expand_more),
             ],
           ),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
           children: <Widget>[
             Align(
               alignment: Alignment.centerLeft,

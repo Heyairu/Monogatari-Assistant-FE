@@ -1241,8 +1241,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         _punctuationResult;
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1262,7 +1261,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1292,7 +1291,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1347,7 +1346,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1405,7 +1404,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
@@ -1426,7 +1425,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
       tooltip: tooltip,
       icon: const Icon(Icons.build_circle_outlined, size: 18),
       visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(AppSpacing.xs),
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
     );
   }
@@ -1654,7 +1653,10 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: const Text("拉丁文句檢測"),
-          subtitle: const Text("偵測到拉丁文字時，自動套用拉丁標點"),
+          subtitle: Text(
+            "偵測到拉丁文字時，自動套用拉丁標點",
+            style: Theme.of(context).textTheme.labelTiny,
+          ),
           value: _enableLatinSentenceDetection,
           onChanged: (bool value) async {
             unawaited(_setLatinSentenceDetection(value));
@@ -1752,15 +1754,12 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               issue.index,
             );
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: AppSpacing.formPadding,
               child: TextButton.icon(
                 onPressed: () => _jumpToOffset(issue.index),
                 icon: const Icon(Icons.my_location, size: 16),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  padding: AppSpacing.badgePadding,
                   alignment: Alignment.centerLeft,
                   foregroundColor: Theme.of(context).colorScheme.onSurface,
                 ),
@@ -1844,10 +1843,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                       onPressed: () => _jumpToOffset(change.index),
                       icon: const Icon(Icons.edit_location_alt, size: 16),
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
+                        padding: AppSpacing.badgePadding,
                         alignment: Alignment.centerLeft,
                       ),
                       label: Text(
@@ -1933,10 +1929,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                         onPressed: () => _jumpToOffset(issue.index),
                         icon: const Icon(Icons.my_location, size: 16),
                         style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
+                          padding: AppSpacing.badgePadding,
                           alignment: Alignment.centerLeft,
                         ),
                         label: Text(
@@ -1957,13 +1950,13 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
               issue.index,
             );
             return Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppSurfaceShape.borderRadius,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1980,7 +1973,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                             icon: const Icon(Icons.my_location, size: 16),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
+                                horizontal: AppSpacing.xs,
                               ),
                               alignment: Alignment.centerLeft,
                             ),
@@ -2066,10 +2059,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                 onPressed: () => _jumpToOffset(issue.index),
                 icon: const Icon(Icons.my_location, size: 16),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
+                  padding: AppSpacing.badgePadding,
                   alignment: Alignment.centerLeft,
                 ),
                 label: Text(
@@ -2130,7 +2120,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
           constraints: const BoxConstraints(maxHeight: 280),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppSurfaceShape.borderRadius,
             border: Border.all(
               color: Theme.of(context).colorScheme.outlineVariant,
             ),
@@ -2140,7 +2130,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
             thumbVisibility: true,
             child: ListView.separated(
               controller: _fillerWordScrollController,
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               itemCount: visibleCount,
               separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (BuildContext context, int index) {
@@ -2156,8 +2146,15 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                   elevation: 0,
                   color: Theme.of(context).colorScheme.surfaceContainer,
                   child: ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-                    childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      0,
+                      AppSpacing.md,
+                      AppSpacing.md,
+                    ),
                     dense: true,
                     title: Text(
                       hit.word,
@@ -2186,7 +2183,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
                       ),
                       if (hit.positions.length > visiblePositionCount)
                         Padding(
-                          padding: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
                           child: Text(
                             "僅顯示前 $visiblePositionCount 個位置。",
                             style: Theme.of(context).textTheme.bodySmall,
@@ -2236,7 +2233,7 @@ class _ProofReadingViewState extends ConsumerState<ProofReadingView> {
         Text("贅字率：${percent.toStringAsFixed(2)}%"),
         const SizedBox(height: 8),
         ClipRRect(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(12),
           child: LinearProgressIndicator(
             minHeight: 10,
             value: progress,

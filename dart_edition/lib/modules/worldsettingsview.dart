@@ -36,6 +36,10 @@ import "../application/locations/location_deletion.dart";
 import "../application/items/item_assignment_operations.dart";
 import "../application/items/world_item_migration.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
+import "../domain/collaboration/collaboration_operation.dart"
+    show ProjectRecordKind;
+import "../domain/collaboration/typed_operation_log.dart" show ProjectRecordKey;
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
@@ -811,6 +815,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                       includeDescendants
                           ? "將建立 ${subtreeLocations.length} 筆獨立快照"
                           : "目前只會修改「${location.localName}」",
+                      style: Theme.of(context).textTheme.labelTiny,
                     ),
                     value: includeDescendants,
                     onChanged: (value) =>
@@ -821,13 +826,19 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                     key: const Key("location-snapshot-name"),
                     initialValue: snapshotName,
                     onChanged: (value) => snapshotName = value,
-                    decoration: const InputDecoration(labelText: "當時名稱"),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: "當時名稱"),
+                    ),
                   ),
                   TextFormField(
                     key: const Key("location-snapshot-description"),
                     initialValue: snapshotDescription,
                     onChanged: (value) => snapshotDescription = value,
-                    decoration: const InputDecoration(labelText: "當時描述"),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: "當時描述"),
+                    ),
                     minLines: 2,
                     maxLines: 4,
                   ),
@@ -845,7 +856,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                               "location-snapshot-property-key-${entry.$1}",
                             ),
                             initialValue: entry.$2.key,
-                            decoration: const InputDecoration(labelText: "設定"),
+                            decoration: appFieldDecoration(
+                              context,
+                              decoration: const InputDecoration(
+                                labelText: "設定",
+                              ),
+                            ),
                             onChanged: (value) {
                               snapshotProperties[entry.$1] = (
                                 key: value,
@@ -861,7 +877,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                               "location-snapshot-property-value-${entry.$1}",
                             ),
                             initialValue: entry.$2.value,
-                            decoration: const InputDecoration(labelText: "鍵值"),
+                            decoration: appFieldDecoration(
+                              context,
+                              decoration: const InputDecoration(
+                                labelText: "鍵值",
+                              ),
+                            ),
                             onChanged: (value) {
                               snapshotProperties[entry.$1] = (
                                 key: snapshotProperties[entry.$1].key,
@@ -930,12 +951,24 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                   initialValue: snapshotStatus,
                   onChanged: (value) =>
                       setDialogState(() => snapshotStatus = value),
-                  decoration: const InputDecoration(labelText: "狀態"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "狀態"),
+                  ),
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("location-snapshot-controller"),
                   initialValue: controllerCharacterId ?? "",
-                  decoration: const InputDecoration(labelText: "控制者"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "控制者"),
+                  ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
                     if (controllerCharacterId != null &&
@@ -963,12 +996,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                   Container(
                     key: const Key("location-snapshot-batch-preview"),
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
                       color: Theme.of(
                         context,
                       ).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppSurfaceShape.borderRadius,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1411,9 +1444,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             autofocus: true,
             keyboardType: TextInputType.number,
             initialValue: quantityText,
-            decoration: const InputDecoration(
-              labelText: "數量",
-              helperText: "留空代表數量未知",
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(
+                labelText: "數量",
+                helperText: "留空代表數量未知",
+              ),
             ),
             onChanged: (value) => quantityText = value,
           ),
@@ -1568,7 +1604,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: AppLayoutSpacing.pageForWidth(constraints.maxWidth),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1679,7 +1715,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                             ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.sm,
+                            ),
                             child: AddItemInput(
                               title: selectedNodeId != null ? "子地點" : "頂層地點",
                               onAdd: _addLocation,
@@ -1701,12 +1739,12 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                                   context,
                                 ).colorScheme.outline.withValues(alpha: 0.2),
                               ),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: AppSurfaceShape.borderRadius,
                               color: Theme.of(
                                 context,
                               ).colorScheme.surfaceContainerLowest,
                             ),
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(AppSpacing.lg),
                             child: _buildDetailPanel(),
                           ),
                         ],
@@ -1779,7 +1817,17 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             ? Theme.of(context).colorScheme.onSurfaceVariant
             : Theme.of(context).colorScheme.primary,
       ),
-      title: titleWidget,
+      title: Row(
+        children: [
+          Flexible(child: titleWidget),
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.worldNode,
+              recordId: location.id,
+            ),
+          ),
+        ],
+      ),
       subtitle: Text(
         [
           "${location.nodeType.label} • ${location.child.length} 個子節點",
@@ -1983,54 +2031,80 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           const SizedBox(height: 16),
 
           // 名稱
-          CollaborativeProjectTextFieldRegion(
-            key: ValueKey("world-name-${location.id}"),
-            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "localName",
-            ),
-            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "localName",
-            ),
-            controller: locationNameController,
-            focusNode: _locationNameFocusNode,
-            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
-            child: AppTextField(
-              controller: locationNameController,
-              focusNode: _locationNameFocusNode,
-              decoration: const InputDecoration(
-                labelText: "名稱",
-                border: OutlineInputBorder(),
-                isDense: true,
+          Row(
+            children: [
+              Expanded(
+                child: CollaborativeProjectTextFieldRegion(
+                  key: ValueKey("world-name-${location.id}"),
+                  fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+                    location.id,
+                    "localName",
+                  ),
+                  crdtDocumentId:
+                      ProjectCollaborativeTextCodec.worldNodeFieldId(
+                        location.id,
+                        "localName",
+                      ),
+                  controller: locationNameController,
+                  focusNode: _locationNameFocusNode,
+                  shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+                  child: AppTextField(
+                    controller: locationNameController,
+                    focusNode: _locationNameFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: "名稱",
+                      isDense: true,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              RevisionFieldMarker(
+                recordKey: ProjectRecordKey(
+                  kind: ProjectRecordKind.worldNode,
+                  recordId: location.id,
+                ),
+                field: 'name',
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 
           // 類型
-          CollaborativeProjectTextFieldRegion(
-            key: ValueKey("world-type-${location.id}"),
-            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "localType",
-            ),
-            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "localType",
-            ),
-            controller: locationTypeController,
-            focusNode: _locationTypeFocusNode,
-            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
-            child: AppTextField(
-              controller: locationTypeController,
-              focusNode: _locationTypeFocusNode,
-              decoration: const InputDecoration(
-                labelText: "類型",
-                border: OutlineInputBorder(),
-                isDense: true,
+          Row(
+            children: [
+              Expanded(
+                child: CollaborativeProjectTextFieldRegion(
+                  key: ValueKey("world-type-${location.id}"),
+                  fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+                    location.id,
+                    "localType",
+                  ),
+                  crdtDocumentId:
+                      ProjectCollaborativeTextCodec.worldNodeFieldId(
+                        location.id,
+                        "localType",
+                      ),
+                  controller: locationTypeController,
+                  focusNode: _locationTypeFocusNode,
+                  shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+                  child: AppTextField(
+                    controller: locationTypeController,
+                    focusNode: _locationTypeFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: "類型",
+                      isDense: true,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              RevisionFieldMarker(
+                recordKey: ProjectRecordKey(
+                  kind: ProjectRecordKind.worldNode,
+                  recordId: location.id,
+                ),
+                field: 'localType',
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -2264,28 +2338,39 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           // 備註
           const Text("備註:", style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          CollaborativeProjectTextFieldRegion(
-            key: ValueKey("world-note-${location.id}"),
-            fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "note",
-            ),
-            crdtDocumentId: ProjectCollaborativeTextCodec.worldNodeFieldId(
-              location.id,
-              "note",
-            ),
-            controller: locationNoteController,
-            focusNode: _locationNoteFocusNode,
-            shouldPublishTextChanges: () => !_isSyncingDetailControllers,
-            child: AppTextField(
-              controller: locationNoteController,
-              focusNode: _locationNoteFocusNode,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
+          Row(
+            children: [
+              Expanded(
+                child: CollaborativeProjectTextFieldRegion(
+                  key: ValueKey("world-note-${location.id}"),
+                  fieldId: ProjectCollaborativeTextCodec.worldNodeFieldId(
+                    location.id,
+                    "note",
+                  ),
+                  crdtDocumentId:
+                      ProjectCollaborativeTextCodec.worldNodeFieldId(
+                        location.id,
+                        "note",
+                      ),
+                  controller: locationNoteController,
+                  focusNode: _locationNoteFocusNode,
+                  shouldPublishTextChanges: () => !_isSyncingDetailControllers,
+                  child: AppTextField(
+                    controller: locationNoteController,
+                    focusNode: _locationNoteFocusNode,
+                    decoration: const InputDecoration(isDense: true),
+                    maxLines: 4,
+                  ),
+                ),
               ),
-              maxLines: 4,
-            ),
+              RevisionFieldMarker(
+                recordKey: ProjectRecordKey(
+                  kind: ProjectRecordKind.worldNode,
+                  recordId: location.id,
+                ),
+                field: 'note',
+              ),
+            ],
           ),
         ],
       ),

@@ -265,6 +265,9 @@ ProjectData snapshotProjectData(
     ),
     totalWords: source.totalWords,
     contentText: source.contentText,
+    revisionTrackingJson: source.revisionTrackingJson,
+    phrases: List.unmodifiable(source.phrases),
+    phrasesRecoveryPayload: source.phrasesRecoveryPayload,
     isDirty: source.isDirty,
   );
 }

@@ -118,6 +118,8 @@ dart run build_runner build --delete-conflicting-outputs
 
 ### 設計規格
 
+- [元件尺寸規範](dart_edition/COMPONENT_SIZE_GUIDELINES.md)：共用元件尺寸、間距、點擊區與文字縮放規則。
+- [List、ListCard 顯示規範](dart_edition/LIST_DISPLAY_GUIDELINES.md)：清單與卡片的文字層級、留白、選取狀態及窄版操作布局。
 - [MonoAshi™ Rhodanthe* 即時 RichText 引擎](dart_edition/RHODANTHE_SPEC.md)：Rust 文字分析、Ring 0–8 優先級、搜尋、贅字與 Mention 標註協定。
 
 ### 主要依賴

@@ -1,5 +1,6 @@
 import "package:flutter/material.dart";
 import "package:flutter_quill/flutter_quill.dart";
+import "../../ui_library/spacing.dart";
 import "plain_text_quill_geometry.dart";
 
 import "../../presentation/providers/collaboration_providers.dart";
@@ -193,15 +194,15 @@ class _PlainTextQuillRemoteCaretMarker extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.tertiaryContainer,
                   borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    topRight: Radius.circular(4),
-                    bottomRight: Radius.circular(4),
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
                   ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.xs,
                   ),
                   child: Text(
                     position.cursor.ipAddress,

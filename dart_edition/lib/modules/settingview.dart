@@ -25,6 +25,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../bin/file.dart" show AutoBackupDirectoryInfo;
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
+import "../models/navigation_style.dart";
 import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/mcp_providers.dart";
@@ -163,7 +164,7 @@ class _SettingViewState extends ConsumerState<SettingView>
       final settings = state.valueOrNull;
       return (
         showExitWarning: settings?.showExitWarning ?? true,
-        fontSize: settings?.fontSize ?? 12.0,
+        fontSize: settings?.fontSize ?? 14.0,
         wordCountMode:
             settings?.wordCountMode ?? WordCountMode.wordsAndCharacters,
         autoSaveEnabled: settings?.autoSaveEnabled ?? false,
@@ -184,8 +185,7 @@ class _SettingViewState extends ConsumerState<SettingView>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -202,7 +202,7 @@ class _SettingViewState extends ConsumerState<SettingView>
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -212,6 +212,9 @@ class _SettingViewState extends ConsumerState<SettingView>
 
                     // 主題模式選擇
                     _buildThemeModeSetting(),
+
+                    const SizedBox(height: 24),
+                    _buildNavigationStyleSetting(),
 
                     const SizedBox(height: 24),
 
@@ -243,7 +246,7 @@ class _SettingViewState extends ConsumerState<SettingView>
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -272,6 +275,83 @@ class _SettingViewState extends ConsumerState<SettingView>
                             .read(settingsStateProvider.notifier)
                             .setPoppinEnabled(value);
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchWithIconTitle(
+                      key: const Key("overwrite-mode-enabled-setting"),
+                      title: "啟用覆寫模式",
+                      icon: Icons.edit_outlined,
+                      subtitle: "允許使用 Ins 或狀態列切換覆寫模式；關閉時使用插入模式",
+                      value:
+                          ref
+                              .watch(settingsStateProvider)
+                              .valueOrNull
+                              ?.overwriteModeEnabled ??
+                          true,
+                      onChanged: (value) => ref
+                          .read(settingsStateProvider.notifier)
+                          .setOverwriteModeEnabled(value),
+                    ),
+                    const SizedBox(height: 16),
+                    const LargeTitle(icon: Icons.space_bar, text: "空格控制"),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      title: const Text("Tab 空格數量"),
+                      subtitle: const Text("按 Tab 或自動留空時插入的空格數"),
+                      trailing: DropdownButton<int>(
+                        key: const Key("tab-space-count-setting"),
+                        value:
+                            ref
+                                .watch(settingsStateProvider)
+                                .valueOrNull
+                                ?.tabSpaceCount ??
+                            2,
+                        items: [
+                          for (var count = 1; count <= 8; count++)
+                            DropdownMenuItem(
+                              value: count,
+                              child: Text("$count"),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            ref
+                                .read(settingsStateProvider.notifier)
+                                .setTabSpaceCount(value);
+                          }
+                        },
+                      ),
+                    ),
+                    SwitchWithIconTitle(
+                      key: const Key("tab-full-width-setting"),
+                      title: "使用全形空格",
+                      icon: Icons.space_bar,
+                      subtitle: "關閉時使用半形空格",
+                      value:
+                          ref
+                              .watch(settingsStateProvider)
+                              .valueOrNull
+                              ?.tabFullWidth ??
+                          true,
+                      onChanged: (value) => ref
+                          .read(settingsStateProvider.notifier)
+                          .setTabFullWidth(value),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchWithIconTitle(
+                      key: const Key("auto-indent-line-start-setting"),
+                      title: "行首自動留空",
+                      icon: Icons.keyboard_return,
+                      subtitle: "Enter 換行後插入設定的空格；Shift+Enter 僅換行",
+                      value:
+                          ref
+                              .watch(settingsStateProvider)
+                              .valueOrNull
+                              ?.autoIndentLineStart ??
+                          false,
+                      onChanged: (value) => ref
+                          .read(settingsStateProvider.notifier)
+                          .setAutoIndentLineStart(value),
                     ),
                     const SizedBox(height: 16),
                     _buildWordCountSetting(),
@@ -342,12 +422,12 @@ class _SettingViewState extends ConsumerState<SettingView>
           ),
           if (!notifier.isDesktopSupported)
             const Padding(
-              padding: EdgeInsets.only(left: 56, top: 4),
+              padding: EdgeInsets.only(left: 56, top: AppSpacing.xs),
               child: Text("MCP sidecar 僅支援 Windows、macOS 與 Linux。"),
             ),
           if (active)
             Padding(
-              padding: const EdgeInsets.only(left: 56, top: 8),
+              padding: const EdgeInsets.only(left: 56, top: AppSpacing.sm),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -361,7 +441,7 @@ class _SettingViewState extends ConsumerState<SettingView>
                     const SizedBox(height: 8),
                   ] else
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                       child: Text(
                         "MCP Host 已取得一次性授權；如要改連其他 Host，請停止後重新啟用。",
                         style: Theme.of(context).textTheme.bodySmall,
@@ -433,7 +513,7 @@ class _SettingViewState extends ConsumerState<SettingView>
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         leading: Icon(
@@ -471,7 +551,7 @@ class _SettingViewState extends ConsumerState<SettingView>
       min: 12,
       max: 20,
       divisions: 8,
-      valueLabelBuilder: (value) => "${value.toInt()} px",
+      valueLabelBuilder: (value) => "${value.toInt()} sp",
       onChanged: (value) async {
         await ref.read(settingsStateProvider.notifier).setFontSize(value);
       },
@@ -484,7 +564,7 @@ class _SettingViewState extends ConsumerState<SettingView>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          padding: AppSpacing.formPadding,
           child: Text(
             "主題顏色",
             style: Theme.of(
@@ -565,6 +645,44 @@ class _SettingViewState extends ConsumerState<SettingView>
   }
 
   // MARK: - 主題模式設定
+  Widget _buildNavigationStyleSetting() {
+    final style = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.valueOrNull?.navigationStyle ?? NavigationStyle.railLabel,
+      ),
+    );
+    return Column(
+      key: const Key("navigation-style-setting"),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("導覽樣式", style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        AppDropdownField<NavigationStyle>(
+          value: style,
+          labelText: "導覽樣式",
+          options: [
+            for (final option in NavigationStyle.values)
+              DropdownOption(value: option, label: option.label),
+          ],
+          onChanged: (value) async {
+            if (value == null) return;
+            await ref
+                .read(settingsStateProvider.notifier)
+                .setNavigationStyle(value);
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(style.description, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Text(
+          "首頁固定頂端；設定、關於固定底端。Drawer 模式提供展開／固定按鈕，窄視窗使用按鈕開啟導覽。",
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
   Widget _buildThemeModeSetting() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -607,10 +725,10 @@ class _SettingViewState extends ConsumerState<SettingView>
       children: [
         // 當前模式指示
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -641,7 +759,7 @@ class _SettingViewState extends ConsumerState<SettingView>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          padding: AppSpacing.formPadding,
           child: Row(
             children: [
               Icon(Icons.numbers, color: Theme.of(context).colorScheme.primary),
@@ -967,7 +1085,7 @@ class _SettingViewState extends ConsumerState<SettingView>
   // MARK: - 佔位元件
   Widget _buildPlaceholderSetting(String title, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         children: [
           Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),

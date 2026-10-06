@@ -717,6 +717,52 @@ void main() {
     expect(find.text("摯友"), findsNothing); // returns to overview after editing
   });
 
+  testWidgets("graph nodes and edge labels grow with large text", (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(characterDataProvider.notifier).setCharacterData({
+      "alice": character(
+        "alice",
+        "Alice",
+        "ALICE001",
+        relationships: const [
+          CharacterRelationship(person: "Bob", relationship: "信任"),
+        ],
+      ),
+      "bob": character("bob", "Bob", "BOB00001"),
+    });
+
+    Widget graph(double textScale) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+          child: const Scaffold(body: CharacterRelationshipGraphView()),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(graph(1));
+    await tester.pumpAndSettle();
+    focusNode(tester, "alice");
+    await tester.pumpAndSettle();
+    final nodeFinder = find.byKey(const ValueKey("relationship-node-alice"));
+    final labelFinder = find.byKey(
+      const ValueKey("relationship-edge-label-alice::0::bob::external"),
+    );
+    final normalNodeWidth = tester.getSize(nodeFinder).width;
+
+    await tester.pumpWidget(graph(3));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(nodeFinder).width, greaterThan(normalNodeWidth * 2));
+    expect(tester.getSize(labelFinder).height, greaterThan(56));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets("crowded relationship labels avoid nodes and each other", (
     tester,
   ) async {

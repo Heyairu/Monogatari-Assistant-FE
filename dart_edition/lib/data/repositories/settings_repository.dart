@@ -1,8 +1,10 @@
 import "package:shared_preferences/shared_preferences.dart";
 
 import "../../bin/settings_manager.dart";
+import "../../models/navigation_style.dart";
 
 class SettingsSnapshot {
+  final NavigationStyle navigationStyle;
   final bool showExitWarning;
   final double fontSize;
   final WordCountMode wordCountMode;
@@ -14,11 +16,14 @@ class SettingsSnapshot {
   final bool allowSingleDevicePairingConfirmation;
   final bool allowPersistentP2pVerification;
   final bool poppinEnabled;
+  final bool overwriteModeEnabled;
   final int tabSpaceCount;
   final bool tabFullWidth;
+  final bool autoIndentLineStart;
   final List<RecentProjectEntry> recentProjects;
 
   const SettingsSnapshot({
+    this.navigationStyle = NavigationStyle.railLabel,
     required this.showExitWarning,
     required this.fontSize,
     required this.wordCountMode,
@@ -30,14 +35,18 @@ class SettingsSnapshot {
     required this.allowSingleDevicePairingConfirmation,
     required this.allowPersistentP2pVerification,
     required this.poppinEnabled,
+    this.overwriteModeEnabled = true,
     this.tabSpaceCount = 2,
     this.tabFullWidth = true,
+    this.autoIndentLineStart = false,
     required this.recentProjects,
   });
 }
 
 abstract class SettingsRepository {
   Future<SettingsSnapshot> load();
+
+  Future<void> saveNavigationStyle(NavigationStyle value);
 
   Future<void> saveShowExitWarning(bool value);
 
@@ -61,8 +70,11 @@ abstract class SettingsRepository {
 
   Future<void> savePoppinEnabled(bool value);
 
+  Future<void> saveOverwriteModeEnabled(bool value);
+
   Future<void> saveTabSpaceCount(int value);
   Future<void> saveTabFullWidth(bool value);
+  Future<void> saveAutoIndentLineStart(bool value);
 
   Future<void> saveRecentProjects(List<RecentProjectEntry> projects);
 }
@@ -88,7 +100,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
       "autosave_interval_minutes";
   static const String _recentProjectsKey = "recent_projects";
   static const int _maxRecentProjects = 10;
-  static const double _defaultFontSize = 12.0;
+  static const double _defaultFontSize = 14.0;
   static const double _minFontSize = 12.0;
   static const double _maxFontSize = 20.0;
   static const int _defaultAutoSaveIntervalMinutes = 5;
@@ -156,6 +168,9 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
         : recentProjects;
 
     return SettingsSnapshot(
+      navigationStyle: NavigationStyle.fromPreference(
+        prefs.getString("navigation_style"),
+      ),
       showExitWarning: showExitWarning,
       fontSize: fontSize,
       wordCountMode: mode,
@@ -168,10 +183,20 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
           allowSingleDevicePairingConfirmation,
       allowPersistentP2pVerification: allowPersistentP2pVerification,
       poppinEnabled: poppinEnabled,
+      overwriteModeEnabled:
+          prefs.getBool("editor_overwrite_mode_enabled") ?? true,
       tabSpaceCount: (prefs.getInt("editor_tab_space_count") ?? 2).clamp(1, 8),
       tabFullWidth: prefs.getBool("editor_tab_full_width") ?? true,
+      autoIndentLineStart:
+          prefs.getBool("editor_auto_indent_line_start") ?? false,
       recentProjects: trimmedProjects,
     );
+  }
+
+  @override
+  Future<void> saveNavigationStyle(NavigationStyle value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("navigation_style", value.name);
   }
 
   @override
@@ -250,6 +275,12 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   }
 
   @override
+  Future<void> saveOverwriteModeEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("editor_overwrite_mode_enabled", value);
+  }
+
+  @override
   Future<void> saveTabSpaceCount(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt("editor_tab_space_count", value.clamp(1, 8));
@@ -259,6 +290,12 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   Future<void> saveTabFullWidth(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool("editor_tab_full_width", value);
+  }
+
+  @override
+  Future<void> saveAutoIndentLineStart(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("editor_auto_indent_line_start", value);
   }
 
   @override

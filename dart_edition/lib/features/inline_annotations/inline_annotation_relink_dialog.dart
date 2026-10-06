@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 
 import "../../ui_library/dialogs.dart";
 import "inline_annotation_target_resolver.dart";
+import "../../ui_library/forms.dart";
 
 abstract final class InlineAnnotationRelinkDialog {
   static Future<InlineAnnotationTargetInfo?> show({
@@ -59,9 +60,12 @@ class _InlineAnnotationRelinkFormState
             TextField(
               key: const ValueKey("inline-annotation-relink-search"),
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: "搜尋名稱、路徑或 UUID",
-                prefixIcon: Icon(Icons.search),
+              decoration: appFieldDecoration(
+                context,
+                decoration: const InputDecoration(
+                  labelText: "搜尋名稱、路徑或 UUID",
+                  prefixIcon: Icon(Icons.search),
+                ),
               ),
               onChanged: (value) => setState(() => _query = value),
             ),

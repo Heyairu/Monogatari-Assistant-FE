@@ -1,6 +1,50 @@
 import "package:flutter/material.dart";
 
+import "control_size.dart";
+import "spacing.dart";
+
 enum ResponsiveSplitViewCompactMode { vertical, primaryOnly, secondaryOnly }
+
+/// Shared page and section spacing for compact and regular layouts.
+abstract final class AppLayoutSpacing {
+  static const compactSection = AppSpacing.compactSection;
+  static const regularSection = AppSpacing.regularSection;
+
+  static EdgeInsets pageForWidth(double width) =>
+      width < 600 ? compactSection : regularSection;
+}
+
+/// Page insets for layouts that manage their own scrolling.
+class AppPagePadding extends StatelessWidget {
+  final Widget child;
+
+  const AppPagePadding({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Padding(
+      padding: AppLayoutSpacing.pageForWidth(constraints.maxWidth),
+      child: child,
+    ),
+  );
+}
+
+/// Scrollable page whose outer margin follows its available width.
+class AppPageScrollView extends StatelessWidget {
+  final Widget child;
+  final ScrollController? controller;
+
+  const AppPageScrollView({super.key, required this.child, this.controller});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      controller: controller,
+      padding: AppLayoutSpacing.pageForWidth(constraints.maxWidth),
+      child: child,
+    ),
+  );
+}
 
 /// A responsive two-pane layout for list/detail and form/form compositions.
 class ResponsiveSplitView extends StatelessWidget {
@@ -18,7 +62,7 @@ class ResponsiveSplitView extends StatelessWidget {
     required this.primary,
     required this.secondary,
     this.breakpoint = 720,
-    this.spacing = 16,
+    this.spacing = AppSpacing.lg,
     this.primaryFlex = 1,
     this.secondaryFlex = 1,
     this.compactMode = ResponsiveSplitViewCompactMode.vertical,
@@ -87,13 +131,13 @@ class AppSectionCard extends StatelessWidget {
     this.header,
     this.actions = const [],
     required this.child,
-    this.padding = const EdgeInsets.all(24),
+    this.padding = AppLayoutSpacing.regularSection,
     this.margin = EdgeInsets.zero,
     this.backgroundColor,
     this.color,
     this.elevation = 0,
     this.titleStyle,
-    this.headerSpacing = 16,
+    this.headerSpacing = AppSpacing.lg,
     this.showDivider = false,
     this.constraints,
     this.clipBehavior = Clip.none,
@@ -208,7 +252,7 @@ class AppEmptyState extends StatelessWidget {
     this.actionLabel,
     this.actionIcon,
     this.onAction,
-    this.padding = const EdgeInsets.all(24),
+    this.padding = AppSpacing.regularSection,
     this.compact = false,
   }) : assert(
          action == null || (actionLabel == null && onAction == null),
@@ -244,7 +288,9 @@ class AppEmptyState extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: compact ? 32 : 48,
+                size: compact
+                    ? AppControlSize.compactEmptyStateIcon
+                    : AppControlSize.emptyStateIcon,
                 color: scheme.onSurfaceVariant,
               ),
               SizedBox(height: compact ? 8 : 12),

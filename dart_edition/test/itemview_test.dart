@@ -31,6 +31,70 @@ void _placeScene(ProviderContainer container, String sceneId, {int tick = 12}) {
 }
 
 void main() {
+  testWidgets(
+    "item search, filters and details share input surfaces and height",
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(ItemClassData(classId: "padding-item", name: "內距測試"));
+
+      for (final dark in [false, true]) {
+        for (final scale in [1.0, 1.4]) {
+          final theme = dark
+              ? AppTheme.getDarkTheme(14, Colors.green)
+              : AppTheme.getLightTheme(14, Colors.green);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                theme: theme,
+                builder: (context, child) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: TextScaler.linear(scale)),
+                  child: child!,
+                ),
+                home: const ItemView(initialClassId: "padding-item"),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          for (final label in ["搜尋物品", "管理模式", "歸屬", "名稱", "數量單位"]) {
+            final field = find.byWidgetPredicate(
+              (widget) =>
+                  widget is InputDecorator &&
+                  widget.decoration.labelText == label,
+            );
+            expect(field, findsOneWidget);
+            final decoration = tester.widget<InputDecorator>(field).decoration;
+            expect(
+              decoration.fillColor,
+              theme.colorScheme.surfaceContainerLowest,
+            );
+            expect(
+              (decoration.contentPadding! as EdgeInsets).left,
+              AppSpacing.md,
+            );
+            final text = find
+                .descendant(of: field, matching: find.byType(Text))
+                .first;
+            final context = tester.element(text);
+            expect(
+              InputDecorator.containerOf(context)!.size.height,
+              closeTo(AppControlSize.heightForContext(context), 0.01),
+              reason: "$label, dark=$dark, text scale=$scale",
+            );
+          }
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+  );
+
   testWidgets("item page uses collection and detail sections", (tester) async {
     await tester.binding.setSurfaceSize(const Size(1100, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));

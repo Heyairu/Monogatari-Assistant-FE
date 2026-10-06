@@ -1,6 +1,7 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../bin/file.dart" as file_module;
+import "../../features/revision_tracking/application/revision_session_codec.dart";
 import "project_snapshot_utils.dart";
 
 /// A deterministic, fixed-size fingerprint of serialized project content.
@@ -140,6 +141,8 @@ class ProjectHistoryEntry {
       totalWords: snapshot.totalWords,
       contentText: snapshot.contentText,
       isDirty: snapshot.isDirty,
+      phrases: snapshot.phrases,
+      phrasesRecoveryPayload: snapshot.phrasesRecoveryPayload,
     );
 
     // Serialize once. The XML is only a transient input to the fixed-size
@@ -149,8 +152,13 @@ class ProjectHistoryEntry {
 
     return ProjectHistoryEntry._(
       data: snapshot,
-      contentDigest: ProjectHistoryContentDigest.fromXml(xml),
-      approximateByteSize: (xml.length * 2) + _estimatedObjectOverheadBytes,
+      contentDigest: ProjectHistoryContentDigest.fromXml(
+        '$xml${RevisionSessionCodec.decisionDigest(snapshot.revisionTrackingJson)}',
+      ),
+      approximateByteSize:
+          (xml.length * 2) +
+          (snapshot.revisionTrackingJson?.length ?? 0) * 2 +
+          _estimatedObjectOverheadBytes,
       pageIndex: pageIndex,
       selectedSegID: selectedSegID,
       selectedChapID: selectedChapID,

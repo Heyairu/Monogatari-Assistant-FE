@@ -1,4 +1,5 @@
 import "package:flutter/material.dart";
+import "../ui_library/forms.dart";
 
 /// Editable terms with the same chip/inline-editor interaction as WordPalettes.
 class AliasTerms extends StatefulWidget {
@@ -96,10 +97,13 @@ class _AliasTermsState extends State<AliasTerms> {
                     child: TextField(
                       controller: _editor,
                       autofocus: true,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: "輸入別名",
-                        errorText: _error,
+                      decoration: appFieldDecoration(
+                        context,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: "輸入別名",
+                          errorText: _error,
+                        ),
                       ),
                       onSubmitted: (_) => _commit(),
                     ),

@@ -3,6 +3,9 @@ import "package:xml/xml.dart" as xml;
 import "../../models/item_data.dart";
 import "../../models/project_data.dart";
 import "../../models/world_settings_data.dart";
+import "../../features/inline_annotations/inline_annotation_target_resolver.dart";
+import "../../features/phrases/phrase_body_validator.dart";
+import "../../features/phrases/phrase_entry.dart";
 
 enum SelectiveProjectModule {
   baseInfo("BaseInfo", "故事設定"),
@@ -11,7 +14,8 @@ enum SelectiveProjectModule {
   plans("Plans", "更新計畫與伏筆"),
   worldSettings("WorldSettings", "世界設定與地點快照"),
   characters("Characters", "角色設定與快照"),
-  items("Items", "物品設定與快照");
+  items("Items", "物品設定與快照"),
+  phrases("Phrases", "短語庫");
 
   final String id;
   final String label;
@@ -81,6 +85,7 @@ class SelectiveProjectImportManifest {
       "ItemClassStateChanges",
       "ItemInstanceStateChanges",
     ]);
+    addWhen(SelectiveProjectModule.phrases, const <String>["Phrases"]);
     return SelectiveProjectImportManifest._(
       Set<String>.unmodifiable(names),
       Set<SelectiveProjectModule>.unmodifiable(declared),
@@ -205,6 +210,25 @@ class SelectiveProjectImporter {
           ? source.contentText
           : current.contentText,
       isDirty: true,
+      revisionTrackingJson: current.revisionTrackingJson,
+      phrases: use("Phrases", SelectiveProjectModule.phrases)
+          ? List.unmodifiable([
+              for (final phrase in source.phrases)
+                source.projectUUID == current.projectUUID ||
+                        !const PhraseBodyValidator()
+                            .validate(phrase.body)
+                            .annotations
+                            .any((annotation) => annotation.targetId != null)
+                    ? phrase
+                    : PhraseEntry.fromJson({
+                        ...phrase.toJson(),
+                        "requiresRelink": true,
+                      }),
+            ])
+          : List.unmodifiable(current.phrases),
+      phrasesRecoveryPayload: use("Phrases", SelectiveProjectModule.phrases)
+          ? source.phrasesRecoveryPayload
+          : current.phrasesRecoveryPayload,
     );
     return SelectiveProjectImportResult(
       data: result,
@@ -216,6 +240,33 @@ class SelectiveProjectImporter {
 Iterable<SelectiveProjectImportWarning> _referenceWarnings(
   ProjectData project,
 ) sync* {
+  const phraseValidator = PhraseBodyValidator();
+  const resolver = InlineAnnotationTargetResolver();
+  for (final phrase in project.phrases) {
+    if (phrase.requiresRelink) {
+      yield SelectiveProjectImportWarning(
+        code: "phrase-relink:${phrase.id}",
+        message: "短語 ${phrase.name} 來自其他專案，Mention 插入前需確認目標。",
+      );
+    }
+    for (final annotation in phraseValidator.validate(phrase.body).annotations) {
+      if (annotation.targetId == null) continue;
+      if (resolver.resolve(
+            annotation: annotation,
+            characters: project.characterData,
+            locations: project.worldSettingsData,
+            outline: project.outlineData,
+            foreshadows: project.foreshadowData,
+            plans: project.updatePlanData,
+            itemClasses: project.itemClasses,
+          ) == null) {
+        yield SelectiveProjectImportWarning(
+          code: "missing-phrase-target:${phrase.id}:${annotation.sourceRange.start}",
+          message: "短語 ${phrase.name} 的 Mention 找不到目標，插入前需重新連結。",
+        );
+      }
+    }
+  }
   final characterIds = project.characterData.values
       .map((item) => item.characterId)
       .toSet();

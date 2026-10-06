@@ -1,7 +1,167 @@
 import "package:flutter/material.dart";
 
+import "control_size.dart";
+import "spacing.dart";
 import "feedback.dart";
 import "layout.dart";
+import "list_style.dart";
+import "surface_shape.dart";
+
+/// One list item with its own surface. The parent owns spacing between cards.
+/// Unlike ListTile, this layout does not cap the height of action controls.
+class AppListCard extends StatelessWidget {
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool selected;
+  final bool enabled;
+  final Color? backgroundColor;
+  final Color? selectedColor;
+
+  const AppListCard({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.trailing,
+    this.onTap,
+    this.selected = false,
+    this.enabled = true,
+    this.backgroundColor,
+    this.selectedColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final foreground = !enabled
+        ? scheme.onSurface.withValues(alpha: 0.38)
+        : selected
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+    final supportingColor = !enabled
+        ? foreground
+        : selected
+        ? foreground
+        : scheme.onSurfaceVariant;
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DefaultTextStyle.merge(
+          style: theme.textTheme.bodyLarge!.copyWith(
+            color: foreground,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+          ),
+          child: title,
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: AppListStyle.supportingGap),
+          DefaultTextStyle.merge(
+            style: theme.textTheme.bodyMedium!.copyWith(color: supportingColor),
+            child: subtitle!,
+          ),
+        ],
+      ],
+    );
+
+    return Semantics(
+      selected: selected,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        color: selected
+            ? (selectedColor ?? scheme.secondaryContainer)
+            : (backgroundColor ?? scheme.surfaceContainerLowest),
+        shape: AppSurfaceShape.shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: AppSurfaceShape.borderRadius,
+          child: IconTheme.merge(
+            data: IconThemeData(
+              size: AppControlSize.icon,
+              color: supportingColor,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final stackActions =
+                    trailing != null &&
+                    constraints.maxWidth <
+                        AppListStyle.stackedActionsBreakpoint;
+                return ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: AppControlSize.heightForContext(context),
+                  ),
+                  child: Padding(
+                    padding: AppListStyle.contentPadding,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            if (leading != null) ...[
+                              leading!,
+                              const SizedBox(width: AppListStyle.contentGap),
+                            ],
+                            Expanded(child: text),
+                            if (trailing != null && !stackActions) ...[
+                              const SizedBox(width: AppListStyle.contentGap),
+                              trailing!,
+                            ],
+                          ],
+                        ),
+                        if (stackActions) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: trailing!,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Single-line status chip aligned with adjacent fields and action controls.
+class AppControlChip extends StatelessWidget {
+  final String label;
+  final Widget? avatar;
+
+  const AppControlChip({super.key, required this.label, this.avatar});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelLarge!;
+    return Chip(
+      label: Text(label, style: style),
+      avatar: avatar,
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        // Material adds the 1dp outline on both sides of the chip's content.
+        vertical: (AppControlSize.verticalPaddingForStyle(context, style) - 1)
+            .clamp(0.0, double.infinity),
+      ),
+    );
+  }
+}
 
 @immutable
 class ItemAction {
@@ -44,8 +204,8 @@ class ItemActionBar extends StatelessWidget {
   const ItemActionBar({
     super.key,
     required this.actions,
-    this.iconSize = 20,
-    this.visualDensity = VisualDensity.compact,
+    this.iconSize = AppControlSize.smallIcon,
+    this.visualDensity = VisualDensity.standard,
     this.alignment = MainAxisAlignment.end,
   }) : assert(iconSize > 0);
 
@@ -55,8 +215,8 @@ class ItemActionBar extends StatelessWidget {
     required VoidCallback? onDelete,
     String editTooltip = "重新命名",
     String deleteTooltip = "刪除",
-    this.iconSize = 20,
-    this.visualDensity = VisualDensity.compact,
+    this.iconSize = AppControlSize.smallIcon,
+    this.visualDensity = VisualDensity.standard,
     this.alignment = MainAxisAlignment.end,
   }) : actions = [
          ItemAction.edit(onPressed: onEdit, tooltip: editTooltip),
@@ -81,6 +241,15 @@ class ItemActionBar extends StatelessWidget {
 
         return IconButton(
           tooltip: action.tooltip,
+          style: ButtonStyle(
+            minimumSize: WidgetStatePropertyAll<Size>(
+              Size.square(AppControlSize.heightForContext(context)),
+            ),
+            padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+              AppSpacing.iconButtonPadding,
+            ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
           visualDensity: visualDensity,
           onPressed: action.onPressed,
           color: action.color ?? semanticColor,
@@ -127,15 +296,15 @@ class CollectionPanel extends StatelessWidget {
     this.emptyTitle = "尚無資料",
     this.emptyDescription,
     this.emptyIcon = Icons.inbox_outlined,
-    this.listPadding = const EdgeInsets.all(8),
-    this.cardPadding = const EdgeInsets.all(24),
-    this.minHeight = 180,
-    this.maxHeight = 300,
+    this.listPadding = AppSpacing.listPadding,
+    this.cardPadding = AppSpacing.regularSection,
+    this.minHeight = AppControlSize.collectionMinHeight,
+    this.maxHeight = AppControlSize.collectionMaxHeight,
     this.controller,
     this.showScrollbar = false,
     this.backgroundColor,
     this.footer,
-    this.footerSpacing = 12,
+    this.footerSpacing = AppSpacing.md,
     this.showSectionCard = true,
   }) : itemCount = null,
        itemBuilder = null,
@@ -156,15 +325,15 @@ class CollectionPanel extends StatelessWidget {
     this.emptyTitle = "尚無資料",
     this.emptyDescription,
     this.emptyIcon = Icons.inbox_outlined,
-    this.listPadding = const EdgeInsets.all(8),
-    this.cardPadding = const EdgeInsets.all(24),
-    this.minHeight = 180,
-    this.maxHeight = 300,
+    this.listPadding = AppSpacing.listPadding,
+    this.cardPadding = AppSpacing.regularSection,
+    this.minHeight = AppControlSize.collectionMinHeight,
+    this.maxHeight = AppControlSize.collectionMaxHeight,
     this.controller,
     this.showScrollbar = false,
     this.backgroundColor,
     this.footer,
-    this.footerSpacing = 12,
+    this.footerSpacing = AppSpacing.md,
     this.showSectionCard = true,
   }) : children = null,
        content = null,
@@ -182,15 +351,15 @@ class CollectionPanel extends StatelessWidget {
     this.emptyTitle = "尚無資料",
     this.emptyDescription,
     this.emptyIcon = Icons.inbox_outlined,
-    this.listPadding = const EdgeInsets.all(8),
-    this.cardPadding = const EdgeInsets.all(24),
-    this.minHeight = 180,
-    this.maxHeight = 300,
+    this.listPadding = AppSpacing.listPadding,
+    this.cardPadding = AppSpacing.regularSection,
+    this.minHeight = AppControlSize.collectionMinHeight,
+    this.maxHeight = AppControlSize.collectionMaxHeight,
     this.controller,
     this.showScrollbar = false,
     this.backgroundColor,
     this.footer,
-    this.footerSpacing = 12,
+    this.footerSpacing = AppSpacing.md,
     this.showSectionCard = true,
   }) : children = null,
        itemCount = null,
@@ -254,8 +423,7 @@ class CollectionPanel extends StatelessWidget {
             maxHeight: maxHeight,
           ),
           decoration: BoxDecoration(
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppSurfaceShape.borderRadius,
             color: scheme.surfaceContainerLowest,
           ),
           clipBehavior: Clip.antiAlias,

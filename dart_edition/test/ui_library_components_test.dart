@@ -9,6 +9,39 @@ Widget _testApp(Widget child) {
 
 void main() {
   group("UI Library", () {
+    testWidgets("switch descriptions use the compact label style", (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.getLightTheme(14, Colors.blue),
+          home: Scaffold(
+            body: Column(
+              children: [
+                SwitchWithTitle(
+                  title: "Plain switch",
+                  subtitle: "Plain description",
+                  value: false,
+                  onChanged: (value) async {},
+                ),
+                SwitchWithIconTitle(
+                  title: "Icon switch",
+                  icon: Icons.settings,
+                  subtitle: "Icon description",
+                  value: true,
+                  onChanged: (value) async {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      for (final description in ["Plain description", "Icon description"]) {
+        expect(tester.widget<Text>(find.text(description)).style?.fontSize, 10);
+      }
+    });
+
     testWidgets("ResponsiveSplitView switches between row and column", (
       tester,
     ) async {
@@ -44,6 +77,53 @@ void main() {
       final compactPrimary = tester.getTopLeft(find.text("Primary"));
       final compactSecondary = tester.getTopLeft(find.text("Secondary"));
       expect(compactSecondary.dy, greaterThan(compactPrimary.dy));
+    });
+
+    testWidgets("page padding follows the available pane width", (
+      tester,
+    ) async {
+      Future<EdgeInsetsGeometry?> paddingAt(double width) async {
+        await tester.pumpWidget(
+          _testApp(
+            SizedBox(
+              width: width,
+              child: const AppPageScrollView(child: Text("Page")),
+            ),
+          ),
+        );
+        return tester
+            .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+            .padding;
+      }
+
+      expect(await paddingAt(500), const EdgeInsets.all(16));
+      expect(await paddingAt(599), const EdgeInsets.all(16));
+      expect(await paddingAt(600), const EdgeInsets.all(24));
+      expect(await paddingAt(800), const EdgeInsets.all(24));
+    });
+
+    testWidgets("responsive page preserves the supplied scroll controller", (
+      tester,
+    ) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _testApp(
+          SizedBox(
+            width: 500,
+            height: 200,
+            child: AppPageScrollView(
+              controller: controller,
+              child: const SizedBox(height: 1000, child: Text("Long page")),
+            ),
+          ),
+        ),
+      );
+      expect(controller.hasClients, isTrue);
+      controller.jumpTo(120);
+      await tester.pump();
+      expect(controller.offset, 120);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets("AppSectionCard composes a header and empty state", (
@@ -146,7 +226,11 @@ void main() {
       );
       expect(
         inputDecorator.decoration.contentPadding,
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      );
+      expect(
+        inputDecorator.decoration.constraints,
+        AppControlSize.fieldConstraints,
       );
       final border = inputDecorator.decoration.border as OutlineInputBorder;
       expect(border.borderRadius, BorderRadius.circular(12));
@@ -193,6 +277,7 @@ void main() {
       expect(dropdownDecoration.filled, textDecoration.filled);
       expect(dropdownDecoration.fillColor, textDecoration.fillColor);
       expect(dropdownDecoration.contentPadding, textDecoration.contentPadding);
+      expect(dropdownDecoration.constraints, textDecoration.constraints);
       expect(
         (dropdownDecoration.border as OutlineInputBorder).borderRadius,
         (textDecoration.border as OutlineInputBorder).borderRadius,
@@ -241,6 +326,19 @@ void main() {
       expect(find.text("Plan 0"), findsOneWidget);
       expect(find.text("Plan 1"), findsOneWidget);
       expect(find.text("Footer action"), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(CollectionPanel),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Container &&
+                widget.decoration is BoxDecoration &&
+                (widget.decoration! as BoxDecoration).borderRadius ==
+                    AppSurfaceShape.borderRadius,
+          ),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets("AppTwoColumnTable renders headers, rows, and empty state", (

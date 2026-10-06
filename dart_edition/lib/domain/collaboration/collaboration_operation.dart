@@ -189,6 +189,7 @@ enum ProjectRecordKind {
   itemClassStateChange,
   itemInstanceStateChange,
   locationStateChange,
+  phrase,
 }
 
 enum ProjectRecordMutation { put, remove, move }

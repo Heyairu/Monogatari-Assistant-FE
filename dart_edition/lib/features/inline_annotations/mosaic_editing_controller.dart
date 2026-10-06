@@ -53,6 +53,38 @@ class MosaicEditingController extends CodeController {
   /// Lets the editor consume Tab for IntelliSense before CodeController
   /// inserts a literal tab character.
   bool Function()? onTabKeyPressed;
+  bool Function(bool plain)? onEnterKeyPressed;
+  bool autoIndentLineStart = false;
+  String indentation = "\u3000\u3000";
+  bool _suppressAutoIndent = false;
+
+  T withoutAutoIndent<T>(T Function() operation) {
+    final previous = _suppressAutoIndent;
+    _suppressAutoIndent = true;
+    try {
+      return operation();
+    } finally {
+      _suppressAutoIndent = previous;
+    }
+  }
+
+  TextEditingValue _withAutoIndent(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    if (!autoIndentLineStart || _suppressAutoIndent) return after;
+    final edit = _diff(before.text, after.text);
+    if (after.text.substring(edit.newStart, edit.newEnd) != "\n") return after;
+    final replacement = "\n$indentation";
+    return after.copyWith(
+      text: after.text.replaceRange(edit.newStart, edit.newEnd, replacement),
+      selection: TextSelection.collapsed(
+        offset: edit.newStart + replacement.length,
+      ),
+      composing: TextRange.empty,
+    );
+  }
+
   bool overwriteEnabled = false;
   bool _suppressOverwrite = false;
   T withoutOverwrite<T>(T Function() operation) {
@@ -97,6 +129,15 @@ class MosaicEditingController extends CodeController {
         !keyboard.isMetaPressed &&
         event.logicalKey == LogicalKeyboardKey.tab &&
         (onTabKeyPressed?.call() ?? false)) {
+      return KeyEventResult.handled;
+    }
+    // ignore: deprecated_member_use
+    if (event is RawKeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.enter &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isMetaPressed &&
+        (onEnterKeyPressed?.call(keyboard.isShiftPressed) ?? false)) {
       return KeyEventResult.handled;
     }
     return super.onKey(event);
@@ -528,6 +569,7 @@ class MosaicEditingController extends CodeController {
       return;
     }
 
+    newValue = _withAutoIndent(oldValue, newValue);
     if (overwriteEnabled && !_suppressOverwrite) {
       newValue = applyOverwrite(
         oldValue,
@@ -609,6 +651,7 @@ class MosaicEditingController extends CodeController {
     final baseProjection = _compositionBaseProjection!;
     final baseRawText = _compositionBaseRawText!;
     final previousPublishedValue = super.value;
+    committedValue = _withAutoIndent(baseValue, committedValue);
     if (overwriteEnabled && !_suppressOverwrite) {
       committedValue = applyOverwrite(
         baseValue,

@@ -367,7 +367,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: ChapterSelectionView())),
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.getDarkTheme(20, Colors.green),
+          home: const ChapterSelectionView(),
+        ),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -383,6 +388,25 @@ void main() {
       find.byKey(const ValueKey("chapter-create-type-rootFolder")),
       findsOne,
     );
+    final addInput = find.byType(AddItemInput);
+    final addCenter = tester.getCenter(addInput).dy;
+    final inputText = find.descendant(
+      of: addInput,
+      matching: find.byType(EditableText),
+    );
+    final controlHeight = AppControlSize.heightForFontSize(20);
+    expect(tester.getSize(addInput).height, closeTo(controlHeight, 0.5));
+    for (final type in ["chapter", "childFolder", "rootFolder"]) {
+      final button = find.byKey(ValueKey("chapter-create-type-$type"));
+      expect(tester.getSize(button).height, closeTo(controlHeight, 0.5));
+      expect(tester.getCenter(button).dy, closeTo(addCenter, 0.5));
+      expect(
+        tester
+            .getCenter(find.descendant(of: button, matching: find.byType(Icon)))
+            .dy,
+        closeTo(tester.getCenter(inputText).dy, 0.5),
+      );
+    }
   });
 
   testWidgets("stopping a folder drag keeps scroll position and row tappable", (

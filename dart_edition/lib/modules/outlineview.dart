@@ -27,6 +27,9 @@ import "package:logging/logging.dart";
 import "../models/outline_data.dart";
 import "../models/item_data.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
+import "../domain/collaboration/collaboration_operation.dart";
+import "../domain/collaboration/typed_operation_log.dart";
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
@@ -1711,9 +1714,9 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
         },
         onPointerUp: (_) => _stopAutoScroll(),
         onPointerCancel: (_) => _stopAutoScroll(),
-        child: SingleChildScrollView(
+        child: AppPageScrollView(
           controller: _pageScrollController,
-          padding: const EdgeInsets.all(24),
+
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1745,6 +1748,30 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     );
   }
 
+  // Match the background of unselected list cards in both themes.
+  BoxDecoration _outlineListDecoration({bool highlighted = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return BoxDecoration(
+      color: highlighted
+          ? Color.alphaBlend(
+              scheme.primary.withValues(alpha: 0.12),
+              scheme.surfaceContainerLowest,
+            )
+          : scheme.surfaceContainerLowest,
+      borderRadius: AppSurfaceShape.borderRadius,
+    );
+  }
+
+  Widget _outlineListEmptyState({
+    required String title,
+    required String description,
+  }) => AppEmptyState(
+    title: title,
+    description: description,
+    icon: Icons.touch_app_outlined,
+    compact: true,
+  );
+
   // MARK: - 大箱（故事線）區段
   Widget _buildStorylineSection() {
     return AppSectionCard(
@@ -1753,7 +1780,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: AppLayoutSpacing.regularSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1792,22 +1819,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 return Container(
                   key: _storylineListKey,
                   height: 250,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isHighlighted
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.outline.withValues(alpha: 0.2),
-                      width: isHighlighted ? 2 : 1,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                    color: isHighlighted
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer.withValues(alpha: 0.1)
-                        : null,
+                  decoration: _outlineListDecoration(
+                    highlighted: isHighlighted,
                   ),
+                  clipBehavior: Clip.antiAlias,
                   child: storylines.isEmpty
                       ? Center(
                           child: Text(
@@ -1822,6 +1837,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                         )
                       : ListView.builder(
                           controller: _storylineListScrollController,
+                          padding: AppSpacing.listPadding,
                           itemCount: storylines.length,
                           itemBuilder: (context, index) =>
                               _buildStorylineRow(storylines[index], index),
@@ -1960,7 +1976,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       maxLines: maxLines,
     );
     if (documentId == null) return field;
-    return CollaborativeProjectTextFieldRegion(
+    final region = CollaborativeProjectTextFieldRegion(
       key: ValueKey("outline-text-$documentId"),
       fieldId: documentId,
       crdtDocumentId: documentId,
@@ -1968,6 +1984,33 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       focusNode: focusNode,
       shouldPublishTextChanges: () => !_isSyncingControllers,
       child: field,
+    );
+    final address = ProjectCollaborativeTextCodec.tryParse(documentId);
+    final kind = switch (address?.kind) {
+      ProjectCollaborativeTextKind.outlineStoryline =>
+        ProjectRecordKind.outlineStoryline,
+      ProjectCollaborativeTextKind.outlineEvent =>
+        ProjectRecordKind.outlineEvent,
+      ProjectCollaborativeTextKind.outlineScene =>
+        ProjectRecordKind.outlineScene,
+      _ => null,
+    };
+    if (address == null || kind == null) return region;
+    final recordField = switch ((kind, address.field)) {
+      (ProjectRecordKind.outlineStoryline, 'storylineName') => 'name',
+      (ProjectRecordKind.outlineStoryline, 'storylineType') => 'type',
+      (ProjectRecordKind.outlineEvent, 'storyEvent') => 'event',
+      (ProjectRecordKind.outlineScene, 'sceneName') => 'name',
+      _ => address.field,
+    };
+    return Row(
+      children: [
+        Expanded(child: region),
+        RevisionFieldMarker(
+          recordKey: ProjectRecordKey(kind: kind, recordId: address.ownerId),
+          field: recordField,
+        ),
+      ],
     );
   }
 
@@ -1980,7 +2023,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       padding: EdgeInsets.zero,
       useSectionLayout: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppLayoutSpacing.compactSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1999,7 +2042,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
               decoration: const InputDecoration(
                 labelText: "故事線名稱",
-                border: OutlineInputBorder(),
                 isDense: true,
               ),
             ),
@@ -2012,7 +2054,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
               decoration: const InputDecoration(
                 labelText: "類型 (如：開頭、中段、高潮、結尾)",
-                border: OutlineInputBorder(),
                 isDense: true,
               ),
             ),
@@ -2025,7 +2066,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               ),
               decoration: const InputDecoration(
                 labelText: "主要衝突",
-                border: OutlineInputBorder(),
                 isDense: true,
               ),
             ),
@@ -2038,10 +2078,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                 selectedStorylineID!,
                 "memo",
               ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: "輸入備註...",
-              ),
+              decoration: const InputDecoration(hintText: "輸入備註..."),
               maxLines: 4,
             ),
           ],
@@ -2058,7 +2095,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: AppLayoutSpacing.regularSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2084,21 +2121,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   return Container(
                     key: _eventListKey,
                     height: 250,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isHighlighted
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(
-                                context,
-                              ).colorScheme.outline.withValues(alpha: 0.2),
-                        width: isHighlighted ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer
-                                .withValues(alpha: 0.1)
-                          : null,
+                    decoration: _outlineListDecoration(
+                      highlighted: isHighlighted,
                     ),
+                    clipBehavior: Clip.antiAlias,
                     child: events.isEmpty
                         ? Center(
                             child: Text(
@@ -2113,6 +2139,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           )
                         : ListView.builder(
                             controller: _eventListScrollController,
+                            padding: AppSpacing.listPadding,
                             itemCount: events.length,
                             itemBuilder: (context, index) =>
                                 _buildEventRow(events[index], index),
@@ -2138,19 +2165,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               Container(
                 height: 250,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withValues(alpha: 0.2),
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const AppEmptyState(
+                decoration: _outlineListDecoration(),
+                child: _outlineListEmptyState(
                   title: "請先選擇故事線",
                   description: "選擇故事線後即可新增與編輯事件",
-                  icon: Icons.touch_app_outlined,
-                  compact: true,
                 ),
               ),
             ],
@@ -2215,13 +2233,24 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: ItemActionBar.editDelete(
-        iconSize: 20,
-        onEdit: () => _startRenamingStoryline(storyline),
-        onDelete: storylines.length > 1
-            ? () => _deleteStoryline(storyline.chapterUUID)
-            : null,
-        deleteTooltip: "刪除故事線",
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.outlineStoryline,
+              recordId: storyline.chapterUUID,
+            ),
+          ),
+          ItemActionBar.editDelete(
+            iconSize: 20,
+            onEdit: () => _startRenamingStoryline(storyline),
+            onDelete: storylines.length > 1
+                ? () => _deleteStoryline(storyline.chapterUUID)
+                : null,
+            deleteTooltip: "刪除故事線",
+          ),
+        ],
       ),
       onClicked: () {
         _flushOutlineDraft();
@@ -2330,10 +2359,21 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: ItemActionBar.editDelete(
-        onEdit: () => _startRenamingEvent(event),
-        onDelete: () => _deleteEvent(event.storyEventUUID, slIdx),
-        deleteTooltip: "刪除事件",
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.outlineEvent,
+              recordId: event.storyEventUUID,
+            ),
+          ),
+          ItemActionBar.editDelete(
+            onEdit: () => _startRenamingEvent(event),
+            onDelete: () => _deleteEvent(event.storyEventUUID, slIdx),
+            deleteTooltip: "刪除事件",
+          ),
+        ],
       ),
       onClicked: () {
         _flushOutlineDraft();
@@ -2426,7 +2466,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       padding: EdgeInsets.zero,
       useSectionLayout: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppLayoutSpacing.compactSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2453,7 +2493,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   ),
                   decoration: const InputDecoration(
                     labelText: "事件名稱",
-                    border: OutlineInputBorder(),
                     isDense: true,
                   ),
                 );
@@ -2477,7 +2516,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   ),
                   decoration: const InputDecoration(
                     labelText: "衝突點",
-                    border: OutlineInputBorder(),
                     isDense: true,
                   ),
                 );
@@ -2633,10 +2671,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     event.storyEventUUID,
                     "memo",
                   ),
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: "輸入備註...",
-                  ),
+                  decoration: const InputDecoration(hintText: "輸入備註..."),
                   maxLines: 4,
                 );
               },
@@ -2728,30 +2763,31 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
 
   Widget _buildSceneItemManager(String sceneId) {
     final workspace = ref.watch(itemWorkspaceProvider);
-    final entries = workspace.itemRelations
-        .where(
-          (relation) =>
-              relation.targetKind == ItemRelationTargetKind.scene &&
-              relation.targetId == sceneId,
-        )
-        .map((relation) {
-          final instance = relation.itemKind == ItemReferenceKind.instance
-              ? workspace.itemInstances[relation.itemId]
-              : null;
-          final classId = relation.itemKind == ItemReferenceKind.itemClass
-              ? relation.itemId
-              : instance?.classId;
-          final label = relation.itemKind == ItemReferenceKind.itemClass
-              ? workspace.itemClasses[classId]?.name
-              : instance?.name;
-          return (
-            relation: relation,
-            classId: classId,
-            label: label?.isNotEmpty == true ? label! : relation.itemId,
-          );
-        })
-        .toList(growable: false)
-      ..sort((a, b) => a.label.compareTo(b.label));
+    final entries =
+        workspace.itemRelations
+            .where(
+              (relation) =>
+                  relation.targetKind == ItemRelationTargetKind.scene &&
+                  relation.targetId == sceneId,
+            )
+            .map((relation) {
+              final instance = relation.itemKind == ItemReferenceKind.instance
+                  ? workspace.itemInstances[relation.itemId]
+                  : null;
+              final classId = relation.itemKind == ItemReferenceKind.itemClass
+                  ? relation.itemId
+                  : instance?.classId;
+              final label = relation.itemKind == ItemReferenceKind.itemClass
+                  ? workspace.itemClasses[classId]?.name
+                  : instance?.name;
+              return (
+                relation: relation,
+                classId: classId,
+                label: label?.isNotEmpty == true ? label! : relation.itemId,
+              );
+            })
+            .toList(growable: false)
+          ..sort((a, b) => a.label.compareTo(b.label));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2778,9 +2814,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
           ...entries.map(
             (entry) => ListTile(
               dense: true,
-              key: ValueKey(
-                "scene-linked-item-${entry.relation.relationId}",
-              ),
+              key: ValueKey("scene-linked-item-${entry.relation.relationId}"),
               contentPadding: EdgeInsets.zero,
               leading: Icon(
                 entry.relation.itemKind == ItemReferenceKind.itemClass
@@ -2843,16 +2877,18 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
     );
     final itemKind = selected?.itemReferenceKind;
     if (!mounted || selected == null || itemKind == null) return;
-    ref.read(itemWorkspaceProvider.notifier).putRelation(
-      ItemRelationData(
-        relationId: const Uuid().v4(),
-        itemId: selected.id,
-        itemKind: itemKind,
-        targetId: sceneId,
-        targetKind: ItemRelationTargetKind.scene,
-        role: "大綱物件",
-      ),
-    );
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .putRelation(
+          ItemRelationData(
+            relationId: const Uuid().v4(),
+            itemId: selected.id,
+            itemKind: itemKind,
+            targetId: sceneId,
+            targetKind: ItemRelationTargetKind.scene,
+            role: "大綱物件",
+          ),
+        );
   }
 
   Future<void> _convertLegacyOutlineItem({
@@ -2963,14 +2999,26 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
               TextFormField(
                 key: const Key("legacy-item-create-name"),
                 initialValue: name,
-                decoration: const InputDecoration(labelText: "名稱"),
+                decoration: appFieldDecoration(
+                  context,
+                  decoration: const InputDecoration(labelText: "名稱"),
+                ),
                 onChanged: (value) => setDialogState(() => name = value),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<ItemMode>(
+                style: appDropdownTextStyle(context),
+                isDense: true,
+                isExpanded: true,
+                iconSize: AppControlSize.smallIcon,
+                itemHeight: appDropdownItemHeight(context),
+                menuMaxHeight: AppControlSize.menuMaxHeight,
                 key: const Key("legacy-item-create-mode"),
                 initialValue: mode,
-                decoration: const InputDecoration(labelText: "物品模式"),
+                decoration: appDropdownFieldDecoration(
+                  context,
+                  decoration: const InputDecoration(labelText: "物品模式"),
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: ItemMode.dedicated,
@@ -3157,7 +3205,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: AppLayoutSpacing.regularSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3192,21 +3240,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   return Container(
                     key: _sceneListKey,
                     height: 250,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isHighlighted
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(
-                                context,
-                              ).colorScheme.outline.withValues(alpha: 0.2),
-                        width: isHighlighted ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      color: isHighlighted
-                          ? Theme.of(context).colorScheme.primaryContainer
-                                .withValues(alpha: 0.1)
-                          : null,
+                    decoration: _outlineListDecoration(
+                      highlighted: isHighlighted,
                     ),
+                    clipBehavior: Clip.antiAlias,
                     child:
                         storylines[selectedStorylineIndex!]
                             .scenes[selectedEventIndex!]
@@ -3225,6 +3262,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                           )
                         : ListView.builder(
                             controller: _sceneListScrollController,
+                            padding: AppSpacing.listPadding,
                             itemCount: storylines[selectedStorylineIndex!]
                                 .scenes[selectedEventIndex!]
                                 .scenes
@@ -3256,19 +3294,10 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             ] else ...[
               Container(
                 height: 250,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withValues(alpha: 0.2),
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const AppEmptyState(
+                decoration: _outlineListDecoration(),
+                child: _outlineListEmptyState(
                   title: "請先選擇一個事件",
                   description: "選擇事件後即可新增與編輯場景",
-                  icon: Icons.touch_app_outlined,
-                  compact: true,
                 ),
               ),
             ],
@@ -3364,15 +3393,26 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
             : Theme.of(context).colorScheme.onSurfaceVariant,
         size: 24,
       ),
-      trailing: ItemActionBar.editDelete(
-        iconSize: 20,
-        onEdit: () => _startRenamingScene(scene),
-        onDelete: () => _deleteScene(
-          scene.sceneUUID,
-          selectedStorylineIndex!,
-          selectedEventIndex!,
-        ),
-        deleteTooltip: "刪除場景",
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RevisionRecordMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.outlineScene,
+              recordId: scene.sceneUUID,
+            ),
+          ),
+          ItemActionBar.editDelete(
+            iconSize: 20,
+            onEdit: () => _startRenamingScene(scene),
+            onDelete: () => _deleteScene(
+              scene.sceneUUID,
+              selectedStorylineIndex!,
+              selectedEventIndex!,
+            ),
+            deleteTooltip: "刪除場景",
+          ),
+        ],
       ),
       onClicked: () {
         _flushOutlineDraft();
@@ -3450,7 +3490,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
       padding: EdgeInsets.zero,
       useSectionLayout: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppLayoutSpacing.compactSection,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3477,7 +3517,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                   ),
                   decoration: const InputDecoration(
                     labelText: "場景名稱",
-                    border: OutlineInputBorder(),
                     isDense: true,
                   ),
                 );
@@ -3505,7 +3544,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                             ),
                         decoration: const InputDecoration(
                           labelText: "時間",
-                          border: OutlineInputBorder(),
                           isDense: true,
                         ),
                       );
@@ -3530,7 +3568,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                             ),
                         decoration: const InputDecoration(
                           labelText: "地點",
-                          border: OutlineInputBorder(),
                           isDense: true,
                         ),
                       );
@@ -3561,7 +3598,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                             ),
                         decoration: const InputDecoration(
                           labelText: "聚焦點",
-                          border: OutlineInputBorder(),
                           isDense: true,
                         ),
                       );
@@ -3586,7 +3622,6 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                             ),
                         decoration: const InputDecoration(
                           labelText: "衝突點",
-                          border: OutlineInputBorder(),
                           isDense: true,
                         ),
                       );
@@ -3698,10 +3733,7 @@ class _OutlineAdjustViewState extends ConsumerState<OutlineAdjustView> {
                     scene.sceneUUID,
                     "memo",
                   ),
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: "輸入備註...",
-                  ),
+                  decoration: const InputDecoration(hintText: "輸入備註..."),
                   maxLines: 4,
                 );
               },

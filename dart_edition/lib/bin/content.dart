@@ -40,12 +40,21 @@ import "../features/inline_annotations/inline_annotation_syntax.dart";
 import "../features/inline_annotations/inline_annotation_symbol_overlay.dart";
 import "../features/inline_annotations/mosaic_editing_controller.dart";
 import "../features/poppin/poppin.dart";
+import "../features/phrases/phrase_entry.dart";
+import "../features/phrases/phrase_search_index.dart";
+import "../features/phrases/phrase_insertion_service.dart";
+import "../features/phrases/phrase_library_dialog.dart";
+import "../features/phrases/global_phrases_provider.dart";
 import "../features/inline_annotations/inline_annotation_parser.dart";
 import "../features/inline_annotations/inline_annotation_edit_dialog.dart";
 import "../features/inline_annotations/inline_annotation_projection.dart";
 import "../features/editor/plain_text_quill_editor_poc.dart";
+import "../features/editor/plain_text_quill_render_range.dart";
+import "../features/revision_tracking/domain/revision_models.dart";
+import "../presentation/providers/revision_tracking_provider.dart";
 import "../features/editor/editor_input_rules.dart";
 import "../features/editor/plain_text_quill_mention_overlay.dart";
+import "../ui_library/forms.dart";
 
 /// Defaults to the plain-text Quill editor. Set
 /// `--dart-define=MONOGATARI_PLAIN_TEXT_QUILL_EDITOR=false` to return to the
@@ -85,6 +94,8 @@ class EditorTextBox extends ConsumerStatefulWidget {
   final VoidCallback? onRedo;
   final ValueChanged<EditorTextInteraction>? onInteractionOffset;
   final bool usePlainTextQuillEditor;
+  final bool showPhraseActions;
+  final Color? backgroundColor;
   final PlainTextQuillSearchController? quillSearchController;
 
   const EditorTextBox({
@@ -95,6 +106,8 @@ class EditorTextBox extends ConsumerStatefulWidget {
     this.onRedo,
     this.onInteractionOffset,
     this.usePlainTextQuillEditor = _usePlainTextQuillEditor,
+    this.showPhraseActions = true,
+    this.backgroundColor,
     this.quillSearchController,
   });
 
@@ -115,6 +128,13 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       PlainTextQuillEditorCommands();
   TextSelection _quillSelection = const TextSelection.collapsed(offset: 0);
   MosaicCompletionSession? _completionSession;
+  PhraseSearchIndex? _phraseIndex;
+  List<PhraseEntry>? _indexedPhrases;
+  int? _phraseMenuTriggerStart;
+  int? _phraseMenuQueryStart;
+  int? _dismissedPhraseStart;
+  String? _lastCompletionRawText;
+  String? _rawBeforeComposition;
   Offset? _completionAnchor;
   bool _completionMeasurementScheduled = false;
   bool _completionRefreshScheduled = false;
@@ -148,6 +168,11 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.controller != widget.controller) {
+      _lastCompletionRawText = null;
+      _rawBeforeComposition = null;
+      _dismissedPhraseStart = null;
+      _phraseMenuTriggerStart = null;
+      _phraseMenuQueryStart = null;
       if (!_usesPlainTextQuillEditor) {
         _detachControllerKeyHandler(oldWidget.controller);
       }
@@ -211,12 +236,14 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   void _attachControllerKeyHandler(CodeController controller) {
     if (controller case final MosaicEditingController mosaicController) {
       mosaicController.onTabKeyPressed = _insertTabSpaces;
+      mosaicController.onEnterKeyPressed = _insertNewline;
     }
   }
 
   void _detachControllerKeyHandler(CodeController controller) {
     if (controller case final MosaicEditingController mosaicController) {
       mosaicController.onTabKeyPressed = null;
+      mosaicController.onEnterKeyPressed = null;
     }
   }
 
@@ -229,6 +256,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   }
 
   void _toggleOverwrite() {
+    if (!(ref.read(settingsStateProvider).valueOrNull?.overwriteModeEnabled ??
+        true)) {
+      return;
+    }
     final mode = ref.read(editorOverwriteProvider.notifier);
     mode.state = !mode.state;
   }
@@ -237,6 +268,17 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     if (_hasActiveComposition(widget.controller.value)) return true;
     if (_acceptCompletionFromTab()) return true;
     _replaceSelectionWithoutOverwrite(_tabSpaces);
+    return true;
+  }
+
+  bool _insertNewline(bool plain) {
+    if (!(ref.read(settingsStateProvider).valueOrNull?.autoIndentLineStart ??
+            false) ||
+        _hasActiveComposition(widget.controller.value)) {
+      return false;
+    }
+    if (!plain && _acceptCompletionFromTab()) return true;
+    _replaceSelectionWithoutOverwrite("\n${plain ? '' : _tabSpaces}");
     return true;
   }
 
@@ -250,7 +292,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
       composing: TextRange.empty,
     );
     if (controller is MosaicEditingController) {
-      controller.withoutOverwrite(insert);
+      controller.withoutOverwrite(() => controller.withoutAutoIndent(insert));
     } else {
       insert();
     }
@@ -286,6 +328,26 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   void _refreshCompletion() {
     if (!mounted) return;
     final controller = widget.controller;
+    final previousRawText = _lastCompletionRawText;
+    final composing = _hasActiveComposition(controller.value);
+    if (composing) {
+      _rawBeforeComposition ??=
+          previousRawText ??
+          (controller is MosaicEditingController ? controller.rawText : null);
+    }
+    if (controller is MosaicEditingController) {
+      _lastCompletionRawText = controller.rawText;
+      if (_dismissedPhraseStart case final start?
+          when start + 2 > controller.rawText.length ||
+              controller.rawText.substring(start, start + 2) != ';;') {
+        _dismissedPhraseStart = null;
+      }
+    }
+    final phrases = ref.read(availablePhrasesProvider);
+    if (!identical(_indexedPhrases, phrases)) {
+      _indexedPhrases = phrases;
+      _phraseIndex = PhraseSearchIndex(phrases);
+    }
     final selection = controller.selection;
     MosaicCompletionSession? nextSession;
     final poppinEnabled =
@@ -294,13 +356,23 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
         controller is MosaicEditingController &&
         selection.isValid &&
         selection.isCollapsed &&
-        !_hasActiveComposition(controller.value)) {
+        !composing) {
       final rawSelection = controller.projection.displaySelectionToRaw(
         selection,
       );
+      final phraseTargetIds = <InlineAnnotationKind, Set<String>>{};
       nextSession = _intelliSenseEngine.build(
         rawText: controller.rawText,
         rawCaret: rawSelection.extentOffset,
+        phraseIndex: _phraseIndex,
+        phraseTargetExists: (kind, id) => phraseTargetIds
+            .putIfAbsent(
+              kind,
+              () => _phraseTargets(kind).map((target) => target.id).toSet(),
+            )
+            .contains(id),
+        phraseMenuTriggerStart: _phraseMenuTriggerStart,
+        phraseMenuQueryStart: _phraseMenuQueryStart,
         loadTargets: (kind) => _targetResolver.candidates(
           kind: kind,
           characters: ref.read(characterDataProvider),
@@ -311,6 +383,31 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
         ),
       );
+      if (nextSession?.kind == MosaicCompletionKind.phrase &&
+          _phraseMenuTriggerStart == null &&
+          previousRawText != null &&
+          controller.rawText.length - previousRawText.length > 1) {
+        _dismissedPhraseStart = nextSession!.rawReplacementRange.start;
+      }
+      if (nextSession?.kind == MosaicCompletionKind.phrase &&
+          _rawBeforeComposition != null) {
+        final start = nextSession!.rawReplacementRange.start;
+        final before = _rawBeforeComposition!;
+        if (start + 2 > before.length ||
+            before.substring(start, start + 2) != ';;') {
+          _dismissedPhraseStart = start;
+        }
+      }
+      if (nextSession?.kind == MosaicCompletionKind.phrase &&
+          nextSession!.rawReplacementRange.start == _dismissedPhraseStart) {
+        nextSession = null;
+      }
+    }
+    if (!composing) _rawBeforeComposition = null;
+    if (nextSession?.kind != MosaicCompletionKind.phrase &&
+        _phraseMenuTriggerStart != null) {
+      _phraseMenuTriggerStart = null;
+      _phraseMenuQueryStart = null;
     }
     setState(() {
       _completionSession = nextSession;
@@ -382,6 +479,17 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
   void _selectCompletion(int index) {
     final candidates = _activeCompletionCandidates;
     if (candidates == null || index < 0 || index >= candidates.length) return;
+    final candidate = candidates[index];
+    if (candidate.phraseMenu) {
+      _phraseMenuTriggerStart = _completionSession?.rawReplacementRange.start;
+      _phraseMenuQueryStart = _completionSession?.rawReplacementRange.end;
+      _refreshCompletion();
+      return;
+    }
+    if (candidate.phraseId case final phraseId?) {
+      unawaited(_insertPhraseById(phraseId));
+      return;
+    }
     if (candidates[index].customDisplayText) {
       unawaited(_customMentionText(candidates[index]));
       return;
@@ -566,7 +674,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
           child: TextField(
             key: const ValueKey("mosaic-create-target-name"),
             autofocus: true,
-            decoration: InputDecoration(labelText: fieldLabel, isDense: true),
+            decoration: appFieldDecoration(
+              context,
+              decoration: InputDecoration(labelText: fieldLabel, isDense: true),
+            ),
             onChanged: (value) => draftName = value,
             onSubmitted: (value) {
               final trimmed = value.trim();
@@ -771,6 +882,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     }
     final selectedIndex = index ?? _poppin.selectedIndex;
     final candidate = candidates[selectedIndex];
+    if (candidate.phraseMenu || candidate.phraseId != null) {
+      _selectCompletion(selectedIndex);
+      return;
+    }
     controller.replaceRawRange(
       session.rawReplacementRange,
       candidate.insertText,
@@ -784,12 +899,211 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 
   void _dismissCompletion() {
     if (_completionSession == null) return;
+    if (_completionSession!.kind == MosaicCompletionKind.phrase) {
+      _dismissedPhraseStart = _completionSession!.rawReplacementRange.start;
+    }
+    _phraseMenuTriggerStart = null;
+    _phraseMenuQueryStart = null;
     setState(() {
       _completionSession = null;
       _completionAnchor = null;
       _poppin.dismiss();
     });
   }
+
+  List<InlineAnnotationTargetInfo> _phraseTargets(InlineAnnotationKind kind) =>
+      _targetResolver.candidates(
+        kind: kind,
+        characters: ref.read(characterDataProvider),
+        locations: ref.read(worldSettingsDataProvider),
+        outline: ref.read(outlineDataProvider),
+        foreshadows: ref.read(foreshadowDataProvider),
+        plans: ref.read(updatePlanDataProvider),
+        itemClasses: ref.read(itemWorkspaceProvider).itemClasses,
+      );
+
+  bool _phraseTargetExists(InlineAnnotationKind kind, String id) =>
+      _phraseTargets(kind).any((target) => target.id == id);
+
+  Future<void> _insertPhraseById(String id, {TextRange? triggerRange}) async {
+    final controller = widget.controller;
+    if (controller is! MosaicEditingController) return;
+    final matches = ref
+        .read(availablePhrasesProvider)
+        .where((entry) => entry.id == id);
+    if (matches.isEmpty) return;
+    final range = triggerRange ?? _completionSession?.rawReplacementRange;
+    final service = const PhraseInsertionService();
+    try {
+      final prepared = service.prepare(
+        phrase: matches.first,
+        controller: controller,
+        displaySelection: controller.selection,
+        targetExists: _phraseTargetExists,
+        triggerRawRange: range,
+      );
+      final resolutions = <int, PhraseMentionResolution>{};
+      for (final missing in prepared.missingMentions) {
+        final decision = await _resolvePhraseMention(missing);
+        if (!mounted || decision == null) {
+          widget.focusNode.requestFocus();
+          return;
+        }
+        resolutions[missing.annotation.sourceRange.start] = decision;
+      }
+      final inserted = service.commit(
+        prepared: prepared,
+        controller: controller,
+        targetExists: _phraseTargetExists,
+        resolutions: resolutions,
+      );
+      if (!inserted && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('正文已變更，請重新選取短語')));
+      }
+      _dismissedPhraseStart = null;
+      _phraseMenuTriggerStart = null;
+      _phraseMenuQueryStart = null;
+      _dismissCompletion();
+      widget.focusNode.requestFocus();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('無法插入短語：$error')));
+    }
+  }
+
+  Future<PhraseMentionResolution?> _resolvePhraseMention(
+    MissingPhraseMention missing,
+  ) async {
+    final annotation = missing.annotation;
+    final targets = _phraseTargets(annotation.kind);
+    var query = '';
+    return showDialog<PhraseMentionResolution>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, update) => AlertDialog(
+          title: Text('重新連結「${annotation.displayText}」'),
+          content: SizedBox(
+            width: 420,
+            height: 360,
+            child: Column(
+              children: [
+                TextField(
+                  autofocus: true,
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: '搜尋對象'),
+                  ),
+                  onChanged: (value) =>
+                      update(() => query = value.toLowerCase()),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final target in targets)
+                        if (target.primaryName.toLowerCase().contains(query) ||
+                            target.id.toLowerCase().contains(query))
+                          ListTile(
+                            title: Text(target.primaryName),
+                            subtitle: Text(target.path ?? target.id),
+                            onTap: () => Navigator.pop(
+                              dialogContext,
+                              RelinkPhraseMention(target.id),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消插入'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, const FlattenPhraseMention()),
+              child: const Text('改為純文字'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPhraseLibrary({String? initialBody}) async {
+    await PhraseLibraryDialog.show(context: context, initialBody: initialBody);
+    if (mounted) _refreshCompletion();
+  }
+
+  void _saveSelectionAsPhrase() {
+    final controller = widget.controller;
+    if (controller is! MosaicEditingController ||
+        !controller.selection.isValid ||
+        controller.selection.isCollapsed) {
+      return;
+    }
+    final range = controller.projection.displayRangeToRaw(
+      TextRange(
+        start: controller.selection.start,
+        end: controller.selection.end,
+      ),
+    );
+    if (range.isCollapsed) return;
+    unawaited(
+      _openPhraseLibrary(
+        initialBody: controller.rawText.substring(range.start, range.end),
+      ),
+    );
+  }
+
+  Future<void> _showPhrasePicker() async {
+    final phrases = ref
+        .read(availablePhrasesProvider)
+        .where((phrase) => phrase.enabled)
+        .toList();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('插入短語'),
+        children: [
+          for (final phrase in phrases)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, phrase.id),
+              child: Text('${phrase.shortcut} · ${phrase.name}'),
+            ),
+        ],
+      ),
+    );
+    if (mounted && selected != null) await _insertPhraseById(selected);
+  }
+
+  Widget _phraseActions() => Material(
+    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+    borderRadius: BorderRadius.circular(12),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          key: const ValueKey('phrase-library-button'),
+          tooltip: '短語庫',
+          onPressed: () => unawaited(_openPhraseLibrary()),
+          icon: const Icon(Icons.library_books_outlined),
+        ),
+        IconButton(
+          key: const ValueKey('insert-phrase-button'),
+          tooltip: '插入短語',
+          onPressed: () => unawaited(_showPhrasePicker()),
+          icon: const Icon(Icons.add_comment_outlined),
+        ),
+      ],
+    ),
+  );
 
   void _moveAcrossAtomicMention(int direction) {
     final controller = widget.controller;
@@ -965,6 +1279,56 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     final mosaicController = widget.controller is MosaicEditingController
         ? widget.controller as MosaicEditingController
         : null;
+    final revision = ref.watch(revisionTrackingProvider);
+    final selectedChapter = ref.watch(editorSelectionProvider).selectedChapID;
+    final rawText = mosaicController?.rawText ?? widget.controller.text;
+    final matchingRevision =
+        revision.status == RevisionComparisonStatus.complete &&
+        selectedChapter != null &&
+        revision.targetSnapshot?.chapterTexts[selectedChapter] == rawText;
+    final chapterDiff = matchingRevision
+        ? revision.comparison?.texts
+              .where((entry) => entry.chapterId == selectedChapter)
+              .firstOrNull
+        : null;
+    int displayOffset(int offset) =>
+        mosaicController?.projection.rawOffsetToDisplay(offset) ?? offset;
+    final revisionRanges = <PlainTextQuillRenderRange>[];
+    final revisionMarkers = <PlainTextQuillRevisionMarker>[];
+    if (chapterDiff != null) {
+      for (final hunk in chapterDiff.hunks) {
+        if (hunk.lines.isEmpty) {
+          revisionMarkers.add(
+            PlainTextQuillRevisionMarker(displayOffset(hunk.newOffset), '±'),
+          );
+        }
+        var hasRemoval = false;
+        for (final line in hunk.lines) {
+          if (line.kind == RevisionLineKind.removed) hasRemoval = true;
+          final added = line.after;
+          if (line.kind != RevisionLineKind.added || added == null) continue;
+          revisionMarkers.add(
+            PlainTextQuillRevisionMarker(displayOffset(added.startOffset), '+'),
+          );
+          if (added.endOffset > added.startOffset) {
+            revisionRanges.add(
+              PlainTextQuillRenderRange(
+                range: TextRange(
+                  start: displayOffset(added.startOffset),
+                  end: displayOffset(added.endOffset),
+                ),
+                backgroundColor: Colors.green.withValues(alpha: 0.2),
+              ),
+            );
+          }
+        }
+        if (hasRemoval) {
+          revisionMarkers.add(
+            PlainTextQuillRevisionMarker(displayOffset(hunk.newOffset), '−'),
+          );
+        }
+      }
+    }
     final completionCandidates = poppinEnabled
         ? _activeCompletionCandidates ?? const <MosaicCompletionCandidate>[]
         : const <MosaicCompletionCandidate>[];
@@ -991,9 +1355,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
             const PoppinAcceptIntent(),
         const SingleActivator(LogicalKeyboardKey.tab):
             const PoppinAcceptIntent(),
+      },
+      if (poppinEnabled && _completionSession != null)
         const SingleActivator(LogicalKeyboardKey.escape):
             const PoppinDismissIntent(),
-      },
     };
     return RepaintBoundary(
       child: Shortcuts(
@@ -1028,8 +1393,16 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                         "main-plain-text-quill-editor",
                       ),
                       content: content,
-                      overwriteMode: ref.watch(editorOverwriteProvider),
+                      overwriteMode: ref.watch(
+                        editorEffectiveOverwriteProvider,
+                      ),
                       tabSpaces: _tabSpaces,
+                      autoIndentLineStart:
+                          ref
+                              .watch(settingsStateProvider)
+                              .valueOrNull
+                              ?.autoIndentLineStart ??
+                          false,
                       onTabPressed: _acceptCompletionFromTab,
                       onToggleOverwrite: _toggleOverwrite,
                       overwriteProtectedRanges:
@@ -1044,6 +1417,8 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                       focusNode: widget.focusNode,
                       commands: _quillCommands,
                       searchController: widget.quillSearchController,
+                      revisionRanges: revisionRanges,
+                      revisionMarkers: revisionMarkers,
                       mentionMarkers: mosaicController == null
                           ? const <PlainTextQuillMentionMarker>[]
                           : <PlainTextQuillMentionMarker>[
@@ -1073,6 +1448,8 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                           },
                     ),
                   ),
+                  if (widget.showPhraseActions)
+                    Positioned(top: 8, right: 8, child: _phraseActions()),
                   if (poppinEnabled && _completionSession != null)
                     Positioned(
                       key: const ValueKey("mosaic-completion-panel"),
@@ -1115,16 +1492,26 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 
   @override
   Widget build(BuildContext context) {
-    final overwrite = ref.watch(editorOverwriteProvider);
+    ref.listen<List<PhraseEntry>>(availablePhrasesProvider, (_, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refreshCompletion();
+      });
+    });
+    final overwrite = ref.watch(editorEffectiveOverwriteProvider);
     if (widget.controller case final MosaicEditingController controller) {
       controller.overwriteEnabled = overwrite && !_usesPlainTextQuillEditor;
+      controller.autoIndentLineStart =
+          (ref.watch(settingsStateProvider).valueOrNull?.autoIndentLineStart ??
+              false) &&
+          !_usesPlainTextQuillEditor;
+      controller.indentation = _tabSpaces;
     }
     if (_usesPlainTextQuillEditor) {
       return _buildPlainTextQuillEditor(context);
     }
     final fontSize = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.fontSize ?? 12.0,
+        (state) => state.valueOrNull?.fontSize ?? 14.0,
       ),
     );
     final poppinEnabled = ref.watch(
@@ -1138,7 +1525,8 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     final textStyle = Theme.of(
       context,
     ).textTheme.labelLarge?.copyWith(height: 1.6, fontSize: fontSize);
-    final editorBackground = colorScheme.surfaceContainerLowest;
+    final editorBackground =
+        widget.backgroundColor ?? colorScheme.surfaceContainerLowest;
     final bool isApple =
         !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
@@ -1183,6 +1571,14 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     final shortcuts = <ShortcutActivator, Intent>{
       const SingleActivator(LogicalKeyboardKey.tab):
           const InsertEditorSpacesIntent(),
+      if (!isComposing &&
+          (ref.watch(settingsStateProvider).valueOrNull?.autoIndentLineStart ??
+              false)) ...{
+        const SingleActivator(LogicalKeyboardKey.enter):
+            const _InsertEditorNewlineIntent(false),
+        const SingleActivator(LogicalKeyboardKey.enter, shift: true):
+            const _InsertEditorNewlineIntent(true),
+      },
       const SingleActivator(LogicalKeyboardKey.insert, includeRepeats: false):
           const ToggleEditorOverwriteIntent(),
       SingleActivator(
@@ -1226,9 +1622,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
             const PoppinAcceptIntent(),
         const SingleActivator(LogicalKeyboardKey.tab):
             const PoppinAcceptIntent(),
+      },
+      if (!isComposing && poppinEnabled && _completionSession != null)
         const SingleActivator(LogicalKeyboardKey.escape):
             const PoppinDismissIntent(),
-      },
       if (!isComposing && !hasCompletionCandidates && skipLeft != null)
         const SingleActivator(LogicalKeyboardKey.arrowLeft):
             const _AtomicMentionMoveIntent(-1),
@@ -1251,6 +1648,10 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
             InsertEditorSpacesIntent: CallbackAction<InsertEditorSpacesIntent>(
               onInvoke: (_) => _insertTabSpaces(),
             ),
+            _InsertEditorNewlineIntent:
+                CallbackAction<_InsertEditorNewlineIntent>(
+                  onInvoke: (intent) => _insertNewline(intent.plain),
+                ),
             ToggleEditorOverwriteIntent:
                 CallbackAction<ToggleEditorOverwriteIntent>(
                   onInvoke: (_) => _toggleOverwrite(),
@@ -1378,6 +1779,7 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                 child: CodeField(
                                   selectionControls: _MentionSelectionControls(
                                     () => unawaited(_mentionFromSelection()),
+                                    _saveSelectionAsPhrase,
                                     (cut) =>
                                         unawaited(_copySelection(cut: cut)),
                                     () => unawaited(_pastePlainText()),
@@ -1396,6 +1798,12 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                 ),
                               ),
                             ),
+                            if (widget.showPhraseActions)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: _phraseActions(),
+                              ),
                             Positioned.fill(
                               child: RemoteTextCursorOverlay(
                                 key: _remoteCursorLayerKey,
@@ -1498,9 +1906,15 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
 // ignore_for_file: deprecated_member_use
 class _MentionSelectionControls extends MaterialTextSelectionControls {
   final VoidCallback onMention;
+  final VoidCallback onSavePhrase;
   final void Function(bool cut) onCopy;
   final VoidCallback onPaste;
-  _MentionSelectionControls(this.onMention, this.onCopy, this.onPaste);
+  _MentionSelectionControls(
+    this.onMention,
+    this.onSavePhrase,
+    this.onCopy,
+    this.onPaste,
+  );
 
   @override
   Widget buildToolbar(
@@ -1557,6 +1971,14 @@ class _MentionSelectionControls extends MaterialTextSelectionControls {
               onMention();
             },
           ),
+        if (!delegate.textEditingValue.selection.isCollapsed)
+          ContextMenuButtonItem(
+            label: '存成短語',
+            onPressed: () {
+              delegate.hideToolbar();
+              onSavePhrase();
+            },
+          ),
       ],
     );
   }
@@ -1592,4 +2014,9 @@ class _AtomicMentionDeleteIntent extends Intent {
 
 class _EditorPasteIntent extends Intent {
   const _EditorPasteIntent();
+}
+
+class _InsertEditorNewlineIntent extends Intent {
+  const _InsertEditorNewlineIntent(this.plain);
+  final bool plain;
 }

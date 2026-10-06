@@ -32,6 +32,7 @@ import "package:window_manager/window_manager.dart";
 import "bin/appbar.dart";
 import "bin/statusbar.dart";
 import "bin/slidebar.dart";
+import "models/navigation_style.dart";
 import "bin/content.dart";
 import "bin/mobile_function_page.dart";
 import "bin/file.dart";
@@ -42,6 +43,8 @@ import "bin/settings_manager.dart";
 import "application/project_import/selective_project_import.dart";
 import "data/p2p/p2p_snapshot_quarantine.dart";
 import "domain/collaboration/collaborative_text.dart";
+import "domain/collaboration/collaboration_operation.dart"
+    show ProjectRecordKind;
 import "domain/models/p2p_sync_models.dart";
 import "domain/models/p2p_revision_models.dart";
 import "domain/models/p2p_snapshot_models.dart";
@@ -63,6 +66,11 @@ import "features/inline_annotations/mosaic_editing_controller.dart";
 import "features/inline_annotations/alias_mention_updates.dart";
 import "features/editor/plain_text_quill_editor_poc.dart";
 import "features/editor/plain_text_quill_render_range.dart";
+import "features/revision_tracking/presentation/revision_tracking_panel.dart";
+import "features/revision_tracking/application/revision_review_service.dart";
+import "features/revision_tracking/application/revision_session_codec.dart";
+import "features/revision_tracking/application/revision_snapshot_builder.dart";
+import "features/revision_tracking/domain/revision_models.dart";
 import "presentation/providers/collaboration_providers.dart";
 import "presentation/providers/editor_coordinator_provider.dart";
 import "presentation/providers/global_state_providers.dart";
@@ -73,6 +81,7 @@ import "presentation/widgets/p2p_conflict_resolution_dialog.dart";
 import "presentation/widgets/splash_screen.dart";
 import "presentation/providers/project_snapshot_utils.dart";
 import "presentation/providers/project_state_providers.dart";
+import "presentation/providers/revision_tracking_provider.dart";
 import "presentation/providers/timeline_providers.dart";
 import "presentation/providers/word_count_providers.dart";
 import "utils/text_change_debouncer.dart";
@@ -259,7 +268,7 @@ class _MainAppState extends ConsumerState<MainApp> {
         home: Scaffold(
           body: Center(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               child: Text("初始化失敗：${bootstrap.error}"),
             ),
           ),
@@ -471,11 +480,21 @@ class _EditorStatusBarState extends ConsumerState<_EditorStatusBar> {
           ref.read(settingsStateProvider.notifier).setTabSpaceCount(count),
       onTabFullWidthChanged: (fullWidth) =>
           ref.read(settingsStateProvider.notifier).setTabFullWidth(fullWidth),
-      overwriteMode: ref.watch(editorOverwriteProvider),
-      onToggleOverwrite: () {
-        final mode = ref.read(editorOverwriteProvider.notifier);
-        mode.state = !mode.state;
-      },
+      autoIndentLineStart:
+          ref.watch(settingsStateProvider).valueOrNull?.autoIndentLineStart ??
+          false,
+      onAutoIndentLineStartChanged: (enabled) => ref
+          .read(settingsStateProvider.notifier)
+          .setAutoIndentLineStart(enabled),
+      overwriteMode: ref.watch(editorEffectiveOverwriteProvider),
+      onToggleOverwrite:
+          (ref.watch(settingsStateProvider).valueOrNull?.overwriteModeEnabled ??
+              true)
+          ? () {
+              final mode = ref.read(editorOverwriteProvider.notifier);
+              mode.state = !mode.state;
+            }
+          : null,
       currentWords: currentWords,
       totalWords: totalWords,
       iconSize: widget.iconSize,
@@ -546,6 +565,8 @@ class _ContentViewState extends ConsumerState<ContentView>
   Widget? _stableResizeBody;
   Size? _stableResizeBodySize;
   double _sidebarWidthRatio = 0.25; // Default sidebar width ratio (25%)
+  bool _showRevisionPanel = false;
+  double _revisionPanelWidth = 320;
 
   static const Duration _windowResizeSettleDelay = Duration(milliseconds: 40);
 
@@ -612,6 +633,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   late final TextChangeDebouncer _textChangeDebouncer;
   Timer? _projectHistoryRecordTimer;
   int _projectDataRevision = 0;
+  bool _suppressRevisionDirty = false;
   int? _lastRecordedProjectDataRevision;
   int? _pendingProjectHistoryRevision;
   Timer? _autoSaveTimer;
@@ -687,7 +709,9 @@ class _ContentViewState extends ConsumerState<ContentView>
       _recordProjectHistorySnapshot();
     }
 
-    if (node != null && _findEditableForFocusNode(node) != null) {
+    if (node != null &&
+        (_findEditableForFocusNode(node) != null ||
+            PlainTextQuillEditorCommands.forFocusNode(node) != null)) {
       // 焦點進入編輯框
       _lastFocusedEditableNode = node;
       debugPrint("[DEBUG] Focus on editable: $node");
@@ -1366,6 +1390,14 @@ class _ContentViewState extends ConsumerState<ContentView>
       final bool textChanged =
           !_isSyncing && _lastObservedEditorText != currentText;
       final chapterId = selectedChapID;
+      final composing = textController.value.composing;
+      if (chapterId != null &&
+          (!composing.isValid || composing.isCollapsed) &&
+          ref.read(revisionTrackingProvider).baseline != null) {
+        ref
+            .read(revisionEditorDraftProvider.notifier)
+            .update(ref.read(projectUuidProvider), chapterId, currentText);
+      }
       final focusOffset = _clampOffset(
         rawSelection.extentOffset,
         currentText.length,
@@ -1455,6 +1487,17 @@ class _ContentViewState extends ConsumerState<ContentView>
     _subscriptions.add(
       ref.listenManual<String>(projectUuidProvider, (previous, next) {
         _publishLocalP2pProjectStatus();
+      }),
+    );
+    _subscriptions.add(
+      ref.listenManual<String?>(revisionTrackingJsonProvider, (previous, next) {
+        if (!mounted || _suppressRevisionDirty || previous == next) return;
+        _projectDataRevision++;
+        ref.read(editorCoordinatorProvider.notifier).markAsModified();
+        if (RevisionSessionCodec.decisionDigest(previous) !=
+            RevisionSessionCodec.decisionDigest(next)) {
+          _scheduleProjectHistoryRecord(_projectDataRevision);
+        }
       }),
     );
     _subscriptions.add(
@@ -2094,12 +2137,16 @@ class _ContentViewState extends ConsumerState<ContentView>
     _isApplyingProjectHistory = true;
     final initialState = _initialStateForHistoryEntry(entry);
     final historyData = snapshotProjectData(entry.data)
-      ..projectUUID = ref.read(projectUuidProvider);
+      ..projectUUID = ref.read(projectUuidProvider)
+      ..revisionTrackingJson = ref.read(revisionTrackingJsonProvider);
 
     setState(() {
       slidePageIndexNow = entry.pageIndex < 0 ? 0 : entry.pageIndex;
       _applyProjectData(historyData, initialState);
     });
+    ref
+        .read(revisionTrackingProvider.notifier)
+        .restoreReviewDecisions(entry.data.revisionTrackingJson);
     _projectDataRevision++;
     _lastRecordedProjectDataRevision = _projectDataRevision;
 
@@ -2291,7 +2338,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   Widget build(BuildContext context) {
     final fontSize = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.fontSize ?? 12.0,
+        (state) => state.valueOrNull?.fontSize ?? 14.0,
       ),
     );
     final wordCountMode = ref.watch(
@@ -2607,81 +2654,139 @@ class _ContentViewState extends ConsumerState<ContentView>
     return Column(
       children: [
         Expanded(
-          child: Row(
-            children: [
-              MonogatariRailSection(
-                selectedIndex: _getNavigationIndex(),
-                onDestinationSelected: (index) {
-                  _syncEditorToSelectedChapter();
-                  _recordPageTransitionIfNeeded(index);
-                  setState(() {
-                    slidePageIndexNow = index;
-                  });
-                },
-                selectedLabelTextStyle: Theme.of(
-                  context,
-                ).textTheme.displaySmall,
-                unselectedLabelTextStyle: Theme.of(
-                  context,
-                ).textTheme.displaySmall,
+          child: MonogatariNavigationLayout(
+            style: ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.valueOrNull?.navigationStyle ??
+                    NavigationStyle.railLabel,
               ),
+            ),
+            selectedIndex: _getNavigationIndex(),
+            onDestinationSelected: (index) {
+              _syncEditorToSelectedChapter();
+              _recordPageTransitionIfNeeded(index);
+              setState(() {
+                slidePageIndexNow = index;
+              });
+            },
+            selectedLabelTextStyle: Theme.of(context).textTheme.labelTiny,
+            unselectedLabelTextStyle: Theme.of(context).textTheme.labelTiny,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double maxWidth = constraints.maxWidth;
+                // 計算側邊欄寬度，並限制在 400px - 40% 之間
+                final double minSidebarWidth = max(maxWidth * 0.2, 400);
+                final double maxSidebarWidth = max(maxWidth * 0.4, 400);
+                // 確保最大寬度至少能容納最小寬度
+                final double effectiveMaxWidth =
+                    maxSidebarWidth < minSidebarWidth
+                    ? minSidebarWidth
+                    : maxSidebarWidth;
 
-              // 主要內容區域
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final double maxWidth = constraints.maxWidth;
-                    // 計算側邊欄寬度，並限制在 400px - 40% 之間
-                    final double minSidebarWidth = max(maxWidth * 0.2, 400);
-                    final double maxSidebarWidth = max(maxWidth * 0.4, 400);
-                    // 確保最大寬度至少能容納最小寬度
-                    final double effectiveMaxWidth =
-                        maxSidebarWidth < minSidebarWidth
-                        ? minSidebarWidth
-                        : maxSidebarWidth;
+                final double sidebarWidth = min(
+                  (maxWidth * _sidebarWidthRatio).clamp(
+                    minSidebarWidth,
+                    effectiveMaxWidth,
+                  ),
+                  max(240, maxWidth - 360),
+                );
+                final bool inlineRevision =
+                    _showRevisionPanel &&
+                    maxWidth >=
+                        sidebarWidth + 8 + 40 + _revisionPanelWidth + 480;
 
-                    final double sidebarWidth = (maxWidth * _sidebarWidthRatio)
-                        .clamp(minSidebarWidth, effectiveMaxWidth);
+                return Row(
+                  children: [
+                    // 左側內容區域
+                    SizedBox(
+                      width: sidebarWidth,
+                      child: Container(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest,
+                        child: _buildPageContent(),
+                      ),
+                    ),
 
-                    return Row(
-                      children: [
-                        // 左側內容區域
-                        SizedBox(
-                          width: sidebarWidth,
-                          child: Container(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerLowest,
-                            child: _buildPageContent(),
+                    MonogatariResizeDivider(
+                      onPanUpdate: (details) {
+                        setState(() {
+                          double currentWidth = sidebarWidth;
+                          double newWidth = currentWidth + details.delta.dx;
+
+                          double newRatio = newWidth / maxWidth;
+                          double minRatio = minSidebarWidth / maxWidth;
+                          double maxRatio = effectiveMaxWidth / maxWidth;
+
+                          _sidebarWidthRatio = newRatio.clamp(
+                            minRatio,
+                            maxRatio,
+                          );
+                        });
+                      },
+                    ),
+
+                    SizedBox(
+                      width: 40,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: IconButton(
+                          tooltip: _showRevisionPanel ? '收合修訂追蹤' : '開啟修訂追蹤',
+                          icon: Icon(
+                            _showRevisionPanel
+                                ? Icons.rate_review
+                                : Icons.rate_review_outlined,
                           ),
+                          onPressed: () => setState(() {
+                            _showRevisionPanel = !_showRevisionPanel;
+                          }),
                         ),
+                      ),
+                    ),
 
-                        MonogatariResizeDivider(
-                          onPanUpdate: (details) {
-                            setState(() {
-                              double currentWidth = sidebarWidth;
-                              double newWidth = currentWidth + details.delta.dx;
-
-                              double newRatio = newWidth / maxWidth;
-                              double minRatio = minSidebarWidth / maxWidth;
-                              double maxRatio = effectiveMaxWidth / maxWidth;
-
-                              _sidebarWidthRatio = newRatio.clamp(
-                                minRatio,
-                                maxRatio,
-                              );
-                            });
-                          },
+                    if (inlineRevision) ...[
+                      SizedBox(
+                        width: _revisionPanelWidth,
+                        child: _buildRevisionPanel(),
+                      ),
+                      MonogatariResizeDivider(
+                        onPanUpdate: (details) => setState(
+                          () => _revisionPanelWidth =
+                              (_revisionPanelWidth + details.delta.dx).clamp(
+                                280.0,
+                                480.0,
+                              ),
                         ),
+                      ),
+                    ],
 
-                        // 右側編輯器
-                        Expanded(child: _buildEditor()),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
+                    // 右側編輯器
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: _buildEditor()),
+                          if (_showRevisionPanel && !inlineRevision)
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              left: 0,
+                              width: min(
+                                _revisionPanelWidth,
+                                max(160, maxWidth - sidebarWidth - 56),
+                              ),
+                              child: Material(
+                                elevation: 8,
+                                child: _buildRevisionPanel(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
 
@@ -2712,6 +2817,439 @@ class _ContentViewState extends ConsumerState<ContentView>
       lastSavedTime: lastSavedTime,
     );
   }
+
+  Widget _buildRevisionPanel() => RevisionTrackingPanel(
+    onStart: () {
+      _syncEditorToSelectedChapter();
+      ref
+          .read(revisionEditorDraftProvider.notifier)
+          .update(
+            ref.read(projectUuidProvider),
+            selectedChapID,
+            textController.rawText,
+          );
+      ref.read(revisionTrackingProvider.notifier).start();
+    },
+    onClose: () => setState(() => _showRevisionPanel = false),
+    onRejectTextScope: (selection) {
+      _syncEditorToSelectedChapter();
+      final tracking = ref.read(revisionTrackingProvider);
+      if (tracking.baseline?.readOnly != false ||
+          tracking.status != RevisionComparisonStatus.complete ||
+          !ref.read(revisionTrackingProvider.notifier).comparisonIsFresh()) {
+        _showMessage('正文已變更，請等待修訂重新計算後再批次拒絕。');
+        return;
+      }
+      final updates = <String, ({String folderId, String content})>{};
+      try {
+        for (final entry in selection.entries) {
+          final text = entry.key;
+          if (tracking.comparison?.texts.contains(text) != true ||
+              !text.hunks.toSet().containsAll(entry.value)) {
+            throw StateError('Stale text selection');
+          }
+          final location = ChapterModule.ChapterTree.findChapter(
+            ref.read(segmentsDataProvider),
+            chapterId: text.chapterId,
+          );
+          final expected =
+              tracking.targetSnapshot?.chapterTexts[text.chapterId];
+          if (location == null ||
+              expected == null ||
+              location.chapter.chapterContent != expected) {
+            throw StateError('Changed chapter');
+          }
+          updates[text.chapterId] = (
+            folderId: location.folder.segmentUUID,
+            content: RevisionReviewService.rejectTextHunks(
+              before:
+                  tracking.baseline!.snapshot.chapterTexts[text.chapterId] ??
+                  '',
+              after: expected,
+              diff: text,
+              hunks: entry.value,
+            ),
+          );
+        }
+      } catch (_) {
+        _showMessage('批次拒絕的來源已變更；請重新計算差異。');
+        return;
+      }
+      _recordProjectHistorySnapshot();
+      for (final entry in updates.entries) {
+        if (selectedChapID == entry.key) {
+          textController.setRawText(entry.value.content);
+        }
+        ref
+            .read(segmentsDataProvider.notifier)
+            .updateChapterContent(
+              segmentID: entry.value.folderId,
+              chapterID: entry.key,
+              content: entry.value.content,
+            );
+      }
+      _recordProjectHistorySnapshot();
+    },
+    onRejectText: (text, hunk) {
+      _syncEditorToSelectedChapter();
+      final tracking = ref.read(revisionTrackingProvider);
+      final snapshot = tracking.targetSnapshot;
+      final current = ChapterModule.ChapterTree.findChapter(
+        ref.read(segmentsDataProvider),
+        chapterId: text.chapterId,
+      );
+      final expected = snapshot?.chapterTexts[text.chapterId];
+      if (tracking.status != RevisionComparisonStatus.complete ||
+          tracking.comparison?.texts.contains(text) != true ||
+          !ref.read(revisionTrackingProvider.notifier).comparisonIsFresh() ||
+          current == null ||
+          expected == null ||
+          current.chapter.chapterContent != expected) {
+        _showMessage('正文已變更，請等待修訂重新計算後再拒絕。');
+        return;
+      }
+      final original =
+          tracking.baseline!.snapshot.chapterTexts[text.chapterId] ?? '';
+      try {
+        final restored = RevisionReviewService.rejectTextHunk(
+          before: original,
+          after: expected,
+          diff: text,
+          hunk: hunk,
+        );
+        _recordProjectHistorySnapshot();
+        if (selectedChapID == text.chapterId) {
+          textController.setRawText(restored);
+        }
+        ref
+            .read(segmentsDataProvider.notifier)
+            .updateChapterContent(
+              segmentID: current.folder.segmentUUID,
+              chapterID: text.chapterId,
+              content: restored,
+            );
+        _recordProjectHistorySnapshot();
+      } catch (_) {
+        _showMessage('此區塊位置已失效，請重新計算差異。');
+      }
+    },
+    onRejectRecord: (record, field) {
+      if (field == null ||
+          !RevisionReviewService.canRejectField(record, field)) {
+        return;
+      }
+      final tracking = ref.read(revisionTrackingProvider);
+      if (tracking.status != RevisionComparisonStatus.complete ||
+          tracking.comparison?.records.contains(record) != true ||
+          !ref.read(revisionTrackingProvider.notifier).comparisonIsFresh()) {
+        _showMessage('欄位已變更，請等待修訂重新計算。');
+        return;
+      }
+      final name = field.target.fieldPath.single;
+      final currentRecord = RevisionSnapshotBuilder.capture(
+        ref.read(projectDataProvider),
+        version: 'review-check',
+      ).records[record.key];
+      final currentValue = currentRecord?.fields[name];
+      if (currentValue != field.newValue) {
+        _showMessage('欄位已變更，請等待修訂重新計算。');
+        return;
+      }
+      _recordProjectHistorySnapshot();
+      final oldValue = field.oldValue as String;
+      switch (record.key.kind) {
+        case ProjectRecordKind.baseInfo:
+          final notifier = ref.read(baseInfoDataProvider.notifier);
+          switch (name) {
+            case 'bookName':
+              notifier.setBookName(oldValue);
+            case 'author':
+              notifier.setAuthor(oldValue);
+            case 'purpose':
+              notifier.setPurpose(oldValue);
+            case 'toRecap':
+              notifier.setToRecap(oldValue);
+            case 'storyType':
+              notifier.setStoryType(oldValue);
+            case 'intro':
+              notifier.setIntro(oldValue);
+          }
+        case ProjectRecordKind.chapterFolder:
+          ref
+              .read(segmentsDataProvider.notifier)
+              .renameSegment(segmentID: record.key.recordId, name: oldValue);
+        case ProjectRecordKind.chapterMetadata:
+          final location = ChapterModule.ChapterTree.findChapter(
+            ref.read(segmentsDataProvider),
+            chapterId: record.key.recordId,
+          );
+          if (location == null) return;
+          ref
+              .read(segmentsDataProvider.notifier)
+              .renameChapter(
+                segmentID: location.folder.segmentUUID,
+                chapterID: record.key.recordId,
+                name: oldValue,
+              );
+        case ProjectRecordKind.worldNode:
+          ref
+              .read(worldSettingsDataProvider.notifier)
+              .updateLocationById(
+                record.key.recordId,
+                (current) => switch (name) {
+                  'name' => current.copyWith(localName: oldValue),
+                  'localType' => current.copyWith(localType: oldValue),
+                  'note' => current.copyWith(note: oldValue),
+                  _ => current,
+                },
+              );
+        case ProjectRecordKind.character:
+          final current = ref.read(characterDataProvider)[record.key.recordId];
+          if (current == null) return;
+          final updated = switch (name) {
+            'displayName' => current.withDisplayName(oldValue),
+            'roleOrOccupation' => current.copyWith(roleOrOccupation: oldValue),
+            'age' => current.copyWith(age: oldValue),
+            'gender' => current.copyWith(gender: oldValue),
+            'appearanceSummary' => current.copyWith(
+              appearanceSummary: oldValue,
+            ),
+            'personalitySummary' => current.copyWith(
+              personalitySummary: oldValue,
+            ),
+            'speechStyle' => current.copyWith(speechStyle: oldValue),
+            'motivation' => current.copyWith(motivation: oldValue),
+            'goal' => current.copyWith(goal: oldValue),
+            'valuesAndBeliefs' => current.copyWith(valuesAndBeliefs: oldValue),
+            'fear' => current.copyWith(fear: oldValue),
+            'relationshipSummary' => current.copyWith(
+              relationshipSummary: oldValue,
+            ),
+            'notes' => current.copyWith(notes: oldValue),
+            _ => current,
+          };
+          ref
+              .read(characterDataProvider.notifier)
+              .setCharacterEntry(
+                characterId: record.key.recordId,
+                entry: name == 'displayName'
+                    ? updated
+                    : updated.withTextField(name, oldValue),
+              );
+        case ProjectRecordKind.outlineStoryline:
+          ref
+              .read(outlineDataProvider.notifier)
+              .updateOutlineData(
+                (source) => [
+                  for (final storyline in source)
+                    if (storyline.chapterUUID == record.key.recordId)
+                      switch (name) {
+                        'name' => storyline.copyWith(storylineName: oldValue),
+                        'type' => storyline.copyWith(storylineType: oldValue),
+                        'memo' => storyline.copyWith(memo: oldValue),
+                        'conflictPoint' => storyline.copyWith(
+                          conflictPoint: oldValue,
+                        ),
+                        _ => storyline,
+                      }
+                    else
+                      storyline,
+                ],
+              );
+        case ProjectRecordKind.outlineEvent:
+          ref
+              .read(outlineDataProvider.notifier)
+              .updateOutlineData(
+                (source) => [
+                  for (final storyline in source)
+                    storyline.copyWith(
+                      scenes: [
+                        for (final event in storyline.scenes)
+                          if (event.storyEventUUID == record.key.recordId)
+                            switch (name) {
+                              'event' => event.copyWith(storyEvent: oldValue),
+                              'memo' => event.copyWith(memo: oldValue),
+                              'conflictPoint' => event.copyWith(
+                                conflictPoint: oldValue,
+                              ),
+                              _ => event,
+                            }
+                          else
+                            event,
+                      ],
+                    ),
+                ],
+              );
+        case ProjectRecordKind.outlineScene:
+          ref
+              .read(outlineDataProvider.notifier)
+              .updateOutlineData(
+                (source) => [
+                  for (final storyline in source)
+                    storyline.copyWith(
+                      scenes: [
+                        for (final event in storyline.scenes)
+                          event.copyWith(
+                            scenes: [
+                              for (final scene in event.scenes)
+                                if (scene.sceneUUID == record.key.recordId)
+                                  switch (name) {
+                                    'name' => scene.copyWith(
+                                      sceneName: oldValue,
+                                    ),
+                                    'time' => scene.copyWith(time: oldValue),
+                                    'location' => scene.copyWith(
+                                      location: oldValue,
+                                    ),
+                                    'focusPoint' => scene.copyWith(
+                                      focusPoint: oldValue,
+                                    ),
+                                    'conflictPoint' => scene.copyWith(
+                                      conflictPoint: oldValue,
+                                    ),
+                                    'memo' => scene.copyWith(memo: oldValue),
+                                    _ => scene,
+                                  }
+                                else
+                                  scene,
+                            ],
+                          ),
+                      ],
+                    ),
+                ],
+              );
+        case ProjectRecordKind.itemClass:
+          final current = ref
+              .read(itemWorkspaceProvider)
+              .itemClasses[record.key.recordId];
+          if (current == null) return;
+          final updated = switch (name) {
+            'name' => current.copyWith(
+              name: oldValue,
+              defaultState: current.defaultState.copyWith(name: oldValue),
+            ),
+            'description' => current.copyWith(
+              description: oldValue,
+              defaultState: current.defaultState.copyWith(
+                description: oldValue,
+              ),
+            ),
+            'category' => current.copyWith(category: oldValue),
+            'unit' => current.copyWith(unit: oldValue),
+            _ => current,
+          };
+          ref.read(itemWorkspaceProvider.notifier).putClass(updated);
+        case ProjectRecordKind.itemInstance:
+          final current = ref
+              .read(itemWorkspaceProvider)
+              .itemInstances[record.key.recordId];
+          if (current == null) return;
+          ref
+              .read(itemWorkspaceProvider.notifier)
+              .putInstance(current.copyWith(name: oldValue));
+        default:
+          return;
+      }
+      _recordProjectHistorySnapshot();
+    },
+    onNavigateText: (text, hunk, index) {
+      _syncEditorToSelectedChapter();
+      final opened = ref
+          .read(editorCoordinatorProvider.notifier)
+          .navigateToChapter(text.chapterId);
+      if (!opened) {
+        _showMessage('章節已刪除；可在修訂窗格查看舊內容。');
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || selectedChapID != text.chapterId) return;
+        final position = hunk.newOffset.clamp(0, textController.rawText.length);
+        textController.setRawText(
+          textController.rawText,
+          rawSelection: TextSelection.collapsed(offset: position),
+        );
+        editorFocusNode.requestFocus();
+      });
+    },
+    onNavigateRecord: (record, field) {
+      _syncEditorToSelectedChapter();
+      switch (record.key.kind) {
+        case ProjectRecordKind.baseInfo:
+          setState(() => slidePageIndexNow = 1);
+        case ProjectRecordKind.chapterFolder:
+          setState(() => slidePageIndexNow = 2);
+        case ProjectRecordKind.chapterMetadata:
+          setState(() => slidePageIndexNow = 2);
+          if (record.after != null) {
+            ref
+                .read(editorCoordinatorProvider.notifier)
+                .navigateToChapter(record.key.recordId);
+          }
+        case ProjectRecordKind.character:
+          if (record.after != null) {
+            _openCharacter(record.key.recordId);
+          } else {
+            setState(() => slidePageIndexNow = 5);
+          }
+        case ProjectRecordKind.worldNode:
+          setState(() {
+            _requestedLocationId = record.after == null
+                ? null
+                : record.key.recordId;
+            _locationSelectionRequestId++;
+            slidePageIndexNow = 7;
+          });
+        case ProjectRecordKind.outlineStoryline:
+        case ProjectRecordKind.outlineEvent:
+        case ProjectRecordKind.outlineScene:
+        case ProjectRecordKind.outlineChapterLink:
+          if (record.after != null) {
+            ref
+                .read(outlineSelectionRequestProvider.notifier)
+                .requestTarget(
+                  record.key.kind == ProjectRecordKind.outlineChapterLink
+                      ? (record.after?.fields['sceneUUID'] as String? ??
+                            record.key.recordId)
+                      : record.key.recordId,
+                );
+          }
+          setState(() => slidePageIndexNow = 3);
+        case ProjectRecordKind.itemClass:
+        case ProjectRecordKind.itemInstance:
+        case ProjectRecordKind.itemRelation:
+        case ProjectRecordKind.itemClassStateChange:
+        case ProjectRecordKind.itemInstanceStateChange:
+          final fields = (record.after ?? record.before)?.fields;
+          final workspace = ref.read(itemWorkspaceProvider);
+          final itemId = fields == null ? null : fields['itemId'] as String?;
+          final itemKind = fields == null ? null : fields['itemKind'];
+          final classId = switch (record.key.kind) {
+            ProjectRecordKind.itemClass => record.key.recordId,
+            ProjectRecordKind.itemInstance =>
+              fields == null ? null : fields['classId'] as String?,
+            ProjectRecordKind.itemClassStateChange =>
+              fields == null ? null : fields['classId'] as String?,
+            ProjectRecordKind.itemInstanceStateChange =>
+              workspace
+                  .itemInstances[fields == null ? null : fields['instanceId']]
+                  ?.classId,
+            ProjectRecordKind.itemRelation =>
+              itemKind == 'itemClass'
+                  ? itemId
+                  : workspace.itemInstances[itemId]?.classId,
+            _ => null,
+          };
+          setState(() {
+            _requestedItemClassId = classId;
+            _itemSelectionRequestId++;
+            slidePageIndexNow = 8;
+          });
+        default:
+          break;
+      }
+    },
+    sidebarPageIndex: slidePageIndexNow,
+  );
 
   // 獲取 NavigationRail 的選中索引
   int _getNavigationIndex() {
@@ -3000,6 +3538,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       onSaveProjectAs: _saveProjectAs,
       onChooseSyncProject: _openProject,
       onApplyVerifiedP2pSnapshot: _applyVerifiedP2pSnapshot,
+      onCompareVerifiedP2pSnapshot: _compareVerifiedP2pSnapshot,
       onResolveConcurrentP2pSnapshot: _resolveConcurrentP2pSnapshot,
     );
   }
@@ -3097,6 +3636,48 @@ class _ContentViewState extends ConsumerState<ContentView>
       return false;
     } finally {
       _isProjectSwitching = false;
+    }
+  }
+
+  Future<bool> _compareVerifiedP2pSnapshot(P2pVerifiedSnapshot snapshot) async {
+    if (!mounted || !_isCurrentP2pComparisonSnapshot(snapshot)) {
+      _showError('遠端版本已失效，請重新下載完整 snapshot。');
+      return false;
+    }
+    if (FileService.isProjectVersionNewerThanSupported(
+      snapshot.manifest.formatVersion,
+    )) {
+      _showError('遠端專案格式較新，無法安全比較。');
+      return false;
+    }
+    _syncEditorToSelectedChapter();
+    try {
+      final parsed = await compute(
+        FileService.parseProjectXMLWithMetadata,
+        snapshot.xmlContent,
+      );
+      if (!mounted || !_isCurrentP2pComparisonSnapshot(snapshot)) return false;
+      final currentId = ref.read(projectUuidProvider).trim().toLowerCase();
+      if (parsed.sourceProjectUuid?.trim().toLowerCase() !=
+              snapshot.manifest.projectUuid ||
+          parsed.data.projectUUID.trim().toLowerCase() != currentId) {
+        _showError('遠端版本屬於另一個專案，未加入比較。');
+        return false;
+      }
+      ref
+          .read(revisionTrackingProvider.notifier)
+          .addHistoricalSource(
+            parsed.data,
+            revisionId: snapshot.manifest.revisionId,
+            label:
+                'P2P ${snapshot.manifest.revisionId.length > 8 ? snapshot.manifest.revisionId.substring(0, 8) : snapshot.manifest.revisionId}',
+          );
+      setState(() => _showRevisionPanel = true);
+      _showMessage('已載入完整遠端版本供唯讀比較。');
+      return true;
+    } catch (error) {
+      if (mounted) _showError('無法比較遠端版本：$error');
+      return false;
     }
   }
 
@@ -3381,14 +3962,17 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   bool _isCurrentP2pSnapshot(P2pVerifiedSnapshot snapshot) {
+    return _isCurrentP2pComparisonSnapshot(snapshot) &&
+        ref.read(p2pSyncProvider).revisionSummaryRelation ==
+            P2pRevisionSummaryRelation.remoteAhead;
+  }
+
+  bool _isCurrentP2pComparisonSnapshot(P2pVerifiedSnapshot snapshot) {
     final syncState = ref.read(p2pSyncProvider);
     return syncState.hasAuthenticatedTransport &&
         syncState.sessionProjectUuid == snapshot.manifest.projectUuid &&
         syncState.remoteSnapshotManifest == snapshot.manifest &&
-        syncState.snapshotManifestStatus ==
-            P2pSnapshotManifestStatus.available &&
-        syncState.revisionSummaryRelation ==
-            P2pRevisionSummaryRelation.remoteAhead;
+        syncState.snapshotManifestStatus == P2pSnapshotManifestStatus.available;
   }
 
   Future<void> _recordP2pPersistedRevision(ProjectIoPayload? payload) async {
@@ -3784,15 +4368,17 @@ class _ContentViewState extends ConsumerState<ContentView>
                         const Divider(),
                         Text(
                           "需要稍後修復的引用：${preview.warnings.length}",
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
                         ),
                         const SizedBox(height: 6),
                         for (final warning in preview.warnings)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.xs,
+                            ),
                             child: Text("• ${warning.message}"),
                           ),
                       ],
@@ -3858,6 +4444,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       "WorldSettings",
       "Characters",
       "Items",
+      "Phrases",
     };
     String selectedFormat = "xml";
 
@@ -3874,9 +4461,9 @@ class _ContentViewState extends ConsumerState<ContentView>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       "選擇匯出格式：",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     Row(
                       children: [
@@ -3898,9 +4485,9 @@ class _ContentViewState extends ConsumerState<ContentView>
                       ],
                     ),
                     const Divider(),
-                    const Text(
+                    Text(
                       "選擇匯出模組：",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
                     // Modules checkboxes
@@ -3912,6 +4499,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                       "WorldSettings",
                       "Characters",
                       "Items",
+                      "Phrases",
                     ].map((module) {
                       final displayNames = {
                         "BaseInfo": "故事設定",
@@ -3921,6 +4509,7 @@ class _ContentViewState extends ConsumerState<ContentView>
                         "WorldSettings": "世界設定",
                         "Characters": "角色設定",
                         "Items": "物品設定與快照",
+                        "Phrases": "短語庫",
                       };
                       return CheckboxListTile(
                         title: Text(displayNames[module] ?? module),
@@ -4109,6 +4698,27 @@ class _ContentViewState extends ConsumerState<ContentView>
       }
       if (action == "redo") {
         _redoProjectHistory();
+        return;
+      }
+
+      final quillCommands = PlainTextQuillEditorCommands.forFocusNode(
+        _lastFocusedEditableNode,
+      );
+      if (quillCommands != null) {
+        switch (action) {
+          case "selectAll":
+            quillCommands.selectAll();
+            break;
+          case "cut":
+            await quillCommands.cut();
+            break;
+          case "copy":
+            await quillCommands.copy();
+            break;
+          case "paste":
+            await quillCommands.paste();
+            break;
+        }
         return;
       }
 
@@ -4993,6 +5603,10 @@ class _ContentViewState extends ConsumerState<ContentView>
     bool reopenCollaboration = true,
   }) {
     _cancelPendingContentCommit();
+    _suppressRevisionDirty = true;
+    if (!_isApplyingProjectHistory) {
+      ref.read(revisionTrackingProvider.notifier).stop();
+    }
     final coordinatorNotifier = ref.read(editorCoordinatorProvider.notifier);
     final beganApplying = coordinatorNotifier.beginApplyingProjectData();
     final String? previousSelectedChapID = selectedChapID;
@@ -5001,6 +5615,11 @@ class _ContentViewState extends ConsumerState<ContentView>
       data: data,
       initialState: initialState,
     );
+    if (!_isApplyingProjectHistory) {
+      ref
+          .read(revisionTrackingProvider.notifier)
+          .restore(data.revisionTrackingJson, projectId: data.projectUUID);
+    }
     if (reopenCollaboration) {
       ref.read(collaborationProvider.notifier).openProject(data);
     }
@@ -5035,6 +5654,7 @@ class _ContentViewState extends ConsumerState<ContentView>
       if (beganApplying) {
         coordinatorNotifier.endApplyingProjectData();
       }
+      _suppressRevisionDirty = false;
     });
 
     _refreshActiveChapterWordCount();

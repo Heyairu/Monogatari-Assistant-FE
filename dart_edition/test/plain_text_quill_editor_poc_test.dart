@@ -5,6 +5,7 @@ import "package:flutter_quill/flutter_quill.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/features/editor/plain_text_quill_adapter.dart";
 import "package:monogatari_assistant/features/editor/plain_text_quill_editor_poc.dart";
+import "package:monogatari_assistant/features/editor/plain_text_quill_render_range.dart";
 import "package:monogatari_assistant/features/inline_annotations/inline_annotation_parser.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 
@@ -18,6 +19,8 @@ void main() {
     PlainTextQuillCursorReporter? onLocalCursorChanged,
     FocusNode? focusNode,
     int selectionOffset = 0,
+    List<PlainTextQuillRenderRange> revisionRanges = const [],
+    List<PlainTextQuillRevisionMarker> revisionMarkers = const [],
   }) {
     return MaterialApp(
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
@@ -40,6 +43,8 @@ void main() {
             onLocalCursorChanged: onLocalCursorChanged,
             focusNode: focusNode,
             selectionOffset: selectionOffset,
+            revisionRanges: revisionRanges,
+            revisionMarkers: revisionMarkers,
           ),
         ),
       ),
@@ -73,8 +78,32 @@ void main() {
       "甲\n乙//^<重點>//",
     );
     expect(controller.selection.baseOffset, 2);
-    expect(editor.config.customStyles?.paragraph?.style.height, 1.15);
+    expect(editor.config.customStyles?.paragraph?.style.height, 1.6);
     expect(changes, isEmpty);
+  });
+
+  testWidgets('revision paint does not change editable document', (
+    tester,
+  ) async {
+    final search = PlainTextQuillSearchController();
+    addTearDown(search.dispose);
+    await tester.pumpWidget(
+      buildPoc(
+        content: '甲\n乙',
+        onChanged: (_) {},
+        searchController: search,
+        revisionRanges: const [
+          PlainTextQuillRenderRange(
+            range: TextRange(start: 2, end: 3),
+            backgroundColor: Colors.green,
+          ),
+        ],
+        revisionMarkers: const [PlainTextQuillRevisionMarker(2, '+')],
+      ),
+    );
+    await tester.pump();
+    expect(controllerOf(tester).document.toPlainText(), '甲\n乙\n');
+    expect(find.text('+'), findsOneWidget);
   });
 
   testWidgets("emits plain text after a CJK Quill edit", (tester) async {

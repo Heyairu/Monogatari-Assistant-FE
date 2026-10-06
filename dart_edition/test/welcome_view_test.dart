@@ -279,10 +279,15 @@ void main() {
   testWidgets("WelcomeView exposes P2P endpoint controls and project status", (
     WidgetTester tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 850);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(
-      const ProviderScope(
+      ProviderScope(
         child: MaterialApp(
-          home: WelcomeView(
+          theme: AppTheme.getDarkTheme(20, Colors.green),
+          home: const WelcomeView(
             recentProjects: [],
             localP2pProject: P2pProjectStatus(
               fileName: "story.mnproj",
@@ -302,6 +307,69 @@ void main() {
     expect(find.byKey(const Key("p2p-peer-port-field")), findsOneWidget);
     expect(find.byKey(const Key("p2p-toggle-service-button")), findsOneWidget);
     expect(find.byKey(const Key("p2p-connect-button")), findsOneWidget);
+    expect(
+      find.byKey(const Key("p2p-refresh-local-addresses-button")),
+      findsOneWidget,
+    );
+    final localPortCenter = tester.getCenter(
+      find.byKey(const Key("p2p-local-port-field")),
+    );
+    final serviceButtonCenter = tester.getCenter(
+      find.byKey(const Key("p2p-toggle-service-button")),
+    );
+    expect(serviceButtonCenter.dy, closeTo(localPortCenter.dy, 0.5));
+    expect(
+      tester
+          .getCenter(
+            find.descendant(
+              of: find.byKey(const Key("p2p-local-port-field")),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .dy,
+      closeTo(tester.getCenter(find.text("開啟服務")).dy, 0.5),
+    );
+    final controlHeight = AppControlSize.heightForFontSize(20);
+    expect(
+      tester.getSize(find.byKey(const Key("p2p-local-port-field"))).height,
+      closeTo(controlHeight, 0.5),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key("p2p-toggle-service-button"))).height,
+      closeTo(controlHeight, 0.5),
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const Key("p2p-refresh-local-addresses-button")))
+          .height,
+      closeTo(controlHeight, 0.5),
+    );
+    final peerPortCenter = tester.getCenter(
+      find.byKey(const Key("p2p-peer-port-field")),
+    );
+    final connectButtonCenter = tester.getCenter(
+      find.byKey(const Key("p2p-connect-button")),
+    );
+    expect(connectButtonCenter.dy, closeTo(peerPortCenter.dy, 0.5));
+    expect(
+      tester
+          .getCenter(
+            find.descendant(
+              of: find.byKey(const Key("p2p-peer-port-field")),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .dy,
+      closeTo(tester.getCenter(find.text("連線")).dy, 0.5),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key("p2p-peer-port-field"))).height,
+      closeTo(controlHeight, 0.5),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key("p2p-connect-button"))).height,
+      closeTo(controlHeight, 0.5),
+    );
     expect(
       find.byKey(const Key("p2p-snapshot-manifest-status")),
       findsOneWidget,

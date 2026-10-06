@@ -260,8 +260,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
     );
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -627,7 +626,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
       null => Icons.block,
     };
     return AppSectionCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       useSectionLayout: false,
       child: Wrap(
         spacing: 8,
@@ -1679,7 +1678,7 @@ class _TimelineBoard extends StatelessWidget {
                       children: [
                         const Expanded(
                           child: Padding(
-                            padding: EdgeInsets.only(left: 12),
+                            padding: EdgeInsets.only(left: AppSpacing.md),
                             child: Text(
                               "軌道",
                               style: TextStyle(fontWeight: FontWeight.bold),
@@ -1698,7 +1697,7 @@ class _TimelineBoard extends StatelessWidget {
                     if (!track.isCollapsed)
                       Container(
                         height: rowHeight,
-                        padding: const EdgeInsets.only(left: 12),
+                        padding: const EdgeInsets.only(left: AppSpacing.md),
                         decoration: BoxDecoration(
                           color: Theme.of(
                             context,
@@ -1739,7 +1738,7 @@ class _TimelineBoard extends StatelessWidget {
                   controller: horizontalScrollController,
                   scrollDirection: Axis.horizontal,
                   child: Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                     child: SizedBox(
                       width: width,
                       height: plotHeight,
@@ -1767,6 +1766,12 @@ class _TimelineBoard extends StatelessWidget {
                                     pixelsPerTick: pixelsPerTick,
                                     grid: document.grid,
                                     colorScheme: Theme.of(context).colorScheme,
+                                    labelStyle: Theme.of(
+                                      context,
+                                    ).textTheme.labelSmall!,
+                                    textScaler: MediaQuery.textScalerOf(
+                                      context,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -2027,7 +2032,7 @@ class _TimelineBoard extends StatelessWidget {
                     height: 22,
                     decoration: BoxDecoration(
                       color: selected ? scheme.primary : scheme.outline,
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
@@ -2059,7 +2064,7 @@ class _TimelineBoard extends StatelessWidget {
             color: selected
                 ? scheme.primaryContainer
                 : scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: AppSurfaceShape.borderRadius,
             border: Border.all(
               color: selected ? scheme.primary : scheme.outlineVariant,
               width: selected ? 2 : 1,
@@ -2111,7 +2116,9 @@ class _TimelineBoard extends StatelessWidget {
                   child: MouseRegion(
                     cursor: SystemMouseCursors.move,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                      ),
                       child: Row(
                         children: [
                           Expanded(
@@ -2179,8 +2186,6 @@ class _TimelineBoard extends StatelessWidget {
                                   style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
                                         color: scheme.onTertiaryContainer,
-                                        fontSize: 9,
-                                        height: 1,
                                       ),
                                 ),
                               ),
@@ -2537,7 +2542,7 @@ class _TimelineInspectorState extends State<_TimelineInspector> {
     required TimelineOpenEntity? onOpen,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -2629,8 +2634,18 @@ class _NumberStepperState extends State<_NumberStepper> {
 
   @override
   Widget build(BuildContext context) {
+    final controlHeight = AppControlSize.heightForContext(context);
+    final fieldStyle = Theme.of(context).textTheme.titleSmall;
+    final lineHeight =
+        MediaQuery.textScalerOf(context).scale(fieldStyle?.fontSize ?? 14) *
+        (fieldStyle?.height ?? 20 / 14);
+    final verticalFieldPadding = math.max(
+      0.0,
+      (controlHeight - lineHeight) / 2,
+    );
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Flexible(child: Text(widget.label)),
         Row(
@@ -2638,6 +2653,10 @@ class _NumberStepperState extends State<_NumberStepper> {
           children: [
             IconButton(
               tooltip: "減少",
+              constraints: BoxConstraints.tightFor(
+                width: controlHeight,
+                height: controlHeight,
+              ),
               onPressed: widget.value > _minimum
                   ? () => widget.onChanged(widget.value - 1)
                   : null,
@@ -2650,13 +2669,17 @@ class _NumberStepperState extends State<_NumberStepper> {
                 controller: _valueController,
                 focusNode: _valueFocusNode,
                 textAlign: TextAlign.center,
+                textAlignVertical: TextAlignVertical.center,
                 keyboardType: TextInputType.numberWithOptions(
                   signed: widget.allowNegative,
                 ),
-                style: Theme.of(context).textTheme.titleSmall,
-                decoration: const InputDecoration(
+                style: fieldStyle,
+                decoration: InputDecoration(
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  contentPadding: EdgeInsets.symmetric(
+                    vertical: verticalFieldPadding,
+                  ),
+                  constraints: BoxConstraints(minHeight: controlHeight),
                   border: InputBorder.none,
                 ),
                 onTap: () => _valueController.selection = TextSelection(
@@ -2675,6 +2698,10 @@ class _NumberStepperState extends State<_NumberStepper> {
             ),
             IconButton(
               tooltip: "增加",
+              constraints: BoxConstraints.tightFor(
+                width: controlHeight,
+                height: controlHeight,
+              ),
               onPressed:
                   widget.maximum == null || widget.value < widget.maximum!
                   ? () => widget.onChanged(widget.value + 1)
@@ -2695,6 +2722,8 @@ class _TimelineRulerPainter extends CustomPainter {
   final double pixelsPerTick;
   final TimelineGridConfig grid;
   final ColorScheme colorScheme;
+  final TextStyle labelStyle;
+  final TextScaler textScaler;
 
   const _TimelineRulerPainter({
     required this.axis,
@@ -2702,6 +2731,8 @@ class _TimelineRulerPainter extends CustomPainter {
     required this.pixelsPerTick,
     required this.grid,
     required this.colorScheme,
+    required this.labelStyle,
+    required this.textScaler,
   });
 
   @override
@@ -2750,13 +2781,13 @@ class _TimelineRulerPainter extends CustomPainter {
         final painter = TextPainter(
           text: TextSpan(
             text: "$tick",
-            style: TextStyle(
+            style: labelStyle.copyWith(
               color: colorScheme.onSurfaceVariant,
-              fontSize: 11,
               fontWeight: major ? FontWeight.bold : FontWeight.normal,
             ),
           ),
           textDirection: TextDirection.ltr,
+          textScaler: textScaler,
         )..layout();
         painter.paint(canvas, Offset(x + 4, 7));
       }
@@ -2786,7 +2817,9 @@ class _TimelineRulerPainter extends CustomPainter {
         oldDelegate.currentTick != currentTick ||
         oldDelegate.pixelsPerTick != pixelsPerTick ||
         oldDelegate.grid != grid ||
-        oldDelegate.colorScheme != colorScheme;
+        oldDelegate.colorScheme != colorScheme ||
+        oldDelegate.labelStyle != labelStyle ||
+        oldDelegate.textScaler != textScaler;
   }
 }
 

@@ -2769,7 +2769,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       elevation: 4,
       color: Theme.of(context).colorScheme.surface,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           border: Border(
@@ -2786,8 +2789,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
             // 主搜尋列
             Row(
               children: [
+                Icon(Icons.search_rounded),
+                SizedBox(width: 8),
                 // 尋找輸入框
-                const Text("搜尋："),
                 Expanded(
                   flex: 3,
                   child: SizedBox(
@@ -2795,11 +2799,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                     child: AppTextField(
                       controller: widget.findController,
                       decoration: InputDecoration(
-                        // labelText: "尋找",
-                        border: const OutlineInputBorder(),
+                        labelText: "搜尋……",
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm,
                         ),
                         isDense: true,
                         filled: true,
@@ -2816,10 +2819,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                 // 匹配數量顯示
                 if (widget.totalMatches != null && widget.totalMatches! > 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
+                    padding: AppSpacing.badgePadding,
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
@@ -2917,7 +2917,8 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Text("取代："),
+                  Icon(Icons.find_replace_rounded),
+                  SizedBox(width: 8),
                   // 取代輸入框
                   Expanded(
                     flex: 3,
@@ -2926,11 +2927,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       child: AppTextField(
                         controller: widget.replaceController,
                         decoration: InputDecoration(
-                          // labelText: "取代為",
-                          border: const OutlineInputBorder(),
+                          labelText: "取代為……",
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.sm,
                           ),
                           isDense: true,
                           filled: true,
@@ -2960,7 +2960,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                     ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.secondaryContainer,
@@ -2987,7 +2989,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                     ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.tertiaryContainer,
@@ -3125,7 +3129,10 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
       ),
       selected: value,
       onSelected: enabled ? onChanged : null,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 0,
+      ),
       labelPadding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
     );
@@ -3290,11 +3297,11 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
           top: 40,
           child: Material(
             elevation: 8,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: AppSurfaceShape.borderRadius,
             color: Theme.of(context).colorScheme.surface,
             child: Container(
               width: 520,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3318,10 +3325,9 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                           child: AppTextField(
                             controller: widget.findController,
                             decoration: InputDecoration(
-                              border: const OutlineInputBorder(),
                               contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
+                                horizontal: AppSpacing.sm,
+                                vertical: AppSpacing.sm,
                               ),
                               isDense: true,
                               filled: true,
@@ -3338,15 +3344,12 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                       if (widget.totalMatches != null &&
                           widget.totalMatches! > 0)
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                          padding: AppSpacing.badgePadding,
                           decoration: BoxDecoration(
                             color: Theme.of(
                               context,
                             ).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
@@ -3375,7 +3378,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           child: const Icon(Icons.arrow_upward, size: 16),
@@ -3397,7 +3400,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           child: const Icon(Icons.arrow_downward, size: 16),
@@ -3484,10 +3487,9 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             child: AppTextField(
                               controller: widget.replaceController,
                               decoration: InputDecoration(
-                                border: const OutlineInputBorder(),
                                 contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 8,
+                                  horizontal: AppSpacing.sm,
+                                  vertical: AppSpacing.sm,
                                 ),
                                 isDense: true,
                                 filled: true,
@@ -3515,7 +3517,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             style: ElevatedButton.styleFrom(
                               padding: EdgeInsets.zero,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               backgroundColor: Theme.of(
                                 context,
@@ -3546,7 +3548,7 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                             style: ElevatedButton.styleFrom(
                               padding: EdgeInsets.zero,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               backgroundColor: Theme.of(
                                 context,
@@ -3694,7 +3696,10 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
       ),
       selected: value,
       onSelected: enabled ? onChanged : null,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 0,
+      ),
       labelPadding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
     );

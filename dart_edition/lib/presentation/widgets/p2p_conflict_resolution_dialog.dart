@@ -2,7 +2,9 @@ import "dart:convert";
 
 import "package:flutter/material.dart";
 
+import "../../ui_library/spacing.dart";
 import "../../domain/models/p2p_sync_models.dart";
+import "../../ui_library/surface_shape.dart";
 
 class P2pConflictResolutionDialog extends StatefulWidget {
   final List<P2pFieldConflictItem> conflicts;
@@ -187,7 +189,12 @@ class _P2pConflictResolutionDialogState
         subtitle: Text(
           "${group.conflicts.length} 個衝突欄位 · ${_shortId(group.id)}",
         ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          0,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
         children: [
           Align(
             alignment: Alignment.centerLeft,
@@ -238,13 +245,13 @@ class _P2pConflictResolutionDialogState
       null => "同上（尚未設定）",
     };
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border.all(
             color: Theme.of(context).colorScheme.outlineVariant,
           ),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppSurfaceShape.borderRadius,
         ),
         child: ExpansionTile(
           key: Key("p2p-field-${conflict.conflictId}"),
@@ -252,7 +259,12 @@ class _P2pConflictResolutionDialogState
           subtitle: Text(
             _effectiveSide(group, conflict) == null ? "尚未決定" : "已決定",
           ),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            0,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
           children: [
             _buildVersionPreview("共同祖先", conflict.base),
             _buildVersionPreview("本機", conflict.local),
@@ -309,7 +321,7 @@ class _P2pConflictResolutionDialogState
 
   Widget _buildVersionPreview(String label, P2pFieldValue value) {
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -319,10 +331,10 @@ class _P2pConflictResolutionDialogState
           ),
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: AppSurfaceShape.borderRadius,
               ),
               child: SelectableText(_displayValue(value)),
             ),
@@ -352,6 +364,8 @@ class _P2pConflictResolutionDialogState
     "character" => "角色",
     "projectRemainder" => "專案區段",
     "itemWorkspace" => "物品",
+    "phrase" => "短語",
+    "phraseLibrary" => "短語庫",
     _ => type,
   };
 }

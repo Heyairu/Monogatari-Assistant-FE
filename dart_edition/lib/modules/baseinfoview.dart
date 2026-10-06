@@ -23,10 +23,16 @@ import "package:xml/xml.dart" as xml;
 import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../application/collaboration/project_collaboration_fields.dart";
+import "../application/collaboration/project_record_codec.dart";
 import "../bin/settings_manager.dart";
 import "../models/base_info_data.dart";
 import "../models/codecs/xml_text_codec.dart";
 import "../presentation/providers/project_state_providers.dart";
+import "../presentation/providers/revision_tracking_provider.dart";
+import "../domain/collaboration/collaboration_operation.dart"
+    show ProjectRecordKind;
+import "../domain/collaboration/typed_operation_log.dart" show ProjectRecordKey;
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../presentation/providers/word_count_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
 
@@ -274,6 +280,39 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     _storyTypeFocusNode = FocusNode();
     _introFocusNode = FocusNode();
 
+    _subscriptions.add(
+      ref.listenManual<RevisionTrackingState>(revisionTrackingProvider, (
+        previous,
+        next,
+      ) {
+        final target = next.selectedTarget;
+        if (identical(previous?.selectedTarget, target) ||
+            target?.recordKind != ProjectRecordKind.baseInfo ||
+            target!.fieldPath.isEmpty) {
+          return;
+        }
+        final node = switch (target.fieldPath.first) {
+          'bookName' => _bookNameFocusNode,
+          'author' => _authorFocusNode,
+          'purpose' => _purposeFocusNode,
+          'toRecap' => _toRecapFocusNode,
+          'storyType' => _storyTypeFocusNode,
+          'intro' => _introFocusNode,
+          _ => null,
+        };
+        if (node == null) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || node.context == null) return;
+          Scrollable.ensureVisible(
+            node.context!,
+            duration: const Duration(milliseconds: 180),
+            alignment: 0.2,
+          );
+          node.requestFocus();
+        });
+      }),
+    );
+
     // 添加監聽器
     _bookNameController.addListener(() {
       if (_isSyncingControllers) return;
@@ -453,8 +492,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     final tags = ref.read(baseInfoDataProvider).tags;
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -471,7 +509,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -571,7 +609,18 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SmallTitle(icon: icon, text: label),
+        Row(
+          children: [
+            SmallTitle(icon: icon, text: label),
+            RevisionFieldMarker(
+              recordKey: const ProjectRecordKey(
+                kind: ProjectRecordKind.baseInfo,
+                recordId: ProjectRecordCodec.baseInfoRecordId,
+              ),
+              field: fieldId.split('.').last,
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         CollaborativeProjectTextFieldRegion(
           fieldId: fieldId,
@@ -602,7 +651,18 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SmallTitle(icon: Icons.description, text: "簡介"),
+        Row(
+          children: [
+            const SmallTitle(icon: Icons.description, text: "簡介"),
+            const RevisionFieldMarker(
+              recordKey: ProjectRecordKey(
+                kind: ProjectRecordKind.baseInfo,
+                recordId: ProjectRecordCodec.baseInfoRecordId,
+              ),
+              field: 'intro',
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         CollaborativeProjectTextFieldRegion(
           fieldId: ProjectCollaborationFields.baseInfoIntro,
@@ -632,7 +692,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
       elevation: 0,
       color: Theme.of(context).colorScheme.tertiaryContainer,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppLayoutSpacing.compactSection,
         child: Column(
           children: [
             Theme(
@@ -698,7 +758,7 @@ class _BaseInfoViewState extends ConsumerState<BaseInfoView> {
           ],
         ),
         Padding(
-          padding: const EdgeInsets.only(left: 36, top: 4),
+          padding: const EdgeInsets.only(left: 36, top: AppSpacing.xs),
           child: Text(
             value,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(

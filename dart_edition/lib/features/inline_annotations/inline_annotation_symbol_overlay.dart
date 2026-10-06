@@ -247,7 +247,7 @@ class _AnnotationKindBadge extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: background,
-            borderRadius: BorderRadius.circular(height * 0.22),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             _symbol(annotation.kind),

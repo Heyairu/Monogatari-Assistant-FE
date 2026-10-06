@@ -16,6 +16,8 @@
 
 import "package:flutter/material.dart";
 
+import "../ui_library/spacing.dart";
+
 class PunctuationPanel extends StatefulWidget {
   final Function(String) onInsert;
   final VoidCallback? onClose;
@@ -80,7 +82,10 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
       elevation: 4,
       color: Theme.of(context).colorScheme.surface,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           border: Border(
@@ -96,14 +101,8 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
               margin: const EdgeInsets.only(right: 8),
               child: SegmentedButton<bool>(
                 segments: const [
-                  ButtonSegment<bool>(
-                    value: true,
-                    label: Text("全形", style: TextStyle(fontSize: 12)),
-                  ),
-                  ButtonSegment<bool>(
-                    value: false,
-                    label: Text("半形", style: TextStyle(fontSize: 12)),
-                  ),
+                  ButtonSegment<bool>(value: true, label: Text("全形")),
+                  ButtonSegment<bool>(value: false, label: Text("半形")),
                 ],
                 selected: {isFullWidth},
                 onSelectionChanged: (Set<bool> newSelection) {
@@ -133,29 +132,35 @@ class _PunctuationPanelState extends State<PunctuationPanel> {
                     }
 
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                      ),
                       child: Material(
                         color: Theme.of(
                           context,
                         ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(12),
                         child: InkWell(
                           onTap: () => widget.onInsert(symbol),
                           canRequestFocus: false, // 關鍵：防止 InkWell 獲取焦點
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(12),
                           child: Container(
                             alignment: Alignment.center,
                             constraints: const BoxConstraints(
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                            ),
                             child: Text(
                               displayLabel,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
                             ),
                           ),
                         ),

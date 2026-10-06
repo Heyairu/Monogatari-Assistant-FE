@@ -110,7 +110,7 @@ class SceneRangeView extends StatelessWidget {
             Text("新增大箱後，會在這裡顯示場次範圍。", style: theme.textTheme.bodySmall)
           else ...[
             ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(12),
               child: SizedBox(
                 height: 12,
                 child: Row(

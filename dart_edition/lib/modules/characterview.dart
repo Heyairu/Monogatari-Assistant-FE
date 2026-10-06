@@ -38,6 +38,10 @@ import "../bin/ui_library.dart";
 import "package:logging/logging.dart";
 import "../models/character_data.dart";
 import "../application/collaboration/project_collaborative_text_codec.dart";
+import "../domain/collaboration/collaboration_operation.dart"
+    show ProjectRecordKind;
+import "../domain/collaboration/typed_operation_log.dart" show ProjectRecordKey;
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../application/items/legacy_character_possession_conversion.dart";
 import "../application/items/item_assignment_operations.dart";
 import "../models/character_snapshot_data.dart";
@@ -49,6 +53,7 @@ import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
 import "../presentation/widgets/project_object_selector.dart";
+import "../presentation/widgets/timeline_mini_view.dart";
 import "character_relationship_operations.dart" as relationship_operations;
 
 export "../models/character_data.dart";
@@ -2363,9 +2368,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       children: [
         // Main Content
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-
+          child: AppPageScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2392,7 +2395,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       padding: EdgeInsets.zero,
       useSectionLayout: false,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -2410,7 +2413,6 @@ class _CharacterViewState extends ConsumerState<CharacterView>
               showSectionCard: false,
               minHeight: 200,
               maxHeight: 200,
-              listPadding: EdgeInsets.zero,
               itemCount: characters.length,
               emptyTitle: "尚無角色",
               emptyDescription: "請新增第一個角色",
@@ -2428,14 +2430,21 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                   isThisDragging: _currentDragData == characterId,
                   isSelected: isSelected,
 
-                  title: Text(
-                    _characterLabel(characterId),
-                    style: isSelected
-                        ? TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          )
-                        : null,
+                  title: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _characterLabel(characterId),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      RevisionRecordMarker(
+                        recordKey: ProjectRecordKey(
+                          kind: ProjectRecordKind.character,
+                          recordId: characterId,
+                        ),
+                      ),
+                    ],
                   ),
                   subtitle: Text("角色類型：${_characterTypeFor(characterId)}"),
                   trailing: ItemActionBar(
@@ -2543,7 +2552,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
             child: _buildSnapshotQuickControls(),
           ),
           TabBar(
@@ -2557,7 +2571,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             ],
           ),
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (Widget child, Animation<double> animation) {
@@ -3041,7 +3055,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         Card(
           color: Theme.of(context).colorScheme.secondaryContainer,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3084,10 +3098,10 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             entry.snapshot.state,
           );
           return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -3573,7 +3587,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                       AppSectionCard(
                         title: "Scene 階層",
                         icon: Icons.account_tree_outlined,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(AppSpacing.lg),
                         child: Column(
                           children: [
                             AppComboBoxField(
@@ -3647,6 +3661,15 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                         data: timelinePreview,
                         currentTick: selectedTick,
                         onTickChanged: setTick,
+                        markers: [
+                          for (final entry in timelineEntries)
+                            if (!entry.isBaseline)
+                              MiniTimelineMarker(
+                                id: entry.change!.stateChangeId,
+                                tick: entry.snapshot.resolvedTick,
+                                label: entry.sceneName,
+                              ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       AppTextField(
@@ -4153,7 +4176,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4168,7 +4191,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4183,7 +4206,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4259,7 +4282,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4291,7 +4314,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4309,7 +4332,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4327,7 +4350,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4348,7 +4371,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4364,7 +4387,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           padding: EdgeInsets.zero,
           useSectionLayout: false,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -4492,7 +4515,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       characterId,
       controllerKey,
     );
-    return CollaborativeProjectTextFieldRegion(
+    final region = CollaborativeProjectTextFieldRegion(
       key: ValueKey("character-text-$characterId-$controllerKey"),
       fieldId: documentId,
       crdtDocumentId: documentId,
@@ -4500,6 +4523,18 @@ class _CharacterViewState extends ConsumerState<CharacterView>
       focusNode: focusNode,
       shouldPublishTextChanges: () => !_isLoading,
       child: field,
+    );
+    return Row(
+      children: [
+        Expanded(child: region),
+        RevisionFieldMarker(
+          recordKey: ProjectRecordKey(
+            kind: ProjectRecordKind.character,
+            recordId: characterId,
+          ),
+          field: controllerKey == 'name' ? 'displayName' : controllerKey,
+        ),
+      ],
     );
   }
 
@@ -4528,7 +4563,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
           title: Text(
             alignment,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12),
+            style: Theme.of(context).textTheme.labelMedium,
           ),
           value: alignment,
           groupValue: selectedAlignment,
@@ -4710,7 +4745,9 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                         children: [
                           for (final field in fields)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
                               child: field,
                             ),
                         ],
@@ -4722,7 +4759,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
+                                horizontal: AppSpacing.xs,
                               ),
                               child: field,
                             ),
@@ -5344,9 +5381,12 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             autofocus: true,
             keyboardType: TextInputType.number,
             initialValue: quantityText,
-            decoration: const InputDecoration(
-              labelText: "數量",
-              helperText: "留空代表數量未知",
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(
+                labelText: "數量",
+                helperText: "留空代表數量未知",
+              ),
             ),
             onChanged: (value) => quantityText = value,
           ),
@@ -5552,13 +5592,25 @@ class _CharacterViewState extends ConsumerState<CharacterView>
             children: [
               TextFormField(
                 initialValue: name,
-                decoration: const InputDecoration(labelText: "物品名稱"),
+                decoration: appFieldDecoration(
+                  context,
+                  decoration: const InputDecoration(labelText: "物品名稱"),
+                ),
                 onChanged: (value) => setDialogState(() => name = value),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<ItemMode>(
+                style: appDropdownTextStyle(context),
+                isDense: true,
+                isExpanded: true,
+                iconSize: AppControlSize.smallIcon,
+                itemHeight: appDropdownItemHeight(context),
+                menuMaxHeight: AppControlSize.menuMaxHeight,
                 initialValue: mode,
-                decoration: const InputDecoration(labelText: "物品模式"),
+                decoration: appDropdownFieldDecoration(
+                  context,
+                  decoration: const InputDecoration(labelText: "物品模式"),
+                ),
                 items: const <DropdownMenuItem<ItemMode>>[
                   DropdownMenuItem(
                     value: ItemMode.dedicated,
@@ -5767,7 +5819,7 @@ class _CharacterViewState extends ConsumerState<CharacterView>
         return CheckboxListTile(
           title: Text(
             labels[entry.key] ?? entry.key,
-            style: const TextStyle(fontSize: 13),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           value: entry.value,
           dense: true,
@@ -7039,293 +7091,57 @@ class _SnapshotTimelinePreview extends StatelessWidget {
   final _SnapshotTimelinePreviewData data;
   final int currentTick;
   final ValueChanged<int> onTickChanged;
+  final List<MiniTimelineMarker> markers;
 
   const _SnapshotTimelinePreview({
     super.key,
     required this.data,
     required this.currentTick,
     required this.onTickChanged,
+    this.markers = const [],
   });
 
-  Color _nodeColor(BuildContext context, TimelineElementLevel level) {
-    final scheme = Theme.of(context).colorScheme;
-    return switch (level) {
-      TimelineElementLevel.large => scheme.primaryContainer,
-      TimelineElementLevel.middle => scheme.secondaryContainer,
-      TimelineElementLevel.small => scheme.tertiaryContainer,
-    };
-  }
-
-  Color _nodeForeground(BuildContext context, TimelineElementLevel level) {
-    final scheme = Theme.of(context).colorScheme;
-    return switch (level) {
-      TimelineElementLevel.large => scheme.onPrimaryContainer,
-      TimelineElementLevel.middle => scheme.onSecondaryContainer,
-      TimelineElementLevel.small => scheme.onTertiaryContainer,
-    };
-  }
-
   @override
-  Widget build(BuildContext context) {
-    return AppSectionCard(
-      title: "簡易時間軸",
-      icon: Icons.timeline_outlined,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  data.scopeLabel,
-                  key: const ValueKey("snapshot-timeline-scope"),
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+  Widget build(BuildContext context) => AppSectionCard(
+    title: "簡易時間軸",
+    icon: Icons.timeline_outlined,
+    padding: const EdgeInsets.all(AppSpacing.lg),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                data.scopeLabel,
+                key: const ValueKey("snapshot-timeline-scope"),
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              Chip(label: Text("Tick $currentTick")),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const AppNoticeBanner(
-            message: "節點位置與長度在此為唯讀；點擊或拖動 Scrubber 可調整新 Scene 的 Tick。",
-            icon: Icons.lock_clock_outlined,
-            compact: true,
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 170,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const horizontalPadding = 18.0;
-                final usableWidth =
-                    (constraints.maxWidth - horizontalPadding * 2).clamp(
-                      1.0,
-                      double.infinity,
-                    );
-                final span = data.maxTick - data.minTick;
-
-                double xForTick(int tick) {
-                  final normalized =
-                      (tick.clamp(data.minTick, data.maxTick) - data.minTick) /
-                      span;
-                  return horizontalPadding + normalized * usableWidth;
-                }
-
-                int tickForX(double x) {
-                  final normalized = ((x - horizontalPadding) / usableWidth)
-                      .clamp(0.0, 1.0);
-                  return data.minTick + (normalized * span).round();
-                }
-
-                final scrubberX = xForTick(currentTick);
-                return Semantics(
-                  slider: true,
-                  label: "快照 Tick Scrubber",
-                  value: "Tick $currentTick",
-                  increasedValue: currentTick < timelineMaximumTick
-                      ? "Tick ${currentTick + 1}"
-                      : null,
-                  decreasedValue: currentTick > timelineMinimumTick
-                      ? "Tick ${currentTick - 1}"
-                      : null,
-                  onIncrease: currentTick < timelineMaximumTick
-                      ? () => onTickChanged(currentTick + 1)
-                      : null,
-                  onDecrease: currentTick > timelineMinimumTick
-                      ? () => onTickChanged(currentTick - 1)
-                      : null,
-                  child: GestureDetector(
-                    key: const ValueKey("snapshot-timeline-canvas"),
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (details) =>
-                        onTickChanged(tickForX(details.localPosition.dx)),
-                    onHorizontalDragStart: (details) =>
-                        onTickChanged(tickForX(details.localPosition.dx)),
-                    onHorizontalDragUpdate: (details) =>
-                        onTickChanged(tickForX(details.localPosition.dx)),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerLowest,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                              ),
-                            ),
-                          ),
-                          for (var index = 0; index <= 4; index++) ...[
-                            Builder(
-                              builder: (context) {
-                                final tickValue =
-                                    data.minTick + (span * index / 4).round();
-                                final x = xForTick(tickValue);
-                                return Positioned(
-                                  left: x - 28,
-                                  top: 6,
-                                  width: 56,
-                                  child: Text(
-                                    "$tickValue",
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.labelSmall,
-                                  ),
-                                );
-                              },
-                            ),
-                            Builder(
-                              builder: (context) {
-                                final tickValue =
-                                    data.minTick + (span * index / 4).round();
-                                return Positioned(
-                                  left: xForTick(tickValue),
-                                  top: 28,
-                                  bottom: 8,
-                                  child: VerticalDivider(
-                                    width: 1,
-                                    thickness: 1,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                          if (data.placements.isEmpty)
-                            Positioned(
-                              left: 24,
-                              right: 24,
-                              top: 72,
-                              child: Text(
-                                data.emptyMessage,
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            )
-                          else
-                            for (
-                              var index = 0;
-                              index < data.placements.length;
-                              index++
-                            )
-                              Builder(
-                                builder: (context) {
-                                  final placement = data.placements[index];
-                                  final left = xForTick(placement.startTick);
-                                  final right = xForTick(placement.endTick);
-                                  final width = (right - left).clamp(
-                                    64.0,
-                                    usableWidth,
-                                  );
-                                  return Positioned(
-                                    left: left,
-                                    top: 52 + (index % 2) * 46,
-                                    width: width,
-                                    height: 36,
-                                    child: Tooltip(
-                                      message:
-                                          "${placement.label} · Tick ${placement.startTick}–${placement.endTick - 1}",
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          color: _nodeColor(
-                                            context,
-                                            placement.level,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: _nodeForeground(
-                                              context,
-                                              placement.level,
-                                            ).withValues(alpha: 0.35),
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
-                                          child: Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              placement.label.trim().isEmpty
-                                                  ? "未命名節點"
-                                                  : placement.label,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelMedium
-                                                  ?.copyWith(
-                                                    color: _nodeForeground(
-                                                      context,
-                                                      placement.level,
-                                                    ),
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                          Positioned(
-                            left: scrubberX - 1,
-                            top: 28,
-                            bottom: 8,
-                            width: 2,
-                            child: ColoredBox(
-                              color: Theme.of(context).colorScheme.tertiary,
-                            ),
-                          ),
-                          Positioned(
-                            left: scrubberX - 9,
-                            top: 20,
-                            width: 18,
-                            height: 18,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.tertiary,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  width: 2,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.drag_indicator,
-                                size: 12,
-                                color: Theme.of(context).colorScheme.onTertiary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            Chip(label: Text("Tick $currentTick")),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        TimelineMiniView(
+          canvasKey: const ValueKey("snapshot-timeline-canvas"),
+          placements: data.placements,
+          markers: markers,
+          currentTick: currentTick,
+          minTick: data.minTick,
+          maxTick: data.maxTick,
+          onTickChanged: onTickChanged,
+          emptyMessage: data.emptyMessage,
+          semanticLabel: "快照 Tick Scrubber",
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          "點擊或拖曳選擇時間 · 菱形表示既有快照",
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    ),
+  );
 }
-
 class CharacterSlider extends StatefulWidget {
   final String title;
   final String leftLabel;
@@ -7408,7 +7224,7 @@ class CharacterTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: AppTextField(
         controller: controller,
         focusNode: focusNode,

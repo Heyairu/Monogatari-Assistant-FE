@@ -16,6 +16,8 @@
 
 import "package:flutter/material.dart";
 
+import "../ui_library/spacing.dart";
+
 class MonogatariTopAppBar extends StatelessWidget
     implements PreferredSizeWidget {
   final double iconSize;
@@ -48,7 +50,7 @@ class MonogatariTopAppBar extends StatelessWidget
   Widget build(BuildContext context) {
     return AppBar(
       leading: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(AppSpacing.sm),
         child: Image.asset(
           "assets/icon/app_icon.png",
           errorBuilder: (context, error, stackTrace) {
@@ -178,7 +180,7 @@ class MonogatariTopAppBar extends StatelessWidget
                 decoration: showPunctuationPanel
                     ? BoxDecoration(
                         color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       )
                     : null,
                 child: IconButton(
@@ -199,7 +201,7 @@ class MonogatariTopAppBar extends StatelessWidget
                 decoration: showFindReplaceWindow
                     ? BoxDecoration(
                         color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       )
                     : null,
                 child: IconButton(

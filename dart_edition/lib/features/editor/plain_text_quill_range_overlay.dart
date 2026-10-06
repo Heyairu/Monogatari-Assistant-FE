@@ -19,6 +19,7 @@ class PlainTextQuillRangeOverlay extends StatefulWidget {
     required this.currentMatchIndex,
     required this.proofreadingRanges,
     required this.renderRanges,
+    this.revisionMarkers = const [],
   });
 
   final QuillController controller;
@@ -27,6 +28,7 @@ class PlainTextQuillRangeOverlay extends StatefulWidget {
   final int currentMatchIndex;
   final List<TextRange> proofreadingRanges;
   final List<PlainTextQuillRenderRange> renderRanges;
+  final List<PlainTextQuillRevisionMarker> revisionMarkers;
 
   @override
   State<PlainTextQuillRangeOverlay> createState() =>
@@ -36,6 +38,7 @@ class PlainTextQuillRangeOverlay extends StatefulWidget {
 class _PlainTextQuillRangeOverlayState
     extends State<PlainTextQuillRangeOverlay> {
   List<_MeasuredRange> _ranges = const <_MeasuredRange>[];
+  List<({String label, double top})> _markers = const [];
   bool _measurementScheduled = false;
 
   @override
@@ -85,6 +88,15 @@ class _PlainTextQuillRangeOverlayState
         .clamp(0, widget.controller.document.length)
         .toInt();
     final measured = <_MeasuredRange>[];
+    final markers = <({String label, double top})>[];
+    for (final marker in widget.revisionMarkers) {
+      final offset = marker.offset.clamp(0, documentLength).toInt();
+      final caret = quillCaretGlobalRect(editor, TextPosition(offset: offset));
+      markers.add((
+        label: marker.label,
+        top: layerBox.globalToLocal(caret.topLeft).dy,
+      ));
+    }
     for (var index = 0; index < widget.matches.length; index += 1) {
       _appendMeasuredRange(
         measured,
@@ -125,8 +137,18 @@ class _PlainTextQuillRangeOverlayState
         doubleUnderline: renderRange.doubleUnderline,
       );
     }
-    if (_sameRanges(_ranges, measured)) return;
-    setState(() => _ranges = measured);
+    if (_sameRanges(_ranges, measured) &&
+        _markers.length == markers.length &&
+        List.generate(
+          markers.length,
+          (index) => index,
+        ).every((index) => _markers[index] == markers[index])) {
+      return;
+    }
+    setState(() {
+      _ranges = measured;
+      _markers = markers;
+    });
   }
 
   void _appendMeasuredRange(
@@ -228,6 +250,21 @@ class _PlainTextQuillRangeOverlayState
                       ? 2
                       : range.decorationThickness,
                   doubleUnderline: range.doubleUnderline,
+                ),
+              ),
+            ),
+          for (final marker in _markers)
+            Positioned(
+              left: 1,
+              top: marker.top,
+              child: Text(
+                marker.label,
+                style: TextStyle(
+                  color: marker.label.contains('+')
+                      ? Colors.green.shade700
+                      : Colors.red.shade700,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),

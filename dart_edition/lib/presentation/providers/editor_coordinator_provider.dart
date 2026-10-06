@@ -31,6 +31,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
   final timeline = ref.watch(timelineDocumentProvider);
   final timelineLinks = ref.watch(outlineChapterLinksProvider);
   final itemWorkspace = ref.watch(itemWorkspaceProvider);
+  final phrases = ref.watch(phrasesProvider);
 
   return Object.hash(
     projectUuid,
@@ -55,6 +56,7 @@ final projectDataAggregateProvider = Provider<int>((ref) {
     identityHashCode(timeline),
     identityHashCode(timelineLinks),
     identityHashCode(itemWorkspace),
+    identityHashCode(phrases),
   );
 });
 
@@ -448,6 +450,9 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
       outlineChapterLinks: ref.read(outlineChapterLinksProvider),
       totalWords: ref.read(totalWordsProvider),
       contentText: ref.read(editorContentProvider),
+      revisionTrackingJson: ref.read(revisionTrackingJsonProvider),
+      phrases: ref.read(phrasesProvider),
+      phrasesRecoveryPayload: ref.read(phrasesRecoveryPayloadProvider),
     );
   }
 
@@ -462,6 +467,13 @@ class EditorCoordinatorNotifier extends Notifier<EditorCoordinatorState> {
     final snapshot = data;
 
     ref.read(projectUuidProvider.notifier).setProjectUuid(snapshot.projectUUID);
+    ref
+        .read(revisionTrackingJsonProvider.notifier)
+        .setJson(snapshot.revisionTrackingJson);
+    ref.read(phrasesProvider.notifier).setPhrases(snapshot.phrases);
+    ref
+        .read(phrasesRecoveryPayloadProvider.notifier)
+        .setPayload(snapshot.phrasesRecoveryPayload);
 
     ref
         .read(baseInfoDataProvider.notifier)

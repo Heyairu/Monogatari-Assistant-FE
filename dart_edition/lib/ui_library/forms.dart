@@ -1,13 +1,46 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
+import "control_shape.dart";
+import "control_size.dart";
+import "spacing.dart";
+
+/// Selected dropdown text uses the same type role as text input.
+TextStyle appDropdownTextStyle(BuildContext context, {TextStyle? style}) =>
+    Theme.of(context).textTheme.bodyLarge!.merge(style).copyWith(height: 1);
+
+double appDropdownItemHeight(BuildContext context) =>
+    AppControlSize.heightForContext(context) < AppControlSize.menuItemHeight
+    ? AppControlSize.menuItemHeight
+    : AppControlSize.heightForContext(context);
+
+/// Dense Flutter dropdowns reserve at least a 24dp content box.
+InputDecoration appDropdownFieldDecoration(
+  BuildContext context, {
+  InputDecoration decoration = const InputDecoration(),
+  TextStyle? textStyle,
+}) {
+  final style = appDropdownTextStyle(context, style: textStyle);
+  final fontSize = MediaQuery.textScalerOf(context).scale(style.fontSize!);
+  return appFieldDecoration(
+    context,
+    decoration: decoration,
+    textStyle: style,
+    contentHeight: fontSize > AppControlSize.icon
+        ? fontSize
+        : AppControlSize.icon,
+  );
+}
+
 InputDecoration appFieldDecoration(
   BuildContext context, {
   InputDecoration decoration = const InputDecoration(),
+  TextStyle? textStyle,
+  double? contentHeight,
 }) {
   final scheme = Theme.of(context).colorScheme;
   final defaultBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
+    borderRadius: AppControlShape.borderRadius,
   );
   final enabledBorder = defaultBorder.copyWith(
     borderSide: BorderSide(color: scheme.outline),
@@ -23,7 +56,19 @@ InputDecoration appFieldDecoration(
     isDense: true,
     filled: true,
     fillColor: scheme.surfaceContainerLowest,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    contentPadding: EdgeInsets.symmetric(
+      horizontal: AppSpacing.md,
+      vertical: AppControlSize.verticalPaddingForStyle(
+        context,
+        Theme.of(context).textTheme.bodyLarge!.merge(textStyle),
+        contentHeight: contentHeight,
+      ),
+    ),
+    constraints: BoxConstraints(
+      minHeight: AppControlSize.heightForContext(context),
+    ),
+    prefixIconConstraints: AppControlSize.iconConstraints,
+    suffixIconConstraints: AppControlSize.iconConstraints,
     border: defaultBorder,
     enabledBorder: enabledBorder,
     disabledBorder: enabledBorder.copyWith(
@@ -123,6 +168,7 @@ class AppTextField extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedDecoration = appFieldDecoration(
       context,
+      textStyle: style,
       decoration: (decoration ?? const InputDecoration()).copyWith(
         labelText: labelText,
         hintText: hintText,
@@ -186,7 +232,7 @@ class AppComboBoxField extends StatefulWidget {
     this.onChanged,
     this.onSelected,
     this.optionMatchesQuery,
-    this.optionsMaxHeight = 240,
+    this.optionsMaxHeight = AppControlSize.suggestionMaxHeight,
   }) : assert(optionsMaxHeight > 0);
 
   @override
@@ -222,7 +268,7 @@ class _AppComboBoxFieldState extends State<AppComboBoxField> {
       builder: (context, constraints) {
         final optionsWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : 320.0;
+            : AppControlSize.suggestionWidth;
         return RawAutocomplete<String>(
           textEditingController: widget.controller,
           focusNode: _focusNode,
@@ -315,7 +361,7 @@ class LabeledSlider extends StatelessWidget {
     this.icon,
     this.layout = LabeledSliderLayout.stacked,
     this.inlineTitleWidth = 72,
-    this.padding = const EdgeInsets.symmetric(vertical: 4),
+    this.padding = AppSpacing.formPadding,
   }) : assert(max > min),
        assert(value >= min && value <= max),
        assert(divisions == null || divisions > 0),
@@ -445,7 +491,7 @@ class IconedSlider extends StatelessWidget {
     this.showValue = true,
     this.layout = IconedSliderLayout.stacked,
     this.inlineTitleWidth = 72,
-    this.padding = const EdgeInsets.symmetric(vertical: 4),
+    this.padding = AppSpacing.formPadding,
   }) : assert(max > min),
        assert(value >= min && value <= max),
        assert(divisions == null || divisions > 0),
@@ -633,14 +679,14 @@ class _InlineEditableTextState extends State<InlineEditableText> {
             children: [
               IconButton(
                 tooltip: "儲存",
-                visualDensity: VisualDensity.compact,
+                visualDensity: VisualDensity.standard,
                 onPressed: _submit,
                 icon: const Icon(Icons.check),
               ),
               if (widget.onCanceled != null)
                 IconButton(
                   tooltip: "取消",
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: VisualDensity.standard,
                   onPressed: widget.onCanceled,
                   icon: const Icon(Icons.close),
                 ),

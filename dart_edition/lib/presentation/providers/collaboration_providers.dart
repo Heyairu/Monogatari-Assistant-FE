@@ -1061,6 +1061,11 @@ class CollaborationNotifier extends Notifier<CollaborationState> {
               ProjectRecordCodec.decodeBaseInfo(_projectRecords),
             );
       }
+      if (changedKinds.contains(ProjectRecordKind.phrase)) {
+        ref.read(phrasesProvider.notifier).setPhrases(
+          ProjectRecordCodec.decodePhrases(_projectRecords),
+        );
+      }
       if (changedKinds.contains(ProjectRecordKind.chapterFolder) ||
           changedKinds.contains(ProjectRecordKind.chapterMetadata)) {
         final chapterTexts = <String, String>{

@@ -1401,7 +1401,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           margin: const EdgeInsets.only(bottom: 10),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1430,10 +1430,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   initialValue: pair.meaning,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: "意義",
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: "意義"),
                   onChanged: (value) => _scheduleDraftCommit(
                     "meaning:${selectedEntry.id}:$index",
                     () => _updatePairMeaning(selectedEntry.id, index, value),
@@ -1445,10 +1442,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   initialValue: pair.example,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: "例句",
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: "例句"),
                   onChanged: (value) => _scheduleDraftCommit(
                     "example:${selectedEntry.id}:$index",
                     () => _updatePairExample(selectedEntry.id, index, value),
@@ -1550,8 +1544,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final List<_VisibleCategoryRow> rows = _collectVisibleCategories(
       categoryTree,
     );
-    final TextStyle menuTextStyle =
-        Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
+    final TextStyle menuTextStyle = Theme.of(context).textTheme.bodySmall!;
 
     return AppSectionCard(
       padding: EdgeInsets.zero,
@@ -1559,7 +1552,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1638,7 +1631,6 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               maxHeight: 420,
               controller: _categoryTreeScrollController,
               showScrollbar: true,
-              listPadding: EdgeInsets.zero,
               itemCount: rows.length,
               emptyTitle: "尚無詞語類別",
               emptyDescription: "請新增第一個分類",
@@ -1663,8 +1655,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     final bool isExpanded = _expandedCategoryIds.contains(category.id);
     final bool isEditing = _editingCategoryId == category.id;
     final int totalEntries = _countSubtreeEntries(category);
-    final TextStyle menuTextStyle =
-        Theme.of(context).textTheme.bodySmall ?? const TextStyle(fontSize: 13);
+    final TextStyle menuTextStyle = Theme.of(context).textTheme.bodySmall!;
 
     return DraggableCardNode<Object>(
       key: ValueKey(category.id),
@@ -1867,7 +1858,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1885,7 +1876,6 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               maxHeight: 320,
               controller: _entryListScrollController,
               showScrollbar: true,
-              listPadding: EdgeInsets.zero,
               itemCount: visibleRefs.length,
               emptyTitle: "此類別目前沒有詞條",
               emptyDescription: "請新增第一個詞條",
@@ -1895,13 +1885,10 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 onAdd: _addEntryByTermToSelectedCategory,
               ),
               itemBuilder: (BuildContext context, int index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _buildEntryRow(
-                    visibleRefs[index],
-                    categoryTree,
-                    entryIndex,
-                  ),
+                return _buildEntryRow(
+                  visibleRefs[index],
+                  categoryTree,
+                  entryIndex,
                 );
               },
             ),
@@ -1923,9 +1910,6 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
 
     final bool isSelected = _selectedEntryId == entry.id;
-    final Color sourceColor = ref.isLocal
-        ? scheme.primaryContainer.withValues(alpha: 0.52)
-        : scheme.tertiaryContainer.withValues(alpha: 0.52);
     final String summary = entry.pairs.isEmpty
         ? "尚未填寫意義"
         : (entry.pairs.first.meaning.trim().isEmpty
@@ -1941,10 +1925,6 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       ),
       nodeId: "${ref.sourceCategoryId}_${entry.id}",
       nodeType: NodeType.item,
-      baseColor: sourceColor,
-      selectedColor: isSelected
-          ? scheme.primaryContainer.withValues(alpha: 0.82)
-          : sourceColor,
       leading: Icon(entry.polarity.icon, color: entry.polarity.color(scheme)),
       title: Text(
         entry.term,
@@ -2066,7 +2046,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       elevation: 0,
       color: scheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2078,10 +2058,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
               AppTextField(
                 key: ValueKey("term_${selectedEntry.id}"),
                 initialValue: selectedEntry.term,
-                decoration: const InputDecoration(
-                  labelText: "詞條名稱",
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: "詞條名稱"),
                 onChanged: (value) => _scheduleDraftCommit(
                   "term:${selectedEntry.id}",
                   () => _updateTerm(selectedEntry.id, value),
@@ -2092,9 +2069,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 key: ValueKey("part_of_speech_${selectedEntry.id}"),
                 value: selectedEntry.partOfSpeech,
                 labelText: "詞性",
-                textStyle:
-                    Theme.of(context).textTheme.bodySmall ??
-                    const TextStyle(fontSize: 13),
+                textStyle: Theme.of(context).textTheme.bodySmall,
                 options: GlossaryPartOfSpeech.values.map((partOfSpeech) {
                   return DropdownOption<GlossaryPartOfSpeech>(
                     value: partOfSpeech,
@@ -2113,10 +2088,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 AppTextField(
                   key: ValueKey("custom_pos_${selectedEntry.id}"),
                   initialValue: selectedEntry.customPartOfSpeech,
-                  decoration: const InputDecoration(
-                    labelText: "自訂詞性",
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: "自訂詞性"),
                   onChanged: (value) => _scheduleDraftCommit(
                     "partOfSpeech:${selectedEntry.id}",
                     () => _updateCustomPartOfSpeech(selectedEntry.id, value),
@@ -2128,9 +2100,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 key: ValueKey("polarity_${selectedEntry.id}"),
                 value: selectedEntry.polarity,
                 labelText: "情感傾向",
-                textStyle:
-                    Theme.of(context).textTheme.bodySmall ??
-                    const TextStyle(fontSize: 13),
+                textStyle: Theme.of(context).textTheme.bodySmall,
                 options: GlossaryPolarity.values.map((polarity) {
                   return DropdownOption<GlossaryPolarity>(
                     value: polarity,
@@ -2145,9 +2115,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                         const SizedBox(width: 8),
                         Text(
                           polarity.label,
-                          style:
-                              Theme.of(context).textTheme.bodySmall ??
-                              const TextStyle(fontSize: 13),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -2208,7 +2176,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
       return Scaffold(
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2234,8 +2202,7 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
     }
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

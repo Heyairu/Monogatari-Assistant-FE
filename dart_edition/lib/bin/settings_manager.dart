@@ -109,7 +109,7 @@ class SettingsManager extends ChangeNotifier {
       "autosave_interval_minutes";
   static const String _recentProjectsKey = "recent_projects";
   static const int _maxRecentProjects = 10;
-  static const double _defaultFontSize = 12.0;
+  static const double _defaultFontSize = 14.0;
   static const double _minFontSize = 12.0;
   static const double _maxFontSize = 20.0;
   static const int _defaultAutoSaveIntervalMinutes = 5;

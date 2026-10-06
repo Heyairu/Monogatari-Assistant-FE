@@ -5,6 +5,7 @@ import "../../models/item_data.dart";
 import "../../models/world_settings_data.dart";
 import "../providers/project_state_providers.dart";
 import "../providers/timeline_providers.dart";
+import "../../ui_library/forms.dart";
 
 enum ProjectObjectKind {
   itemClass,
@@ -116,10 +117,12 @@ class _ProjectObjectSelectorDialogState
               key: const Key("project-object-selector-search"),
               controller: _searchController,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: "搜尋名稱、類型或所屬資訊",
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
+              decoration: appFieldDecoration(
+                context,
+                decoration: const InputDecoration(
+                  labelText: "搜尋名稱、類型或所屬資訊",
+                  prefixIcon: Icon(Icons.search),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),

@@ -1,5 +1,9 @@
 import "package:flutter/material.dart";
 
+import "control_shape.dart";
+import "control_size.dart";
+import "spacing.dart";
+
 /// UI feedback semantics shared by banners, snack bars, and dialogs.
 enum AppFeedbackTone { neutral, info, success, warning, error }
 
@@ -73,7 +77,7 @@ class AppNoticeBanner extends StatelessWidget {
     this.icon,
     this.action,
     this.onDismiss,
-    this.padding = const EdgeInsets.all(12),
+    this.padding = AppSpacing.cellPadding,
     this.compact = false,
   });
 
@@ -88,7 +92,7 @@ class AppNoticeBanner extends StatelessWidget {
       child: Material(
         color: visuals.backgroundColor,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(compact ? 8 : 12),
+          borderRadius: AppControlShape.borderRadius,
         ),
         child: Padding(
           padding: padding,
@@ -100,7 +104,7 @@ class AppNoticeBanner extends StatelessWidget {
               Icon(
                 icon ?? visuals.icon,
                 color: visuals.foregroundColor,
-                size: compact ? 20 : 24,
+                size: compact ? AppControlSize.smallIcon : AppControlSize.icon,
               ),
               SizedBox(width: compact ? 8 : 12),
               Expanded(
@@ -134,7 +138,7 @@ class AppNoticeBanner extends StatelessWidget {
               if (action != null) ...[const SizedBox(width: 8), action!],
               if (onDismiss != null)
                 IconButton(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: VisualDensity.standard,
                   tooltip: "關閉",
                   onPressed: onDismiss,
                   color: visuals.foregroundColor,

@@ -160,6 +160,9 @@ class ProjectMigrator {
         totalWords: source.totalWords,
         contentText: source.contentText,
         isDirty: source.isDirty,
+        revisionTrackingJson: source.revisionTrackingJson,
+        phrases: source.phrases,
+        phrasesRecoveryPayload: source.phrasesRecoveryPayload,
       ),
       changed: true,
     );
@@ -274,6 +277,9 @@ class ProjectMigrator {
         totalWords: source.totalWords,
         contentText: source.contentText,
         isDirty: source.isDirty,
+        revisionTrackingJson: source.revisionTrackingJson,
+        phrases: source.phrases,
+        phrasesRecoveryPayload: source.phrasesRecoveryPayload,
       ),
       changed: true,
     );
@@ -377,6 +383,9 @@ class ProjectMigrator {
         totalWords: source.totalWords,
         contentText: source.contentText,
         isDirty: source.isDirty,
+        revisionTrackingJson: source.revisionTrackingJson,
+        phrases: source.phrases,
+        phrasesRecoveryPayload: source.phrasesRecoveryPayload,
       ),
       changed: true,
     );
@@ -519,6 +528,9 @@ class ProjectMigrator {
       totalWords: source.totalWords,
       contentText: source.contentText,
       isDirty: source.isDirty,
+      revisionTrackingJson: source.revisionTrackingJson,
+      phrases: source.phrases,
+      phrasesRecoveryPayload: source.phrasesRecoveryPayload,
     );
     warnings.addAll(_validateReferences(migratedData));
     return ProjectMigrationResult(

@@ -514,7 +514,7 @@ void main() {
       find.byKey(const ValueKey("mosaic-completion-panel")),
       findsOneWidget,
     );
-    for (var index = 0; index < 6; index++) {
+    for (var index = 0; index < 8; index++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     }
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);

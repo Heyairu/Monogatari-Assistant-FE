@@ -4,6 +4,7 @@ import "../../models/base_info_data.dart";
 import "../../models/character_data.dart";
 import "../../models/item_snapshot_data.dart";
 import "../../models/project_data.dart";
+import "p2p_phrase_merge.dart";
 
 class P2pProjectRemainderSignatures {
   final String base;
@@ -26,23 +27,23 @@ class P2pProjectMergePlan {
   final _P2pProjectRemainderChoice _remainderChoice;
   final _P2pItemWorkspaceChoice _itemWorkspaceChoice;
   final P2pKeyedTableMergeResult baseInfoMerge;
+  final P2pPhraseMergePlan phraseMerge;
   final List<_P2pCharacterMergeEntry> _characterEntries;
   final List<P2pFieldConflictItem> conflicts;
 
-  P2pProjectMergePlan._({
+  P2pProjectMergePlan._(
+    this._remainderChoice,
+    this._itemWorkspaceChoice, {
     required this.sessionId,
     required this.baseRevision,
     required this.localRevision,
     required this.remoteRevision,
     required this.localProject,
-    required _P2pProjectRemainderChoice remainderChoice,
-    required _P2pItemWorkspaceChoice itemWorkspaceChoice,
     required this.baseInfoMerge,
+    required this.phraseMerge,
     required List<_P2pCharacterMergeEntry> characterEntries,
     required List<P2pFieldConflictItem> conflicts,
-  }) : _remainderChoice = remainderChoice,
-       _itemWorkspaceChoice = itemWorkspaceChoice,
-       _characterEntries = List.unmodifiable(characterEntries),
+  }) : _characterEntries = List.unmodifiable(characterEntries),
        conflicts = List.unmodifiable(conflicts);
 
   bool matchesHeads({
@@ -102,6 +103,9 @@ class P2pProjectMergePlan {
       totalWords: remainder.totalWords,
       contentText: remainder.contentText,
       isDirty: true,
+      revisionTrackingJson: localProject.revisionTrackingJson,
+      phrases: phraseMerge.apply(resolutions),
+      phrasesRecoveryPayload: phraseMerge.resolveRecovery(resolutions),
     );
   }
 }
@@ -153,6 +157,15 @@ class P2pProjectMergeEngine {
       local: _baseInfoToMap(local.baseInfoData),
       remote: _baseInfoToMap(remote.baseInfoData),
     );
+    final phraseMerge = P2pPhraseMergePlan.create(
+      projectUuid: projectUuid,
+      base: base.phrases,
+      local: local.phrases,
+      remote: remote.phrases,
+      baseRecovery: base.phrasesRecoveryPayload,
+      localRecovery: local.phrasesRecoveryPayload,
+      remoteRecovery: remote.phrasesRecoveryPayload,
+    );
     final remainderChoice = _P2pProjectRemainderChoice.evaluate(
       projectUuid: projectUuid,
       local: local,
@@ -171,6 +184,7 @@ class P2pProjectMergeEngine {
     final characterEntries = <_P2pCharacterMergeEntry>[];
     final conflicts = <P2pFieldConflictItem>[
       ...baseInfoMerge.conflicts,
+      ...phraseMerge.conflicts,
       if (remainderChoice.conflict != null) remainderChoice.conflict!,
       if (itemWorkspaceChoice.conflict != null) itemWorkspaceChoice.conflict!,
     ];
@@ -190,14 +204,15 @@ class P2pProjectMergeEngine {
       conflicts.addAll(entry.conflicts);
     }
     return P2pProjectMergePlan._(
+      remainderChoice,
+      itemWorkspaceChoice,
       sessionId: normalizedSessionId,
       baseRevision: baseRevision,
       localRevision: localRevision,
       remoteRevision: remoteRevision,
       localProject: local,
-      remainderChoice: remainderChoice,
-      itemWorkspaceChoice: itemWorkspaceChoice,
       baseInfoMerge: baseInfoMerge,
+      phraseMerge: phraseMerge,
       characterEntries: characterEntries,
       conflicts: conflicts,
     );
@@ -231,6 +246,13 @@ class P2pProjectMergeEngine {
       local: _baseInfoToMap(local.baseInfoData),
       remote: _baseInfoToMap(remote.baseInfoData),
     );
+    final phraseMerge = P2pPhraseMergePlan.create(
+      projectUuid: projectUuid,
+      local: local.phrases,
+      remote: remote.phrases,
+      localRecovery: local.phrasesRecoveryPayload,
+      remoteRecovery: remote.phrasesRecoveryPayload,
+    );
     final remainderChoice = _P2pProjectRemainderChoice.evaluateWithoutBase(
       projectUuid: projectUuid,
       local: local,
@@ -248,6 +270,7 @@ class P2pProjectMergeEngine {
     final characterEntries = <_P2pCharacterMergeEntry>[];
     final conflicts = <P2pFieldConflictItem>[
       ...baseInfoMerge.conflicts,
+      ...phraseMerge.conflicts,
       if (remainderChoice.conflict != null) remainderChoice.conflict!,
       if (itemWorkspaceChoice.conflict != null) itemWorkspaceChoice.conflict!,
     ];
@@ -265,14 +288,15 @@ class P2pProjectMergeEngine {
       conflicts.addAll(entry.conflicts);
     }
     return P2pProjectMergePlan._(
+      remainderChoice,
+      itemWorkspaceChoice,
       sessionId: normalizedSessionId,
       baseRevision: null,
       localRevision: localRevision,
       remoteRevision: remoteRevision,
       localProject: local,
-      remainderChoice: remainderChoice,
-      itemWorkspaceChoice: itemWorkspaceChoice,
       baseInfoMerge: baseInfoMerge,
+      phraseMerge: phraseMerge,
       characterEntries: characterEntries,
       conflicts: conflicts,
     );

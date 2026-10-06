@@ -440,6 +440,7 @@ void main() {
     );
     const expectedManualLabels = [
       "@",
+      "短語",
       "!",
       "#",
       "?",
@@ -455,11 +456,11 @@ void main() {
       "^<>",
     ];
     expect(
-      slash?.candidates.take(14).map((item) => item.label),
+      slash?.candidates.take(15).map((item) => item.label),
       expectedManualLabels,
     );
     expect(
-      backslash?.candidates.take(14).map((item) => item.label),
+      backslash?.candidates.take(15).map((item) => item.label),
       expectedManualLabels,
     );
     expect(

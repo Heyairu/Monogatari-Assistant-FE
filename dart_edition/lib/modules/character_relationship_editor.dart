@@ -22,6 +22,7 @@ import "../models/character_data.dart";
 import "../ui_library/dialogs.dart";
 import "../ui_library/forms.dart";
 import "character_relationship_resolver.dart";
+import "../ui_library/control_size.dart";
 
 class CharacterRelationshipEditorResult {
   final String sourceCharacterId;
@@ -163,9 +164,15 @@ class _CharacterRelationshipEditorDialogState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             DropdownButtonFormField<String>(
+              style: appDropdownTextStyle(context),
+              isDense: true,
+              isExpanded: true,
+              iconSize: AppControlSize.smallIcon,
+              itemHeight: appDropdownItemHeight(context),
+              menuMaxHeight: AppControlSize.menuMaxHeight,
               key: const ValueKey("relationship-source-field"),
               initialValue: _sourceCharacterId,
-              decoration: appFieldDecoration(
+              decoration: appDropdownFieldDecoration(
                 context,
                 decoration: const InputDecoration(labelText: "來源人物"),
               ),

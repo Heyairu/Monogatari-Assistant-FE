@@ -140,20 +140,21 @@ Expressive 邊界參考：[官方更新介紹](https://m3.material.io/blog/build
 
 | 元件 | 建議形狀 | 建議圓角／規則 |
 | --- | --- | --- |
-| Filled／Tonal／Elevated／Outlined button | 圓角矩形 | 8dp；較大型按鈕可用 12dp |
-| Text button 的狀態層 | 圓角矩形 | 8dp |
-| Chip、tag、filter | 圓角矩形 | 8dp；高度增加時仍維持 8dp |
+| Filled／Tonal／Elevated／Outlined button | 圓角矩形 | 固定 12dp |
+| Text button 的狀態層 | 圓角矩形 | 固定 12dp |
+| Chip、tag、filter | 圓角矩形 | 固定 12dp；高度增加時仍維持相同圓角 |
 | Segmented button 外框 | 圓角矩形群組 | 外框 12dp；內部分段共用直線邊界 |
-| FAB／Extended FAB | 圓角正方形／圓角矩形 | 16dp；Extended FAB 不使用半高圓角 |
-| 一般 icon button | 圓角正方形 | 8dp 或 12dp |
+| FAB／Extended FAB | 圓角正方形／圓角矩形 | 固定 12dp |
+| 一般 icon button | 圓角正方形；hover 為圓形 | 一般狀態固定 12dp，hover 狀態層為圓形 |
 | 獨立圓形 icon button | 圓形 | 僅在寬高相等、圓形能表達獨立操作時使用 |
-| Search bar、text field | 圓角矩形 | 8dp 或 12dp；不使用兩端半圓 |
-| Cards、dialogs、menus | 圓角矩形 | 12dp、16dp 或 28dp，按容器層級選擇 |
-| Navigation 選取指示 | 圓角矩形 | 8dp 或 12dp；寬度由內容與版面決定 |
-| Switch 軌道 | 小圓角矩形 | 固定 8dp 或 12dp；thumb 保持圓形 |
+| Search bar、text field | 圓角矩形 | 固定 12dp；不使用兩端半圓 |
+| List 容器、拖曳預覽、Cards、Dialogs | 圓角矩形 | 共用固定 16dp |
+| Menus | 圓角矩形 | 固定 12dp |
+| Navigation 選取指示 | 圓角矩形 | 固定 12dp；寬度由內容與版面決定 |
+| Switch 軌道 | 小圓角矩形 | 固定 12dp；thumb 保持圓形 |
 | Avatar、radio、圓形進度 | 圓形 | 寬高必須相等 |
 
-設計 token 可另外建立 `componentRadiusSmall = 8dp`、`componentRadiusMedium = 12dp`、`containerRadiusLarge = 16dp`、`containerRadiusExtraLarge = 28dp` 與 `circle = 50%`。不要讓一般元件直接引用 `corner-full`；如框架預設使用 Full，應在全域主題或共用元件層覆寫，而不是在各畫面重複修改。
+操作與輸入元件共用 `componentRadius = 12dp`；List 容器、Card 與 Dialog 共用 `surfaceRadius = 16dp`，真正的圓形元件使用 `circle = 50%`。不要讓一般元件直接引用 `corner-full`；如框架預設使用 Full，應在全域主題或共用元件層覆寫，而不是在各畫面重複修改。
 
 圓角矩形與圓形之間應保持功能差異：圓形偏向單一圖像、狀態或身份；圓角矩形承載文字、複合資訊與多步操作。互動時只改變色彩、層級或狀態層，不在按壓時切換成另一種形狀。
 
@@ -284,7 +285,7 @@ Disabled 依元件個別定義。例如原版 Filled button 使用 `onSurface` �
 | --- | --- |
 | Filled button 容器高度 | 40dp 等值邏輯尺寸 |
 | Filled button 官方形狀／文字 | Full／`labelLarge` |
-| Filled button 專案覆寫 | 8dp 圓角矩形；大型版本可用 12dp |
+| Filled button 專案覆寫 | 固定 12dp 圓角矩形 |
 | Filled button 內圖示 | 18dp 等值邏輯尺寸 |
 | Filled text field 上方圓角 | 4dp 等值邏輯尺寸 |
 | Filled text field 底線 | 一般 1dp、focus 2dp 等值邏輯尺寸 |

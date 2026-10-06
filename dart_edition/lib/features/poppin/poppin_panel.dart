@@ -1,5 +1,8 @@
 import "package:flutter/material.dart";
 
+import "../../ui_library/spacing.dart";
+import "../../ui_library/surface_shape.dart";
+
 final class PoppinPanel<T> extends StatefulWidget {
   final List<T> items;
   final int selectedIndex;
@@ -33,7 +36,7 @@ final class PoppinPanel<T> extends StatefulWidget {
 }
 
 final class _PoppinPanelState<T> extends State<PoppinPanel<T>> {
-  static const double _itemExtent = 56;
+  static const double _itemExtent = 64;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -84,13 +87,13 @@ final class _PoppinPanelState<T> extends State<PoppinPanel<T>> {
     return Material(
       elevation: 8,
       color: colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: AppSurfaceShape.borderRadius,
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 260),
         child: widget.items.isEmpty
             ? const Padding(
-                padding: EdgeInsets.all(12),
+                padding: EdgeInsets.all(AppSpacing.md),
                 child: Text("找不到符合的候選項目"),
               )
             : Column(
@@ -123,7 +126,10 @@ final class _PoppinPanelState<T> extends State<PoppinPanel<T>> {
         child: InkWell(
           onTap: widget.onBack,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.sm,
+            ),
             child: Row(
               children: [
                 const Icon(Icons.chevron_left, size: 18),
@@ -168,8 +174,8 @@ final class _PoppinPanelState<T> extends State<PoppinPanel<T>> {
                   onTap: () => widget.onSelected(index),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

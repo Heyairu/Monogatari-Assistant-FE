@@ -7,7 +7,9 @@ import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_quill/flutter_quill.dart";
+import "package:flutter_quill/quill_delta.dart";
 
+import "../../ui_library/spacing.dart";
 import "../../presentation/providers/collaboration_providers.dart";
 import "plain_text_quill_adapter.dart";
 import "editor_input_rules.dart";
@@ -33,6 +35,17 @@ typedef PlainTextQuillInteractionReporter =
 /// boundary. It has no effect while it is detached from an editor widget.
 final class PlainTextQuillEditorCommands {
   _PlainTextQuillEditorPocState? _state;
+
+  /// Finds the command bridge belonging to a host-owned editor focus node.
+  /// Quill uses its own raw editor rather than Flutter's EditableText.
+  static PlainTextQuillEditorCommands? forFocusNode(FocusNode? node) {
+    final context = node?.context;
+    if (context == null || !context.mounted) return null;
+    final state = context
+        .findAncestorStateOfType<_PlainTextQuillEditorPocState>();
+    if (state?._focusNode != node) return null;
+    return state?.widget.commands;
+  }
 
   bool get hasFocus => _state?._focusNode.hasFocus ?? false;
   bool get canUndo => _state?._controller.hasUndo ?? false;
@@ -495,14 +508,19 @@ class PlainTextQuillEditorPoc extends StatefulWidget {
     this.placeholder = "開始撰寫正文…",
     this.overwriteMode = false,
     this.tabSpaces = "\u3000\u3000",
+    this.autoIndentLineStart = false,
     this.onTabPressed,
     this.onToggleOverwrite,
     this.overwriteProtectedRanges = const [],
+    this.revisionRanges = const [],
+    this.revisionMarkers = const [],
   });
 
   /// Plain text supplied by the host. Changing this value simulates selecting
   /// a different chapter without persisting a Quill document.
   final String content;
+  final List<PlainTextQuillRenderRange> revisionRanges;
+  final List<PlainTextQuillRevisionMarker> revisionMarkers;
 
   /// Receives the canonical plain-text representation after a user edit.
   final ValueChanged<String> onChanged;
@@ -545,6 +563,7 @@ class PlainTextQuillEditorPoc extends StatefulWidget {
   final String placeholder;
   final bool overwriteMode;
   final String tabSpaces;
+  final bool autoIndentLineStart;
   final bool Function()? onTabPressed;
   final VoidCallback? onToggleOverwrite;
   final List<TextRange> overwriteProtectedRanges;
@@ -626,14 +645,10 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
 
   bool _handleReplaceText(int index, int length, Object? data) {
     _attachCompositionListener();
-    if (!widget.overwriteMode ||
-        _nonTypingEdit ||
+    if (_nonTypingEdit ||
         _isApplyingExternalContent ||
         _compositionBefore != null ||
-        data is! String ||
-        length != 0 ||
-        !_controller.selection.isCollapsed ||
-        index != _controller.selection.start) {
+        data is! String) {
       return true;
     }
     final input = _inputState?.currentTextEditingValue;
@@ -641,7 +656,34 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     final before = _controller.plainTextEditingValue;
     if (input == null ||
         input.composing.isValid && !input.composing.isCollapsed ||
-        input.text != before.text.replaceRange(index, index, data)) {
+        input.text != before.text.replaceRange(index, index + length, data)) {
+      return true;
+    }
+    if (data == "\n") {
+      final replacement = widget.autoIndentLineStart
+          ? "\n${widget.tabSpaces}"
+          : "\n";
+      _nonTypingEdit = true;
+      try {
+        if (replacement == "\n") {
+          _replacePlainNewline(index, length);
+        } else {
+          _controller.replaceText(
+            index,
+            length,
+            replacement,
+            TextSelection.collapsed(offset: index + replacement.length),
+          );
+        }
+      } finally {
+        _nonTypingEdit = false;
+      }
+      return false;
+    }
+    if (!widget.overwriteMode ||
+        length != 0 ||
+        !_controller.selection.isCollapsed ||
+        index != _controller.selection.start) {
       return true;
     }
     final end = overwriteEnd(
@@ -663,6 +705,28 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
       _nonTypingEdit = false;
     }
     return false;
+  }
+
+  bool _insertNewline({required bool plain}) {
+    final range = _inputState?.composingRange.value ?? TextRange.empty;
+    if (range.isValid && !range.isCollapsed) return false;
+    if (!plain && (widget.onTabPressed?.call() ?? false)) return true;
+    _replaceSelectionWith(
+      "\n${plain || !widget.autoIndentLineStart ? '' : widget.tabSpaces}",
+    );
+    return true;
+  }
+
+  void _replacePlainNewline(int index, int length) {
+    final change = Delta()
+      ..retain(index)
+      ..insert("\n")
+      ..delete(length);
+    _controller.document.compose(change, ChangeSource.local);
+    _controller.updateSelection(
+      TextSelection.collapsed(offset: index + 1),
+      ChangeSource.local,
+    );
   }
 
   void _insertTabSpaces() {
@@ -970,12 +1034,18 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
     final canonicalText = _canonicalizeLineEndings(text);
     _nonTypingEdit = true;
     try {
-      _controller.replaceText(
-        selection.start,
-        selection.end - selection.start,
-        canonicalText,
-        TextSelection.collapsed(offset: selection.start + canonicalText.length),
-      );
+      if (canonicalText == "\n") {
+        _replacePlainNewline(selection.start, selection.end - selection.start);
+      } else {
+        _controller.replaceText(
+          selection.start,
+          selection.end - selection.start,
+          canonicalText,
+          TextSelection.collapsed(
+            offset: selection.start + canonicalText.length,
+          ),
+        );
+      }
     } finally {
       _nonTypingEdit = false;
     }
@@ -1099,7 +1169,11 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
               matches: searchController.state.matches,
               currentMatchIndex: searchController.state.currentMatchIndex,
               proofreadingRanges: searchController.state.proofreadingRanges,
-              renderRanges: searchController.state.renderRanges,
+              renderRanges: [
+                ...searchController.state.renderRanges,
+                ...widget.revisionRanges,
+              ],
+              revisionMarkers: widget.revisionMarkers,
             ),
           ),
         Listener(
@@ -1119,6 +1193,14 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
                     keyboard.isMetaPressed) {
                   return null;
                 }
+                if (event.logicalKey == LogicalKeyboardKey.enter) {
+                  if (event is KeyDownEvent || event is KeyRepeatEvent) {
+                    if (!_insertNewline(plain: keyboard.isShiftPressed)) {
+                      return null;
+                    }
+                  }
+                  return KeyEventResult.handled;
+                }
                 if (event.logicalKey == LogicalKeyboardKey.tab) {
                   if (keyboard.isShiftPressed) return KeyEventResult.ignored;
                   if (event is KeyDownEvent || event is KeyRepeatEvent) {
@@ -1134,11 +1216,11 @@ class _PlainTextQuillEditorPocState extends State<PlainTextQuillEditorPoc> {
                 return null;
               },
               expands: true,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               placeholder: widget.placeholder,
               customStyles: DefaultStyles(
                 paragraph: defaultParagraph.copyWith(
-                  style: defaultParagraph.style.copyWith(height: 1.15),
+                  style: defaultParagraph.style.copyWith(height: 1.6),
                 ),
               ),
               customShortcuts: _plainTextShortcuts,

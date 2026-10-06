@@ -48,6 +48,7 @@ class WelcomeView extends ConsumerStatefulWidget {
     this.onSaveProjectAs,
     this.onChooseSyncProject,
     this.onApplyVerifiedP2pSnapshot,
+    this.onCompareVerifiedP2pSnapshot,
     this.onResolveConcurrentP2pSnapshot,
   });
 
@@ -62,6 +63,8 @@ class WelcomeView extends ConsumerStatefulWidget {
   final Future<void> Function()? onChooseSyncProject;
   final Future<bool> Function(P2pVerifiedSnapshot snapshot)?
   onApplyVerifiedP2pSnapshot;
+  final Future<bool> Function(P2pVerifiedSnapshot snapshot)?
+  onCompareVerifiedP2pSnapshot;
   final Future<bool> Function(P2pVerifiedSnapshot snapshot)?
   onResolveConcurrentP2pSnapshot;
 
@@ -554,10 +557,10 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
   Widget _buildP2pOfferPreview(String label, P2pProjectOffer offer) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppSurfaceShape.borderRadius,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -614,7 +617,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                 const SizedBox(height: 12),
                 ...issues.map(
                   (issue) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -935,6 +938,20 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
     await notifier.applyVerifiedSnapshot(apply);
   }
 
+  Future<void> _handleCompareRemoteSnapshot() async {
+    final compare = widget.onCompareVerifiedP2pSnapshot;
+    if (compare == null) return;
+    final notifier = ref.read(p2pSnapshotTransferProvider.notifier);
+    var transfer = ref.read(p2pSnapshotTransferProvider);
+    if (!transfer.hasVerifiedSnapshot) {
+      final downloaded = await notifier.downloadRemoteSnapshot();
+      if (!downloaded || !mounted) return;
+      transfer = ref.read(p2pSnapshotTransferProvider);
+    }
+    final verified = transfer.verifiedSnapshot;
+    if (verified != null) await compare(verified);
+  }
+
   // MARK: - UI 介面建構
   @override
   Widget build(BuildContext context) {
@@ -1015,8 +1032,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
     final TextStyle? dropdownTextStyle = Theme.of(context).textTheme.bodyMedium;
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: AppPageScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1055,7 +1071,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1093,7 +1109,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                         children: const [
                           Icon(Icons.code, size: 18),
                           SizedBox(width: 4),
-                          Text("Open GitHub Repo for This Project"),
+                          Flexible(
+                            child: Text("Open GitHub Repo for This Project"),
+                          ),
                         ],
                       ),
                     ),
@@ -1104,7 +1122,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                         children: const [
                           Icon(Icons.person_pin, size: 18),
                           SizedBox(width: 4),
-                          Text("Heyairu's Profile on KadoKado"),
+                          Flexible(
+                            child: Text("Heyairu's Profile on KadoKado"),
+                          ),
                         ],
                       ),
                     ),
@@ -1115,7 +1135,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                         children: const [
                           Icon(Icons.coffee, size: 18),
                           SizedBox(width: 4),
-                          Text("Heyairu's Ko-fi"),
+                          Flexible(child: Text("Heyairu's Ko-fi")),
                         ],
                       ),
                     ),
@@ -1131,10 +1151,10 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppSurfaceShape.borderRadius,
                 onTap: _reloadDidYouKnow,
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(AppSpacing.xl),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1182,7 +1202,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1194,7 +1214,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                         description: "開啟專案後會顯示在這裡",
                         icon: Icons.history_outlined,
                         compact: true,
-                        padding: EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
                       )
                     else
                       ...recentProjects.take(5).map((entry) {
@@ -1261,7 +1281,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1424,11 +1444,11 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                             ),
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(AppSpacing.md),
                               constraints: const BoxConstraints(minHeight: 120),
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.surface,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: AppSurfaceShape.borderRadius,
                                 border: Border.all(
                                   color: Theme.of(context).dividerColor,
                                 ),
@@ -1458,7 +1478,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
               elevation: 0,
               color: Theme.of(context).colorScheme.surfaceContainerLow,
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1470,21 +1490,20 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                             text: "內容同步",
                           ),
                         ),
-                        Container(
+                        Chip(
                           key: const Key("p2p-service-status"),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.xs,
                           ),
-                          decoration: BoxDecoration(
-                            color: p2pState.isListening
-                                ? Theme.of(context).colorScheme.primaryContainer
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
+                          labelPadding: EdgeInsets.zero,
+                          side: BorderSide.none,
+                          backgroundColor: p2pState.isListening
+                              ? Theme.of(context).colorScheme.primaryContainer
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                          label: Text(
                             _p2pServiceStatusText(p2pState),
                             style: Theme.of(context).textTheme.labelSmall,
                           ),
@@ -1502,54 +1521,60 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                     Text("本機服務", style: Theme.of(context).textTheme.titleSmall),
                     const SizedBox(height: 10),
                     Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 8,
                       runSpacing: 8,
                       children: [
                         if (p2pState.localAddresses.isEmpty)
-                          const Chip(
+                          const AppControlChip(
                             avatar: Icon(Icons.lan_outlined, size: 16),
-                            label: Text("尚未找到可用 LAN IPv4"),
+                            label: "尚未找到可用 LAN IPv4",
                           )
                         else
                           ...p2pState.localAddresses.map(
-                            (address) => Chip(
+                            (address) => AppControlChip(
                               avatar: const Icon(Icons.lan_outlined, size: 16),
-                              label: Text(address),
+                              label: address,
                             ),
                           ),
                         if (p2pState.listeningPort != null)
-                          Chip(
+                          AppControlChip(
                             avatar: const Icon(
                               Icons.settings_ethernet,
                               size: 16,
                             ),
-                            label: Text("Port ${p2pState.listeningPort}"),
+                            label: "Port ${p2pState.listeningPort}",
                           ),
+                        IconButton(
+                          key: const Key("p2p-refresh-local-addresses-button"),
+                          tooltip: "重新偵測本機 IP",
+                          constraints: BoxConstraints.tightFor(
+                            width: AppControlSize.heightForContext(context),
+                            height: AppControlSize.heightForContext(context),
+                          ),
+                          onPressed: () => ref
+                              .read(p2pSyncProvider.notifier)
+                              .refreshLocalAddresses(),
+                          icon: const Icon(Icons.refresh),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        SizedBox(
-                          width: 180,
-                          child: AppTextField(
-                            key: const Key("p2p-local-port-field"),
-                            controller: _localPortController,
-                            enabled:
-                                !p2pState.isListening &&
-                                !p2pState.isServiceBusy,
-                            labelText: "本機 Port",
-                            errorText: _localPortError,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                          ),
-                        ),
-                        FilledButton.tonalIcon(
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final portField = AppTextField(
+                          key: const Key("p2p-local-port-field"),
+                          controller: _localPortController,
+                          enabled:
+                              !p2pState.isListening && !p2pState.isServiceBusy,
+                          labelText: "本機 Port",
+                          errorText: _localPortError,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                        );
+                        final serviceButton = FilledButton.tonalIcon(
                           key: const Key("p2p-toggle-service-button"),
                           onPressed:
                               p2pState.isServiceBusy || p2pState.isConnecting
@@ -1561,15 +1586,32 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                                 : Icons.play_circle_outline,
                           ),
                           label: Text(p2pState.isListening ? "中斷服務" : "開啟服務"),
-                        ),
-                        IconButton(
-                          tooltip: "重新偵測本機 IP",
-                          onPressed: () => ref
-                              .read(p2pSyncProvider.notifier)
-                              .refreshLocalAddresses(),
-                          icon: const Icon(Icons.refresh),
-                        ),
-                      ],
+                        );
+                        if (constraints.maxWidth >= 280 &&
+                            constraints.maxWidth < 350) {
+                          return Row(
+                            crossAxisAlignment: _localPortError == null
+                                ? CrossAxisAlignment.center
+                                : CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: portField),
+                              const SizedBox(width: 12),
+                              serviceButton,
+                            ],
+                          );
+                        }
+                        return Wrap(
+                          crossAxisAlignment: _localPortError == null
+                              ? WrapCrossAlignment.center
+                              : WrapCrossAlignment.start,
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            SizedBox(width: 180, child: portField),
+                            serviceButton,
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     Text(
@@ -1578,7 +1620,10 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                     ),
                     const SizedBox(height: 10),
                     Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                      crossAxisAlignment:
+                          _peerIpError == null && _peerPortError == null
+                          ? WrapCrossAlignment.center
+                          : WrapCrossAlignment.start,
                       spacing: 12,
                       runSpacing: 12,
                       children: [
@@ -1650,12 +1695,12 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                     Container(
                       key: const Key("p2p-pairing-panel"),
                       width: double.infinity,
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(AppSpacing.md),
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Theme.of(context).dividerColor,
                         ),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppSurfaceShape.borderRadius,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1854,12 +1899,12 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                     const SizedBox(height: 20),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(AppSpacing.md),
                       decoration: BoxDecoration(
                         color: Theme.of(
                           context,
                         ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppSurfaceShape.borderRadius,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1986,6 +2031,28 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> {
                                   ),
                                 ),
                               ),
+                              if (widget.onCompareVerifiedP2pSnapshot != null &&
+                                  (p2pTransferState.hasVerifiedSnapshot ||
+                                      p2pState.canDownloadRemoteSnapshot))
+                                OutlinedButton.icon(
+                                  key: const Key(
+                                    'p2p-compare-verified-snapshot-button',
+                                  ),
+                                  onPressed:
+                                      !p2pTransferState.isBusy &&
+                                          widget.localP2pProject != null &&
+                                          p2pState.sessionProjectUuid != null &&
+                                          widget.localP2pProject?.projectUuid
+                                                  ?.trim()
+                                                  .toLowerCase() ==
+                                              p2pState.sessionProjectUuid
+                                                  ?.trim()
+                                                  .toLowerCase()
+                                      ? _handleCompareRemoteSnapshot
+                                      : null,
+                                  icon: const Icon(Icons.difference_outlined),
+                                  label: const Text('比較遠端版本'),
+                                ),
                               if (p2pTransferState.isBusy)
                                 TextButton(
                                   key: const Key(

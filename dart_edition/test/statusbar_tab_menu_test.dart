@@ -10,6 +10,7 @@ void main() {
     (tester) async {
       var count = 2;
       var fullWidth = true;
+      var autoIndent = false;
       await tester.pumpWidget(
         MaterialApp(
           home: StatefulBuilder(
@@ -24,6 +25,9 @@ void main() {
                 iconSize: 16,
                 tabSpaceCount: count,
                 tabFullWidth: fullWidth,
+                autoIndentLineStart: autoIndent,
+                onAutoIndentLineStartChanged: (value) =>
+                    setState(() => autoIndent = value),
                 onTabSpaceCountChanged: (value) =>
                     setState(() => count = value),
                 onTabFullWidthChanged: (value) =>
@@ -54,6 +58,24 @@ void main() {
       await click(const Key("statusbar-tab-spaces"));
       await click(const Key("tab-full-width-choice"));
       expect(find.text("[全形:4]"), findsOneWidget);
+      await click(const Key("statusbar-tab-spaces"));
+      final autoIndentChoice = find.byKey(
+        const Key("auto-indent-line-start-choice"),
+      );
+      expect(find.text("OFF"), findsOneWidget);
+      expect(
+        tester.getTopLeft(autoIndentChoice).dy,
+        greaterThan(
+          tester.getBottomLeft(find.byKey(const Key("tab-space-count-8"))).dy,
+        ),
+      );
+      expect(tester.getSize(autoIndentChoice).width, greaterThan(150));
+      await click(const Key("auto-indent-line-start-choice"));
+      expect(autoIndent, isTrue);
+      await click(const Key("statusbar-tab-spaces"));
+      expect(find.text("ON"), findsOneWidget);
+      await click(const Key("auto-indent-line-start-choice"));
+      expect(autoIndent, isFalse);
       await mouse.removePointer();
     },
   );

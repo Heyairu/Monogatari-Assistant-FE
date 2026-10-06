@@ -15,6 +15,7 @@ import "../../models/chapter_selection_data.dart" as chapter_module;
 import "../../models/outline_data.dart" as outline_module;
 import "../../models/plan_data.dart" as plan_module;
 import "../../models/project_data.dart";
+import "../../features/phrases/phrase_entry.dart";
 import "../../models/project_file.dart";
 import "../../models/timeline_data.dart";
 import "../../models/world_settings_data.dart";
@@ -2607,6 +2608,46 @@ final projectUuidProvider = NotifierProvider<ProjectUuidNotifier, String>(
   ProjectUuidNotifier.new,
 );
 
+/// Serialized, versioned revision session. Kept out of story/Undo equality.
+class RevisionTrackingJsonNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void setJson(String? value) {
+    if (state != value) state = value;
+  }
+}
+
+final revisionTrackingJsonProvider =
+    NotifierProvider<RevisionTrackingJsonNotifier, String?>(
+      RevisionTrackingJsonNotifier.new,
+    );
+
+class PhrasesNotifier extends Notifier<List<PhraseEntry>> {
+  @override
+  List<PhraseEntry> build() => const <PhraseEntry>[];
+
+  void setPhrases(Iterable<PhraseEntry> phrases) {
+    validatePhraseLibrary(phrases);
+    state = List<PhraseEntry>.unmodifiable(phrases);
+  }
+}
+
+final phrasesProvider = NotifierProvider<PhrasesNotifier, List<PhraseEntry>>(
+  PhrasesNotifier.new,
+);
+
+class PhrasesRecoveryPayloadNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setPayload(String? payload) => state = payload;
+}
+
+final phrasesRecoveryPayloadProvider =
+    NotifierProvider<PhrasesRecoveryPayloadNotifier, String?>(
+      PhrasesRecoveryPayloadNotifier.new,
+    );
+
 class CurrentProjectFileNotifier extends Notifier<ProjectFile?> {
   @override
   ProjectFile? build() {
@@ -3190,5 +3231,8 @@ final projectDataProvider = Provider<ProjectData>((ref) {
     outlineChapterLinks: ref.watch(outlineChapterLinksProvider),
     totalWords: ref.watch(totalWordsProvider),
     contentText: ref.watch(editorContentProvider),
+    revisionTrackingJson: ref.watch(revisionTrackingJsonProvider),
+    phrases: ref.watch(phrasesProvider),
+    phrasesRecoveryPayload: ref.watch(phrasesRecoveryPayloadProvider),
   );
 });

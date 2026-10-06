@@ -54,9 +54,18 @@ class CharacterRelationshipGraphView extends ConsumerStatefulWidget {
 class _CharacterRelationshipGraphViewState
     extends ConsumerState<CharacterRelationshipGraphView> {
   static const _mapper = CharacterRelationshipGraphMapper();
-  Size get _nodeSize => Size.square(
-    104 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
-  );
+  Size get _nodeSize {
+    final textTheme = Theme.of(context).textTheme;
+    final scaler = MediaQuery.textScalerOf(context);
+    final bodySize = textTheme.bodyMedium?.fontSize ?? 14;
+    final labelSize = textTheme.labelSmall?.fontSize ?? 11;
+    final scale = math.max(
+      1.0,
+      math.max(scaler.scale(bodySize) / 14, scaler.scale(labelSize) / 11),
+    );
+    return Size.square(104 * scale);
+  }
+
   Map<String, CharacterEntryData>? _mappedCharacters;
   CharacterRelationshipGraphData? _cachedGraph;
   CharacterRelationshipDisplayMode? _mappedMode;
@@ -294,7 +303,7 @@ class _CharacterRelationshipGraphViewState
   Widget _buildNoCharactersState() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -327,7 +336,12 @@ class _CharacterRelationshipGraphViewState
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: scheme.outlineVariant)),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+        ),
         child: LayoutBuilder(
           builder: (context, constraints) {
             return Wrap(
@@ -336,7 +350,7 @@ class _CharacterRelationshipGraphViewState
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: EdgeInsets.all(AppSpacing.md),
                   child: LargeTitle(
                     icon: Icons.people_alt_rounded,
                     text: "關係設定",
@@ -431,7 +445,9 @@ class _CharacterRelationshipGraphViewState
                   ),
                   if (selectedSnapshotEvent != null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
                       child: AppNoticeBanner(
                         message:
                             "正在檢視 Tick ${selectedSnapshotEvent.resolvedTick} 的關係快照；每位角色皆採用自己在此 Tick 前最後一次變更的關係。",
@@ -460,38 +476,42 @@ class _CharacterRelationshipGraphViewState
                             key: const ValueKey("relationship-search-field"),
                             controller: textEditingController,
                             focusNode: focusNode,
-                            decoration: InputDecoration(
-                              isDense: true,
-                              prefixIcon: const Icon(
-                                Icons.person_search_outlined,
-                              ),
-                              hintText: "搜尋或選擇人物",
-                              suffixIcon: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_searchController.text.isNotEmpty)
+                            decoration: appFieldDecoration(
+                              context,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                prefixIcon: const Icon(
+                                  Icons.person_search_outlined,
+                                ),
+                                hintText: "搜尋或選擇人物",
+                                suffixIcon: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_searchController.text.isNotEmpty)
+                                      IconButton(
+                                        tooltip: "清除搜尋",
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() {});
+                                        },
+                                        icon: const Icon(Icons.clear),
+                                      ),
                                     IconButton(
-                                      tooltip: "清除搜尋",
-                                      onPressed: () {
-                                        _searchController.clear();
-                                        setState(() {});
-                                      },
-                                      icon: const Icon(Icons.clear),
+                                      key: const ValueKey(
+                                        "relationship-search-button",
+                                      ),
+                                      tooltip: "搜尋並聚焦",
+                                      onPressed: () => _focusFirstSearchResult(
+                                        characters,
+                                        graph,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.center_focus_strong,
+                                      ),
                                     ),
-                                  IconButton(
-                                    key: const ValueKey(
-                                      "relationship-search-button",
-                                    ),
-                                    tooltip: "搜尋並聚焦",
-                                    onPressed: () => _focusFirstSearchResult(
-                                      characters,
-                                      graph,
-                                    ),
-                                    icon: const Icon(Icons.center_focus_strong),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                              border: const OutlineInputBorder(),
                             ),
                             onChanged: (_) => setState(() {}),
                             onSubmitted: (_) {
@@ -504,7 +524,7 @@ class _CharacterRelationshipGraphViewState
                             alignment: Alignment.topLeft,
                             child: Material(
                               elevation: 8,
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: AppSurfaceShape.borderRadius,
                               clipBehavior: Clip.antiAlias,
                               child: SizedBox(
                                 width: constraints.maxWidth,
@@ -756,8 +776,13 @@ class _CharacterRelationshipGraphViewState
       _geometryGraph = graph;
       _geometryLayout = layout;
     }
+    final labelFontSize =
+        Theme.of(context).textTheme.labelSmall?.fontSize ?? 11;
+    final scaledLabelSize = MediaQuery.textScalerOf(
+      context,
+    ).scale(labelFontSize);
     final focusKey =
-        "${_controller.selectedNodeId}:${_controller.selectedEdgeId}:$_hoveredEdgeId:${visibleIds.toList()..sort()}";
+        "${_controller.selectedNodeId}:${_controller.selectedEdgeId}:$_hoveredEdgeId:$scaledLabelSize:${visibleIds.toList()..sort()}";
     if (!identical(_routeGraph, graph) ||
         !identical(_routeLayout, layout) ||
         _routeFocusKey != focusKey) {
@@ -913,7 +938,7 @@ class _CharacterRelationshipGraphViewState
             top: 16,
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Row(
                   children: [
                     const Icon(Icons.link_off_outlined),
@@ -964,7 +989,7 @@ class _CharacterRelationshipGraphViewState
               : scheme.surfaceContainerHighest,
           elevation: selected ? 8 : 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: AppSurfaceShape.borderRadius,
             side: BorderSide(
               color: node.isUnresolved
                   ? scheme.error
@@ -999,7 +1024,7 @@ class _CharacterRelationshipGraphViewState
             onPanEnd: (_) => setState(() => _draggingNode = false),
             onPanCancel: () => setState(() => _draggingNode = false),
             child: Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1059,12 +1084,12 @@ class _CharacterRelationshipGraphViewState
         child: Material(
           color: selected ? scheme.secondaryContainer : scheme.surface,
           elevation: selected ? 4 : 1,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppSurfaceShape.borderRadius,
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppSurfaceShape.borderRadius,
             onTap: () => _controller.selectEdge(edge.id),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              padding: AppSpacing.badgePadding,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1117,7 +1142,7 @@ class _CharacterRelationshipGraphViewState
             elevation: 10,
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
@@ -1422,7 +1447,7 @@ class _CharacterRelationshipGraphViewState
         : edge.sourceCharacterId;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1786,21 +1811,24 @@ class _CharacterRelationshipGraphViewState
 
   Size _edgeLabelSizeFor(CharacterRelationshipGraphEdge edge) {
     final label = "${edge.layerLabel}：${edge.description}";
+    final style = Theme.of(context).textTheme.labelSmall;
+    final scaler = MediaQuery.textScalerOf(context);
+    final baseFontSize = style?.fontSize ?? 11;
+    final textScale = math.max(1.0, scaler.scale(baseFontSize) / 11);
     final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: Theme.of(context).textTheme.labelSmall,
-      ),
+      text: TextSpan(text: label, style: style),
       maxLines: 2,
       ellipsis: "…",
       textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout(maxWidth: 190);
+      textScaler: scaler,
+    )..layout(maxWidth: 190 * textScale);
     final warningWidth = edge.isResolved ? 0.0 : 18.0;
-    return Size(
-      (painter.width + 16 + warningWidth).clamp(56.0, 224.0),
-      (painter.height + 10).clamp(30.0, 56.0),
+    final size = Size(
+      math.max(56.0, painter.width + 16 + warningWidth),
+      math.max(30.0, painter.height + 10),
     );
+    painter.dispose();
+    return size;
   }
 
   List<CharacterRelationshipGraphEdge> _edgesByConnectionDensity(

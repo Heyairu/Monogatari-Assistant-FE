@@ -3,6 +3,9 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:uuid/uuid.dart";
 
 import "../bin/ui_library.dart";
+import "../domain/collaboration/collaboration_operation.dart";
+import "../domain/collaboration/typed_operation_log.dart";
+import "../features/revision_tracking/presentation/revision_field_marker.dart";
 import "../application/items/world_item_migration.dart";
 import "../application/items/item_operations.dart";
 import "../models/item_data.dart";
@@ -312,9 +315,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-relation-subject"),
                   initialValue: "${itemKind.name}:$itemId",
-                  decoration: const InputDecoration(labelText: "物品"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "物品"),
+                  ),
                   items: [
                     DropdownMenuItem(
                       value:
@@ -371,11 +383,17 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 ),
                 TextField(
                   onChanged: (value) => role = value,
-                  decoration: const InputDecoration(labelText: "關係／用途"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "關係／用途"),
+                  ),
                 ),
                 TextField(
                   onChanged: (value) => note = value,
-                  decoration: const InputDecoration(labelText: "備註"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "備註"),
+                  ),
                 ),
               ],
             ),
@@ -437,9 +455,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-allocation-target"),
                   initialValue: "${target.kind.name}:${target.id}",
-                  decoration: const InputDecoration(labelText: "分配對象"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "分配對象"),
+                  ),
                   items: targets
                       .map(
                         (value) => DropdownMenuItem(
@@ -464,14 +491,20 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   key: const Key("item-allocation-quantity"),
                   keyboardType: TextInputType.number,
                   onChanged: (value) => quantityText = value,
-                  decoration: const InputDecoration(
-                    labelText: "數量",
-                    helperText: "留空代表數量未知",
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(
+                      labelText: "數量",
+                      helperText: "留空代表數量未知",
+                    ),
                   ),
                 ),
                 TextField(
                   onChanged: (value) => note = value,
-                  decoration: const InputDecoration(labelText: "備註"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "備註"),
+                  ),
                 ),
               ],
             ),
@@ -593,9 +626,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   },
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-transfer-target"),
                   initialValue: "${target.kind.name}:${target.id}",
-                  decoration: const InputDecoration(labelText: "轉移至"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "轉移至"),
+                  ),
                   items: targets
                       .map(
                         (value) => DropdownMenuItem(
@@ -620,15 +662,21 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   key: const Key("item-transfer-quantity"),
                   keyboardType: TextInputType.number,
                   onChanged: (value) => quantityText = value,
-                  decoration: const InputDecoration(labelText: "轉移數量"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "轉移數量"),
+                  ),
                 ),
                 if (source.quantity == null)
                   TextField(
                     keyboardType: TextInputType.number,
                     onChanged: (value) => sourceAfterText = value,
-                    decoration: const InputDecoration(
-                      labelText: "轉移後來源數量",
-                      helperText: "來源數量未知，必須明確設定",
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(
+                        labelText: "轉移後來源數量",
+                        helperText: "來源數量未知，必須明確設定",
+                      ),
                     ),
                   ),
                 if (currentState.allocations.any(
@@ -642,14 +690,20 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   TextField(
                     keyboardType: TextInputType.number,
                     onChanged: (value) => destinationAfterText = value,
-                    decoration: const InputDecoration(
-                      labelText: "轉移後目的數量",
-                      helperText: "目的數量未知，必須明確設定",
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(
+                        labelText: "轉移後目的數量",
+                        helperText: "目的數量未知，必須明確設定",
+                      ),
                     ),
                   ),
                 TextField(
                   onChanged: (value) => note = value,
-                  decoration: const InputDecoration(labelText: "備註"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "備註"),
+                  ),
                 ),
               ],
             ),
@@ -794,22 +848,31 @@ class _ItemViewState extends ConsumerState<ItemView> {
                     key: const Key("item-materialize-name"),
                     initialValue: instanceName,
                     onChanged: (value) => instanceName = value,
-                    decoration: const InputDecoration(labelText: "單件名稱"),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: "單件名稱"),
+                    ),
                   ),
                   if (sceneSource?.quantity == null && sceneSource != null)
                     TextField(
                       key: const Key("item-materialize-source-after"),
                       keyboardType: TextInputType.number,
                       onChanged: (value) => sourceAfterText = value,
-                      decoration: const InputDecoration(
-                        labelText: "拆出後來源數量",
-                        helperText: "來源數量未知，必須明確設定",
+                      decoration: appFieldDecoration(
+                        context,
+                        decoration: const InputDecoration(
+                          labelText: "拆出後來源數量",
+                          helperText: "來源數量未知，必須明確設定",
+                        ),
                       ),
                     ),
                   TextField(
                     key: const Key("item-materialize-note"),
                     onChanged: (value) => note = value,
-                    decoration: const InputDecoration(labelText: "轉換備註"),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: "轉換備註"),
+                    ),
                   ),
                 ],
               ),
@@ -965,7 +1028,10 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   TextField(
                     key: const Key("item-demotion-note"),
                     onChanged: (value) => note = value,
-                    decoration: const InputDecoration(labelText: "轉換備註"),
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: "轉換備註"),
+                    ),
                   ),
                 ],
               ),
@@ -1247,12 +1313,24 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 ),
                 TextField(
                   onChanged: (value) => status = value,
-                  decoration: const InputDecoration(labelText: "狀態"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "狀態"),
+                  ),
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-class-snapshot-holder"),
                   initialValue: "",
-                  decoration: const InputDecoration(labelText: "持有人"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "持有人"),
+                  ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
                     for (final character in characters)
@@ -1265,9 +1343,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       holderCharacterId = value?.isEmpty == true ? null : value,
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-class-snapshot-location"),
                   initialValue: "",
-                  decoration: const InputDecoration(labelText: "所在地"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "所在地"),
+                  ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
                     for (final location in locations)
@@ -1369,12 +1456,24 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 ),
                 TextField(
                   onChanged: (value) => status = value,
-                  decoration: const InputDecoration(labelText: "狀態"),
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "狀態"),
+                  ),
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-instance-snapshot-holder"),
                   initialValue: "",
-                  decoration: const InputDecoration(labelText: "持有人"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "持有人"),
+                  ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
                     for (final character in characters)
@@ -1387,9 +1486,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       holderCharacterId = value?.isEmpty == true ? null : value,
                 ),
                 DropdownButtonFormField<String>(
+                  style: appDropdownTextStyle(context),
+                  isDense: true,
+                  isExpanded: true,
+                  iconSize: AppControlSize.smallIcon,
+                  itemHeight: appDropdownItemHeight(context),
+                  menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-instance-snapshot-location"),
                   initialValue: "",
-                  decoration: const InputDecoration(labelText: "所在地"),
+                  decoration: appDropdownFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(labelText: "所在地"),
+                  ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
                     for (final location in locations)
@@ -1494,8 +1602,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
     );
 
     return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: AppPagePadding(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1598,10 +1705,12 @@ class _ItemViewState extends ConsumerState<ItemView> {
         const SizedBox(height: 8),
         TextField(
           controller: _searchController,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            labelText: "搜尋物品",
-            border: OutlineInputBorder(),
+          decoration: appFieldDecoration(
+            context,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              labelText: "搜尋物品",
+            ),
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -1699,9 +1808,9 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   workspace: workspace,
                   tick: tick,
                 );
-                return Material(
-                  type: MaterialType.transparency,
-                  child: ListTile(
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppListStyle.cardGap),
+                  child: AppListCard(
                     key: ValueKey("item-class-row-${itemClass.classId}"),
                     selected: itemClass.classId == _selectedClassId,
                     leading: Icon(
@@ -1710,18 +1819,27 @@ class _ItemViewState extends ConsumerState<ItemView> {
                     ),
                     title: Text(
                       itemClass.name.trim().isEmpty ? "未命名物品" : itemClass.name,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     subtitle: Text(
                       "${_modeLabel(itemClass.mode)} · $instanceCount 件單件 · "
                       "$relationCount 個關聯${assigned ? " · 已有歸屬" : ""}",
                     ),
-                    trailing: ItemActionBar.editDelete(
-                      iconSize: 18,
-                      editTooltip: "編輯物品",
-                      deleteTooltip: "封存物品",
-                      onEdit: () => _selectClass(itemClass.classId),
-                      onDelete: () => _archiveClass(itemClass, workspace),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RevisionRecordMarker(
+                          recordKey: ProjectRecordKey(
+                            kind: ProjectRecordKind.itemClass,
+                            recordId: itemClass.classId,
+                          ),
+                        ),
+                        ItemActionBar.editDelete(
+                          editTooltip: "編輯物品",
+                          deleteTooltip: "封存物品",
+                          onEdit: () => _selectClass(itemClass.classId),
+                          onDelete: () => _archiveClass(itemClass, workspace),
+                        ),
+                      ],
                     ),
                     onTap: () => _selectClass(itemClass.classId),
                   ),
@@ -1793,10 +1911,24 @@ class _ItemViewState extends ConsumerState<ItemView> {
     final scheme = Theme.of(context).colorScheme;
     return BoxDecoration(
       border: Border.all(color: scheme.outline.withValues(alpha: 0.2)),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: AppSurfaceShape.borderRadius,
       color: scheme.surfaceContainerLowest,
     );
   }
+
+  Widget _markedItemClassField(String classId, String field, Widget input) =>
+      Row(
+        children: [
+          Expanded(child: input),
+          RevisionFieldMarker(
+            recordKey: ProjectRecordKey(
+              kind: ProjectRecordKind.itemClass,
+              recordId: classId,
+            ),
+            field: field,
+          ),
+        ],
+      );
 
   Widget _buildDetails(ItemClassData itemClass, ItemWorkspaceData workspace) {
     final instances = workspace.itemInstances.values
@@ -1839,36 +1971,71 @@ class _ItemViewState extends ConsumerState<ItemView> {
 
     return ListView(
       key: ValueKey("item-details-${itemClass.classId}"),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
-        TextFormField(
-          key: ValueKey("item-name-${itemClass.classId}"),
-          initialValue: itemClass.name,
-          decoration: const InputDecoration(labelText: "名稱", isDense: true),
-          onChanged: (value) => _updateClass(
-            itemClass.copyWith(
-              name: value,
-              defaultState: itemClass.defaultState.copyWith(name: value),
+        _markedItemClassField(
+          itemClass.classId,
+          'name',
+          TextFormField(
+            key: ValueKey("item-name-${itemClass.classId}"),
+            initialValue: itemClass.name,
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(labelText: "名稱", isDense: true),
+            ),
+            onChanged: (value) => _updateClass(
+              itemClass.copyWith(
+                name: value,
+                defaultState: itemClass.defaultState.copyWith(name: value),
+              ),
             ),
           ),
         ),
         const SizedBox(height: 12),
-        TextFormField(
-          key: ValueKey("item-unit-${itemClass.classId}"),
-          initialValue: itemClass.unit,
-          decoration: const InputDecoration(labelText: "數量單位", isDense: true),
-          onChanged: (value) => _updateClass(itemClass.copyWith(unit: value)),
+        _markedItemClassField(
+          itemClass.classId,
+          'unit',
+          TextFormField(
+            key: ValueKey("item-unit-${itemClass.classId}"),
+            initialValue: itemClass.unit,
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(
+                labelText: "數量單位",
+                isDense: true,
+              ),
+            ),
+            onChanged: (value) => _updateClass(itemClass.copyWith(unit: value)),
+          ),
         ),
         const SizedBox(height: 12),
-        TextFormField(
-          key: ValueKey("item-category-${itemClass.classId}"),
-          initialValue: itemClass.category,
-          decoration: const InputDecoration(labelText: "分類", isDense: true),
-          onChanged: (value) =>
-              _updateClass(itemClass.copyWith(category: value)),
+        _markedItemClassField(
+          itemClass.classId,
+          'category',
+          TextFormField(
+            key: ValueKey("item-category-${itemClass.classId}"),
+            initialValue: itemClass.category,
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(labelText: "分類", isDense: true),
+            ),
+            onChanged: (value) =>
+                _updateClass(itemClass.copyWith(category: value)),
+          ),
         ),
         const SizedBox(height: 16),
-        Text("管理模式", style: Theme.of(context).textTheme.titleSmall),
+        Row(
+          children: [
+            Text("管理模式", style: Theme.of(context).textTheme.titleSmall),
+            RevisionFieldMarker(
+              recordKey: ProjectRecordKey(
+                kind: ProjectRecordKind.itemClass,
+                recordId: itemClass.classId,
+              ),
+              field: 'mode',
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         SegmentedButton<ItemMode>(
           key: const Key("item-mode-switch"),
@@ -1887,21 +2054,29 @@ class _ItemViewState extends ConsumerState<ItemView> {
           },
         ),
         const SizedBox(height: 16),
-        TextFormField(
-          key: ValueKey("item-description-${itemClass.classId}"),
-          initialValue: itemClass.description,
-          minLines: 3,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            labelText: "設定說明",
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          onChanged: (value) => _updateClass(
-            itemClass.copyWith(
-              description: value,
-              defaultState: itemClass.defaultState.copyWith(description: value),
+        _markedItemClassField(
+          itemClass.classId,
+          'description',
+          TextFormField(
+            key: ValueKey("item-description-${itemClass.classId}"),
+            initialValue: itemClass.description,
+            minLines: 3,
+            maxLines: 8,
+            decoration: appFieldDecoration(
+              context,
+              decoration: const InputDecoration(
+                labelText: "設定說明",
+                alignLabelWithHint: true,
+                isDense: true,
+              ),
+            ),
+            onChanged: (value) => _updateClass(
+              itemClass.copyWith(
+                description: value,
+                defaultState: itemClass.defaultState.copyWith(
+                  description: value,
+                ),
+              ),
             ),
           ),
         ),
@@ -2011,12 +2186,23 @@ class _ItemViewState extends ConsumerState<ItemView> {
                           ? change.patch.status!.value!
                           : "連結此 Scene",
                     ),
-                    trailing: IconButton(
-                      tooltip: "移除快照",
-                      onPressed: () => ref
-                          .read(itemWorkspaceProvider.notifier)
-                          .removeClassStateChange(change.stateChangeId),
-                      icon: const Icon(Icons.delete_outline),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RevisionRecordMarker(
+                          recordKey: ProjectRecordKey(
+                            kind: ProjectRecordKind.itemClassStateChange,
+                            recordId: change.stateChangeId,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: "移除快照",
+                          onPressed: () => ref
+                              .read(itemWorkspaceProvider.notifier)
+                              .removeClassStateChange(change.stateChangeId),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
                     ),
                   ),
                 )
@@ -2054,7 +2240,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
           const SizedBox.shrink(),
         if (itemClass.mode != ItemMode.generic && instances.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
             child: Text("尚未建立單件物品。"),
           )
         else if (itemClass.mode != ItemMode.generic)
@@ -2081,13 +2267,30 @@ class _ItemViewState extends ConsumerState<ItemView> {
             return ExpansionTile(
               key: ValueKey("item-instance-${instance.instanceId}"),
               leading: const Icon(Icons.inventory_2_outlined),
-              title: Text(
-                instance.name.isEmpty ? itemClass.name : instance.name,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      instance.name.isEmpty ? itemClass.name : instance.name,
+                    ),
+                  ),
+                  RevisionRecordMarker(
+                    recordKey: ProjectRecordKey(
+                      kind: ProjectRecordKind.itemInstance,
+                      recordId: instance.instanceId,
+                    ),
+                  ),
+                ],
               ),
               subtitle: Text("ID：${instance.instanceId}"),
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -2221,6 +2424,12 @@ class _ItemViewState extends ConsumerState<ItemView> {
                             ? change.patch.status!.value!
                             : "連結此 Scene",
                       ),
+                      trailing: RevisionRecordMarker(
+                        recordKey: ProjectRecordKey(
+                          kind: ProjectRecordKind.itemInstanceStateChange,
+                          recordId: change.stateChangeId,
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -2242,7 +2451,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
         ),
         if (relations.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
             child: Text("尚未連結人物、地點或事件。"),
           )
         else
@@ -2261,12 +2470,23 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   if (relation.note.isNotEmpty) relation.note,
                 ].join("・"),
               ),
-              trailing: IconButton(
-                tooltip: "移除關聯",
-                onPressed: () => ref
-                    .read(itemWorkspaceProvider.notifier)
-                    .removeRelation(relation.relationId),
-                icon: const Icon(Icons.delete_outline),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RevisionRecordMarker(
+                    recordKey: ProjectRecordKey(
+                      kind: ProjectRecordKind.itemRelation,
+                      recordId: relation.relationId,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: "移除關聯",
+                    onPressed: () => ref
+                        .read(itemWorkspaceProvider.notifier)
+                        .removeRelation(relation.relationId),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2290,7 +2510,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
           child: Text(switch (itemClass.mode) {
             ItemMode.generic => "非專用模式以 Class 與聚合分配管理，不建立單件 ID。",
             ItemMode.semiDedicated => "半專用模式保留尚未識別的聚合數量，並可在 Scene 中逐件拆出固定 ID。",
@@ -2315,7 +2535,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
         ),
         if (allocations.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
             child: Text("尚未分配數量。"),
           )
         else

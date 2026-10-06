@@ -30,6 +30,7 @@ import "package:monogatari_assistant/models/chapter_selection_data.dart";
 import "package:monogatari_assistant/models/character_data.dart";
 import "package:monogatari_assistant/models/project_data.dart";
 import "package:monogatari_assistant/models/item_data.dart";
+import "package:monogatari_assistant/features/phrases/phrase_entry.dart";
 import "package:monogatari_assistant/presentation/providers/collaboration_providers.dart";
 import "package:monogatari_assistant/presentation/providers/editor_coordinator_provider.dart";
 import "package:monogatari_assistant/presentation/providers/global_state_providers.dart";
@@ -2422,4 +2423,89 @@ void main() {
     expect(records.map((record) => record.transactionIndex).toSet(), {0, 1});
     expect(records.every((record) => record.transactionSize == 2), isTrue);
   });
+
+  test('local project phrase edit creates a P2P record operation', () {
+    const projectUuid = '123e4567-e89b-12d3-a456-426614174000';
+    final service = _FakeP2pEndpointService();
+    final container = ProviderContainer(
+      overrides: [p2pEndpointServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+    final before = ProjectData.collaborationShell(projectUUID: projectUuid);
+    final after = ProjectData.collaborationShell(projectUUID: projectUuid)
+      ..phrases = [
+        PhraseEntry(
+          id: 'f61e1304-03bc-47c2-aa61-79a9ee67b5c0',
+          name: '介紹',
+          shortcut: 'intro',
+          body: '你好',
+          createdAt: DateTime.utc(2026, 10, 3),
+          updatedAt: DateTime.utc(2026, 10, 3),
+        ),
+      ];
+    final notifier = container.read(collaborationProvider.notifier);
+    notifier.openProject(before);
+    notifier.captureProjectData(after);
+    final records = container
+        .read(collaborationProvider)
+        .document!
+        .operationsAfter(const {}, limit: 128)
+        .whereType<ProjectDataRecordOperation>()
+        .map((operation) => operation.record)
+        .where((record) => record.recordKind == ProjectRecordKind.phrase)
+        .toList();
+    expect(records, hasLength(1));
+    expect(records.single.recordId, after.phrases.single.id);
+    expect(records.single.fields['body'], '你好');
+  });
+
+  test(
+    'inbound P2P phrase record updates the current project library',
+    () async {
+      const projectUuid = '123e4567-e89b-12d3-a456-426614174000';
+      const mention = '//@<4e251fc2-1e2b-4f78-93da-91f8c76d9a92|艾莉絲>//';
+      final service = _FakeP2pEndpointService();
+      final container = ProviderContainer(
+        overrides: [p2pEndpointServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+      final before = ProjectData.collaborationShell(projectUUID: projectUuid);
+      final after = ProjectData.collaborationShell(projectUUID: projectUuid)
+        ..phrases = [
+          PhraseEntry(
+            id: 'f61e1304-03bc-47c2-aa61-79a9ee67b5c0',
+            name: '稱呼',
+            shortcut: 'alias',
+            body: mention,
+            createdAt: DateTime.utc(2026, 10, 3),
+            updatedAt: DateTime.utc(2026, 10, 3),
+          ),
+        ];
+      final diff = ProjectRecordCodec.diff(
+        ProjectRecordCodec.snapshot(before, omitCollaborativeText: true),
+        ProjectRecordCodec.snapshot(after, omitCollaborativeText: true),
+      ).where((record) => record.recordKind == ProjectRecordKind.phrase);
+      var source = CollaborationDocument.seeded(
+        projectUuid: projectUuid,
+        replicaId: 'remote',
+        chapterTexts: const {},
+      );
+      for (final record in diff) {
+        source = source.createLocalProjectOperation(record);
+      }
+      container.read(collaborationProvider.notifier).openProject(before);
+      service.emitInboundCollaborationBatch(
+        '192.168.1.20',
+        CollaborationSyncBatch(
+          projectUuid: projectUuid,
+          senderReplicaId: source.replicaId,
+          acknowledgedSequences: source.acknowledgedSequences,
+          operations: source.operationsAfter(const {}, limit: 128),
+        ),
+      );
+      await pumpEventQueue();
+      expect(container.read(phrasesProvider).single.body, mention);
+      expect(container.read(phrasesProvider).single.requiresRelink, isFalse);
+    },
+  );
 }

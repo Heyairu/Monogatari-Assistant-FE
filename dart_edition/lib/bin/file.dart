@@ -48,6 +48,8 @@ import "../models/codecs/item_codec.dart";
 import "../models/codecs/item_snapshot_codec.dart";
 import "../models/codecs/location_snapshot_codec.dart";
 import "../features/inline_annotations/inline_annotation_projection.dart";
+import "../features/phrases/phrase_entry.dart";
+import "../features/phrases/phrase_library_codec.dart";
 
 export "../models/project_data.dart";
 export "../models/project_file.dart";
@@ -580,7 +582,7 @@ class ProjectManager {
                         });
                       },
                       title: const Text("以後不再提示"),
-                      contentPadding: EdgeInsets.zero,
+                      contentPadding: AppSpacing.checkboxTile,
                       dense: true,
                     ),
                   ],
@@ -1008,6 +1010,7 @@ class ProjectManager {
           "WorldSettings",
           "Characters",
           "Items",
+          "Phrases",
         };
         final declaredModules =
             selectedModules.where(supportedModules.contains).toList()..sort();
@@ -1092,6 +1095,12 @@ class ProjectManager {
           ]) {
             if (section != null) buffer.writeln(section);
           }
+        }
+
+        if (selectedModules.contains("Phrases")) {
+          buffer.writeln(
+            '<Type><Name>Phrases</Name><Data>${base64.encode(utf8.encode(PhraseLibraryCodec.encode(currentData.phrases)))}</Data></Type>',
+          );
         }
 
         buffer.writeln("</Project>");
@@ -1208,6 +1217,17 @@ class ProjectManager {
             ),
           );
         }
+
+        if (selectedModules.contains("Phrases")) {
+          buffer.writeln("## 短語庫");
+          buffer.writeln();
+          for (final phrase in currentData.phrases) {
+            buffer.writeln("### ${phrase.name} (${phrase.shortcut})");
+            buffer.writeln();
+            buffer.writeln(phrase.body);
+            buffer.writeln();
+          }
+        }
       }
 
       await FileService.exportText(
@@ -1247,6 +1267,9 @@ class _ProjectParser {
     final defaultData = ProjectData.empty();
     String? projectVersion;
     String? projectUUID;
+    String? revisionTrackingJson;
+    List<PhraseEntry>? loadedPhrases;
+    String? phrasesRecoveryPayload;
 
     BaseInfoModule.BaseInfoData? loadedBaseInfo;
     List<ChapterModule.SegmentData>? loadedSegments;
@@ -1298,6 +1321,44 @@ class _ProjectParser {
 
         try {
           switch (typeName) {
+            case "Phrases":
+              final encoded = element
+                  .findElements("Data")
+                  .firstOrNull
+                  ?.innerText
+                  .trim();
+              if (encoded != null && encoded.isNotEmpty) {
+                try {
+                  loadedPhrases ??= PhraseLibraryCodec.decode(
+                    utf8.decode(base64.decode(encoded)),
+                  );
+                } catch (_) {
+                  phrasesRecoveryPayload ??= encoded;
+                }
+              }
+              break;
+            case "PhrasesRecovery":
+              phrasesRecoveryPayload ??= element
+                  .findElements("Data")
+                  .firstOrNull
+                  ?.innerText
+                  .trim();
+              break;
+            case "RevisionTracking":
+              final encoded = element
+                  .findElements("Data")
+                  .firstOrNull
+                  ?.innerText
+                  .trim();
+              if (encoded != null && encoded.isNotEmpty) {
+                try {
+                  revisionTrackingJson ??= utf8.decode(base64.decode(encoded));
+                } catch (_) {
+                  // Retain damaged payload for the recovery UI and next save.
+                  revisionTrackingJson ??= encoded;
+                }
+              }
+              break;
             case "BaseInfo":
               // 避免重複載入，只取第一個遇到的有效區塊
               loadedBaseInfo ??= BaseInfoModule.BaseInfoCodec.loadElement(
@@ -1494,6 +1555,9 @@ class _ProjectParser {
           loadedTimeline?.chapterLinks ?? defaultData.outlineChapterLinks,
       totalWords: totalWords,
       contentText: contentText,
+      revisionTrackingJson: revisionTrackingJson,
+      phrases: loadedPhrases ?? const <PhraseEntry>[],
+      phrasesRecoveryPayload: phrasesRecoveryPayload,
     );
     final migration = ProjectMigrator.migrate(
       sourceVersion: projectVersion,
@@ -1618,6 +1682,24 @@ class _ProjectMerger {
       LocationSnapshotCodec.saveChanges(data.locationStateChanges),
     ]) {
       if (section != null) buffer.writeln(section);
+    }
+
+    final revisionJson = data.revisionTrackingJson;
+    if (data.phrases.isNotEmpty) {
+      buffer.writeln(
+        '<Type><Name>Phrases</Name><Data>${base64.encode(utf8.encode(PhraseLibraryCodec.encode(data.phrases)))}</Data></Type>',
+      );
+    }
+    if (data.phrasesRecoveryPayload case final recovery?) {
+      final recoveryName = data.phrases.isEmpty ? "Phrases" : "PhrasesRecovery";
+      buffer.writeln(
+        '<Type><Name>$recoveryName</Name><Data>$recovery</Data></Type>',
+      );
+    }
+    if (revisionJson != null && revisionJson.isNotEmpty) {
+      buffer.writeln(
+        '<Type><Name>RevisionTracking</Name><Data>${base64.encode(utf8.encode(revisionJson))}</Data></Type>',
+      );
     }
 
     buffer.writeln("</Project>");

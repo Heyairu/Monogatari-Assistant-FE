@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:monogatari_assistant/bin/file.dart";
+import "package:monogatari_assistant/bin/ui_library.dart";
 import "package:monogatari_assistant/models/chapter_selection_data.dart";
 import "package:monogatari_assistant/models/character_data.dart";
 import "package:monogatari_assistant/models/character_snapshot_data.dart";
@@ -1395,7 +1396,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: TimelineView()),
+        child: MaterialApp(
+          theme: AppTheme.getDarkTheme(20, Colors.green),
+          home: const TimelineView(),
+        ),
       ),
     );
     await tester.pump();
@@ -1418,6 +1422,36 @@ void main() {
       of: currentTickStepper,
       matching: find.byTooltip("增加"),
     );
+    final decreaseTickButton = find.descendant(
+      of: currentTickStepper,
+      matching: find.byTooltip("減少"),
+    );
+    final fieldCenter = tester.getCenter(currentTickField).dy;
+    final controlHeight = AppControlSize.heightForFontSize(20);
+    expect(
+      tester.getSize(currentTickField).height,
+      closeTo(controlHeight, 0.5),
+    );
+    for (final button in [decreaseTickButton, increaseTickButton]) {
+      expect(tester.getSize(button).height, closeTo(controlHeight, 0.5));
+      expect(tester.getCenter(button).dy, closeTo(fieldCenter, 0.5));
+      expect(
+        tester
+            .getCenter(find.descendant(of: button, matching: find.byType(Icon)))
+            .dy,
+        closeTo(
+          tester
+              .getCenter(
+                find.descendant(
+                  of: currentTickField,
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .dy,
+          0.5,
+        ),
+      );
+    }
     expect(tester.widget<TextField>(currentTickField).readOnly, isFalse);
     await tester.tap(increaseTickButton);
     await tester.pump();
