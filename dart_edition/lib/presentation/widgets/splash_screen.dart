@@ -180,7 +180,7 @@ class _SplashContent extends StatelessWidget {
         const SizedBox(height: 2),
         Text("Codename Hana", style: codeNameStyle),
         const SizedBox(height: 7),
-        Text("Version 0.9.19    Build 919", style: detailStyle),
+        Text("Version 0.9.31    Build 931", style: detailStyle),
         const Spacer(),
         Text("2025–2026 Heyairu(TM)", style: detailStyle),
       ],

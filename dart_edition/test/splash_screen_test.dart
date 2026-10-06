@@ -12,7 +12,7 @@ void main() {
 
     expect(find.text("物語 Assistant"), findsOneWidget);
     expect(find.text("Codename Hana"), findsOneWidget);
-    expect(find.text("Version 0.9.19    Build 919"), findsOneWidget);
+    expect(find.text("Version 0.9.31    Build 931"), findsOneWidget);
     expect(find.text("120×360\n裝飾區"), findsNothing);
     expect(
       find.descendant(
@@ -28,6 +28,6 @@ void main() {
 
     expect(find.text("物語 Assistant"), findsOneWidget);
     expect(find.text("Codename Hana"), findsOneWidget);
-    expect(find.text("Version 0.9.19    Build 919"), findsOneWidget);
+    expect(find.text("Version 0.9.31    Build 931"), findsOneWidget);
   });
 }

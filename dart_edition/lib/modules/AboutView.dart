@@ -68,10 +68,10 @@ class AboutView extends StatelessWidget {
             ),
 
             // 版本狀態
-            Text("Beta 8", style: Theme.of(context).textTheme.titleSmall),
+            Text("Beta 9", style: Theme.of(context).textTheme.titleSmall),
 
             // Version
-            Text("Ver 0.9.19", style: Theme.of(context).textTheme.labelLarge),
+            Text("Ver 0.9.31", style: Theme.of(context).textTheme.labelLarge),
 
             const SizedBox(height: 32),
 
