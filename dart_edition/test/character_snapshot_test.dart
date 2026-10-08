@@ -13,6 +13,17 @@ import "package:monogatari_assistant/modules/characterview.dart";
 import "package:monogatari_assistant/presentation/providers/character_snapshot_providers.dart";
 import "package:monogatari_assistant/presentation/providers/project_state_providers.dart";
 
+Future<void> _editDefaults(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  final button = tester.widget<NeonIconButton>(
+    find.byKey(const ValueKey("snapshot-preview-follow")),
+  );
+  if (button.selected == true) {
+    button.onPressed!();
+    await tester.pumpAndSettle();
+  }
+}
+
 void main() {
   group("Character snapshots", () {
     const characterId = "character-1";
@@ -451,6 +462,7 @@ void main() {
           ),
         ),
       );
+      await _editDefaults(tester);
       await tester.pumpAndSettle();
 
       final statusSection = find.text("角色狀態").first;
@@ -563,6 +575,7 @@ void main() {
             child: const MaterialApp(home: Scaffold(body: CharacterView())),
           ),
         );
+        await _editDefaults(tester);
         await tester.pumpAndSettle();
         final statusSection = find.text("角色狀態").first;
         await tester.ensureVisible(statusSection);
@@ -643,19 +656,10 @@ void main() {
           child: const MaterialApp(home: Scaffold(body: CharacterView())),
         ),
       );
+      await _editDefaults(tester);
       await tester.pumpAndSettle();
-      final combo = find.byKey(
-        const ValueKey("character-snapshot-combo-character-1-__baseline__"),
-      );
-      expect(combo, findsOneWidget);
-      final dropdown = find.descendant(
-        of: combo,
-        matching: find.byType(DropdownButton<String>),
-      );
-      expect(
-        tester.widget<DropdownButton<String>>(dropdown).value,
-        "__baseline__",
-      );
+      expect(find.text("故事狀態 · 編輯中：預設資料"), findsOneWidget);
+      expect(find.text("時間軸與快照"), findsOneWidget);
       final addButton = find.byKey(
         const ValueKey("character-snapshot-toolbar-add"),
       );
@@ -723,7 +727,14 @@ void main() {
       );
       expect(nameField, findsOneWidget);
       expect(tester.widget<CharacterTextField>(nameField).enabled, isFalse);
-      expect(find.textContaining("正在編輯 Scene 快照"), findsOneWidget);
+      expect(
+        tester
+            .widget<Tooltip>(
+              find.byKey(const ValueKey("snapshot-preview-hint")),
+            )
+            .message,
+        contains("正在編輯 Scene 快照"),
+      );
 
       await tester.tap(
         find.byKey(const ValueKey("character-snapshot-toolbar-copy")),
@@ -794,6 +805,7 @@ void main() {
           child: const MaterialApp(home: Scaffold(body: CharacterView())),
         ),
       );
+      await _editDefaults(tester);
       await tester.pumpAndSettle();
 
       final statusSection = find.text("角色狀態").first;
@@ -858,6 +870,7 @@ void main() {
             child: const MaterialApp(home: Scaffold(body: CharacterView())),
           ),
         );
+        await _editDefaults(tester);
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const ValueKey("character-snapshot-toolbar-add")),

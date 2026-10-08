@@ -50,16 +50,30 @@ class _UpdatePlanDragData {
 class InspirationFolder {
   String id;
   String name;
+  String? parentId;
+  final List<String> childOrder;
 
-  InspirationFolder({String? id, this.name = ""})
-    : id = id ?? const Uuid().v4();
+  InspirationFolder({
+    String? id,
+    this.name = "",
+    this.parentId,
+    List<String>? childOrder,
+  }) : id = id ?? const Uuid().v4(),
+       childOrder = List<String>.of(childOrder ?? const []);
 
-  Map<String, dynamic> toJson() => {"id": id, "name": name};
+  Map<String, dynamic> toJson() => {
+    "id": id,
+    "name": name,
+    "parentId": parentId,
+    "childOrder": List<String>.of(childOrder),
+  };
 
   factory InspirationFolder.fromJson(Map<String, dynamic> json) {
     return InspirationFolder(
       id: json["id"] as String?,
       name: json["name"] as String? ?? "",
+      parentId: json["parentId"] as String?,
+      childOrder: (json["childOrder"] as List<dynamic>?)?.cast<String>(),
     );
   }
 }
@@ -133,7 +147,7 @@ class _InspirationLayerEntry {
       title: folder.name.isEmpty ? "（未命名）" : folder.name,
       subtitle: "$noteCount 則靈感",
       depth: depth,
-      folderContextId: folder.id,
+      folderContextId: folder.parentId,
     );
   }
 
@@ -326,7 +340,6 @@ class _PlanViewState extends ConsumerState<PlanView> {
   String? _draggingForeshadowId;
   bool _isUpdatePlanDragging = false;
   String? _draggingUpdatePlanId;
-  bool _showRootDirectory = false;
   List<String> _rootLayerOrder = [];
 
   final TextEditingController foreshadowTitleController =
@@ -476,47 +489,70 @@ class _PlanViewState extends ConsumerState<PlanView> {
     return key.substring(idx + 1);
   }
 
-  void _ensureRootLayerOrderIntegrity() {
-    final validFolderKeys = inspirationFolders
-        .map((folder) => _folderRootKey(folder.id))
-        .toSet();
-    final validRootNoteKeys = inspirationNotes
-        .where((note) => note.folderId == null)
-        .map((note) => _noteRootKey(note.id))
-        .toSet();
-
-    final validKeys = <String>{...validFolderKeys, ...validRootNoteKeys};
-    _rootLayerOrder = _rootLayerOrder.where(validKeys.contains).toList();
-
+  InspirationFolder? _findInspirationFolder(String? id) {
     for (final folder in inspirationFolders) {
-      final key = _folderRootKey(folder.id);
-      if (!_rootLayerOrder.contains(key)) {
-        _rootLayerOrder.add(key);
+      if (folder.id == id) return folder;
+    }
+    return null;
+  }
+
+  List<String> _inspirationLayerOrder(String? parentId) =>
+      _findInspirationFolder(parentId)?.childOrder ?? _rootLayerOrder;
+
+  bool _isInspirationDescendant(String? folderId, String ancestorId) {
+    final visited = <String>{};
+    while (folderId != null && visited.add(folderId)) {
+      if (folderId == ancestorId) return true;
+      folderId = _findInspirationFolder(folderId)?.parentId;
+    }
+    return false;
+  }
+
+  void _ensureRootLayerOrderIntegrity() {
+    final folderIds = inspirationFolders.map((folder) => folder.id).toSet();
+    for (final folder in inspirationFolders) {
+      if (!folderIds.contains(folder.parentId) ||
+          _isInspirationDescendant(folder.parentId, folder.id)) {
+        folder.parentId = null;
       }
     }
+    for (final note in inspirationNotes) {
+      if (!folderIds.contains(note.folderId)) note.folderId = null;
+    }
 
-    for (final note in inspirationNotes.where((n) => n.folderId == null)) {
-      final key = _noteRootKey(note.id);
-      if (!_rootLayerOrder.contains(key)) {
-        _rootLayerOrder.add(key);
-      }
+    final children = <String?, List<String>>{null: []};
+    for (final folder in inspirationFolders) {
+      children
+          .putIfAbsent(folder.parentId, () => [])
+          .add(_folderRootKey(folder.id));
+    }
+    for (final note in inspirationNotes) {
+      children.putIfAbsent(note.folderId, () => []).add(_noteRootKey(note.id));
+    }
+    for (final parentId in <String?>[null, ...folderIds]) {
+      final order = _inspirationLayerOrder(parentId);
+      final validKeys = children[parentId] ?? const <String>[];
+      final seen = <String>{};
+      final retained = order
+          .where((key) => validKeys.contains(key) && seen.add(key))
+          .toList();
+      order
+        ..clear()
+        ..addAll(retained)
+        ..addAll(validKeys.where((key) => seen.add(key)));
     }
   }
 
-  void _moveRootLayerKeyBeforeAfter(
-    String draggedKey,
-    String targetKey,
-    bool isBefore,
-  ) {
-    if (draggedKey == targetKey) return;
-    _rootLayerOrder.remove(draggedKey);
-    final targetIndex = _rootLayerOrder.indexOf(targetKey);
-    if (targetIndex == -1) {
-      _rootLayerOrder.add(draggedKey);
-      return;
-    }
-    final insertIndex = isBefore ? targetIndex : targetIndex + 1;
-    _rootLayerOrder.insert(insertIndex, draggedKey);
+  void _clearInspirationSelection() {
+    if (selectedFolderId == null && selectedInspirationId == null) return;
+    _inspirationTitleFocusNode.unfocus();
+    _inspirationContentFocusNode.unfocus();
+    setState(() {
+      selectedFolderId = null;
+      selectedInspirationId = null;
+      _syncInspirationControllers();
+    });
+    unawaited(_inspirationWriter.flush());
   }
 
   void _emitProjectChanged() {
@@ -929,11 +965,17 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
     setState(() {
-      final folder = InspirationFolder(name: trimmed);
+      final folder = InspirationFolder(
+        name: trimmed,
+        parentId: selectedFolderId,
+      );
       inspirationFolders.add(folder);
-      _rootLayerOrder.add(_folderRootKey(folder.id));
+      _inspirationLayerOrder(folder.parentId).add(_folderRootKey(folder.id));
+      collapsedFolderIds.remove(folder.parentId);
       _ensureRootLayerOrderIntegrity();
       selectedFolderId = folder.id;
+      selectedInspirationId = null;
+      _syncInspirationControllers();
     });
     _scheduleInspirationSave(immediate: true);
   }
@@ -942,27 +984,28 @@ class _PlanViewState extends ConsumerState<PlanView> {
     final folderIndex = inspirationFolders.indexWhere((f) => f.id == folderId);
     if (folderIndex == -1) return;
     setState(() {
+      final folder = inspirationFolders[folderIndex];
+      final parentOrder = _inspirationLayerOrder(folder.parentId);
       final folderKey = _folderRootKey(folderId);
-      final folderOrderIndex = _rootLayerOrder.indexOf(folderKey);
+      final folderOrderIndex = parentOrder.indexOf(folderKey);
+      parentOrder.remove(folderKey);
+      parentOrder.insertAll(
+        folderOrderIndex == -1 ? parentOrder.length : folderOrderIndex,
+        folder.childOrder,
+      );
       inspirationFolders.removeAt(folderIndex);
-      _rootLayerOrder.remove(folderKey);
       collapsedFolderIds.remove(folderId);
-
-      int insertIndex = folderOrderIndex == -1
-          ? _rootLayerOrder.length
-          : folderOrderIndex;
+      for (final child in inspirationFolders) {
+        if (child.parentId == folderId) child.parentId = folder.parentId;
+      }
       for (final note in inspirationNotes) {
         if (note.folderId == folderId) {
-          note.folderId = null;
-          final key = _noteRootKey(note.id);
-          _rootLayerOrder.remove(key);
-          _rootLayerOrder.insert(insertIndex, key);
-          insertIndex++;
+          note.folderId = folder.parentId;
         }
       }
       _ensureRootLayerOrderIntegrity();
       if (selectedFolderId == folderId) {
-        selectedFolderId = null;
+        selectedFolderId = folder.parentId;
       }
     });
     _scheduleInspirationSave(immediate: true);
@@ -974,9 +1017,8 @@ class _PlanViewState extends ConsumerState<PlanView> {
     setState(() {
       final note = InspirationNote(title: trimmed, folderId: selectedFolderId);
       inspirationNotes.add(note);
-      if (note.folderId == null) {
-        _rootLayerOrder.add(_noteRootKey(note.id));
-      }
+      _inspirationLayerOrder(note.folderId).add(_noteRootKey(note.id));
+      collapsedFolderIds.remove(note.folderId);
       _ensureRootLayerOrderIntegrity();
       selectedInspirationId = note.id;
       _syncInspirationControllers();
@@ -1011,61 +1053,44 @@ class _PlanViewState extends ConsumerState<PlanView> {
 
   List<_InspirationLayerEntry> _buildInspirationLayerEntries() {
     final entries = <_InspirationLayerEntry>[];
-    final rootDepth = _showRootDirectory ? 1 : 0;
-
-    final folderMap = <String, InspirationFolder>{
+    final folderMap = {
       for (final folder in inspirationFolders) folder.id: folder,
     };
-    final rootNoteMap = <String, InspirationNote>{
-      for (final note in inspirationNotes.where((n) => n.folderId == null))
-        note.id: note,
-    };
+    final noteMap = {for (final note in inspirationNotes) note.id: note};
+    final visited = <String>{};
 
-    for (final key in _rootLayerOrder) {
-      if (key.startsWith("F:")) {
-        final folderId = _extractRootId(key);
-        final folder = folderMap[folderId];
-        if (folder == null) continue;
-
-        final noteCount = inspirationNotes
-            .where((n) => n.folderId == folder.id)
-            .length;
-        entries.add(
-          _InspirationLayerEntry.folder(
-            folder: folder,
-            noteCount: noteCount,
-            depth: 0,
-          ),
-        );
-
-        if (!collapsedFolderIds.contains(folder.id)) {
-          for (final note in inspirationNotes.where(
-            (n) => n.folderId == folder.id,
-          )) {
-            entries.add(
-              _InspirationLayerEntry.note(
-                note: note,
-                depth: 1,
-                folderContextId: folder.id,
-              ),
-            );
+    void appendChildren(List<String> order, int depth) {
+      for (final key in order) {
+        if (!visited.add(key)) continue;
+        final id = _extractRootId(key);
+        if (key.startsWith("F:")) {
+          final folder = folderMap[id];
+          if (folder == null) continue;
+          entries.add(
+            _InspirationLayerEntry.folder(
+              folder: folder,
+              noteCount: inspirationNotes.where((n) => n.folderId == id).length,
+              depth: depth,
+            ),
+          );
+          if (!collapsedFolderIds.contains(id)) {
+            appendChildren(folder.childOrder, depth + 1);
           }
+        } else if (key.startsWith("N:")) {
+          final note = noteMap[id];
+          if (note == null) continue;
+          entries.add(
+            _InspirationLayerEntry.note(
+              note: note,
+              depth: depth,
+              folderContextId: note.folderId,
+            ),
+          );
         }
-      } else if (key.startsWith("N:")) {
-        final noteId = _extractRootId(key);
-        final note = rootNoteMap[noteId];
-        if (note == null) continue;
-
-        entries.add(
-          _InspirationLayerEntry.note(
-            note: note,
-            depth: rootDepth,
-            folderContextId: null,
-          ),
-        );
       }
     }
 
+    appendChildren(_rootLayerOrder, 0);
     return entries;
   }
 
@@ -1075,112 +1100,18 @@ class _PlanViewState extends ConsumerState<PlanView> {
     DropPosition pos,
   ) {
     if (data.nodeKey == target.nodeKey) return false;
-
-    if (data.type == _InspirationLayerType.folder) {
-      if (pos == DropPosition.child) return false;
-      if (target.type == _InspirationLayerType.folder) return true;
-      if (target.type == _InspirationLayerType.note) {
-        return target.folderContextId == null;
-      }
+    if (pos == DropPosition.child &&
+        target.type != _InspirationLayerType.folder) {
       return false;
     }
-
-    if (data.type == _InspirationLayerType.note) {
-      if (target.type == _InspirationLayerType.note) {
-        return pos != DropPosition.child;
-      }
-      if (target.type == _InspirationLayerType.folder) {
-        return true;
-      }
+    final parentId = pos == DropPosition.child
+        ? target.id
+        : target.folderContextId;
+    if (data.type == _InspirationLayerType.folder) {
+      return _findInspirationFolder(data.id) != null &&
+          !_isInspirationDescendant(parentId, data.id);
     }
-
-    return false;
-  }
-
-  void _moveFolderBeforeAfter(
-    String draggedFolderId,
-    String targetFolderId,
-    bool isBefore,
-  ) {
-    _moveRootLayerKeyBeforeAfter(
-      _folderRootKey(draggedFolderId),
-      _folderRootKey(targetFolderId),
-      isBefore,
-    );
-  }
-
-  void _moveNoteBeforeAfter(
-    String draggedNoteId,
-    String targetNoteId,
-    bool isBefore,
-  ) {
-    final draggedIndex = inspirationNotes.indexWhere(
-      (n) => n.id == draggedNoteId,
-    );
-    final targetIndex = inspirationNotes.indexWhere(
-      (n) => n.id == targetNoteId,
-    );
-    if (draggedIndex == -1 || targetIndex == -1) return;
-
-    final target = inspirationNotes[targetIndex];
-    final dragged = inspirationNotes.removeAt(draggedIndex);
-    dragged.folderId = target.folderId;
-
-    if (target.folderId == null) {
-      _moveRootLayerKeyBeforeAfter(
-        _noteRootKey(draggedNoteId),
-        _noteRootKey(targetNoteId),
-        isBefore,
-      );
-    } else {
-      _rootLayerOrder.remove(_noteRootKey(draggedNoteId));
-    }
-
-    var adjustedTarget = targetIndex;
-    if (draggedIndex < targetIndex) {
-      adjustedTarget -= 1;
-    }
-    final insertIndex = isBefore ? adjustedTarget : adjustedTarget + 1;
-    inspirationNotes.insert(insertIndex, dragged);
-  }
-
-  void _moveNoteToFolder(String noteId, String? folderId) {
-    final noteIndex = inspirationNotes.indexWhere((n) => n.id == noteId);
-    if (noteIndex == -1) return;
-
-    final note = inspirationNotes.removeAt(noteIndex);
-    note.folderId = folderId;
-
-    if (folderId == null) {
-      final key = _noteRootKey(note.id);
-      if (!_rootLayerOrder.contains(key)) {
-        _rootLayerOrder.add(key);
-      }
-    } else {
-      _rootLayerOrder.remove(_noteRootKey(note.id));
-    }
-
-    final lastIndexInTarget = inspirationNotes.lastIndexWhere(
-      (n) => n.folderId == folderId,
-    );
-    if (lastIndexInTarget == -1) {
-      inspirationNotes.add(note);
-    } else {
-      inspirationNotes.insert(lastIndexInTarget + 1, note);
-    }
-  }
-
-  void _moveNoteOutByFolderAnchor(
-    String noteId,
-    String targetFolderId,
-    bool isBefore,
-  ) {
-    _moveNoteToFolder(noteId, null);
-    _moveRootLayerKeyBeforeAfter(
-      _noteRootKey(noteId),
-      _folderRootKey(targetFolderId),
-      isBefore,
-    );
+    return inspirationNotes.any((note) => note.id == data.id);
   }
 
   void _handleInspirationDrop(
@@ -1189,46 +1120,45 @@ class _PlanViewState extends ConsumerState<PlanView> {
     DropPosition pos,
   ) {
     if (!_canAcceptInspirationDrop(data, target, pos)) return;
+    final parentId = pos == DropPosition.child
+        ? target.id
+        : target.folderContextId;
+    final draggedKey = data.type == _InspirationLayerType.folder
+        ? _folderRootKey(data.id)
+        : _noteRootKey(data.id);
+    final targetKey = target.type == _InspirationLayerType.folder
+        ? _folderRootKey(target.id)
+        : _noteRootKey(target.id);
 
     setState(() {
-      if (data.type == _InspirationLayerType.folder &&
-          target.type == _InspirationLayerType.folder) {
-        _moveFolderBeforeAfter(data.id, target.id, pos == DropPosition.before);
+      if (data.type == _InspirationLayerType.folder) {
+        final folder = _findInspirationFolder(data.id)!;
+        _inspirationLayerOrder(folder.parentId).remove(draggedKey);
+        folder.parentId = parentId;
         selectedFolderId = data.id;
         selectedInspirationId = null;
-      } else if (data.type == _InspirationLayerType.folder &&
-          target.type == _InspirationLayerType.note &&
-          target.folderContextId == null) {
-        _moveRootLayerKeyBeforeAfter(
-          _folderRootKey(data.id),
-          _noteRootKey(target.id),
-          pos == DropPosition.before,
-        );
-        selectedFolderId = data.id;
-        selectedInspirationId = null;
-      } else if (data.type == _InspirationLayerType.note) {
-        if (target.type == _InspirationLayerType.note) {
-          _moveNoteBeforeAfter(data.id, target.id, pos == DropPosition.before);
-          selectedInspirationId = data.id;
-        } else if (target.type == _InspirationLayerType.folder) {
-          if (pos == DropPosition.child) {
-            _moveNoteToFolder(data.id, target.id);
-            selectedFolderId = target.id;
-          } else {
-            // 丟到資料夾上/下區域時，視為移出資料夾到根層並排序。
-            _moveNoteOutByFolderAnchor(
-              data.id,
-              target.id,
-              pos == DropPosition.before,
-            );
-            selectedFolderId = null;
-          }
-          selectedInspirationId = data.id;
-        }
-        _syncInspirationControllers();
+      } else {
+        final note = inspirationNotes.firstWhere((note) => note.id == data.id);
+        _inspirationLayerOrder(note.folderId).remove(draggedKey);
+        note.folderId = parentId;
+        selectedFolderId = parentId;
+        selectedInspirationId = data.id;
       }
-
+      final order = _inspirationLayerOrder(parentId);
+      if (pos == DropPosition.child) {
+        order.add(draggedKey);
+        collapsedFolderIds.remove(parentId);
+      } else {
+        final targetIndex = order.indexOf(targetKey);
+        order.insert(
+          targetIndex == -1
+              ? order.length
+              : targetIndex + (pos == DropPosition.after ? 1 : 0),
+          draggedKey,
+        );
+      }
       _ensureRootLayerOrderIntegrity();
+      _syncInspirationControllers();
     });
     _scheduleInspirationSave(immediate: true);
   }
@@ -1573,132 +1503,143 @@ class _PlanViewState extends ConsumerState<PlanView> {
                   description: "請新增資料夾或靈感",
                   compact: true,
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  itemCount: entries.length + (_showRootDirectory ? 1 : 0),
-                  itemBuilder: (BuildContext context, int index) {
-                    if (_showRootDirectory && index == 0) {
-                      return ListTile(
-                        selected:
-                            selectedFolderId == null &&
-                            selectedInspirationId == null,
-                        leading: const Icon(Icons.home_outlined),
-                        title: const Text("根目錄"),
-                        onTap: () {
-                          setState(() {
-                            selectedFolderId = null;
-                            selectedInspirationId = null;
-                            _syncInspirationControllers();
-                          });
-                        },
-                      );
-                    }
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxDepth = entries.fold<int>(
+                      0,
+                      (depth, entry) =>
+                          entry.depth > depth ? entry.depth : depth,
+                    );
+                    final minimumWidth = 320.0 + maxDepth * 28.0;
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: constraints.maxWidth < minimumWidth
+                            ? minimumWidth
+                            : constraints.maxWidth,
+                        child: ListView.builder(
+                          key: const ValueKey("inspiration-layer-list"),
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          itemCount: entries.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final entry = entries[index];
+                            final isFolder =
+                                entry.type == _InspirationLayerType.folder;
+                            final isSelected = isFolder
+                                ? (selectedFolderId == entry.id &&
+                                      selectedInspirationId == null)
+                                : selectedInspirationId == entry.id;
+                            final isCollapsed =
+                                isFolder &&
+                                collapsedFolderIds.contains(entry.id);
 
-                    final entry = entries[index - (_showRootDirectory ? 1 : 0)];
-                    final isFolder = entry.type == _InspirationLayerType.folder;
-                    final isSelected = isFolder
-                        ? (selectedFolderId == entry.id &&
-                              selectedInspirationId == null)
-                        : selectedInspirationId == entry.id;
-                    final isCollapsed =
-                        isFolder && collapsedFolderIds.contains(entry.id);
-
-                    return DraggableCardNode<_InspirationDragData>(
-                      key: ValueKey(entry.nodeKey),
-                      dragData: _InspirationDragData(
-                        id: entry.id,
-                        type: entry.type,
-                      ),
-                      nodeId: entry.nodeKey,
-                      nodeType: isFolder ? NodeType.folder : NodeType.item,
-                      leading: Icon(
-                        isFolder
-                            ? (isCollapsed
-                                  ? Icons.folder_outlined
-                                  : Icons.folder_open_outlined)
-                            : Icons.lightbulb_outline,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 20,
-                      ),
-                      title: Text(entry.title),
-                      subtitle: entry.subtitle == null
-                          ? null
-                          : Text(
-                              entry.subtitle!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isFolder)
-                            IconButton(
-                              onPressed: () => _toggleFolderCollapsed(entry.id),
-                              tooltip: isCollapsed ? "展開" : "收合",
-                              icon: Icon(
-                                isCollapsed
-                                    ? Icons.chevron_right
-                                    : Icons.expand_more,
+                            return DraggableCardNode<_InspirationDragData>(
+                              key: ValueKey(entry.nodeKey),
+                              dragData: _InspirationDragData(
+                                id: entry.id,
+                                type: entry.type,
                               ),
-                            ),
-                          ItemActionBar(
-                            actions: [
-                              ItemAction.delete(
-                                onPressed: () {
+                              nodeId: entry.nodeKey,
+                              nodeType: isFolder
+                                  ? NodeType.folder
+                                  : NodeType.item,
+                              leading: Icon(
+                                isFolder
+                                    ? (isCollapsed
+                                          ? Icons.folder_outlined
+                                          : Icons.folder_open_outlined)
+                                    : Icons.lightbulb_outline,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 20,
+                              ),
+                              title: Text(entry.title),
+                              subtitle: entry.subtitle == null
+                                  ? null
+                                  : Text(
+                                      entry.subtitle!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isFolder)
+                                    IconButton(
+                                      onPressed: () =>
+                                          _toggleFolderCollapsed(entry.id),
+                                      tooltip: isCollapsed ? "展開" : "收合",
+                                      icon: Icon(
+                                        isCollapsed
+                                            ? Icons.chevron_right
+                                            : Icons.expand_more,
+                                      ),
+                                    ),
+                                  ItemActionBar(
+                                    actions: [
+                                      ItemAction.delete(
+                                        onPressed: () {
+                                          if (isFolder) {
+                                            _deleteInspirationFolder(entry.id);
+                                          } else {
+                                            _deleteInspirationNote(entry.id);
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              isSelected: isSelected,
+                              onClicked: () {
+                                setState(() {
                                   if (isFolder) {
-                                    _deleteInspirationFolder(entry.id);
+                                    selectedFolderId = entry.id;
+                                    selectedInspirationId = null;
                                   } else {
-                                    _deleteInspirationNote(entry.id);
+                                    selectedInspirationId = entry.id;
+                                    selectedFolderId = entry.folderContextId;
                                   }
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                                  _syncInspirationControllers();
+                                });
+                              },
+                              isDragging: _isInspirationDragging,
+                              isThisDragging:
+                                  _draggingInspirationNodeKey == entry.nodeKey,
+                              isDragForbidden: false,
+                              onDragStarted: () {
+                                setState(() {
+                                  _isInspirationDragging = true;
+                                  _draggingInspirationNodeKey = entry.nodeKey;
+                                });
+                              },
+                              onDragEnd: () {
+                                setState(() {
+                                  _isInspirationDragging = false;
+                                  _draggingInspirationNodeKey = null;
+                                });
+                              },
+                              getDropZoneSize: (pos) {
+                                if (isFolder) {
+                                  if (pos == DropPosition.child) return 0.34;
+                                  return 0.33;
+                                }
+                                return pos == DropPosition.child ? 0.0 : 0.5;
+                              },
+                              onWillAccept: (data, pos) {
+                                return _canAcceptInspirationDrop(
+                                  data,
+                                  entry,
+                                  pos,
+                                );
+                              },
+                              onAccept: (data, pos) {
+                                _handleInspirationDrop(data, entry, pos);
+                              },
+                              indent: entry.depth * 28.0,
+                            );
+                          },
+                        ),
                       ),
-                      isSelected: isSelected,
-                      onClicked: () {
-                        setState(() {
-                          if (isFolder) {
-                            selectedFolderId = entry.id;
-                            selectedInspirationId = null;
-                          } else {
-                            selectedInspirationId = entry.id;
-                            selectedFolderId = entry.folderContextId;
-                            _syncInspirationControllers();
-                          }
-                        });
-                      },
-                      isDragging: _isInspirationDragging,
-                      isThisDragging:
-                          _draggingInspirationNodeKey == entry.nodeKey,
-                      isDragForbidden: false,
-                      onDragStarted: () {
-                        setState(() {
-                          _isInspirationDragging = true;
-                          _draggingInspirationNodeKey = entry.nodeKey;
-                        });
-                      },
-                      onDragEnd: () {
-                        setState(() {
-                          _isInspirationDragging = false;
-                          _draggingInspirationNodeKey = null;
-                        });
-                      },
-                      getDropZoneSize: (pos) {
-                        if (isFolder) {
-                          if (pos == DropPosition.child) return 0.34;
-                          return 0.33;
-                        }
-                        return pos == DropPosition.child ? 0.0 : 0.5;
-                      },
-                      onWillAccept: (data, pos) {
-                        return _canAcceptInspirationDrop(data, entry, pos);
-                      },
-                      onAccept: (data, pos) {
-                        _handleInspirationDrop(data, entry, pos);
-                      },
-                      indent: entry.depth * 28.0,
                     );
                   },
                 ),
@@ -1745,26 +1686,31 @@ class _PlanViewState extends ConsumerState<PlanView> {
   }
 
   Widget _buildInspirationSection() {
-    return AppSectionCard(
-      padding: EdgeInsets.zero,
-      useSectionLayout: false,
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const MediumTitle(icon: Icons.book_outlined, text: "靈感筆記"),
-            const SizedBox(height: 12),
-            if (_isLoadingInspiration)
-              const Center(child: CircularProgressIndicator())
-            else ...[
-              _buildInspirationLayerList(),
+    return GestureDetector(
+      key: const ValueKey("inspiration-section"),
+      behavior: HitTestBehavior.opaque,
+      onTap: _clearInspirationSelection,
+      child: AppSectionCard(
+        padding: EdgeInsets.zero,
+        useSectionLayout: false,
+        elevation: 0,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const MediumTitle(icon: Icons.book_outlined, text: "靈感筆記"),
               const SizedBox(height: 12),
-              _buildInspirationEditorPanel(),
+              if (_isLoadingInspiration)
+                const Center(child: CircularProgressIndicator())
+              else ...[
+                _buildInspirationLayerList(),
+                const SizedBox(height: 12),
+                _buildInspirationEditorPanel(),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

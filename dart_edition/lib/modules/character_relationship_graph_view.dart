@@ -24,8 +24,11 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:monogatari_assistant/bin/ui_library.dart";
 
 import "../models/character_data.dart";
-import "../models/character_snapshot_data.dart";
+import "../presentation/providers/timeline_providers.dart";
 import "../presentation/providers/character_snapshot_providers.dart";
+import "../presentation/providers/snapshot_timeline_providers.dart";
+import "../presentation/widgets/snapshot_timeline_preview.dart";
+import "../presentation/widgets/snapshot_panel_card.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "character_relationship_editor.dart";
 import "character_relationship_graph_controller.dart";
@@ -185,11 +188,31 @@ class _CharacterRelationshipGraphViewState
   Size _viewportSize = Size.zero;
   bool _initialGlobalPreviewScheduled = false;
   bool _toolbarExpanded = true;
-  String? _selectedSnapshotEventId;
+  bool _snapshotsEnabled = false;
+  bool _snapshotCardMinimized = false;
+  SnapshotPreviewMode _previewMode = SnapshotPreviewMode.baseline;
+  int _previewTick = 0;
   CharacterRelationshipDisplayMode _displayMode =
       CharacterRelationshipDisplayMode.external;
 
-  bool get _isViewingSnapshot => _selectedSnapshotEventId != null;
+  bool get _isViewingSnapshot =>
+      _snapshotsEnabled && _previewMode != SnapshotPreviewMode.baseline;
+
+  void _toggleSnapshots() {
+    setState(() {
+      if (!_snapshotsEnabled) {
+        _snapshotsEnabled = true;
+        _snapshotCardMinimized = false;
+        if (_previewMode == SnapshotPreviewMode.baseline) {
+          _previewMode = SnapshotPreviewMode.followTimeline;
+        }
+      } else if (_snapshotCardMinimized) {
+        _snapshotCardMinimized = false;
+      } else {
+        _snapshotsEnabled = false;
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -214,7 +237,10 @@ class _CharacterRelationshipGraphViewState
     _cachedRoutes = null;
     _hoveredEdgeId = null;
     _panelExpanded = true;
-    _selectedSnapshotEventId = null;
+    _snapshotsEnabled = false;
+    _snapshotCardMinimized = false;
+    _previewMode = SnapshotPreviewMode.baseline;
+    _previewTick = 0;
     _displayMode = CharacterRelationshipDisplayMode.external;
     _initialGlobalPreviewScheduled = false;
     _toolbarExpanded = true;
@@ -232,15 +258,13 @@ class _CharacterRelationshipGraphViewState
 
   @override
   Widget build(BuildContext context) {
-    final snapshotEvents = ref.watch(characterSnapshotEventsProvider);
-    final selectedSnapshotEvent = _selectedSnapshotEvent(snapshotEvents);
-    final characters = selectedSnapshotEvent == null
+    final tick =
+        _snapshotsEnabled && _previewMode == SnapshotPreviewMode.followTimeline
+        ? ref.watch(timelineViewProvider.select((state) => state.currentTick))
+        : _previewTick;
+    final characters = !_isViewingSnapshot
         ? ref.watch(characterDataProvider)
-        : ref.watch(
-            characterDataAtSnapshotTickProvider(
-              selectedSnapshotEvent.resolvedTick,
-            ),
-          );
+        : ref.watch(characterDataAtSnapshotTickProvider(tick));
     final graph = _mapGraph(characters);
     _discardMissingSelection(graph);
 
@@ -253,14 +277,22 @@ class _CharacterRelationshipGraphViewState
       children: [
         ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .45,
+            maxHeight: MediaQuery.sizeOf(context).height * .55,
           ),
           child: SingleChildScrollView(
-            child: _buildToolbar(
-              characters,
-              graph,
-              snapshotEvents,
-              selectedSnapshotEvent,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildToolbar(characters, graph),
+                Visibility(
+                  visible: _snapshotsEnabled && !_snapshotCardMinimized,
+                  maintainState: true,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: _buildGraphTimelineCard(),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -274,17 +306,6 @@ class _CharacterRelationshipGraphViewState
         ),
       ],
     );
-  }
-
-  CharacterSnapshotEvent? _selectedSnapshotEvent(
-    List<CharacterSnapshotEvent> events,
-  ) {
-    final id = _selectedSnapshotEventId;
-    if (id == null) return null;
-    for (final event in events) {
-      if (event.id == id) return event;
-    }
-    return null;
   }
 
   void _discardMissingSelection(CharacterRelationshipGraphData graph) {
@@ -322,11 +343,39 @@ class _CharacterRelationshipGraphViewState
     );
   }
 
+  Widget _buildGraphTimelineCard() => SnapshotPanelCard(
+    key: const ValueKey("relationship-snapshot-card"),
+    collapsible: false,
+    actions: [
+      NeonIconButton(
+        key: const ValueKey("relationship-snapshot-minimize"),
+        label: "最小化時間軸與快照",
+        icon: Icons.minimize_rounded,
+        onPressed: () => setState(() => _snapshotCardMinimized = true),
+      ),
+    ],
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SnapshotTimelinePreview(
+          key: const ValueKey("relationship-snapshot-preview"),
+          subject: (kind: SnapshotSubjectKind.relationships, id: "all"),
+          mode: _previewMode,
+          localTick: _previewTick,
+          allowLocalMode: true,
+          hint: _isViewingSnapshot
+              ? "歷史預覽唯讀；每位角色採用此 Tick 前的有效變更。切回預設資料可編輯。"
+              : null,
+          onModeChanged: (value) => setState(() => _previewMode = value),
+          onTickChanged: (value) => setState(() => _previewTick = value),
+        ),
+      ],
+    ),
+  );
+
   Widget _buildToolbar(
     Map<String, CharacterEntryData> characters,
     CharacterRelationshipGraphData graph,
-    List<CharacterSnapshotEvent> snapshotEvents,
-    CharacterSnapshotEvent? selectedSnapshotEvent,
   ) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -356,105 +405,69 @@ class _CharacterRelationshipGraphViewState
                     text: "關係設定",
                   ),
                 ),
-                IconButton(
+                NeonIconButton(
                   key: const ValueKey("relationship-toolbar-toggle"),
-                  tooltip: _toolbarExpanded ? "收合工具列" : "展開工具列",
+                  label: _toolbarExpanded ? "收合工具列" : "展開工具列",
                   onPressed: () =>
                       setState(() => _toolbarExpanded = !_toolbarExpanded),
-                  icon: Icon(
-                    _toolbarExpanded
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                  ),
+                  icon: _toolbarExpanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                ),
+                NeonIconButton(
+                  key: const ValueKey("relationship-snapshot-toggle"),
+                  label: !_snapshotsEnabled
+                      ? "啟用快照"
+                      : _snapshotCardMinimized
+                      ? "顯示快照 Card"
+                      : "關閉快照",
+                  icon: Icons.history_toggle_off_outlined,
+                  selected: _snapshotsEnabled,
+                  onPressed: _toggleSnapshots,
                 ),
                 if (_toolbarExpanded) ...[
-                  SizedBox(
-                    width: 240,
-                    child: AppDropdownField<CharacterRelationshipDisplayMode>(
-                      key: const ValueKey("relationship-display-selector"),
-                      value: _displayMode,
-                      labelText: "顯示關係",
-                      options: const [
-                        DropdownOption(
-                          value: CharacterRelationshipDisplayMode.internal,
-                          label: "內在關係",
-                        ),
-                        DropdownOption(
-                          value: CharacterRelationshipDisplayMode.external,
-                          label: "外在關係",
-                        ),
-                        DropdownOption(
-                          value: CharacterRelationshipDisplayMode.both,
-                          label: "全部",
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _displayMode = value);
-                      },
-                    ),
+                  AppMenuButton<CharacterRelationshipDisplayMode>(
+                    key: const ValueKey("relationship-display-selector"),
+                    value: _displayMode,
+                    labelText: "顯示關係",
+                    options: const [
+                      DropdownOption(
+                        value: CharacterRelationshipDisplayMode.internal,
+                        label: "內在關係",
+                      ),
+                      DropdownOption(
+                        value: CharacterRelationshipDisplayMode.external,
+                        label: "外在關係",
+                      ),
+                      DropdownOption(
+                        value: CharacterRelationshipDisplayMode.both,
+                        label: "全部",
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _displayMode = value);
+                    },
                   ),
-                  SizedBox(
-                    width: 200,
-                    child: AppDropdownField<CharacterGraphLayoutMode>(
-                      key: const ValueKey("relationship-layout-selector"),
-                      value: _controller.layoutMode,
-                      labelText: "角色排列",
-                      options: const [
-                        DropdownOption(
-                          value: CharacterGraphLayoutMode.roles,
-                          label: "角色定位",
-                        ),
-                        DropdownOption(
-                          value: CharacterGraphLayoutMode.clusters,
-                          label: "關係群集",
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) _controller.setLayoutMode(value);
-                      },
-                    ),
+                  AppMenuButton<CharacterGraphLayoutMode>(
+                    key: const ValueKey("relationship-layout-selector"),
+                    value: _controller.layoutMode,
+                    labelText: "角色排列",
+                    options: const [
+                      DropdownOption(
+                        value: CharacterGraphLayoutMode.roles,
+                        label: "角色定位",
+                      ),
+                      DropdownOption(
+                        value: CharacterGraphLayoutMode.clusters,
+                        label: "關係群集",
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) _controller.setLayoutMode(value);
+                    },
                   ),
                   const Text("外在 ━   內在 ┄   拖曳角色可調整位置"),
-                  SizedBox(
-                    width: constraints.maxWidth,
-                    child: AppDropdownField<String>(
-                      key: const ValueKey("relationship-snapshot-selector"),
-                      value: selectedSnapshotEvent?.id ?? "__current__",
-                      labelText: "關係快照",
-                      options: [
-                        const DropdownOption(
-                          value: "__current__",
-                          label: "預設角色資料",
-                        ),
-                        for (final event in snapshotEvents)
-                          DropdownOption(
-                            value: event.id,
-                            label:
-                                "Tick ${event.resolvedTick} · ${event.sceneName}（${event.changedCharacterIds.length} 位角色變更）",
-                          ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedSnapshotEventId = value == "__current__"
-                              ? null
-                              : value;
-                        });
-                      },
-                    ),
-                  ),
-                  if (selectedSnapshotEvent != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                      ),
-                      child: AppNoticeBanner(
-                        message:
-                            "正在檢視 Tick ${selectedSnapshotEvent.resolvedTick} 的關係快照；每位角色皆採用自己在此 Tick 前最後一次變更的關係。",
-                        icon: Icons.history_toggle_off_outlined,
-                        tone: AppFeedbackTone.info,
-                      ),
-                    ),
                   SizedBox(
                     width: constraints.maxWidth,
                     child: RawAutocomplete<String>(
@@ -488,26 +501,24 @@ class _CharacterRelationshipGraphViewState
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (_searchController.text.isNotEmpty)
-                                      IconButton(
-                                        tooltip: "清除搜尋",
+                                      NeonIconButton(
+                                        label: "清除搜尋",
                                         onPressed: () {
                                           _searchController.clear();
                                           setState(() {});
                                         },
-                                        icon: const Icon(Icons.clear),
+                                        icon: Icons.clear,
                                       ),
-                                    IconButton(
+                                    NeonIconButton(
                                       key: const ValueKey(
                                         "relationship-search-button",
                                       ),
-                                      tooltip: "搜尋並聚焦",
+                                      label: "搜尋並聚焦",
                                       onPressed: () => _focusFirstSearchResult(
                                         characters,
                                         graph,
                                       ),
-                                      icon: const Icon(
-                                        Icons.center_focus_strong,
-                                      ),
+                                      icon: Icons.center_focus_strong,
                                     ),
                                   ],
                                 ),
@@ -557,64 +568,63 @@ class _CharacterRelationshipGraphViewState
                           ),
                     ),
                   ),
-                  IconButton(
+                  NeonIconButton(
                     key: const ValueKey("neighbors-only-toggle-button"),
-                    tooltip: "只顯示一階鄰居",
-                    isSelected: _controller.neighborsOnly,
-                    style: _controller.neighborsOnly
-                        ? IconButton.styleFrom(foregroundColor: Colors.green)
-                        : null,
+                    label: "只顯示一階鄰居",
                     onPressed: _controller.selectedNodeId == null
                         ? null
                         : () => _controller.setNeighborsOnly(
                             !_controller.neighborsOnly,
                           ),
-                    icon: const Icon(Icons.hub_outlined),
+                    icon: Icons.hub_outlined,
+                    selected: _controller.neighborsOnly,
+                    statusLabel: _controller.selectedNodeId == null
+                        ? "先選擇角色"
+                        : null,
                   ),
-                  IconButton(
+                  NeonIconButton(
                     key: const ValueKey("global-preview-button"),
-                    tooltip: "全局預覽",
+                    label: "全局預覽",
                     onPressed: () => _showGlobalPreview(graph, _viewportSize),
-                    icon: const Icon(Icons.fit_screen_outlined),
+                    icon: Icons.fit_screen_outlined,
                   ),
-                  IconButton(
-                    tooltip: "新增關係",
+                  NeonIconButton(
+                    label: "新增關係",
                     onPressed: _isViewingSnapshot
                         ? null
                         : () => _addRelationship(characters),
-                    icon: const Icon(Icons.add_link),
+                    icon: Icons.add_link,
+                    accent: NeonAccent.green,
+                    statusLabel: _isViewingSnapshot ? "歷史預覽唯讀" : null,
                   ),
-                  IconButton(
-                    tooltip: "自動重新排列",
+                  NeonIconButton(
+                    label: "自動重新排列",
                     onPressed: () => _rearrangeGraph(graph),
-                    icon: const Icon(Icons.auto_fix_high_outlined),
+                    icon: Icons.auto_fix_high_outlined,
                   ),
-                  IconButton(
-                    tooltip: "重設縮放",
+                  NeonIconButton(
+                    label: "重設縮放",
                     onPressed: _controller.resetZoom,
-                    icon: const Icon(Icons.refresh),
+                    icon: Icons.refresh,
                   ),
-                  IconButton(
-                    tooltip: "縮小",
+                  NeonIconButton(
+                    label: "縮小",
                     onPressed: () => _controller.zoomBy(0.8, _viewportSize),
-                    icon: const Icon(Icons.zoom_out),
+                    icon: Icons.zoom_out,
                   ),
-                  IconButton(
-                    tooltip: "放大",
+                  NeonIconButton(
+                    label: "放大",
                     onPressed: () => _controller.zoomBy(1.25, _viewportSize),
-                    icon: const Icon(Icons.zoom_in),
+                    icon: Icons.zoom_in,
                   ),
-                  IconButton(
+                  NeonIconButton(
                     key: const ValueKey("relationship-merge-toggle"),
-                    tooltip: "合併相同的雙向關係",
-                    isSelected: _controller.mergeOpposite,
-                    style: _controller.mergeOpposite
-                        ? IconButton.styleFrom(foregroundColor: Colors.green)
-                        : null,
+                    label: "合併相同的雙向關係",
                     onPressed: () => _controller.setMergeOpposite(
                       !_controller.mergeOpposite,
                     ),
-                    icon: const Icon(Icons.merge_rounded),
+                    icon: Icons.merge_rounded,
+                    selected: _controller.mergeOpposite,
                   ),
                 ],
               ],
@@ -1006,23 +1016,31 @@ class _CharacterRelationshipGraphViewState
               _controller.selectNode(node.id);
             },
             dragStartBehavior: DragStartBehavior.down,
-            onPanStart: (details) {
-              _dragPointerOrigin = details.globalPosition;
-              _dragNodeOrigin = _cachedLayout!.positions[node.id]!;
-              _controller.selectNode(node.id);
-              setState(() => _draggingNode = true);
-            },
-            onPanUpdate: (details) {
-              final scale = _controller.transformationController.value
-                  .getMaxScaleOnAxis();
-              _controller.moveNode(
-                node.id,
-                _dragNodeOrigin +
-                    (details.globalPosition - _dragPointerOrigin) / scale,
-              );
-            },
-            onPanEnd: (_) => setState(() => _draggingNode = false),
-            onPanCancel: () => setState(() => _draggingNode = false),
+            onPanStart: _isViewingSnapshot
+                ? null
+                : (details) {
+                    _dragPointerOrigin = details.globalPosition;
+                    _dragNodeOrigin = _cachedLayout!.positions[node.id]!;
+                    _controller.selectNode(node.id);
+                    setState(() => _draggingNode = true);
+                  },
+            onPanUpdate: _isViewingSnapshot
+                ? null
+                : (details) {
+                    final scale = _controller.transformationController.value
+                        .getMaxScaleOnAxis();
+                    _controller.moveNode(
+                      node.id,
+                      _dragNodeOrigin +
+                          (details.globalPosition - _dragPointerOrigin) / scale,
+                    );
+                  },
+            onPanEnd: _isViewingSnapshot
+                ? null
+                : (_) => setState(() => _draggingNode = false),
+            onPanCancel: _isViewingSnapshot
+                ? null
+                : () => setState(() => _draggingNode = false),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
@@ -1147,14 +1165,42 @@ class _CharacterRelationshipGraphViewState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextButton.icon(
-                      key: const ValueKey("relationship-panel-toggle"),
-                      onPressed: () =>
-                          setState(() => _panelExpanded = !_panelExpanded),
-                      icon: Icon(
-                        _panelExpanded ? Icons.expand_more : Icons.expand_less,
-                      ),
-                      label: Text(_panelExpanded ? "收合詳細資料" : "展開詳細資料"),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: MediumTitle(
+                            icon: Icons.person_rounded,
+                            text: edge != null
+                                ? "${graph.nodeById(edge.canonicalSource)?.label} 與 ${graph.nodeById(edge.canonicalTarget)?.label}"
+                                : node!.label,
+                          ),
+                        ),
+                        if (edge == null)
+                          IconButton(
+                            icon: Icon(Icons.edit_rounded),
+                            tooltip: "開啟人物編輯",
+                            onPressed: widget.onOpenCharacter == null
+                                ? null
+                                : () => widget.onOpenCharacter!(node!.id),
+                          ),
+                        IconButton(
+                          key: const ValueKey("relationship-panel-toggle"),
+                          onPressed: () =>
+                              setState(() => _panelExpanded = !_panelExpanded),
+                          icon: Icon(
+                            _panelExpanded
+                                ? Icons.expand_more
+                                : Icons.expand_less,
+                          ),
+                          tooltip: _panelExpanded ? "收合詳細資料" : "展開詳細資料",
+                        ),
+                        IconButton(
+                          color: Colors.red,
+                          onPressed: _controller.clearSelection,
+                          icon: Icon(Icons.close),
+                          tooltip: "關閉",
+                        ),
+                      ],
                     ),
                     if (_panelExpanded)
                       edge != null
@@ -1179,11 +1225,7 @@ class _CharacterRelationshipGraphViewState
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(node.label, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          const Text("此名稱目前無法唯一對應到人物資料。請選取連線進行修正。"),
-        ],
+        children: [const Text("此名稱目前無法唯一對應到人物資料。請選取連線進行修正。")],
       );
     }
     final character = node.character!;
@@ -1200,34 +1242,6 @@ class _CharacterRelationshipGraphViewState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                node.label,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            IconButton(
-              tooltip: "開啟人物編輯",
-              onPressed: widget.onOpenCharacter == null
-                  ? null
-                  : () => widget.onOpenCharacter!(node.id),
-              icon: const Icon(Icons.edit_rounded),
-              style: IconButton.styleFrom(
-                foregroundColor: Theme.of(
-                  context,
-                ).colorScheme.onPrimaryContainer,
-              ),
-            ),
-            IconButton(
-              tooltip: "關閉",
-              onPressed: _controller.clearSelection,
-              icon: const Icon(Icons.close),
-              style: IconButton.styleFrom(foregroundColor: Colors.redAccent),
-            ),
-          ],
-        ),
         if (character.roleOrOccupation.trim().isNotEmpty)
           Text("職業：${character.roleOrOccupation}"),
         if (character.age.trim().isNotEmpty) Text("年齡：${character.age}"),
@@ -1376,21 +1390,6 @@ class _CharacterRelationshipGraphViewState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                "${graph.nodeById(edge.canonicalSource)?.label} 與 ${graph.nodeById(edge.canonicalTarget)?.label}",
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            IconButton(
-              tooltip: "關閉",
-              onPressed: _controller.clearSelection,
-              icon: const Icon(Icons.close),
-            ),
-          ],
-        ),
         Text(
           "目前顯示：${_displayMode == CharacterRelationshipDisplayMode.both
               ? '全部'

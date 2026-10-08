@@ -3154,8 +3154,8 @@ final projectStoryStateIndexProvider = Provider<ProjectStoryStateIndex>((ref) {
 
 typedef ItemSnapshotQuery = ({String id, int tick});
 
-final itemClassSnapshotProvider =
-    Provider.family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
+final itemClassSnapshotProvider = Provider.autoDispose
+    .family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
       final workspace = ref.watch(itemWorkspaceProvider);
       final itemClass = workspace.itemClasses[query.id];
       if (itemClass == null) return null;
@@ -3164,8 +3164,8 @@ final itemClassSnapshotProvider =
           .resolveItemClass(itemClass, query.tick);
     });
 
-final itemInstanceSnapshotProvider =
-    Provider.family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
+final itemInstanceSnapshotProvider = Provider.autoDispose
+    .family<ItemSnapshotState?, ItemSnapshotQuery>((ref, query) {
       final workspace = ref.watch(itemWorkspaceProvider);
       final instance = workspace.itemInstances[query.id];
       if (instance == null) return null;
@@ -3180,8 +3180,8 @@ final itemInstanceSnapshotProvider =
           );
     });
 
-final locationSnapshotProvider =
-    Provider.family<LocationSnapshotState?, ItemSnapshotQuery>((ref, query) {
+final locationSnapshotProvider = Provider.autoDispose
+    .family<LocationSnapshotState?, ItemSnapshotQuery>((ref, query) {
       LocationData? find(Iterable<LocationData> nodes) {
         for (final node in nodes) {
           if (node.id == query.id) return node;

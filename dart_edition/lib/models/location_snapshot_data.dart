@@ -361,12 +361,14 @@ orderedLocationStateChanges({
 }
 
 /// Resolve one node only: editing-tree parents never affect historical state.
+/// [throughStateChangeId] stops after the selected event when copying a snapshot.
 LocationSnapshotState resolveLocationSnapshot({
   required String locationId,
   LocationSnapshotState? defaultState,
   required Iterable<LocationStateChange> changes,
   required TimelineDocumentData timeline,
   required int atTick,
+  String? throughStateChangeId,
 }) {
   final defaults = defaultState ?? LocationSnapshotState();
   var state = defaults;
@@ -377,6 +379,7 @@ LocationSnapshotState resolveLocationSnapshot({
   )) {
     if (entry.time.resolvedTick > atTick) break;
     state = entry.change.patch.applyTo(state, inherited: defaults);
+    if (entry.change.stateChangeId == throughStateChangeId) break;
   }
   return state;
 }

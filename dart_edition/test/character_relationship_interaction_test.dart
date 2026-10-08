@@ -101,7 +101,7 @@ void main() {
     container.read(characterDataProvider.notifier).setCharacterData(sample());
     await pumpGraph(tester, container);
     tester
-        .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(
+        .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(
           find.byKey(const ValueKey("relationship-display-selector")),
         )
         .onChanged!(CharacterRelationshipDisplayMode.both);
@@ -114,17 +114,17 @@ void main() {
     }
 
     final originalPosition = position(tester, "a");
-    expect(tester.widget<IconButton>(toggle).isSelected, isTrue);
+    expect(tester.widget<NeonIconButton>(toggle).selected, isTrue);
     expect(edgeCount(), 3);
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(toggle).isSelected, isFalse);
+    expect(tester.widget<NeonIconButton>(toggle).selected, isFalse);
     expect(edgeCount(), 4);
     expect(position(tester, "a"), originalPosition);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(toggle).isSelected, isTrue);
+    expect(tester.widget<NeonIconButton>(toggle).selected, isTrue);
     expect(edgeCount(), 3);
     expect(position(tester, "a"), originalPosition);
     expect(container.read(characterDataProvider), sample());
@@ -141,12 +141,12 @@ void main() {
     container.read(characterDataProvider.notifier).setCharacterData(sample());
     await pumpGraph(tester, container);
     tester
-        .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(
+        .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(
           find.byKey(const ValueKey("relationship-display-selector")),
         )
         .onChanged!(CharacterRelationshipDisplayMode.both);
     tester
-        .widget<IconButton>(
+        .widget<NeonIconButton>(
           find.byKey(const ValueKey("relationship-merge-toggle")),
         )
         .onPressed!();
@@ -296,7 +296,7 @@ void main() {
         const ValueKey("relationship-display-selector"),
       );
       tester
-          .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(selector)
+          .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(selector)
           .onChanged!(CharacterRelationshipDisplayMode.both);
       await tester.pumpAndSettle();
       focus(tester, "a");
@@ -409,7 +409,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(position(tester, "a"), after);
       tester
-          .widget<AppDropdownField<CharacterGraphLayoutMode>>(
+          .widget<AppMenuButton<CharacterGraphLayoutMode>>(
             find.byKey(const ValueKey("relationship-layout-selector")),
           )
           .onChanged!(CharacterGraphLayoutMode.clusters);
@@ -417,14 +417,14 @@ void main() {
       expect(position(tester, "a"), after);
       final cPosition = position(tester, "c");
       tester
-          .widget<IconButton>(
+          .widget<NeonIconButton>(
             find.byKey(const ValueKey("neighbors-only-toggle-button")),
           )
           .onPressed!();
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey("relationship-node-c")), findsNothing);
       tester
-          .widget<IconButton>(
+          .widget<NeonIconButton>(
             find.byKey(const ValueKey("neighbors-only-toggle-button")),
           )
           .onPressed!();
@@ -476,12 +476,12 @@ void main() {
       });
       await pumpGraph(tester, container, fontFamily: previewFont);
       tester
-          .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(
+          .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(
             find.byKey(const ValueKey("relationship-display-selector")),
           )
           .onChanged!(CharacterRelationshipDisplayMode.both);
       tester
-          .widget<IconButton>(
+          .widget<NeonIconButton>(
             find.byKey(const ValueKey("relationship-merge-toggle")),
           )
           .onPressed!();
@@ -522,7 +522,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey("relationship-panel-toggle")));
       await tester.pumpAndSettle();
-      expect(find.text("展開詳細資料"), findsOneWidget);
+      expect(find.byTooltip("展開詳細資料"), findsOneWidget);
       expect(
         find.byKey(const ValueKey("relationship-edit-a-internal")),
         findsNothing,

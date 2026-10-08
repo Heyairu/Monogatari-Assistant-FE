@@ -3,6 +3,7 @@ import "dart:math" as math;
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:monogatari_assistant/bin/ui_library.dart" show NeonIconButton;
 
 import "package:monogatari_assistant/models/character_data.dart";
 import "package:monogatari_assistant/modules/character_relationship_graph_controller.dart";
@@ -1003,6 +1004,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byTooltip("新增關係"));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip("新增關係"));
       await tester.pumpAndSettle();
       expect(
@@ -1163,33 +1166,30 @@ void main() {
     final neighborsToggle = find.byKey(
       const ValueKey("neighbors-only-toggle-button"),
     );
-    var neighborsButton = tester.widget<IconButton>(neighborsToggle);
-    expect(neighborsButton.isSelected, isFalse);
-    expect(neighborsButton.style, isNull);
+    var neighborsButton = tester.widget<NeonIconButton>(neighborsToggle);
+    expect(neighborsButton.selected, isFalse);
 
     await tester.ensureVisible(neighborsToggle);
     await tester.pumpAndSettle();
     await tester.tap(neighborsToggle);
     await tester.pumpAndSettle();
-    neighborsButton = tester.widget<IconButton>(neighborsToggle);
-    final scheme = Theme.of(tester.element(neighborsToggle)).colorScheme;
-    expect(neighborsButton.isSelected, isTrue);
+    neighborsButton = tester.widget<NeonIconButton>(neighborsToggle);
+    expect(neighborsButton.selected, isTrue);
     expect(
-      neighborsButton.style?.backgroundColor?.resolve({WidgetState.selected}),
-      scheme.primaryContainer,
-    );
-    expect(
-      neighborsButton.style?.foregroundColor?.resolve({WidgetState.selected}),
-      scheme.onPrimaryContainer,
+      tester
+          .widget<Icon>(
+            find.descendant(of: neighborsToggle, matching: find.byType(Icon)),
+          )
+          .color,
+      const Color(0xFF147D43),
     );
 
     final focusedTransform = viewer.transformationController!.value.clone();
     await tester.ensureVisible(find.byTooltip("關閉"));
     await tester.tap(find.byTooltip("關閉"));
     await tester.pumpAndSettle();
-    neighborsButton = tester.widget<IconButton>(neighborsToggle);
-    expect(neighborsButton.isSelected, isFalse);
-    expect(neighborsButton.style, isNull);
+    neighborsButton = tester.widget<NeonIconButton>(neighborsToggle);
+    expect(neighborsButton.selected, isFalse);
     expect(find.text("相鄰關係：1"), findsNothing);
     expect(
       find.descendant(of: graphCanvas, matching: find.text("Alice")),
@@ -1211,7 +1211,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(neighborsToggle);
     await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(neighborsToggle).isSelected, isTrue);
+    expect(tester.widget<NeonIconButton>(neighborsToggle).selected, isTrue);
     expect(
       viewer.transformationController!.value.getMaxScaleOnAxis(),
       greaterThan(1),
@@ -1219,9 +1219,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey("global-preview-button")));
     await tester.pumpAndSettle();
-    neighborsButton = tester.widget<IconButton>(neighborsToggle);
-    expect(neighborsButton.isSelected, isFalse);
-    expect(neighborsButton.style, isNull);
+    neighborsButton = tester.widget<NeonIconButton>(neighborsToggle);
+    expect(neighborsButton.selected, isFalse);
     expect(find.text("相鄰關係：1"), findsNothing);
     expect(
       find.descendant(of: graphCanvas, matching: find.text("Alice")),

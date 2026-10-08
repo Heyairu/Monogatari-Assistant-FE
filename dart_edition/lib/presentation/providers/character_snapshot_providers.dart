@@ -60,8 +60,8 @@ final currentCharacterSnapshotProvider =
 /// graphs: a connection comes from that character's own most recent snapshot
 /// at or before the selected Tick, rather than from the most recently changed
 /// character in the whole project.
-final characterDataAtSnapshotTickProvider =
-    Provider.family<Map<String, CharacterEntryData>, int>((ref, tick) {
+final characterDataAtSnapshotTickProvider = Provider.autoDispose
+    .family<Map<String, CharacterEntryData>, int>((ref, tick) {
       final characters = ref.watch(characterDataProvider);
       final baselines = ref.watch(characterStateBaselinesProvider);
       final changes = ref.watch(characterStateChangesProvider);

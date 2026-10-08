@@ -40,8 +40,14 @@ import "../domain/collaboration/collaboration_operation.dart"
     show ProjectRecordKind;
 import "../domain/collaboration/typed_operation_log.dart" show ProjectRecordKey;
 import "../features/revision_tracking/presentation/revision_field_marker.dart";
+import "../presentation/providers/snapshot_timeline_providers.dart";
+import "../presentation/widgets/snapshot_timeline_preview.dart";
+import "../presentation/widgets/snapshot_panel_card.dart";
+import "../presentation/widgets/snapshot_state_editor.dart";
+import "../presentation/widgets/scene_snapshot_timeline_preview.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
+import "../presentation/providers/scene_selection_providers.dart";
 import "../presentation/widgets/remote_text_cursor_overlay.dart";
 import "../presentation/widgets/project_object_selector.dart";
 
@@ -298,7 +304,6 @@ class WorldSettingsView extends ConsumerStatefulWidget {
 }
 
 class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
-  static const _baselineSnapshotSelection = "__baseline__";
   List<LocationData> get _locations => ref.read(worldSettingsDataProvider);
   String? selectedNodeId;
   String? lastSelectedNodeId; // 記錄上次選取的節點
@@ -306,6 +311,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   String? selectedCustomValueId;
   String? _customValueEditorLocationId;
   String? _selectedLocationSnapshotId;
+  final Map<String, SnapshotPreviewMode> _locationPreviewModes = {};
   List<TemplatePreset> templatePresets = [];
   String selectedPresetName = "空白";
   Map<String, LocationData> _locationIndex = const <String, LocationData>{};
@@ -540,6 +546,28 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     // Dirty tracking is driven by provider listeners in coordinator.
   }
 
+  void _updateLocationSnapshot(String id, LocationStatePatch patch) {
+    final change = ref
+        .read(itemWorkspaceProvider)
+        .locationStateChanges
+        .where((change) => change.stateChangeId == id)
+        .firstOrNull;
+    if (change == null ||
+        change.locationId != (selectedNodeId ?? lastSelectedNodeId) ||
+        _locationPreviewModes[change.locationId] ==
+            SnapshotPreviewMode.baseline ||
+        resolveLocationStateChangeTime(
+              change,
+              ref.read(timelineDocumentProvider),
+            ).resolvedTick !=
+            ref.read(timelineViewProvider).currentTick) {
+      return;
+    }
+    ref.read(itemWorkspaceProvider.notifier).putLocationStateChanges([
+      change.copyWith(patch: change.patch.merge(patch)),
+    ]);
+  }
+
   void _updateLocationById(
     String id,
     LocationData Function(LocationData current) update,
@@ -670,13 +698,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
   _placedScenes() {
     final sceneIndex = ref.read(timelineSceneIndexProvider);
     final scenes = ref
-        .read(timelineDocumentProvider)
-        .placements
-        .where(
-          (placement) =>
-              placement.sceneUUID != null &&
-              sceneIndex.containsKey(placement.sceneUUID),
-        )
+        .read(placedSceneChoicesProvider)
         .map((placement) {
           final reference = sceneIndex[placement.sceneUUID]!;
           return (
@@ -688,30 +710,37 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           );
         })
         .toList(growable: false);
-    scenes.sort((a, b) {
-      final byTime = a.startTick.compareTo(b.startTick);
-      return byTime != 0 ? byTime : a.placementId.compareTo(b.placementId);
-    });
     return scenes;
   }
 
-  Future<void> _addLocationSnapshot(LocationData location) async {
+  Future<void> _addLocationSnapshot(
+    LocationData location, {
+    LocationSnapshotState? sourceState,
+  }) async {
     final scenes = _placedScenes();
     if (scenes.isEmpty) {
       AppFeedback.error(context, "請先將 Scene 放入時間軸，再新增地點快照。");
       return;
     }
     final currentTick = ref.read(timelineViewProvider).currentTick;
-    final currentState = ref.read(
-      locationSnapshotProvider((id: location.id, tick: currentTick)),
-    );
-    var placementId = scenes.first.placementId;
+    final currentState =
+        sourceState ??
+        ref.read(
+          locationSnapshotProvider((id: location.id, tick: currentTick)),
+        );
+    var placementId = nearestSceneChoice(
+      scenes,
+      currentTick,
+      (scene) => scene.startTick,
+    )!.placementId;
     var exists = currentState?.exists ?? true;
     var accessible = currentState?.accessible ?? true;
     var includeDescendants = false;
-    var snapshotName = currentState?.name.isNotEmpty == true
-        ? currentState!.name
-        : location.localName;
+    var snapshotName =
+        sourceState?.name ??
+        (currentState?.name.isNotEmpty == true
+            ? currentState!.name
+            : location.localName);
     var snapshotDescription = currentState?.description ?? location.note;
     var snapshotStatus = currentState?.status ?? "";
     String? propertyValidationError;
@@ -784,11 +813,22 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text("新增「${location.localName}」場景快照"),
+          title: Text(
+            "${sourceState == null ? '新增' : '複製'}「${location.localName}」場景快照",
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                SceneSnapshotTimelinePreview(
+                  subject: (
+                    kind: SnapshotSubjectKind.location,
+                    id: location.id,
+                  ),
+                  placementUUID: placementId,
+                  onPlacementSelected: (value) =>
+                      setDialogState(() => placementId = value),
+                ),
                 AppDropdownField<String>(
                   value: placementId,
                   labelText: "綁定 Scene",
@@ -891,15 +931,16 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                             },
                           ),
                         ),
-                        IconButton(
+                        NeonIconButton(
                           key: ValueKey(
                             "location-snapshot-property-remove-${entry.$1}",
                           ),
-                          tooltip: "移除屬性",
+                          label: "移除屬性",
                           onPressed: () => setDialogState(
                             () => snapshotProperties.removeAt(entry.$1),
                           ),
-                          icon: const Icon(Icons.remove_circle_outline),
+                          icon: Icons.remove_circle_outline,
+                          destructive: true,
                         ),
                       ],
                     ),
@@ -1049,7 +1090,7 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                 }
                 Navigator.pop(context, true);
               },
-              child: const Text("新增快照"),
+              child: Text(sourceState == null ? "新增快照" : "複製快照"),
             ),
           ],
         ),
@@ -1073,6 +1114,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         .map(
           (target) => LocationStateChange(
             locationId: target.id,
+            sequence: ref
+                .read(itemWorkspaceProvider)
+                .locationStateChanges
+                .where((change) => change.locationId == target.id)
+                .fold<int>(
+                  0,
+                  (next, change) =>
+                      change.sequence >= next ? change.sequence + 1 : next,
+                ),
             sceneUUID: selectedScene.sceneId,
             sourcePlacementUUID: selectedScene.placementId,
             fallbackTick: selectedScene.startTick,
@@ -1099,7 +1149,10 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final selectedChange = changes.firstWhere(
       (change) => change.locationId == location.id,
     );
-    setState(() => _selectedLocationSnapshotId = selectedChange.stateChangeId);
+    setState(() {
+      _locationPreviewModes[location.id] = SnapshotPreviewMode.followTimeline;
+      _selectedLocationSnapshotId = selectedChange.stateChangeId;
+    });
     ref
         .read(timelineViewProvider.notifier)
         .setCurrentTick(selectedScene.startTick);
@@ -1165,7 +1218,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     return labels;
   }
 
-  Widget _buildLocationItemProjection(String locationId, int tick) {
+  Widget _buildLocationItemProjection(
+    String locationId,
+    int tick, {
+    bool baseline = false,
+  }) {
     final workspace = ref.watch(itemWorkspaceProvider);
     final relatedEntries =
         workspace.itemRelations
@@ -1196,9 +1253,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     final entries = <_LocationItemProjectionEntry>[];
     for (final itemClass in workspace.itemClasses.values) {
       final unit = itemClass.unit.trim();
-      final state = ref.watch(
-        itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
-      );
+      final state = baseline
+          ? itemClass.defaultState
+          : ref.watch(
+              itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
+            );
       if (state?.exists == true && state!.allocations.isNotEmpty) {
         for (final allocation in state.allocations.where(
           (value) => value.locationId == locationId,
@@ -1224,9 +1283,19 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       for (final instance in workspace.itemInstances.values.where(
         (value) => value.classId == itemClass.classId,
       )) {
-        final state = ref.watch(
-          itemInstanceSnapshotProvider((id: instance.instanceId, tick: tick)),
-        );
+        final state = baseline
+            ? resolveItemInstanceSnapshot(
+                itemClass: itemClass,
+                instance: instance,
+                timeline: ref.watch(timelineDocumentProvider),
+                atTick: 0,
+              )
+            : ref.watch(
+                itemInstanceSnapshotProvider((
+                  id: instance.instanceId,
+                  tick: tick,
+                )),
+              );
         if (state == null || !state.exists || state.locationId != locationId) {
           continue;
         }
@@ -1257,7 +1326,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             ),
             FilledButton.tonalIcon(
               key: const Key("location-link-item"),
-              onPressed: () => _linkItemToLocation(locationId),
+              onPressed: baseline
+                  ? () => _linkItemToLocation(locationId)
+                  : null,
               icon: const Icon(Icons.add_link),
               label: const Text("連結物品"),
             ),
@@ -1285,23 +1356,26 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
               trailing: Wrap(
                 children: [
                   if (widget.onOpenItem != null)
-                    IconButton(
+                    NeonIconButton(
                       key: ValueKey(
                         "location-open-related-item-${entry.relation.relationId}",
                       ),
-                      tooltip: "開啟物品頁",
+                      label: "開啟物品頁",
                       onPressed: () => widget.onOpenItem!(entry.classId!),
-                      icon: const Icon(Icons.open_in_new),
+                      icon: Icons.open_in_new,
                     ),
-                  IconButton(
+                  NeonIconButton(
                     key: ValueKey(
                       "location-unlink-item-${entry.relation.relationId}",
                     ),
-                    tooltip: "解除關聯",
-                    onPressed: () => ref
-                        .read(itemWorkspaceProvider.notifier)
-                        .removeRelation(entry.relation.relationId),
-                    icon: const Icon(Icons.link_off),
+                    label: "解除關聯",
+                    onPressed: !baseline
+                        ? null
+                        : () => ref
+                              .read(itemWorkspaceProvider.notifier)
+                              .removeRelation(entry.relation.relationId),
+                    icon: Icons.link_off,
+                    destructive: true,
                   ),
                 ],
               ),
@@ -1318,7 +1392,9 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
             ),
             FilledButton.tonalIcon(
               key: const Key("location-assign-item"),
-              onPressed: () => _assignItemToLocation(locationId),
+              onPressed: baseline
+                  ? () => _assignItemToLocation(locationId)
+                  : null,
               icon: const Icon(Icons.inventory_2_outlined),
               label: const Text("分配物品"),
             ),
@@ -1361,12 +1437,17 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                         DataCell(Text(entry.quantity)),
                         DataCell(Text(entry.description)),
                         DataCell(
-                          IconButton(
+                          NeonIconButton(
                             key: ValueKey("location-unassign-item-${entry.id}"),
-                            tooltip: "清除預設分配",
-                            onPressed: () =>
-                                _clearLocationItemAssignment(locationId, entry),
-                            icon: const Icon(Icons.remove_circle_outline),
+                            label: "清除預設分配",
+                            onPressed: !baseline
+                                ? null
+                                : () => _clearLocationItemAssignment(
+                                    locationId,
+                                    entry,
+                                  ),
+                            icon: Icons.remove_circle_outline,
+                            destructive: true,
                           ),
                         ),
                       ],
@@ -1682,10 +1763,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                     ),
                     const SizedBox(height: 32),
 
-                    ResponsiveSplitView(
-                      breakpoint: 980,
-                      spacing: 24,
-                      primary: Column(
+                    SnapshotWorkspaceLayout(
+                      collection: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1719,13 +1798,15 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
                               vertical: AppSpacing.sm,
                             ),
                             child: AddItemInput(
+                              useNeonStyle: true,
                               title: selectedNodeId != null ? "子地點" : "頂層地點",
                               onAdd: _addLocation,
                             ),
                           ),
                         ],
                       ),
-                      secondary: Column(
+                      timeline: _buildLocationSnapshotCard(),
+                      details: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1844,7 +1925,8 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
         style: Theme.of(context).textTheme.bodySmall,
       ),
       trailing: ItemActionBar.editDelete(
-        iconSize: 18,
+        useNeonStyle: true,
+        iconSize: AppControlSize.smallIcon,
         onEdit: () {
           setState(() {
             editingNodeId = location.id;
@@ -1938,6 +2020,179 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
     );
   }
 
+  Widget _buildLocationSnapshotCard() {
+    final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
+    final location = displayNodeId == null
+        ? null
+        : _getLocation(displayNodeId, _locations);
+    if (location == null || location.nodeType != WorldNodeType.location) {
+      return const SnapshotPanelCard(
+        key: ValueKey("location-snapshot-card"),
+        child: AppEmptyState(
+          title: "請先選取地點",
+          description: "選取地點後即可預覽時間軸與管理快照",
+          icon: Icons.location_on_outlined,
+          compact: true,
+        ),
+      );
+    }
+    final tick = ref.watch(timelineViewProvider).currentTick;
+    final previewMode =
+        _locationPreviewModes[location.id] ??
+        SnapshotPreviewMode.followTimeline;
+    final snapshot = previewMode == SnapshotPreviewMode.baseline
+        ? LocationSnapshotState(
+            name: location.localName,
+            description: location.note,
+            properties: {
+              for (final value in location.customVal) value.key: value.val,
+            },
+          )
+        : location.nodeType == WorldNodeType.location
+        ? ref.watch(locationSnapshotProvider((id: location.id, tick: tick)))
+        : null;
+    final sceneLabels = _sceneLabels();
+    final characterLabels = {
+      for (final entry in ref.watch(characterDataProvider).entries)
+        entry.key: entry.value.displayName,
+    };
+    final locationChanges = orderedLocationStateChanges(
+      locationId: location.id,
+      changes: ref.watch(itemWorkspaceProvider).locationStateChanges,
+      timeline: ref.watch(timelineDocumentProvider),
+    ).reversed.map((entry) => entry.change).toList(growable: false);
+    final selectedSnapshotChange = locationChanges
+        .where((change) => change.stateChangeId == _selectedLocationSnapshotId)
+        .firstOrNull;
+
+    return SnapshotPanelCard(
+      key: const ValueKey("location-snapshot-card"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SnapshotTimelinePreview(
+            key: ValueKey("location-snapshot-preview-${location.id}"),
+            subject: (kind: SnapshotSubjectKind.location, id: location.id),
+            mode: previewMode,
+            autoSelectAtTick: true,
+            selectedEventId: _selectedLocationSnapshotId == null
+                ? null
+                : "location:$_selectedLocationSnapshotId",
+            onModeChanged: (value) {
+              _flushDetailDraft();
+              setState(() => _locationPreviewModes[location.id] = value);
+            },
+            onEventSelected: (event) =>
+                setState(() => _selectedLocationSnapshotId = event?.sourceId),
+            snapshotActionsBuilder: (event) => [
+              NeonIconButton(
+                key: ValueKey("location-add-snapshot-${location.id}"),
+                label: "新增 Scene 快照",
+                onPressed: () => _addLocationSnapshot(location),
+                icon: Icons.add_photo_alternate_outlined,
+                accent: NeonAccent.green,
+              ),
+              NeonIconButton(
+                key: ValueKey("location-copy-snapshot-${location.id}"),
+                label: "複製快照",
+                icon: Icons.copy_all_outlined,
+                onPressed: () => _addLocationSnapshot(
+                  location,
+                  sourceState: event == null
+                      ? snapshot
+                      : resolveLocationSnapshot(
+                          locationId: location.id,
+                          defaultState: LocationSnapshotState(
+                            name: location.localName,
+                            description: location.note,
+                            properties: {
+                              for (final value in location.customVal)
+                                value.key: value.val,
+                            },
+                          ),
+                          changes: ref
+                              .read(itemWorkspaceProvider)
+                              .locationStateChanges,
+                          timeline: ref.read(timelineDocumentProvider),
+                          atTick: event.tick,
+                          throughStateChangeId: event.sourceId,
+                        ),
+                ),
+              ),
+              NeonIconButton(
+                key: ValueKey(
+                  "location-delete-selected-snapshot-${location.id}",
+                ),
+                label: "刪除目前快照",
+                onPressed: selectedSnapshotChange == null
+                    ? null
+                    : () => _removeLocationSnapshot(selectedSnapshotChange),
+                icon: Icons.delete_outline,
+                destructive: true,
+                statusLabel: selectedSnapshotChange == null ? "尚未選取快照" : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.movie_outlined),
+              title: const Text("目前故事狀態"),
+              subtitle: Text(
+                snapshot == null
+                    ? "無快照"
+                    : [
+                        if (snapshot.name.isNotEmpty) "名稱：${snapshot.name}",
+                        if (snapshot.description.isNotEmpty)
+                          "描述：${snapshot.description}",
+                        if (snapshot.properties.isNotEmpty)
+                          "屬性：${snapshot.properties.entries.map((entry) => "${entry.key}=${entry.value}").join("、")}",
+                        snapshot.exists ? "存在" : "尚未存在",
+                        snapshot.accessible ? "可進入" : "不可進入",
+                        if (snapshot.status.isNotEmpty) snapshot.status,
+                        if (snapshot.controllerCharacterId != null)
+                          "控制者：${characterLabels[snapshot.controllerCharacterId] ?? snapshot.controllerCharacterId}",
+                      ].join("・"),
+              ),
+            ),
+          ),
+          if (locationChanges.isNotEmpty)
+            Material(
+              color: Colors.transparent,
+              child: ExpansionTile(
+                key: ValueKey("location-snapshot-history-${location.id}"),
+                leading: const Icon(Icons.history),
+                title: Text("快照歷程（${locationChanges.length}）"),
+                children: locationChanges
+                    .map(
+                      (change) => ListTile(
+                        key: ValueKey(
+                          "location-snapshot-${change.stateChangeId}",
+                        ),
+                        title: Text(
+                          sceneLabels[change.sceneUUID] ?? change.sceneUUID,
+                        ),
+                        subtitle: Text(
+                          change.patch.status?.value?.isNotEmpty == true
+                              ? change.patch.status!.value!
+                              : "連結此 Scene",
+                        ),
+                        trailing: NeonIconButton(
+                          label: "移除地點快照",
+                          onPressed: () => _removeLocationSnapshot(change),
+                          icon: Icons.delete_outline,
+                          destructive: true,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDetailPanel() {
     // 如果當前沒有選中節點，使用上次選取的節點
     final displayNodeId = selectedNodeId ?? lastSelectedNodeId;
@@ -1960,32 +2215,77 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
       );
     }
     final tick = ref.watch(timelineViewProvider).currentTick;
-    final snapshot = location.nodeType == WorldNodeType.location
-        ? ref.watch(locationSnapshotProvider((id: location.id, tick: tick)))
-        : null;
-    final sceneLabels = _sceneLabels();
-    final characterLabels = {
-      for (final entry in ref.watch(characterDataProvider).entries)
-        entry.key: entry.value.displayName,
-    };
-    final locationChanges =
-        ref
-            .watch(itemWorkspaceProvider)
-            .locationStateChanges
-            .where((value) => value.locationId == location.id)
-            .toList(growable: false)
-          ..sort((a, b) {
-            final tickOrder = b.fallbackTick.compareTo(a.fallbackTick);
-            return tickOrder != 0
-                ? tickOrder
-                : b.sequence.compareTo(a.sequence);
-          });
-    final selectedSnapshotChange = locationChanges
-        .where((change) => change.stateChangeId == _selectedLocationSnapshotId)
-        .firstOrNull;
-    final snapshotSelection =
-        selectedSnapshotChange?.stateChangeId ?? _baselineSnapshotSelection;
-
+    final previewMode =
+        _locationPreviewModes[location.id] ??
+        SnapshotPreviewMode.followTimeline;
+    if (location.nodeType == WorldNodeType.location &&
+        previewMode == SnapshotPreviewMode.followTimeline) {
+      final event = snapshotEventAtTick(
+        ref.watch(
+          snapshotTimelineEventsProvider((
+            kind: SnapshotSubjectKind.location,
+            id: location.id,
+          )),
+        ),
+        tick,
+        selectedId: _selectedLocationSnapshotId == null
+            ? null
+            : "location:$_selectedLocationSnapshotId",
+      );
+      final changes = ref.watch(itemWorkspaceProvider).locationStateChanges;
+      final change = changes
+          .where((change) => change.stateChangeId == event?.sourceId)
+          .firstOrNull;
+      final state = resolveLocationSnapshot(
+        locationId: location.id,
+        defaultState: LocationSnapshotState(
+          name: location.localName,
+          description: location.note,
+          properties: {
+            for (final value in location.customVal) value.key: value.val,
+          },
+        ),
+        changes: changes,
+        timeline: ref.watch(timelineDocumentProvider),
+        atTick: tick,
+        throughStateChangeId: change?.stateChangeId,
+      );
+      return SingleChildScrollView(
+        controller: _detailScrollController,
+        primary: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (change != null) ...[
+              Text("編輯中：${event!.label}"),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            LocationSnapshotStateEditor(
+              key: ValueKey(
+                "location-editor-${location.id}-${change?.stateChangeId ?? 'preview-$tick'}",
+              ),
+              state: state,
+              characters: ref
+                  .watch(characterDataProvider)
+                  .entries
+                  .map(
+                    (entry) => DropdownOption(
+                      value: entry.key,
+                      label: entry.value.displayName,
+                    ),
+                  )
+                  .toList(),
+              onChanged: change == null
+                  ? null
+                  : (patch) =>
+                        _updateLocationSnapshot(change.stateChangeId, patch),
+            ),
+            const SizedBox(height: 16),
+            _buildLocationItemProjection(location.id, tick),
+          ],
+        ),
+      );
+    }
     return SingleChildScrollView(
       controller: _detailScrollController,
       primary: false,
@@ -2144,124 +2444,11 @@ class _WorldSettingsViewState extends ConsumerState<WorldSettingsView> {
           const SizedBox(height: 16),
 
           if (location.nodeType == WorldNodeType.location) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: AppDropdownField<String>(
-                    key: ValueKey(
-                      "location-snapshot-selector-${location.id}-$snapshotSelection",
-                    ),
-                    value: snapshotSelection,
-                    labelText: "地點快照",
-                    options: [
-                      const DropdownOption(
-                        value: _baselineSnapshotSelection,
-                        label: "預設",
-                      ),
-                      for (final change in locationChanges.reversed)
-                        DropdownOption(
-                          value: change.stateChangeId,
-                          label:
-                              sceneLabels[change.sceneUUID] ?? change.sceneUUID,
-                        ),
-                    ],
-                    onChanged: (value) {
-                      final selectedId = value == _baselineSnapshotSelection
-                          ? null
-                          : value;
-                      setState(() => _selectedLocationSnapshotId = selectedId);
-                      if (selectedId == null) return;
-                      final change = locationChanges.firstWhere(
-                        (entry) => entry.stateChangeId == selectedId,
-                      );
-                      final resolved = resolveLocationStateChangeTime(
-                        change,
-                        ref.read(timelineDocumentProvider),
-                      );
-                      ref
-                          .read(timelineViewProvider.notifier)
-                          .setCurrentTick(resolved.resolvedTick);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  key: ValueKey("location-add-snapshot-${location.id}"),
-                  tooltip: "新增 Scene 快照",
-                  onPressed: () => _addLocationSnapshot(location),
-                  style: IconButton.styleFrom(foregroundColor: Colors.green),
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                ),
-                IconButton(
-                  key: ValueKey(
-                    "location-delete-selected-snapshot-${location.id}",
-                  ),
-                  tooltip: "刪除目前快照",
-                  onPressed: selectedSnapshotChange == null
-                      ? null
-                      : () => _removeLocationSnapshot(selectedSnapshotChange),
-                  style: IconButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.error,
-                  ),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
+            _buildLocationItemProjection(
+              location.id,
+              tick,
+              baseline: previewMode == SnapshotPreviewMode.baseline,
             ),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.movie_outlined),
-                title: const Text("目前故事狀態"),
-                subtitle: Text(
-                  snapshot == null
-                      ? "無快照"
-                      : [
-                          if (snapshot.name.isNotEmpty) "名稱：${snapshot.name}",
-                          if (snapshot.description.isNotEmpty)
-                            "描述：${snapshot.description}",
-                          if (snapshot.properties.isNotEmpty)
-                            "屬性：${snapshot.properties.entries.map((entry) => "${entry.key}=${entry.value}").join("、")}",
-                          snapshot.exists ? "存在" : "尚未存在",
-                          snapshot.accessible ? "可進入" : "不可進入",
-                          if (snapshot.status.isNotEmpty) snapshot.status,
-                          if (snapshot.controllerCharacterId != null)
-                            "控制者：${characterLabels[snapshot.controllerCharacterId] ?? snapshot.controllerCharacterId}",
-                        ].join("・"),
-                ),
-              ),
-            ),
-            if (locationChanges.isNotEmpty)
-              Material(
-                color: Colors.transparent,
-                child: ExpansionTile(
-                  key: ValueKey("location-snapshot-history-${location.id}"),
-                  leading: const Icon(Icons.history),
-                  title: Text("地點快照歷程（${locationChanges.length}）"),
-                  children: locationChanges
-                      .map(
-                        (change) => ListTile(
-                          key: ValueKey(
-                            "location-snapshot-${change.stateChangeId}",
-                          ),
-                          title: Text(
-                            sceneLabels[change.sceneUUID] ?? change.sceneUUID,
-                          ),
-                          subtitle: Text(
-                            change.patch.status?.value?.isNotEmpty == true
-                                ? change.patch.status!.value!
-                                : "連結此 Scene",
-                          ),
-                          trailing: IconButton(
-                            tooltip: "移除地點快照",
-                            onPressed: () => _removeLocationSnapshot(change),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-              ),
-            _buildLocationItemProjection(location.id, tick),
             const SizedBox(height: 16),
           ],
 

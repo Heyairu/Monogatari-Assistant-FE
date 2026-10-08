@@ -29,6 +29,8 @@ import "../ui_library/surface_shape.dart";
 import "../ui_library/forms.dart";
 import "../ui_library/collections.dart";
 import "../ui_library/list_style.dart";
+import "../ui_library/neon_icon_button.dart";
+import "../ui_library/neon_ui_theme.dart";
 
 export "../ui_library/collections.dart";
 export "../ui_library/control_shape.dart";
@@ -40,6 +42,10 @@ export "../ui_library/forms.dart";
 export "../ui_library/layout.dart";
 export "../ui_library/list_style.dart";
 export "../ui_library/mini_timeline.dart";
+export "../ui_library/menu_button.dart";
+export "../ui_library/neon_icon_button.dart";
+export "../ui_library/neon_status_icon.dart";
+export "../ui_library/neon_ui_theme.dart";
 export "../ui_library/surface_shape.dart";
 export "../ui_library/tables.dart";
 
@@ -691,6 +697,7 @@ class SwitchWithIconTitle extends StatelessWidget {
 
 // 新增項目元件
 class AddItemInput extends StatefulWidget {
+  final bool useNeonStyle;
   final String title;
   final ValueChanged<String> onAdd;
   final TextEditingController? controller;
@@ -699,6 +706,7 @@ class AddItemInput extends StatefulWidget {
 
   const AddItemInput({
     super.key,
+    this.useNeonStyle = false,
     required this.title,
     required this.onAdd,
     this.controller,
@@ -766,6 +774,19 @@ class _AddItemInputState extends State<AddItemInput> {
             final bool canAdd =
                 widget.enabled && (widget.allowEmpty || text.isNotEmpty);
 
+            if (widget.useNeonStyle) {
+              return NeonIconButton(
+                onPressed: canAdd ? _handleAdd : null,
+                icon: Icons.add_circle,
+                label: "新增${widget.title}",
+                accent: NeonAccent.green,
+                statusLabel: canAdd
+                    ? null
+                    : widget.enabled
+                    ? "請先輸入${widget.title}"
+                    : "目前不可新增",
+              );
+            }
             return IconButton(
               onPressed: canAdd ? _handleAdd : null,
               icon: Icon(

@@ -583,11 +583,14 @@ orderedItemInstanceStateChanges({
   return List.unmodifiable(result);
 }
 
+/// [throughStateChangeId] includes that event and stops before later changes,
+/// including other changes at the same Tick, when copying a selected snapshot.
 ItemSnapshotState resolveItemClassSnapshot({
   required ItemClassData itemClass,
   required Iterable<ItemClassStateChange> changes,
   required TimelineDocumentData timeline,
   required int atTick,
+  String? throughStateChangeId,
 }) {
   var state = itemClass.defaultState;
   for (final entry in orderedItemClassStateChanges(
@@ -600,10 +603,13 @@ ItemSnapshotState resolveItemClassSnapshot({
       state,
       inherited: itemClass.defaultState,
     );
+    if (entry.change.stateChangeId == throughStateChangeId) break;
   }
   return state;
 }
 
+/// Optional event IDs bound the instance overrides and inherited Class state
+/// independently when copying a selected snapshot.
 ItemSnapshotState resolveItemInstanceSnapshot({
   required ItemClassData itemClass,
   required ItemInstanceData instance,
@@ -611,6 +617,8 @@ ItemSnapshotState resolveItemInstanceSnapshot({
   Iterable<ItemInstanceStateChange> instanceChanges = const [],
   required TimelineDocumentData timeline,
   required int atTick,
+  String? throughStateChangeId,
+  String? throughClassStateChangeId,
 }) {
   if (instance.classId != itemClass.classId)
     throw ArgumentError('Instance belongs to another Class');
@@ -619,6 +627,7 @@ ItemSnapshotState resolveItemInstanceSnapshot({
     changes: classChanges,
     timeline: timeline,
     atTick: atTick,
+    throughStateChangeId: throughClassStateChangeId,
   );
   var overrides = instance.defaultState;
   for (final entry in orderedItemInstanceStateChanges(
@@ -628,6 +637,7 @@ ItemSnapshotState resolveItemInstanceSnapshot({
   )) {
     if (entry.time.resolvedTick > atTick) break;
     overrides = overrides.merge(entry.change.patch);
+    if (entry.change.stateChangeId == throughStateChangeId) break;
   }
   return overrides.applyTo(inherited, inherited: inherited);
 }

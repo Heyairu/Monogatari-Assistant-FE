@@ -12,8 +12,14 @@ import "../models/item_data.dart";
 import "../models/item_snapshot_data.dart";
 import "../models/timeline_data.dart";
 import "../models/world_settings_data.dart";
+import "../presentation/providers/snapshot_timeline_providers.dart";
+import "../presentation/widgets/snapshot_timeline_preview.dart";
+import "../presentation/widgets/snapshot_panel_card.dart";
+import "../presentation/widgets/snapshot_state_editor.dart";
+import "../presentation/widgets/scene_snapshot_timeline_preview.dart";
 import "../presentation/providers/project_state_providers.dart";
 import "../presentation/providers/timeline_providers.dart";
+import "../presentation/providers/scene_selection_providers.dart";
 import "../presentation/widgets/project_object_selector.dart";
 
 class ItemView extends ConsumerStatefulWidget {
@@ -28,10 +34,12 @@ class ItemView extends ConsumerStatefulWidget {
 
 class _ItemViewState extends ConsumerState<ItemView> {
   static const _uuid = Uuid();
-  static const _baselineSnapshotSelection = "__baseline__";
+
   static const _allFilter = "__all__";
   String? _selectedClassId;
   String? _selectedClassSnapshotId;
+  final Map<String, SnapshotPreviewMode> _classPreviewModes = {};
+  final Map<String, SnapshotPreviewMode> _instancePreviewModes = {};
   final Map<String, String?> _selectedInstanceSnapshotIds = {};
   final _searchController = TextEditingController();
   final _pageScrollController = ScrollController();
@@ -80,6 +88,8 @@ class _ItemViewState extends ConsumerState<ItemView> {
     workspace.putInstance(creation.instance);
     setState(() {
       _selectedClassId = creation.itemClass.classId;
+      _classPreviewModes[creation.itemClass.classId] =
+          SnapshotPreviewMode.baseline;
       _selectedClassSnapshotId = null;
       _selectedInstanceSnapshotIds.clear();
     });
@@ -121,6 +131,51 @@ class _ItemViewState extends ConsumerState<ItemView> {
 
   void _updateClass(ItemClassData value) {
     ref.read(itemWorkspaceProvider.notifier).putClass(value);
+  }
+
+  void _updateClassSnapshot(String id, ItemStatePatch patch) {
+    final change = ref
+        .read(itemWorkspaceProvider)
+        .itemClassStateChanges
+        .where((change) => change.stateChangeId == id)
+        .firstOrNull;
+    if (change == null ||
+        change.classId != _selectedClassId ||
+        _classPreviewModes[change.classId] == SnapshotPreviewMode.baseline ||
+        resolveItemClassStateChangeTime(
+              change,
+              ref.read(timelineDocumentProvider),
+            ).resolvedTick !=
+            ref.read(timelineViewProvider).currentTick) {
+      return;
+    }
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .putClassStateChange(change.copyWith(patch: change.patch.merge(patch)));
+  }
+
+  void _updateInstanceSnapshot(String id, ItemStatePatch patch) {
+    final workspace = ref.read(itemWorkspaceProvider);
+    final change = workspace.itemInstanceStateChanges
+        .where((change) => change.stateChangeId == id)
+        .firstOrNull;
+    if (change == null ||
+        workspace.itemInstances[change.instanceId]?.classId !=
+            _selectedClassId ||
+        _instancePreviewModes[change.instanceId] ==
+            SnapshotPreviewMode.baseline ||
+        resolveItemInstanceStateChangeTime(
+              change,
+              ref.read(timelineDocumentProvider),
+            ).resolvedTick !=
+            ref.read(timelineViewProvider).currentTick) {
+      return;
+    }
+    ref
+        .read(itemWorkspaceProvider.notifier)
+        .putInstanceStateChange(
+          change.copyWith(patch: change.patch.merge(patch)),
+        );
   }
 
   void _createInstance(ItemClassData itemClass) {
@@ -187,13 +242,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
   _placedScenes() {
     final sceneIndex = ref.read(timelineSceneIndexProvider);
     final scenes = ref
-        .read(timelineDocumentProvider)
-        .placements
-        .where(
-          (placement) =>
-              placement.sceneUUID != null &&
-              sceneIndex.containsKey(placement.sceneUUID),
-        )
+        .read(placedSceneChoicesProvider)
         .map((placement) {
           final reference = sceneIndex[placement.sceneUUID]!;
           return (
@@ -205,10 +254,6 @@ class _ItemViewState extends ConsumerState<ItemView> {
           );
         })
         .toList(growable: false);
-    scenes.sort((a, b) {
-      final byTime = a.startTick.compareTo(b.startTick);
-      return byTime != 0 ? byTime : a.placementId.compareTo(b.placementId);
-    });
     return scenes;
   }
 
@@ -610,6 +655,15 @@ class _ItemViewState extends ConsumerState<ItemView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                SceneSnapshotTimelinePreview(
+                  subject: (
+                    kind: SnapshotSubjectKind.itemClass,
+                    id: itemClass.classId,
+                  ),
+                  placementUUID: placementId,
+                  onPlacementSelected: (value) =>
+                      setDialogState(() => placementId = value),
+                ),
                 AppDropdownField<String>(
                   value: placementId,
                   labelText: "綁定 Scene",
@@ -622,7 +676,9 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       )
                       .toList(growable: false),
                   onChanged: (value) {
-                    if (value != null) placementId = value;
+                    if (value != null) {
+                      setDialogState(() => placementId = value);
+                    }
                   },
                 ),
                 DropdownButtonFormField<String>(
@@ -819,6 +875,15 @@ class _ItemViewState extends ConsumerState<ItemView> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  SceneSnapshotTimelinePreview(
+                    subject: (
+                      kind: SnapshotSubjectKind.itemClass,
+                      id: itemClass.classId,
+                    ),
+                    placementUUID: placementId,
+                    onPlacementSelected: (value) =>
+                        setDialogState(() => placementId = value),
+                  ),
                   AppDropdownField<String>(
                     value: placementId,
                     labelText: "建立於 Scene",
@@ -1001,6 +1066,15 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  SceneSnapshotTimelinePreview(
+                    subject: (
+                      kind: SnapshotSubjectKind.itemClass,
+                      id: itemClass.classId,
+                    ),
+                    placementUUID: placementId,
+                    onPlacementSelected: (value) =>
+                        setDialogState(() => placementId = value),
+                  ),
                   AppDropdownField<String>(
                     value: placementId,
                     labelText: "轉換 Scene",
@@ -1262,7 +1336,10 @@ class _ItemViewState extends ConsumerState<ItemView> {
     );
   }
 
-  Future<void> _addClassSnapshot(ItemClassData itemClass) async {
+  Future<void> _addClassSnapshot(
+    ItemClassData itemClass, {
+    ItemSnapshotState? sourceState,
+  }) async {
     final scenes = _placedScenes();
     if (scenes.isEmpty) {
       ScaffoldMessenger.of(
@@ -1270,11 +1347,15 @@ class _ItemViewState extends ConsumerState<ItemView> {
       ).showSnackBar(const SnackBar(content: Text("請先將 Scene 放入時間軸，再新增物品快照。")));
       return;
     }
-    var placementId = scenes.first.placementId;
-    var exists = true;
-    var status = "";
-    String? holderCharacterId;
-    String? locationId;
+    var placementId = nearestSceneChoice(
+      scenes,
+      ref.read(timelineViewProvider).currentTick,
+      (scene) => scene.startTick,
+    )!.placementId;
+    var exists = sourceState?.exists ?? true;
+    var status = sourceState?.status ?? "";
+    String? holderCharacterId = sourceState?.holderCharacterId;
+    String? locationId = sourceState?.locationId;
     final characters = _relationTargets()
         .where((value) => value.kind == ItemRelationTargetKind.character)
         .toList(growable: false);
@@ -1285,11 +1366,20 @@ class _ItemViewState extends ConsumerState<ItemView> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text("新增物品場景快照"),
+          title: Text(sourceState == null ? "新增物品場景快照" : "複製物品場景快照"),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                SceneSnapshotTimelinePreview(
+                  subject: (
+                    kind: SnapshotSubjectKind.itemClass,
+                    id: itemClass.classId,
+                  ),
+                  placementUUID: placementId,
+                  onPlacementSelected: (value) =>
+                      setDialogState(() => placementId = value),
+                ),
                 AppDropdownField<String>(
                   value: placementId,
                   labelText: "綁定 Scene",
@@ -1302,7 +1392,9 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       )
                       .toList(growable: false),
                   onChanged: (value) {
-                    if (value != null) placementId = value;
+                    if (value != null) {
+                      setDialogState(() => placementId = value);
+                    }
                   },
                 ),
                 SwitchListTile(
@@ -1311,7 +1403,8 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   value: exists,
                   onChanged: (value) => setDialogState(() => exists = value),
                 ),
-                TextField(
+                TextFormField(
+                  initialValue: status,
                   onChanged: (value) => status = value,
                   decoration: appFieldDecoration(
                     context,
@@ -1326,13 +1419,21 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   itemHeight: appDropdownItemHeight(context),
                   menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-class-snapshot-holder"),
-                  initialValue: "",
+                  initialValue: holderCharacterId ?? "",
                   decoration: appDropdownFieldDecoration(
                     context,
                     decoration: const InputDecoration(labelText: "持有人"),
                   ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
+                    if (holderCharacterId != null &&
+                        !characters.any(
+                          (value) => value.id == holderCharacterId,
+                        ))
+                      DropdownMenuItem(
+                        value: holderCharacterId,
+                        child: Text("找不到：$holderCharacterId"),
+                      ),
                     for (final character in characters)
                       DropdownMenuItem(
                         value: character.id,
@@ -1350,13 +1451,19 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   itemHeight: appDropdownItemHeight(context),
                   menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-class-snapshot-location"),
-                  initialValue: "",
+                  initialValue: locationId ?? "",
                   decoration: appDropdownFieldDecoration(
                     context,
                     decoration: const InputDecoration(labelText: "所在地"),
                   ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
+                    if (locationId != null &&
+                        !locations.any((value) => value.id == locationId))
+                      DropdownMenuItem(
+                        value: locationId,
+                        child: Text("找不到：$locationId"),
+                      ),
                     for (final location in locations)
                       DropdownMenuItem(
                         value: location.id,
@@ -1376,7 +1483,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("新增快照"),
+              child: Text(sourceState == null ? "新增快照" : "複製快照"),
             ),
           ],
         ),
@@ -1388,24 +1495,49 @@ class _ItemViewState extends ConsumerState<ItemView> {
     );
     final change = ItemClassStateChange(
       classId: itemClass.classId,
+      sequence: ref
+          .read(itemWorkspaceProvider)
+          .itemClassStateChanges
+          .where((change) => change.classId == itemClass.classId)
+          .fold<int>(
+            0,
+            (next, change) =>
+                change.sequence >= next ? change.sequence + 1 : next,
+          ),
       sceneUUID: selectedScene.sceneId,
       sourcePlacementUUID: selectedScene.placementId,
       fallbackTick: selectedScene.startTick,
-      patch: ItemStatePatch(
-        exists: StateValue.set(exists),
-        status: StateValue.set(status),
-        holderCharacterId: StateValue<String?>.set(holderCharacterId),
-        locationId: StateValue<String?>.set(locationId),
-      ),
+      patch: sourceState == null
+          ? ItemStatePatch(
+              exists: StateValue.set(exists),
+              status: StateValue.set(status),
+              holderCharacterId: StateValue<String?>.set(holderCharacterId),
+              locationId: StateValue<String?>.set(locationId),
+            )
+          : ItemStatePatch.fromState(
+              sourceState.copyWith(
+                exists: exists,
+                status: status,
+                holderCharacterId: holderCharacterId,
+                locationId: locationId,
+              ),
+            ),
     );
     ref.read(itemWorkspaceProvider.notifier).putClassStateChange(change);
-    setState(() => _selectedClassSnapshotId = change.stateChangeId);
+    setState(() {
+      _classPreviewModes[itemClass.classId] =
+          SnapshotPreviewMode.followTimeline;
+      _selectedClassSnapshotId = change.stateChangeId;
+    });
     ref
         .read(timelineViewProvider.notifier)
         .setCurrentTick(selectedScene.startTick);
   }
 
-  Future<void> _addInstanceSnapshot(ItemInstanceData instance) async {
+  Future<void> _addInstanceSnapshot(
+    ItemInstanceData instance, {
+    ItemSnapshotState? sourceState,
+  }) async {
     final scenes = _placedScenes();
     if (scenes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1413,11 +1545,15 @@ class _ItemViewState extends ConsumerState<ItemView> {
       );
       return;
     }
-    var placementId = scenes.first.placementId;
-    var exists = true;
-    var status = "";
-    String? holderCharacterId;
-    String? locationId;
+    var placementId = nearestSceneChoice(
+      scenes,
+      ref.read(timelineViewProvider).currentTick,
+      (scene) => scene.startTick,
+    )!.placementId;
+    var exists = sourceState?.exists ?? true;
+    var status = sourceState?.status ?? "";
+    String? holderCharacterId = sourceState?.holderCharacterId;
+    String? locationId = sourceState?.locationId;
     final characters = _relationTargets()
         .where((value) => value.kind == ItemRelationTargetKind.character)
         .toList(growable: false);
@@ -1428,11 +1564,22 @@ class _ItemViewState extends ConsumerState<ItemView> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text("新增「${instance.name}」場景快照"),
+          title: Text(
+            "${sourceState == null ? '新增' : '複製'}「${instance.name}」場景快照",
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                SceneSnapshotTimelinePreview(
+                  subject: (
+                    kind: SnapshotSubjectKind.itemInstance,
+                    id: instance.instanceId,
+                  ),
+                  placementUUID: placementId,
+                  onPlacementSelected: (value) =>
+                      setDialogState(() => placementId = value),
+                ),
                 AppDropdownField<String>(
                   value: placementId,
                   labelText: "綁定 Scene",
@@ -1445,7 +1592,9 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       )
                       .toList(growable: false),
                   onChanged: (value) {
-                    if (value != null) placementId = value;
+                    if (value != null) {
+                      setDialogState(() => placementId = value);
+                    }
                   },
                 ),
                 SwitchListTile(
@@ -1454,7 +1603,8 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   value: exists,
                   onChanged: (value) => setDialogState(() => exists = value),
                 ),
-                TextField(
+                TextFormField(
+                  initialValue: status,
                   onChanged: (value) => status = value,
                   decoration: appFieldDecoration(
                     context,
@@ -1469,13 +1619,21 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   itemHeight: appDropdownItemHeight(context),
                   menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-instance-snapshot-holder"),
-                  initialValue: "",
+                  initialValue: holderCharacterId ?? "",
                   decoration: appDropdownFieldDecoration(
                     context,
                     decoration: const InputDecoration(labelText: "持有人"),
                   ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
+                    if (holderCharacterId != null &&
+                        !characters.any(
+                          (value) => value.id == holderCharacterId,
+                        ))
+                      DropdownMenuItem(
+                        value: holderCharacterId,
+                        child: Text("找不到：$holderCharacterId"),
+                      ),
                     for (final character in characters)
                       DropdownMenuItem(
                         value: character.id,
@@ -1493,13 +1651,19 @@ class _ItemViewState extends ConsumerState<ItemView> {
                   itemHeight: appDropdownItemHeight(context),
                   menuMaxHeight: AppControlSize.menuMaxHeight,
                   key: const Key("item-instance-snapshot-location"),
-                  initialValue: "",
+                  initialValue: locationId ?? "",
                   decoration: appDropdownFieldDecoration(
                     context,
                     decoration: const InputDecoration(labelText: "所在地"),
                   ),
                   items: [
                     const DropdownMenuItem(value: "", child: Text("未設定")),
+                    if (locationId != null &&
+                        !locations.any((value) => value.id == locationId))
+                      DropdownMenuItem(
+                        value: locationId,
+                        child: Text("找不到：$locationId"),
+                      ),
                     for (final location in locations)
                       DropdownMenuItem(
                         value: location.id,
@@ -1520,7 +1684,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
             FilledButton(
               key: const Key("item-instance-snapshot-confirm"),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("新增快照"),
+              child: Text(sourceState == null ? "新增快照" : "複製快照"),
             ),
           ],
         ),
@@ -1532,19 +1696,39 @@ class _ItemViewState extends ConsumerState<ItemView> {
     );
     final change = ItemInstanceStateChange(
       instanceId: instance.instanceId,
+      sequence: ref
+          .read(itemWorkspaceProvider)
+          .itemInstanceStateChanges
+          .where((change) => change.instanceId == instance.instanceId)
+          .fold<int>(
+            0,
+            (next, change) =>
+                change.sequence >= next ? change.sequence + 1 : next,
+          ),
       sceneUUID: selectedScene.sceneId,
       sourcePlacementUUID: selectedScene.placementId,
       fallbackTick: selectedScene.startTick,
-      patch: ItemStatePatch(
-        exists: StateValue.set(exists),
-        status: StateValue.set(status.trim()),
-        holderCharacterId: StateValue<String?>.set(holderCharacterId),
-        locationId: StateValue<String?>.set(locationId),
-      ),
+      patch: sourceState == null
+          ? ItemStatePatch(
+              exists: StateValue.set(exists),
+              status: StateValue.set(status.trim()),
+              holderCharacterId: StateValue<String?>.set(holderCharacterId),
+              locationId: StateValue<String?>.set(locationId),
+            )
+          : ItemStatePatch.fromState(
+              sourceState.copyWith(
+                exists: exists,
+                status: status.trim(),
+                holderCharacterId: holderCharacterId,
+                locationId: locationId,
+              ),
+            ),
     );
     ref.read(itemWorkspaceProvider.notifier).putInstanceStateChange(change);
     setState(() {
       _selectedInstanceSnapshotIds[instance.instanceId] = change.stateChangeId;
+      _instancePreviewModes[instance.instanceId] =
+          SnapshotPreviewMode.followTimeline;
     });
     ref
         .read(timelineViewProvider.notifier)
@@ -1614,17 +1798,18 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 ),
                 const Spacer(),
                 if (worldItemCount > 0)
-                  IconButton(
+                  NeonIconButton(
                     key: const Key("item-migrate-world"),
-                    tooltip: "搬移世界設定中的 $worldItemCount 筆物品",
+                    label: "搬移世界設定中的 $worldItemCount 筆物品",
                     onPressed: _migrateWorldItems,
-                    icon: const Icon(Icons.move_down_outlined),
+                    icon: Icons.move_down_outlined,
                   ),
-                IconButton(
+                NeonIconButton(
                   key: const Key("item-add-class"),
-                  tooltip: "新增物品",
+                  label: "新增物品",
                   onPressed: _createClass,
-                  icon: const Icon(Icons.add_circle_outline),
+                  icon: Icons.add_circle_outline,
+                  accent: NeonAccent.green,
                 ),
               ],
             ),
@@ -1632,56 +1817,44 @@ class _ItemViewState extends ConsumerState<ItemView> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  if (constraints.maxWidth < 720) {
-                    final listHeight = (constraints.maxHeight * 0.62)
-                        .clamp(420.0, 560.0)
-                        .toDouble();
-                    return Scrollbar(
+                  final listHeight = (constraints.maxHeight * 0.62)
+                      .clamp(420.0, 560.0)
+                      .toDouble();
+                  return Scrollbar(
+                    controller: _pageScrollController,
+                    child: SingleChildScrollView(
+                      key: const Key("item-narrow-sections"),
                       controller: _pageScrollController,
-                      child: ListView(
-                        key: const Key("item-narrow-sections"),
-                        controller: _pageScrollController,
-                        primary: false,
-                        children: [
-                          SizedBox(
-                            height: listHeight,
-                            child: _buildClassList(
-                              classes,
-                              categories,
-                              workspace,
-                              tick,
-                            ),
+                      primary: false,
+                      child: SnapshotWorkspaceLayout(
+                        collection: SizedBox(
+                          height: listHeight,
+                          child: _buildClassList(
+                            classes,
+                            categories,
+                            workspace,
+                            tick,
                           ),
-                          const SizedBox(height: 24),
-                          SizedBox(
-                            height: constraints.maxHeight,
-                            child: selected == null
-                                ? _buildEmptyDetails()
-                                : _buildDetailsSection(selected, workspace),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        width: 360,
-                        child: _buildClassList(
-                          classes,
-                          categories,
-                          workspace,
-                          tick,
+                        ),
+                        timeline: selected == null
+                            ? const SnapshotPanelCard(
+                                key: ValueKey("item-snapshot-card"),
+                                child: AppEmptyState(
+                                  title: "請先選取物品",
+                                  description: "選取物品後即可預覽時間軸與管理快照",
+                                  icon: Icons.inventory_2_outlined,
+                                  compact: true,
+                                ),
+                              )
+                            : _buildItemSnapshotCard(selected, workspace),
+                        details: SizedBox(
+                          height: constraints.maxHeight,
+                          child: selected == null
+                              ? _buildEmptyDetails()
+                              : _buildDetailsSection(selected, workspace),
                         ),
                       ),
-                      const SizedBox(width: 24),
-                      Expanded(
-                        child: selected == null
-                            ? _buildEmptyDetails()
-                            : _buildDetailsSection(selected, workspace),
-                      ),
-                    ],
+                    ),
                   );
                 },
               ),
@@ -1834,6 +2007,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
                           ),
                         ),
                         ItemActionBar.editDelete(
+                          useNeonStyle: true,
                           editTooltip: "編輯物品",
                           deleteTooltip: "封存物品",
                           onEdit: () => _selectClass(itemClass.classId),
@@ -1849,7 +2023,7 @@ class _ItemViewState extends ConsumerState<ItemView> {
           ),
         ),
         const SizedBox(height: 8),
-        AddItemInput(title: "物品", onAdd: _createClass),
+        AddItemInput(useNeonStyle: true, title: "物品", onAdd: _createClass),
       ],
     );
   }
@@ -1930,14 +2104,475 @@ class _ItemViewState extends ConsumerState<ItemView> {
         ],
       );
 
+  Widget _buildItemSnapshotCard(
+    ItemClassData itemClass,
+    ItemWorkspaceData workspace,
+  ) {
+    final instances = workspace.itemInstances.values
+        .where((value) => value.classId == itemClass.classId && !value.archived)
+        .toList(growable: false);
+    final tick = ref.watch(timelineViewProvider).currentTick;
+    final previewMode =
+        _classPreviewModes[itemClass.classId] ??
+        SnapshotPreviewMode.followTimeline;
+    final snapshot = previewMode == SnapshotPreviewMode.baseline
+        ? itemClass.defaultState
+        : ref.watch(
+            itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
+          );
+    final targetLabels = {
+      for (final target in _relationTargets())
+        "${target.kind.name}:${target.id}": target.label,
+    };
+    final sceneLabels = _sceneLabels();
+    final classChanges = orderedItemClassStateChanges(
+      classId: itemClass.classId,
+      changes: workspace.itemClassStateChanges,
+      timeline: ref.watch(timelineDocumentProvider),
+    ).reversed.map((entry) => entry.change).toList(growable: false);
+    final selectedSnapshotChange = classChanges
+        .where((change) => change.stateChangeId == _selectedClassSnapshotId)
+        .firstOrNull;
+
+    return SnapshotPanelCard(
+      key: const ValueKey("item-snapshot-card"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SnapshotTimelinePreview(
+            key: ValueKey("item-class-snapshot-preview-${itemClass.classId}"),
+            subject: (
+              kind: SnapshotSubjectKind.itemClass,
+              id: itemClass.classId,
+            ),
+            mode: previewMode,
+            autoSelectAtTick: true,
+            selectedEventId: _selectedClassSnapshotId == null
+                ? null
+                : "itemClass:$_selectedClassSnapshotId",
+            onModeChanged: (value) =>
+                setState(() => _classPreviewModes[itemClass.classId] = value),
+            onEventSelected: (event) =>
+                setState(() => _selectedClassSnapshotId = event?.sourceId),
+            snapshotActionsBuilder: (event) => [
+              NeonIconButton(
+                key: const Key("item-add-snapshot"),
+                label: "新增 Scene 快照",
+                onPressed: () => _addClassSnapshot(itemClass),
+                icon: Icons.add_photo_alternate_outlined,
+                accent: NeonAccent.green,
+              ),
+              NeonIconButton(
+                key: const Key("item-copy-snapshot"),
+                label: "複製快照",
+                icon: Icons.copy_all_outlined,
+                onPressed: () => _addClassSnapshot(
+                  itemClass,
+                  sourceState: event == null
+                      ? snapshot ?? itemClass.defaultState
+                      : resolveItemClassSnapshot(
+                          itemClass: itemClass,
+                          changes: workspace.itemClassStateChanges,
+                          timeline: ref.read(timelineDocumentProvider),
+                          atTick: event.tick,
+                          throughStateChangeId: event.sourceId,
+                        ),
+                ),
+              ),
+              NeonIconButton(
+                key: const Key("item-delete-selected-snapshot"),
+                label: "刪除目前快照",
+                onPressed: selectedSnapshotChange == null
+                    ? null
+                    : () {
+                        ref
+                            .read(itemWorkspaceProvider.notifier)
+                            .removeClassStateChange(
+                              selectedSnapshotChange.stateChangeId,
+                            );
+                        setState(() => _selectedClassSnapshotId = null);
+                      },
+                icon: Icons.delete_outline,
+                destructive: true,
+                statusLabel: selectedSnapshotChange == null ? "尚未選取快照" : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.movie_outlined),
+              title: const Text("目前故事狀態"),
+              subtitle: Text(
+                snapshot == null
+                    ? "無快照"
+                    : [
+                        snapshot.exists ? "存在" : "尚未存在",
+                        snapshot.status.isEmpty ? "未設定狀態" : snapshot.status,
+                        if (snapshot.holderCharacterId != null)
+                          "持有人：${targetLabels["${ItemRelationTargetKind.character.name}:${snapshot.holderCharacterId}"] ?? snapshot.holderCharacterId}",
+                        if (snapshot.locationId != null)
+                          "所在地：${targetLabels["${ItemRelationTargetKind.location.name}:${snapshot.locationId}"] ?? snapshot.locationId}",
+                      ].join("・"),
+              ),
+            ),
+          ),
+          if (classChanges.isNotEmpty)
+            ExpansionTile(
+              key: const Key("item-class-snapshot-history"),
+              leading: const Icon(Icons.history),
+              title: Text("快照歷程（${classChanges.length}）"),
+              children: classChanges
+                  .map(
+                    (change) => ListTile(
+                      key: ValueKey(
+                        "item-class-snapshot-${change.stateChangeId}",
+                      ),
+                      title: Text(
+                        sceneLabels[change.sceneUUID] ?? change.sceneUUID,
+                      ),
+                      subtitle: Text(
+                        change.patch.status?.value?.isNotEmpty == true
+                            ? change.patch.status!.value!
+                            : "連結此 Scene",
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          RevisionRecordMarker(
+                            recordKey: ProjectRecordKey(
+                              kind: ProjectRecordKind.itemClassStateChange,
+                              recordId: change.stateChangeId,
+                            ),
+                          ),
+                          NeonIconButton(
+                            label: "移除快照",
+                            onPressed: () => ref
+                                .read(itemWorkspaceProvider.notifier)
+                                .removeClassStateChange(change.stateChangeId),
+                            icon: Icons.delete_outline,
+                            destructive: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          const SizedBox(height: AppSpacing.md),
+          if (itemClass.mode != ItemMode.generic)
+            ...instances.map((instance) {
+              final instanceMode =
+                  _instancePreviewModes[instance.instanceId] ??
+                  SnapshotPreviewMode.followTimeline;
+              final changes = orderedItemInstanceStateChanges(
+                instanceId: instance.instanceId,
+                changes: workspace.itemInstanceStateChanges,
+                timeline: ref.watch(timelineDocumentProvider),
+              ).reversed.map((entry) => entry.change).toList(growable: false);
+              final selectedChange = changes
+                  .where(
+                    (change) =>
+                        change.stateChangeId ==
+                        _selectedInstanceSnapshotIds[instance.instanceId],
+                  )
+                  .firstOrNull;
+
+              return ExpansionTile(
+                key: ValueKey("item-instance-${instance.instanceId}"),
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        instance.name.isEmpty ? itemClass.name : instance.name,
+                      ),
+                    ),
+                    RevisionRecordMarker(
+                      recordKey: ProjectRecordKey(
+                        kind: ProjectRecordKind.itemInstance,
+                        recordId: instance.instanceId,
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: Text("ID：${instance.instanceId}"),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SnapshotTimelinePreview(
+                          key: ValueKey(
+                            "item-instance-snapshot-preview-${instance.instanceId}",
+                          ),
+                          subject: (
+                            kind: SnapshotSubjectKind.itemInstance,
+                            id: instance.instanceId,
+                          ),
+                          mode: instanceMode,
+                          autoSelectAtTick: true,
+                          selectedEventId:
+                              _selectedInstanceSnapshotIds[instance
+                                      .instanceId] ==
+                                  null
+                              ? null
+                              : "itemInstance:${_selectedInstanceSnapshotIds[instance.instanceId]}",
+                          onModeChanged: (value) => setState(
+                            () => _instancePreviewModes[instance.instanceId] =
+                                value,
+                          ),
+                          onEventSelected: (event) => setState(
+                            () =>
+                                _selectedInstanceSnapshotIds[instance
+                                        .instanceId] =
+                                    event == null || event.inherited
+                                    ? null
+                                    : event.sourceId,
+                          ),
+                          snapshotActionsBuilder: (event) => [
+                            NeonIconButton(
+                              key: ValueKey(
+                                "item-instance-add-snapshot-${instance.instanceId}",
+                              ),
+                              label: "新增 Scene 快照",
+                              onPressed: () => _addInstanceSnapshot(instance),
+                              icon: Icons.add_photo_alternate_outlined,
+                              accent: NeonAccent.green,
+                            ),
+                            NeonIconButton(
+                              key: ValueKey(
+                                "item-instance-copy-snapshot-${instance.instanceId}",
+                              ),
+                              label: "複製快照",
+                              icon: Icons.copy_all_outlined,
+                              onPressed: () => _addInstanceSnapshot(
+                                instance,
+                                sourceState: resolveItemInstanceSnapshot(
+                                  itemClass: itemClass,
+                                  instance: instance,
+                                  classChanges:
+                                      instanceMode ==
+                                          SnapshotPreviewMode.baseline
+                                      ? const []
+                                      : workspace.itemClassStateChanges,
+                                  instanceChanges:
+                                      instanceMode ==
+                                          SnapshotPreviewMode.baseline
+                                      ? const []
+                                      : workspace.itemInstanceStateChanges,
+                                  timeline: ref.read(timelineDocumentProvider),
+                                  atTick: event?.tick ?? tick,
+                                  throughStateChangeId:
+                                      event?.inherited == false
+                                      ? event?.sourceId
+                                      : null,
+                                  throughClassStateChangeId:
+                                      event?.inherited == true
+                                      ? event?.sourceId
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            NeonIconButton(
+                              key: ValueKey(
+                                "item-instance-delete-selected-snapshot-${instance.instanceId}",
+                              ),
+                              label: "刪除目前快照",
+                              onPressed: selectedChange == null
+                                  ? null
+                                  : () {
+                                      ref
+                                          .read(itemWorkspaceProvider.notifier)
+                                          .removeInstanceStateChange(
+                                            selectedChange.stateChangeId,
+                                          );
+                                      setState(() {
+                                        _selectedInstanceSnapshotIds.remove(
+                                          instance.instanceId,
+                                        );
+                                      });
+                                    },
+                              icon: Icons.delete_outline,
+                              destructive: true,
+                              statusLabel: selectedChange == null
+                                  ? "尚未選取快照"
+                                  : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (instanceMode == SnapshotPreviewMode.followTimeline)
+                          Builder(
+                            builder: (context) {
+                              final event = snapshotEventAtTick(
+                                ref.watch(
+                                  snapshotTimelineEventsProvider((
+                                    kind: SnapshotSubjectKind.itemInstance,
+                                    id: instance.instanceId,
+                                  )),
+                                ),
+                                tick,
+                                selectedId:
+                                    _selectedInstanceSnapshotIds[instance
+                                            .instanceId] ==
+                                        null
+                                    ? null
+                                    : "itemInstance:${_selectedInstanceSnapshotIds[instance.instanceId]}",
+                              );
+                              final change = event == null || event.inherited
+                                  ? null
+                                  : workspace.itemInstanceStateChanges
+                                        .where(
+                                          (change) =>
+                                              change.stateChangeId ==
+                                              event.sourceId,
+                                        )
+                                        .firstOrNull;
+                              final state = resolveItemInstanceSnapshot(
+                                itemClass: itemClass,
+                                instance: instance,
+                                classChanges: workspace.itemClassStateChanges,
+                                instanceChanges:
+                                    workspace.itemInstanceStateChanges,
+                                timeline: ref.watch(timelineDocumentProvider),
+                                atTick: tick,
+                                throughStateChangeId: change?.stateChangeId,
+                              );
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (change != null) ...[
+                                    Text("編輯中：${event!.label}"),
+                                    const SizedBox(height: AppSpacing.md),
+                                  ],
+                                  ItemSnapshotStateEditor(
+                                    key: ValueKey(
+                                      "item-instance-editor-${instance.instanceId}-${change?.stateChangeId ?? 'preview-$tick'}",
+                                    ),
+                                    state: state,
+                                    characters: _relationTargets()
+                                        .where(
+                                          (target) =>
+                                              target.kind ==
+                                              ItemRelationTargetKind.character,
+                                        )
+                                        .map(
+                                          (target) => DropdownOption(
+                                            value: target.id,
+                                            label: target.label,
+                                          ),
+                                        )
+                                        .toList(),
+                                    locations: _relationTargets()
+                                        .where(
+                                          (target) =>
+                                              target.kind ==
+                                              ItemRelationTargetKind.location,
+                                        )
+                                        .map(
+                                          (target) => DropdownOption(
+                                            value: target.id,
+                                            label: target.label,
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: change == null
+                                        ? null
+                                        : (patch) => _updateInstanceSnapshot(
+                                            change.stateChangeId,
+                                            patch,
+                                          ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        Builder(
+                          builder: (context) {
+                            final state =
+                                instanceMode == SnapshotPreviewMode.baseline
+                                ? resolveItemInstanceSnapshot(
+                                    itemClass: itemClass,
+                                    instance: instance,
+                                    timeline: ref.watch(
+                                      timelineDocumentProvider,
+                                    ),
+                                    atTick: 0,
+                                  )
+                                : ref.watch(
+                                    itemInstanceSnapshotProvider((
+                                      id: instance.instanceId,
+                                      tick: tick,
+                                    )),
+                                  );
+                            return Text(
+                              [
+                                state?.exists == false ? "此場景尚未存在" : "此場景存在",
+                                if (state?.status.isNotEmpty == true)
+                                  state!.status,
+                                if (state?.holderCharacterId != null)
+                                  "持有人：${targetLabels["${ItemRelationTargetKind.character.name}:${state!.holderCharacterId}"] ?? state.holderCharacterId}",
+                                if (state?.locationId != null)
+                                  "所在地：${targetLabels["${ItemRelationTargetKind.location.name}:${state!.locationId}"] ?? state.locationId}",
+                              ].join("・"),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (changes.isNotEmpty)
+                    ...changes.map(
+                      (change) => ListTile(
+                        dense: true,
+                        key: ValueKey(
+                          "item-instance-snapshot-${change.stateChangeId}",
+                        ),
+                        leading: const Icon(Icons.history, size: 20),
+                        title: Text(
+                          sceneLabels[change.sceneUUID] ?? change.sceneUUID,
+                        ),
+                        subtitle: Text(
+                          change.patch.status?.value?.isNotEmpty == true
+                              ? change.patch.status!.value!
+                              : "連結此 Scene",
+                        ),
+                        trailing: RevisionRecordMarker(
+                          recordKey: ProjectRecordKey(
+                            kind: ProjectRecordKind.itemInstanceStateChange,
+                            recordId: change.stateChangeId,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDetails(ItemClassData itemClass, ItemWorkspaceData workspace) {
     final instances = workspace.itemInstances.values
         .where((value) => value.classId == itemClass.classId && !value.archived)
         .toList(growable: false);
     final tick = ref.watch(timelineViewProvider).currentTick;
-    final snapshot = ref.watch(
-      itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
-    );
+    final previewMode =
+        _classPreviewModes[itemClass.classId] ??
+        SnapshotPreviewMode.followTimeline;
+    final snapshot = previewMode == SnapshotPreviewMode.baseline
+        ? itemClass.defaultState
+        : ref.watch(
+            itemClassSnapshotProvider((id: itemClass.classId, tick: tick)),
+          );
     final instanceIds = instances.map((value) => value.instanceId).toSet();
     final relations = workspace.itemRelations
         .where(
@@ -1952,23 +2587,77 @@ class _ItemViewState extends ConsumerState<ItemView> {
       for (final target in _relationTargets())
         "${target.kind.name}:${target.id}": target.label,
     };
-    final sceneLabels = _sceneLabels();
-    final classChanges =
-        workspace.itemClassStateChanges
-            .where((value) => value.classId == itemClass.classId)
-            .toList(growable: false)
-          ..sort((a, b) {
-            final tickOrder = b.fallbackTick.compareTo(a.fallbackTick);
-            return tickOrder != 0
-                ? tickOrder
-                : b.sequence.compareTo(a.sequence);
-          });
-    final selectedSnapshotChange = classChanges
-        .where((change) => change.stateChangeId == _selectedClassSnapshotId)
-        .firstOrNull;
-    final snapshotSelection =
-        selectedSnapshotChange?.stateChangeId ?? _baselineSnapshotSelection;
-
+    if (previewMode == SnapshotPreviewMode.followTimeline) {
+      final event = snapshotEventAtTick(
+        ref.watch(
+          snapshotTimelineEventsProvider((
+            kind: SnapshotSubjectKind.itemClass,
+            id: itemClass.classId,
+          )),
+        ),
+        tick,
+        selectedId: _selectedClassSnapshotId == null
+            ? null
+            : "itemClass:$_selectedClassSnapshotId",
+      );
+      final change = workspace.itemClassStateChanges
+          .where((change) => change.stateChangeId == event?.sourceId)
+          .firstOrNull;
+      final state = resolveItemClassSnapshot(
+        itemClass: itemClass,
+        changes: workspace.itemClassStateChanges,
+        timeline: ref.watch(timelineDocumentProvider),
+        atTick: tick,
+        throughStateChangeId: change?.stateChangeId,
+      );
+      return ListView(
+        key: ValueKey("item-details-${itemClass.classId}"),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+          if (change != null) ...[
+            Text("編輯中：${event!.label}"),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          ItemSnapshotStateEditor(
+            key: ValueKey(
+              "item-class-editor-${itemClass.classId}-${change?.stateChangeId ?? 'preview-$tick'}",
+            ),
+            state: state,
+            characters: _relationTargets()
+                .where(
+                  (target) => target.kind == ItemRelationTargetKind.character,
+                )
+                .map(
+                  (target) =>
+                      DropdownOption(value: target.id, label: target.label),
+                )
+                .toList(),
+            locations: _relationTargets()
+                .where(
+                  (target) => target.kind == ItemRelationTargetKind.location,
+                )
+                .map(
+                  (target) =>
+                      DropdownOption(value: target.id, label: target.label),
+                )
+                .toList(),
+            onChanged: change == null
+                ? null
+                : (patch) => _updateClassSnapshot(change.stateChangeId, patch),
+          ),
+          if (itemClass.mode != ItemMode.dedicated ||
+              state.allocations.isNotEmpty)
+            _buildAllocations(
+              itemClass,
+              state,
+              targetLabels,
+              tick,
+              editDefaults: false,
+              allowSceneActions: change != null,
+            ),
+        ],
+      );
+    }
     return ListView(
       key: ValueKey("item-details-${itemClass.classId}"),
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -2081,133 +2770,6 @@ class _ItemViewState extends ConsumerState<ItemView> {
           ),
         ),
         const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: AppDropdownField<String>(
-                key: ValueKey(
-                  "item-snapshot-selector-${itemClass.classId}-$snapshotSelection",
-                ),
-                value: snapshotSelection,
-                labelText: "物品快照",
-                options: [
-                  const DropdownOption(
-                    value: _baselineSnapshotSelection,
-                    label: "預設",
-                  ),
-                  for (final change in classChanges.reversed)
-                    DropdownOption(
-                      value: change.stateChangeId,
-                      label: sceneLabels[change.sceneUUID] ?? change.sceneUUID,
-                    ),
-                ],
-                onChanged: (value) {
-                  final selectedId = value == _baselineSnapshotSelection
-                      ? null
-                      : value;
-                  setState(() => _selectedClassSnapshotId = selectedId);
-                  if (selectedId == null) return;
-                  final change = classChanges.firstWhere(
-                    (entry) => entry.stateChangeId == selectedId,
-                  );
-                  final resolved = resolveItemClassStateChangeTime(
-                    change,
-                    ref.read(timelineDocumentProvider),
-                  );
-                  ref
-                      .read(timelineViewProvider.notifier)
-                      .setCurrentTick(resolved.resolvedTick);
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              key: const Key("item-add-snapshot"),
-              tooltip: "新增 Scene 快照",
-              onPressed: () => _addClassSnapshot(itemClass),
-              style: IconButton.styleFrom(foregroundColor: Colors.green),
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-            ),
-            IconButton(
-              key: const Key("item-delete-selected-snapshot"),
-              tooltip: "刪除目前快照",
-              onPressed: selectedSnapshotChange == null
-                  ? null
-                  : () {
-                      ref
-                          .read(itemWorkspaceProvider.notifier)
-                          .removeClassStateChange(
-                            selectedSnapshotChange.stateChangeId,
-                          );
-                      setState(() => _selectedClassSnapshotId = null);
-                    },
-              style: IconButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-              ),
-              icon: const Icon(Icons.delete_outline),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.movie_outlined),
-            title: const Text("目前故事狀態"),
-            subtitle: Text(
-              snapshot == null
-                  ? "無快照"
-                  : [
-                      snapshot.exists ? "存在" : "尚未存在",
-                      snapshot.status.isEmpty ? "未設定狀態" : snapshot.status,
-                      if (snapshot.holderCharacterId != null)
-                        "持有人：${targetLabels["${ItemRelationTargetKind.character.name}:${snapshot.holderCharacterId}"] ?? snapshot.holderCharacterId}",
-                      if (snapshot.locationId != null)
-                        "所在地：${targetLabels["${ItemRelationTargetKind.location.name}:${snapshot.locationId}"] ?? snapshot.locationId}",
-                    ].join("・"),
-            ),
-          ),
-        ),
-        if (classChanges.isNotEmpty)
-          ExpansionTile(
-            key: const Key("item-class-snapshot-history"),
-            leading: const Icon(Icons.history),
-            title: Text("Class 快照歷程（${classChanges.length}）"),
-            children: classChanges
-                .map(
-                  (change) => ListTile(
-                    key: ValueKey(
-                      "item-class-snapshot-${change.stateChangeId}",
-                    ),
-                    title: Text(
-                      sceneLabels[change.sceneUUID] ?? change.sceneUUID,
-                    ),
-                    subtitle: Text(
-                      change.patch.status?.value?.isNotEmpty == true
-                          ? change.patch.status!.value!
-                          : "連結此 Scene",
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        RevisionRecordMarker(
-                          recordKey: ProjectRecordKey(
-                            kind: ProjectRecordKind.itemClassStateChange,
-                            recordId: change.stateChangeId,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: "移除快照",
-                          onPressed: () => ref
-                              .read(itemWorkspaceProvider.notifier)
-                              .removeClassStateChange(change.stateChangeId),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-                .toList(growable: false),
-          ),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -2244,197 +2806,22 @@ class _ItemViewState extends ConsumerState<ItemView> {
             child: Text("尚未建立單件物品。"),
           )
         else if (itemClass.mode != ItemMode.generic)
-          ...instances.map((instance) {
-            final changes =
-                workspace.itemInstanceStateChanges
-                    .where((value) => value.instanceId == instance.instanceId)
-                    .toList(growable: false)
-                  ..sort((a, b) {
-                    final tickOrder = b.fallbackTick.compareTo(a.fallbackTick);
-                    return tickOrder != 0
-                        ? tickOrder
-                        : b.sequence.compareTo(a.sequence);
-                  });
-            final selectedChange = changes
-                .where(
-                  (change) =>
-                      change.stateChangeId ==
-                      _selectedInstanceSnapshotIds[instance.instanceId],
-                )
-                .firstOrNull;
-            final selection =
-                selectedChange?.stateChangeId ?? _baselineSnapshotSelection;
-            return ExpansionTile(
-              key: ValueKey("item-instance-${instance.instanceId}"),
+          ...instances.map(
+            (instance) => ListTile(
+              key: ValueKey("item-instance-details-${instance.instanceId}"),
               leading: const Icon(Icons.inventory_2_outlined),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      instance.name.isEmpty ? itemClass.name : instance.name,
-                    ),
-                  ),
-                  RevisionRecordMarker(
-                    recordKey: ProjectRecordKey(
-                      kind: ProjectRecordKind.itemInstance,
-                      recordId: instance.instanceId,
-                    ),
-                  ),
-                ],
+              title: Text(
+                instance.name.isEmpty ? itemClass.name : instance.name,
               ),
               subtitle: Text("ID：${instance.instanceId}"),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: AppDropdownField<String>(
-                              key: ValueKey(
-                                "item-instance-snapshot-selector-${instance.instanceId}-$selection",
-                              ),
-                              value: selection,
-                              labelText: "單件物品快照",
-                              options: [
-                                const DropdownOption(
-                                  value: _baselineSnapshotSelection,
-                                  label: "預設",
-                                ),
-                                for (final change in changes.reversed)
-                                  DropdownOption(
-                                    value: change.stateChangeId,
-                                    label:
-                                        sceneLabels[change.sceneUUID] ??
-                                        change.sceneUUID,
-                                  ),
-                              ],
-                              onChanged: (value) {
-                                final selectedId =
-                                    value == _baselineSnapshotSelection
-                                    ? null
-                                    : value;
-                                setState(() {
-                                  _selectedInstanceSnapshotIds[instance
-                                          .instanceId] =
-                                      selectedId;
-                                });
-                                if (selectedId == null) return;
-                                final change = changes.firstWhere(
-                                  (entry) => entry.stateChangeId == selectedId,
-                                );
-                                final resolved =
-                                    resolveItemInstanceStateChangeTime(
-                                      change,
-                                      ref.read(timelineDocumentProvider),
-                                    );
-                                ref
-                                    .read(timelineViewProvider.notifier)
-                                    .setCurrentTick(resolved.resolvedTick);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            key: ValueKey(
-                              "item-instance-add-snapshot-${instance.instanceId}",
-                            ),
-                            tooltip: "新增 Scene 快照",
-                            onPressed: () => _addInstanceSnapshot(instance),
-                            style: IconButton.styleFrom(
-                              foregroundColor: Colors.green,
-                            ),
-                            icon: const Icon(
-                              Icons.add_photo_alternate_outlined,
-                            ),
-                          ),
-                          IconButton(
-                            key: ValueKey(
-                              "item-instance-delete-selected-snapshot-${instance.instanceId}",
-                            ),
-                            tooltip: "刪除目前快照",
-                            onPressed: selectedChange == null
-                                ? null
-                                : () {
-                                    ref
-                                        .read(itemWorkspaceProvider.notifier)
-                                        .removeInstanceStateChange(
-                                          selectedChange.stateChangeId,
-                                        );
-                                    setState(() {
-                                      _selectedInstanceSnapshotIds.remove(
-                                        instance.instanceId,
-                                      );
-                                    });
-                                  },
-                            style: IconButton.styleFrom(
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.error,
-                            ),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Builder(
-                        builder: (context) {
-                          final state = ref.watch(
-                            itemInstanceSnapshotProvider((
-                              id: instance.instanceId,
-                              tick: tick,
-                            )),
-                          );
-                          return Text(
-                            [
-                              state?.exists == false ? "此場景尚未存在" : "此場景存在",
-                              if (state?.status.isNotEmpty == true)
-                                state!.status,
-                              if (state?.holderCharacterId != null)
-                                "持有人：${targetLabels["${ItemRelationTargetKind.character.name}:${state!.holderCharacterId}"] ?? state.holderCharacterId}",
-                              if (state?.locationId != null)
-                                "所在地：${targetLabels["${ItemRelationTargetKind.location.name}:${state!.locationId}"] ?? state.locationId}",
-                            ].join("・"),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+              trailing: RevisionRecordMarker(
+                recordKey: ProjectRecordKey(
+                  kind: ProjectRecordKind.itemInstance,
+                  recordId: instance.instanceId,
                 ),
-                if (changes.isNotEmpty)
-                  ...changes.map(
-                    (change) => ListTile(
-                      dense: true,
-                      key: ValueKey(
-                        "item-instance-snapshot-${change.stateChangeId}",
-                      ),
-                      leading: const Icon(Icons.history, size: 20),
-                      title: Text(
-                        sceneLabels[change.sceneUUID] ?? change.sceneUUID,
-                      ),
-                      subtitle: Text(
-                        change.patch.status?.value?.isNotEmpty == true
-                            ? change.patch.status!.value!
-                            : "連結此 Scene",
-                      ),
-                      trailing: RevisionRecordMarker(
-                        recordKey: ProjectRecordKey(
-                          kind: ProjectRecordKind.itemInstanceStateChange,
-                          recordId: change.stateChangeId,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          }),
+              ),
+            ),
+          ),
         const SizedBox(height: 24),
         Row(
           children: [
@@ -2479,12 +2866,13 @@ class _ItemViewState extends ConsumerState<ItemView> {
                       recordId: relation.relationId,
                     ),
                   ),
-                  IconButton(
-                    tooltip: "移除關聯",
+                  NeonIconButton(
+                    label: "移除關聯",
                     onPressed: () => ref
                         .read(itemWorkspaceProvider.notifier)
                         .removeRelation(relation.relationId),
-                    icon: const Icon(Icons.delete_outline),
+                    icon: Icons.delete_outline,
+                    destructive: true,
                   ),
                 ],
               ),
@@ -2498,8 +2886,10 @@ class _ItemViewState extends ConsumerState<ItemView> {
     ItemClassData itemClass,
     ItemSnapshotState currentState,
     Map<String, String> targetLabels,
-    int tick,
-  ) {
+    int tick, {
+    bool editDefaults = true,
+    bool allowSceneActions = true,
+  }) {
     final allocations = currentState.allocations;
     final knownTotal = allocations
         .where((value) => value.quantity != null)
@@ -2525,12 +2915,13 @@ class _ItemViewState extends ConsumerState<ItemView> {
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
-            FilledButton.tonalIcon(
-              key: const Key("item-add-allocation"),
-              onPressed: () => _addAllocation(itemClass),
-              icon: const Icon(Icons.add),
-              label: const Text("新增分配"),
-            ),
+            if (editDefaults)
+              FilledButton.tonalIcon(
+                key: const Key("item-add-allocation"),
+                onPressed: () => _addAllocation(itemClass),
+                icon: const Icon(Icons.add),
+                label: const Text("新增分配"),
+              ),
           ],
         ),
         if (allocations.isEmpty)
@@ -2569,29 +2960,32 @@ class _ItemViewState extends ConsumerState<ItemView> {
               trailing: Wrap(
                 children: [
                   if (itemClass.mode != ItemMode.dedicated)
-                    IconButton(
+                    NeonIconButton(
                       key: ValueKey("item-transfer-${allocation.allocationId}"),
-                      tooltip: "轉移數量",
-                      onPressed: () => _transferAllocation(
-                        itemClass,
-                        currentState,
-                        allocation,
-                      ),
-                      icon: const Icon(Icons.swap_horiz),
+                      label: "轉移數量",
+                      onPressed: !allowSceneActions
+                          ? null
+                          : () => _transferAllocation(
+                              itemClass,
+                              currentState,
+                              allocation,
+                            ),
+                      icon: Icons.swap_horiz,
                     ),
                   if (itemClass.mode == ItemMode.semiDedicated)
-                    IconButton(
+                    NeonIconButton(
                       key: ValueKey(
                         "item-materialize-${allocation.allocationId}",
                       ),
-                      tooltip: "拆出單件物品",
-                      onPressed: () =>
-                          _materializeAllocation(itemClass, allocation),
-                      icon: const Icon(Icons.call_split_outlined),
+                      label: "拆出單件物品",
+                      onPressed: !allowSceneActions
+                          ? null
+                          : () => _materializeAllocation(itemClass, allocation),
+                      icon: Icons.call_split_outlined,
                     ),
-                  if (itemClass.mode != ItemMode.dedicated)
-                    IconButton(
-                      tooltip: "移除預設分配",
+                  if (editDefaults && itemClass.mode != ItemMode.dedicated)
+                    NeonIconButton(
+                      label: "移除預設分配",
                       onPressed:
                           itemClass.defaultState.allocations.any(
                             (value) =>
@@ -2602,7 +2996,8 @@ class _ItemViewState extends ConsumerState<ItemView> {
                               allocation.allocationId,
                             )
                           : null,
-                      icon: const Icon(Icons.delete_outline),
+                      icon: Icons.delete_outline,
+                      destructive: true,
                     ),
                 ],
               ),

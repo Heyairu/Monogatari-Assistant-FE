@@ -6,8 +6,10 @@ import 'package:uuid/uuid.dart';
 import "../../ui_library/spacing.dart";
 import '../../bin/content.dart';
 import '../../presentation/providers/project_state_providers.dart';
-import '../../ui_library/control_size.dart';
 import '../inline_annotations/inline_annotation_edit_dialog.dart';
+import '../inline_annotations/inline_annotation.dart';
+import '../inline_annotations/inline_annotation_parser.dart';
+import '../inline_annotations/inline_annotation_syntax.dart';
 import '../inline_annotations/mosaic_editing_controller.dart';
 import 'phrase_body_validator.dart';
 import 'phrase_entry.dart';
@@ -359,41 +361,23 @@ final class _PhraseLibraryDialogState
     return Dialog(
       child: SizedBox(
         width: 680,
-        height: 560,
+        height: editing ? 680 : 560,
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.space20),
           child: editing
-              ? LayoutBuilder(
-                  builder: (context, constraints) {
-                    final minimumHeight =
-                        520 +
-                        (AppControlSize.heightForContext(context) -
-                                AppControlSize.height) *
-                            6;
-                    return SingleChildScrollView(
-                      child: SizedBox(
-                        height: constraints.maxHeight > minimumHeight
-                            ? constraints.maxHeight
-                            : minimumHeight,
-                        child: _PhraseEditForm(
-                          key: ValueKey(_editing?.id ?? 'new'),
-                          original: _editing,
-                          initialBody: _newBody,
-                          initialTags: _newTags,
-                          initialScope: _editingScope,
-                          globalReady: globalState.hasValue,
-                          existing: scoped.map((item) => item.phrase).toList(),
-                          onCancel: _closeEditor,
-                          onSave: (entry) => _save(
-                            entry,
-                            originalScope: _editing == null
-                                ? null
-                                : _editingScope,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+              ? _PhraseEditForm(
+                  key: ValueKey(_editing?.id ?? 'new'),
+                  original: _editing,
+                  initialBody: _newBody,
+                  initialTags: _newTags,
+                  initialScope: _editingScope,
+                  globalReady: globalState.hasValue,
+                  existing: scoped.map((item) => item.phrase).toList(),
+                  onCancel: _closeEditor,
+                  onSave: (entry) => _save(
+                    entry,
+                    originalScope: _editing == null ? null : _editingScope,
+                  ),
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -627,6 +611,40 @@ final class _PhraseEditFormState extends State<_PhraseEditForm> {
     _body.replaceRawRange(range, result);
   }
 
+  TextRange get _bodySelectionRange {
+    final selection = _body.selection;
+    return selection.isValid
+        ? _body.projection.displayRangeToRaw(
+            TextRange(start: selection.start, end: selection.end),
+          )
+        : TextRange.collapsed(_body.rawText.length);
+  }
+
+  void _insertTarget(String trigger) {
+    final range = _bodySelectionRange;
+    _bodyFocus.requestFocus();
+    _body.replaceRawRange(range, trigger);
+  }
+
+  Future<void> _insertMark() async {
+    final original = _body.rawText;
+    final range = _bodySelectionRange;
+    final syntax = InlineAnnotationSyntax.format(
+      kind: InlineAnnotationKind.emphasis,
+      displayText: _body.selection.isValid
+          ? _body.plainTextForSelection(_body.selection)
+          : '',
+    );
+    final result = await InlineAnnotationEditDialog.show(
+      context: context,
+      annotation: const InlineAnnotationParser().parse(syntax).single,
+      rawSyntax: syntax,
+    );
+    if (!mounted || result == null || _body.rawText != original) return;
+    _body.replaceRawRange(range, result);
+    _bodyFocus.requestFocus();
+  }
+
   void _addTag(String value) {
     final tag = value.trim();
     if (tag.isEmpty) return;
@@ -692,166 +710,212 @@ final class _PhraseEditFormState extends State<_PhraseEditForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          widget.original == null ? '新增短語' : '編輯短語',
-          style: const TextStyle(fontSize: 20),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          key: const ValueKey('phrase-shortcut'),
-          controller: _shortcut,
-          autofocus: true,
-          decoration: appFieldDecoration(
-            context,
-            decoration: const InputDecoration(labelText: '短碼（1–32 位英數、_、-）'),
-          ),
-        ),
-        Row(
-          children: [
-            const Text('所有專案可用'),
-            const SizedBox(width: 8),
-            Switch(
-              key: const ValueKey('phrase-global-scope'),
-              value: _scope == PhraseScope.global && !hasMention,
-              onChanged: hasMention || !widget.globalReady
-                  ? null
-                  : (value) => setState(() {
-                      _scope = value ? PhraseScope.global : PhraseScope.project;
-                    }),
-            ),
-            if (hasMention)
-              const Expanded(
-                child: Text(
-                  '含 Mention，只能用於目前專案',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        const Text('標籤'),
-        Wrap(
-          key: const ValueKey('phrase-tags'),
-          spacing: 6,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            for (final tag in _tags)
-              InputChip(
-                label: Text(tag),
-                onDeleted: () => setState(() => _tags.remove(tag)),
-              ),
-            SizedBox(
-              width: 160,
-              child: TextField(
-                key: const ValueKey('phrase-tag-input'),
-                controller: _tagInput,
-                decoration: appFieldDecoration(
-                  context,
-                  decoration: const InputDecoration(
-                    hintText: '新增標籤',
-                    isDense: true,
-                  ),
-                ),
-                onSubmitted: _addTag,
-              ),
-            ),
-            IconButton(
-              tooltip: '新增標籤',
-              onPressed: () => _addTag(_tagInput.text),
-              icon: const Icon(Icons.add),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Icon(Icons.notes_rounded, size: 18, color: colors.primary),
-            const SizedBox(width: 6),
-            const Text('內容'),
-            Expanded(
-              child: Text(
-                '輸入文字或使用 @ 插入提及',
-                textAlign: TextAlign.end,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
         Expanded(
-          child: MouseRegion(
-            onEnter: (_) => setState(() => _bodyHovered = true),
-            onExit: (_) => setState(() => _bodyHovered = false),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest,
-                border: Border.all(
-                  color: _bodyHovered ? colors.primary : colors.outlineVariant,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  widget.original == null ? '新增短語' : '編輯短語',
+                  style: const TextStyle(fontSize: 20),
                 ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Padding(
-                // EditorTextBox already leaves 4px on the left for CodeField.
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xs,
-                  AppSpacing.sm,
-                  AppSpacing.sm,
-                  AppSpacing.sm,
-                ),
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    hoverColor: Colors.transparent,
-                    inputDecorationTheme: Theme.of(context).inputDecorationTheme
-                        .copyWith(
-                          fillColor: colors.surfaceContainerHighest,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                  ),
-                  child: KeyedSubtree(
-                    key: const ValueKey('phrase-body'),
-                    child: EditorTextBox(
-                      controller: _body,
-                      focusNode: _bodyFocus,
-                      usePlainTextQuillEditor: false,
-                      showPhraseActions: false,
-                      backgroundColor: colors.surfaceContainerHighest,
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('phrase-shortcut'),
+                  controller: _shortcut,
+                  autofocus: true,
+                  decoration: appFieldDecoration(
+                    context,
+                    decoration: const InputDecoration(
+                      labelText: '短碼（1–32 位英數、_、-）',
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
-        if (_body.annotations.isNotEmpty)
-          SizedBox(
-            height: 42,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (var i = 0; i < _body.annotations.length; i++)
-                  TextButton(
-                    onPressed: () => _editMention(i),
-                    child: Text('Mention：${_body.annotations[i].displayText}'),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.sm,
+                  children: [
+                    const Text('所有專案可用'),
+                    Switch(
+                      key: const ValueKey('phrase-global-scope'),
+                      value: _scope == PhraseScope.global && !hasMention,
+                      onChanged: hasMention || !widget.globalReady
+                          ? null
+                          : (value) => setState(() {
+                              _scope = value
+                                  ? PhraseScope.global
+                                  : PhraseScope.project;
+                            }),
+                    ),
+                    if (hasMention) const Text('含 Mention，只能用於目前專案'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text('標籤'),
+                Wrap(
+                  key: const ValueKey('phrase-tags'),
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final tag in _tags)
+                      InputChip(
+                        label: Text(tag),
+                        onDeleted: () => setState(() => _tags.remove(tag)),
+                      ),
+                    SizedBox(
+                      width: 160,
+                      child: TextField(
+                        key: const ValueKey('phrase-tag-input'),
+                        controller: _tagInput,
+                        decoration: appFieldDecoration(
+                          context,
+                          decoration: const InputDecoration(
+                            hintText: '新增標籤',
+                            isDense: true,
+                          ),
+                        ),
+                        onSubmitted: _addTag,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '新增標籤',
+                      onPressed: () => _addTag(_tagInput.text),
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.notes_rounded, size: 18, color: colors.primary),
+                    const SizedBox(width: 6),
+                    const Text('內容'),
+                    Expanded(
+                      child: Text(
+                        '提及限目前專案；文字標記可供所有專案使用',
+                        textAlign: TextAlign.end,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (final target in const [
+                      (label: '人物', trigger: '@', icon: Icons.person_outline),
+                      (
+                        label: '物品',
+                        trigger: '*',
+                        icon: Icons.inventory_2_outlined,
+                      ),
+                      (label: '地點', trigger: '!', icon: Icons.place_outlined),
+                      (label: '事件', trigger: '#', icon: Icons.event_outlined),
+                    ])
+                      OutlinedButton.icon(
+                        key: ValueKey('phrase-insert-${target.trigger}'),
+                        onPressed: () => _insertTarget(target.trigger),
+                        icon: Icon(target.icon),
+                        label: Text(target.label),
+                      ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('phrase-insert-mark'),
+                      onPressed: _insertMark,
+                      icon: const Icon(Icons.highlight_outlined),
+                      label: const Text('標記'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(
+                  height: 220,
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _bodyHovered = true),
+                    onExit: (_) => setState(() => _bodyHovered = false),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerHighest,
+                        border: Border.all(
+                          color: _bodyHovered
+                              ? colors.primary
+                              : colors.outlineVariant,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Padding(
+                        // EditorTextBox already leaves 4px on the left for CodeField.
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.xs,
+                          AppSpacing.sm,
+                          AppSpacing.sm,
+                          AppSpacing.sm,
+                        ),
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            hoverColor: Colors.transparent,
+                            inputDecorationTheme: Theme.of(context)
+                                .inputDecorationTheme
+                                .copyWith(
+                                  fillColor: colors.surfaceContainerHighest,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                          ),
+                          child: KeyedSubtree(
+                            key: const ValueKey('phrase-body'),
+                            child: EditorTextBox(
+                              controller: _body,
+                              focusNode: _bodyFocus,
+                              usePlainTextQuillEditor: false,
+                              showPhraseActions: false,
+                              backgroundColor: colors.surfaceContainerHighest,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
+                ),
+                if (_body.annotations.isNotEmpty)
+                  SizedBox(
+                    height: 42,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (var i = 0; i < _body.annotations.length; i++)
+                          TextButton(
+                            onPressed: () => _editMention(i),
+                            child: Text(
+                              'Mention：${_body.annotations[i].displayText}',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                if (!validation.isValid) const Text('Mosaic 語法不完整'),
               ],
             ),
           ),
-        if (_error != null)
-          Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        if (!validation.isValid) const Text('Mosaic 語法不完整'),
+        ),
+        const SizedBox(height: AppSpacing.md),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(onPressed: widget.onCancel, child: const Text('返回')),
+            const SizedBox(width: AppSpacing.sm),
             FilledButton(onPressed: _submit, child: const Text('儲存')),
           ],
         ),

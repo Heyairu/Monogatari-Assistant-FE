@@ -15,6 +15,9 @@ class TimelineMiniView extends StatelessWidget {
   final int? maxTick;
   final ValueChanged<int>? onTickChanged;
   final ValueChanged<MiniTimelineMarker>? onMarkerTap;
+  final ValueChanged<List<MiniTimelineMarker>>? onMarkerGroupTap;
+  final String? selectedMarkerId;
+  final bool showPlayhead;
   final double height;
   final double pixelsPerTick;
   final String emptyMessage;
@@ -30,6 +33,9 @@ class TimelineMiniView extends StatelessWidget {
     this.maxTick,
     this.onTickChanged,
     this.onMarkerTap,
+    this.onMarkerGroupTap,
+    this.selectedMarkerId,
+    this.showPlayhead = true,
     this.height = 120,
     this.pixelsPerTick = 48,
     this.emptyMessage = "尚無時間軸節點",
@@ -55,6 +61,9 @@ class TimelineMiniView extends StatelessWidget {
     maxTick: maxTick,
     onTickChanged: onTickChanged,
     onMarkerTap: onMarkerTap,
+    onMarkerGroupTap: onMarkerGroupTap,
+    selectedMarkerId: selectedMarkerId,
+    showPlayhead: showPlayhead,
     height: height,
     pixelsPerTick: pixelsPerTick,
     emptyMessage: emptyMessage,

@@ -30,7 +30,39 @@ void _placeScene(ProviderContainer container, String sceneId, {int tick = 12}) {
       );
 }
 
+// These management tests edit default item data; synchronized event editing
+// is covered in snapshot_sync_editing_test.dart.
+Future<void> _editDefaults(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  final buttons = tester.widgetList<NeonIconButton>(
+    find.byKey(const ValueKey("snapshot-preview-follow")),
+  );
+  if (buttons.isNotEmpty && buttons.first.selected == true) {
+    buttons.first.onPressed!();
+    await tester.pumpAndSettle();
+  }
+}
+
 void main() {
+  Finder detailScrollable() => find
+      .descendant(
+        of: find.byWidgetPredicate(
+          (widget) =>
+              widget is ListView &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                "item-details-",
+              ),
+        ),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  Finder timelineScrollable() => find
+      .descendant(
+        of: find.byKey(const Key("item-narrow-sections")),
+        matching: find.byType(Scrollable),
+      )
+      .first;
   testWidgets(
     "item search, filters and details share input surfaces and height",
     (tester) async {
@@ -62,6 +94,7 @@ void main() {
               ),
             ),
           );
+          await _editDefaults(tester);
           await tester.pumpAndSettle();
           for (final label in ["搜尋物品", "管理模式", "歸屬", "名稱", "數量單位"]) {
             final field = find.byWidgetPredicate(
@@ -110,6 +143,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.pumpAndSettle();
 
     expect(find.text("物品設定"), findsOneWidget);
@@ -158,6 +192,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip("封存物品"));
     await tester.pumpAndSettle();
@@ -219,6 +254,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.pump();
 
     tester
@@ -281,6 +317,7 @@ void main() {
         ),
       ),
     );
+    await _editDefaults(tester);
     await tester.pump();
 
     expect(
@@ -296,6 +333,7 @@ void main() {
         ),
       ),
     );
+    await _editDefaults(tester);
     await tester.pump();
 
     expect(find.byKey(const ValueKey("item-details-first")), findsOneWidget);
@@ -307,6 +345,7 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: ItemView())),
     );
+    await _editDefaults(tester);
 
     expect(find.text("新增第一個物品"), findsOneWidget);
     await tester.tap(find.byKey(const Key("item-add-class")));
@@ -315,25 +354,38 @@ void main() {
     expect(find.byKey(const Key("item-mode-switch")), findsOneWidget);
     expect(find.text("專用"), findsWidgets);
 
+    await tester.ensureVisible(find.byKey(const Key("item-mode-switch")));
     await tester.tap(find.text("半專用").last);
     await tester.pump();
     final addInstanceButton = find.byKey(const Key("item-add-instance"));
+    await tester.ensureVisible(detailScrollable());
     await tester.scrollUntilVisible(
       addInstanceButton,
       400,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: detailScrollable(),
     );
     tester.widget<FilledButton>(addInstanceButton).onPressed!();
     await tester.pump();
 
     expect(find.byKey(const Key("item-add-instance")), findsOneWidget);
-    expect(find.textContaining("ID："), findsNWidgets(2));
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ExpansionTile &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              "item-instance-",
+            ),
+      ),
+      findsNWidgets(2),
+    );
 
     final modeSwitch = find.byKey(const Key("item-mode-switch"));
+    await tester.ensureVisible(detailScrollable());
     await tester.scrollUntilVisible(
       modeSwitch,
       -400,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: detailScrollable(),
     );
     tester.widget<SegmentedButton<ItemMode>>(modeSwitch).onSelectionChanged!({
       ItemMode.dedicated,
@@ -362,6 +414,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
     final classId = container
@@ -395,6 +448,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
 
@@ -421,6 +475,7 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: ItemView())),
     );
+    await _editDefaults(tester);
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
     expect(find.byKey(const Key("item-narrow-sections")), findsOneWidget);
@@ -448,6 +503,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
 
     await tester.tap(find.byKey(const Key("item-migrate-world")));
     await tester.pumpAndSettle();
@@ -489,12 +545,24 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key("item-add-snapshot")));
     await tester.tap(find.byKey(const Key("item-add-snapshot")));
     await tester.pumpAndSettle();
     expect(find.text("主線 / 事件 / 場景"), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, "狀態"), "損壞");
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(TextField, "狀態"),
+      ),
+      "損壞",
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key("item-class-snapshot-location")),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key("item-class-snapshot-location")));
     await tester.pumpAndSettle();
     await tester.tap(find.text("測試倉庫").last);
@@ -511,7 +579,8 @@ void main() {
     final deleteSnapshot = find.byKey(
       const Key("item-delete-selected-snapshot"),
     );
-    expect(tester.widget<IconButton>(deleteSnapshot).onPressed, isNotNull);
+    expect(tester.widget<NeonIconButton>(deleteSnapshot).onPressed, isNotNull);
+    await tester.ensureVisible(deleteSnapshot);
     await tester.tap(deleteSnapshot);
     await tester.pump();
     expect(
@@ -535,13 +604,15 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
 
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
+    await tester.ensureVisible(detailScrollable());
     await tester.scrollUntilVisible(
       find.byKey(const Key("item-add-relation")),
       400,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: detailScrollable(),
     );
     await tester.tap(find.byKey(const Key("item-add-relation")));
     await tester.pumpAndSettle();
@@ -589,6 +660,7 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
 
     await tester.tap(find.byKey(const Key("item-add-class")));
     await tester.pump();
@@ -597,16 +669,40 @@ void main() {
         .itemInstances
         .keys
         .single;
-    await tester.tap(find.byKey(ValueKey("item-instance-$instanceId")));
-    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(ValueKey("item-instance-$instanceId")),
+      300,
+      scrollable: timelineScrollable(),
+    );
+    await tester.pumpAndSettle();
+    final instanceHeader = find
+        .descendant(
+          of: find.byKey(ValueKey("item-instance-$instanceId")),
+          matching: find.byType(ListTile),
+        )
+        .first;
+    await tester.ensureVisible(instanceHeader);
+    await tester.pumpAndSettle();
+    await tester.tap(instanceHeader);
+    await tester.pumpAndSettle();
     final snapshotButton = find.byKey(
       ValueKey("item-instance-add-snapshot-$instanceId"),
     );
-    await tester.ensureVisible(snapshotButton);
+    await tester.scrollUntilVisible(
+      snapshotButton,
+      150,
+      scrollable: timelineScrollable(),
+    );
     await tester.pumpAndSettle();
-    tester.widget<IconButton>(snapshotButton).onPressed!();
+    tester.widget<NeonIconButton>(snapshotButton).onPressed!();
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, "狀態"), "遺失");
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(TextField, "狀態"),
+      ),
+      "遺失",
+    );
     await tester.tap(find.byKey(const Key("item-instance-snapshot-confirm")));
     await tester.pumpAndSettle();
 
@@ -619,7 +715,7 @@ void main() {
     final deleteSnapshot = find.byKey(
       ValueKey("item-instance-delete-selected-snapshot-$instanceId"),
     );
-    expect(tester.widget<IconButton>(deleteSnapshot).onPressed, isNotNull);
+    expect(tester.widget<NeonIconButton>(deleteSnapshot).onPressed, isNotNull);
     await tester.tap(deleteSnapshot);
     await tester.pump();
     expect(
@@ -655,8 +751,10 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
 
     await tester.tap(find.text("補給品").first);
+    await _editDefaults(tester);
     await tester.pump();
     final addButton = find.byKey(const Key("item-add-allocation"));
     await tester.ensureVisible(addButton);
@@ -730,13 +828,15 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.text("糧食"));
+    await _editDefaults(tester);
     await tester.pump();
     final transferButton = find.byKey(
       const ValueKey("item-transfer-source-stock"),
     );
     await tester.ensureVisible(transferButton);
-    tester.widget<IconButton>(transferButton).onPressed!();
+    tester.widget<NeonIconButton>(transferButton).onPressed!();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key("item-transfer-target")));
     await tester.pumpAndSettle();
@@ -835,13 +935,15 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.text("鑰匙").first);
+    await _editDefaults(tester);
     await tester.pumpAndSettle();
     final materializeButton = find.byKey(
       const ValueKey("item-materialize-warehouse-keys"),
     );
     await tester.ensureVisible(materializeButton);
-    tester.widget<IconButton>(materializeButton).onPressed!();
+    tester.widget<NeonIconButton>(materializeButton).onPressed!();
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key("item-materialize-name")),
@@ -906,7 +1008,25 @@ void main() {
       isTrue,
     );
     expect(find.text("北門鑰匙"), findsWidgets);
+    tester
+        .widgetList<NeonIconButton>(
+          find.byKey(const ValueKey("snapshot-preview-follow")),
+        )
+        .first
+        .onPressed!();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey("item-allocation-warehouse-keys")),
+      150,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey("item-details-keys")),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text("1 把"), findsOneWidget);
+    await _editDefaults(tester);
     final scaffoldContext = tester.element(find.byType(Scaffold));
     ScaffoldMessenger.of(scaffoldContext).hideCurrentSnackBar();
     await tester.pumpAndSettle();
@@ -972,7 +1092,9 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.text("王冠").first);
+    await _editDefaults(tester);
     await tester.pumpAndSettle();
     final modeSwitch = find.byKey(const Key("item-mode-switch"));
     tester.widget<SegmentedButton<ItemMode>>(modeSwitch).onSelectionChanged!({
@@ -1106,8 +1228,10 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.text("鑰匙").first);
     await tester.pumpAndSettle();
+    await _editDefaults(tester);
     tester
         .widget<SegmentedButton<ItemMode>>(
           find.byKey(const Key("item-mode-switch")),
@@ -1252,7 +1376,9 @@ void main() {
         child: const MaterialApp(home: ItemView()),
       ),
     );
+    await _editDefaults(tester);
     await tester.tap(find.text("工具").first);
+    await _editDefaults(tester);
     await tester.pumpAndSettle();
     tester
         .widget<SegmentedButton<ItemMode>>(

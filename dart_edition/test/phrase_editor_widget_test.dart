@@ -9,12 +9,182 @@ import 'package:monogatari_assistant/bin/findreplace.dart';
 import 'package:monogatari_assistant/bin/ui_library.dart';
 import 'package:monogatari_assistant/features/phrases/phrase_entry.dart';
 import 'package:monogatari_assistant/features/phrases/global_phrases_provider.dart';
+import 'package:monogatari_assistant/features/phrases/phrase_library_dialog.dart';
 import 'package:monogatari_assistant/features/inline_annotations/mosaic_editing_controller.dart';
+import 'package:monogatari_assistant/features/inline_annotations/inline_annotation.dart';
 import 'package:monogatari_assistant/models/character_data.dart';
+import 'package:monogatari_assistant/models/item_data.dart';
+import 'package:monogatari_assistant/models/outline_data.dart';
+import 'package:monogatari_assistant/models/world_settings_data.dart';
 import 'package:monogatari_assistant/presentation/providers/project_state_providers.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  for (final target in const [
+    (trigger: '*', kind: InlineAnnotationKind.item, name: '銀鑰匙'),
+    (trigger: '!', kind: InlineAnnotationKind.location, name: '鐘樓'),
+    (trigger: '#', kind: InlineAnnotationKind.event, name: '遠行'),
+  ]) {
+    testWidgets('${target.kind.name} toolbar inserts a project phrase', (
+      tester,
+    ) async {
+      const id = '4e251fc2-1e2b-4f78-93da-91f8c76d9a92';
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(globalPhrasesProvider.future);
+      container
+          .read(itemWorkspaceProvider.notifier)
+          .putClass(ItemClassData(classId: id, name: '銀鑰匙'));
+      container.read(worldSettingsDataProvider.notifier).setWorldSettingsData([
+        LocationData(id: id, localName: '鐘樓'),
+      ]);
+      container.read(outlineDataProvider.notifier).setOutlineData([
+        StorylineData(chapterUUID: id, storylineName: '遠行'),
+      ]);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: PhraseLibraryDialog(initialBody: '抵達 ')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('phrase-shortcut')),
+        'go',
+      );
+      await tester.tap(find.byKey(const ValueKey('phrase-global-scope')));
+      final bodyField = find.descendant(
+        of: find.byKey(const ValueKey('phrase-body')),
+        matching: find.byType(CodeField),
+      );
+      final body =
+          tester.widget<CodeField>(bodyField).controller
+              as MosaicEditingController;
+      body.selection = TextSelection.collapsed(offset: body.displayText.length);
+      await tester.tap(find.byKey(ValueKey('phrase-insert-${target.trigger}')));
+      await tester.pumpAndSettle();
+      final candidate = find.text(target.name).first;
+      await tester.ensureVisible(candidate);
+      await tester.tap(candidate);
+      await tester.pumpAndSettle();
+      expect(body.annotations.single.kind, target.kind);
+      expect(body.rawText, '抵達 //${target.trigger}<$id|${target.name}>//');
+      expect(
+        tester
+            .widget<Switch>(find.byKey(const ValueKey('phrase-global-scope')))
+            .onChanged,
+        isNull,
+      );
+      await tester.tap(find.text('儲存'));
+      await tester.pumpAndSettle();
+      expect(container.read(phrasesProvider).single.body, body.rawText);
+      expect(container.read(globalPhrasesProvider).value, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('text mark replaces selection and can be saved globally', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await container.read(globalPhrasesProvider.future);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: PhraseLibraryDialog(initialBody: '前重點後')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('phrase-shortcut')),
+      'mark',
+    );
+    final bodyField = find.descendant(
+      of: find.byKey(const ValueKey('phrase-body')),
+      matching: find.byType(CodeField),
+    );
+    final body =
+        tester.widget<CodeField>(bodyField).controller
+            as MosaicEditingController;
+    body.selection = const TextSelection(baseOffset: 1, extentOffset: 3);
+    await tester.tap(find.byKey(const ValueKey('phrase-insert-mark')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('inline-annotation-save')),
+    );
+    await tester.tap(find.byKey(const ValueKey('inline-annotation-save')));
+    await tester.pumpAndSettle();
+    expect(body.rawText, '前//^<重點>//後');
+    expect(body.annotations.single.hasTarget, isFalse);
+    await tester.tap(find.byKey(const ValueKey('phrase-global-scope')));
+    await tester.pump();
+    await tester.tap(find.text('儲存'));
+    await tester.pumpAndSettle();
+    expect(container.read(phrasesProvider), isEmpty);
+    expect(
+      container.read(globalPhrasesProvider).value!.single.body,
+      '前//^<重點>//後',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phrase footer has padding and stays visible with many tags', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 650));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.getDarkTheme(20, Colors.green),
+          home: const Scaffold(body: PhraseLibraryDialog(initialBody: '內容')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final save = find.widgetWithText(FilledButton, '儲存');
+    final back = find.widgetWithText(TextButton, '返回');
+    final footer = tester.getRect(save);
+    final dialog = tester.getRect(
+      find
+          .descendant(of: find.byType(Dialog), matching: find.byType(Material))
+          .first,
+    );
+    expect(footer.right, closeTo(dialog.right - 20, 0.5));
+    expect(footer.bottom, closeTo(dialog.bottom - 20, 0.5));
+    expect(footer.left - tester.getRect(back).right, greaterThanOrEqualTo(8));
+    final formScroll = find
+        .ancestor(
+          of: find.byKey(const ValueKey('phrase-shortcut')),
+          matching: find.byType(SingleChildScrollView),
+        )
+        .first;
+    expect(
+      footer.top - tester.getRect(formScroll).bottom,
+      greaterThanOrEqualTo(12),
+    );
+    for (var i = 0; i < 8; i++) {
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('phrase-tag-input')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('phrase-tag-input')),
+        '標籤 $i',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+    }
+    expect(find.byType(InputChip), findsNWidgets(8));
+    expect(tester.getRect(save), footer);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('plain phrase can be saved for every project', (tester) async {
     final container = ProviderContainer();

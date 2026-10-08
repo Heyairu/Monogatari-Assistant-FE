@@ -173,12 +173,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text("外在：同事"), findsNWidgets(2));
     tester
-        .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(selector)
+        .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(selector)
         .onChanged!(CharacterRelationshipDisplayMode.internal);
     await tester.pumpAndSettle();
     expect(find.text("內在：嫉妒"), findsNWidgets(2));
     tester
-        .widget<AppDropdownField<CharacterRelationshipDisplayMode>>(selector)
+        .widget<AppMenuButton<CharacterRelationshipDisplayMode>>(selector)
         .onChanged!(CharacterRelationshipDisplayMode.both);
     await tester.pumpAndSettle();
     tester

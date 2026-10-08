@@ -58,6 +58,9 @@ class MiniTimeline extends StatefulWidget {
   final int? maxTick;
   final ValueChanged<int>? onTickChanged;
   final ValueChanged<MiniTimelineMarker>? onMarkerTap;
+  final ValueChanged<List<MiniTimelineMarker>>? onMarkerGroupTap;
+  final String? selectedMarkerId;
+  final bool showPlayhead;
   final double height;
 
   /// Null fits the viewport; a fixed scale enables horizontal scrolling.
@@ -75,6 +78,9 @@ class MiniTimeline extends StatefulWidget {
     this.maxTick,
     this.onTickChanged,
     this.onMarkerTap,
+    this.onMarkerGroupTap,
+    this.selectedMarkerId,
+    this.showPlayhead = true,
     this.height = 120,
     this.pixelsPerTick,
     this.emptyMessage = "尚無時間軸節點",
@@ -278,18 +284,22 @@ class _MiniTimelineState extends State<MiniTimeline> {
         container: true,
         explicitChildNodes: true,
         label: widget.semanticLabel,
-        value: "Tick ${widget.currentTick}",
-        slider: interactive,
-        increasedValue: interactive && displayedTick < window.max
+        value: widget.showPlayhead ? "Tick ${widget.currentTick}" : "預設資料",
+        slider: interactive && widget.showPlayhead,
+        increasedValue:
+            interactive && widget.showPlayhead && displayedTick < window.max
             ? "Tick ${displayedTick + 1}"
             : null,
-        decreasedValue: interactive && displayedTick > window.min
+        decreasedValue:
+            interactive && widget.showPlayhead && displayedTick > window.min
             ? "Tick ${displayedTick - 1}"
             : null,
-        onIncrease: interactive && displayedTick < window.max
+        onIncrease:
+            interactive && widget.showPlayhead && displayedTick < window.max
             ? () => _select(displayedTick + 1, window)
             : null,
-        onDecrease: interactive && displayedTick > window.min
+        onDecrease:
+            interactive && widget.showPlayhead && displayedTick > window.min
             ? () => _select(displayedTick - 1, window)
             : null,
         child: Container(
@@ -411,6 +421,8 @@ class _MiniTimelineState extends State<MiniTimeline> {
                                     currentTick:
                                         _dragSelectedTick ?? widget.currentTick,
                                     playheadX: _dragDisplayX,
+                                    showPlayhead: widget.showPlayhead,
+                                    selectedMarkerId: widget.selectedMarkerId,
                                     rulerHeight: rulerHeight,
                                     scheme: scheme,
                                     labelStyle: labelStyle,
@@ -430,6 +442,7 @@ class _MiniTimelineState extends State<MiniTimeline> {
                                 markerTicks,
                               ),
                             if (interactive &&
+                                widget.showPlayhead &&
                                 window.contains(
                                   _dragSelectedTick ?? widget.currentTick,
                                 ))
@@ -495,6 +508,17 @@ class _MiniTimelineState extends State<MiniTimeline> {
       key: const ValueKey("mini-timeline-scrubber"),
       behavior: HitTestBehavior.translucent,
       dragStartBehavior: DragStartBehavior.down,
+      onTap: () {
+        final group = widget.markers
+            .where((m) => m.tick == widget.currentTick)
+            .toList();
+        if (group.isEmpty) return;
+        if (widget.onMarkerGroupTap != null) {
+          widget.onMarkerGroupTap!(List.unmodifiable(group));
+        } else {
+          widget.onMarkerTap?.call(group.first);
+        }
+      },
       onHorizontalDragStart: (details) => _startDrag(axis, details),
       onHorizontalDragUpdate: _updateDrag,
       onHorizontalDragEnd: (_) => _endDrag(),
@@ -502,7 +526,12 @@ class _MiniTimelineState extends State<MiniTimeline> {
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,
         child: Tooltip(
-          message: "拖動目前時間：${_dragSelectedTick ?? widget.currentTick} Tick",
+          message: [
+            "拖動目前時間：${_dragSelectedTick ?? widget.currentTick} Tick",
+            ...widget.markers
+                .where((m) => m.tick == widget.currentTick)
+                .map((m) => m.label.isEmpty ? "時間標記" : m.label),
+          ].join("\n"),
           child: Center(
             child: Icon(
               Icons.drag_indicator,
@@ -560,7 +589,10 @@ class _MiniTimelineState extends State<MiniTimeline> {
     final description = group
         .map((m) => "${m.label.isEmpty ? '時間標記' : m.label} · Tick $tick")
         .join("\n");
-    final canTap = widget.onMarkerTap != null || widget.onTickChanged != null;
+    final canTap =
+        widget.onMarkerTap != null ||
+        widget.onMarkerGroupTap != null ||
+        widget.onTickChanged != null;
     final index = markerTicks.indexOf(tick);
     final center = axis.x(tick);
     final left = math.max(
@@ -585,6 +617,7 @@ class _MiniTimelineState extends State<MiniTimeline> {
       width: math.max(0.0, right - left),
       height: rulerHeight,
       child: Tooltip(
+        key: ValueKey("mini-timeline-marker-$tick"),
         message: description,
         child: Semantics(
           label: description,
@@ -595,8 +628,11 @@ class _MiniTimelineState extends State<MiniTimeline> {
                 ? () {
                     _focusNode.requestFocus();
                     _select(tick, axis.window);
-                    // Coincident markers select the first entry in caller order.
-                    widget.onMarkerTap?.call(group.first);
+                    if (widget.onMarkerGroupTap != null) {
+                      widget.onMarkerGroupTap!(List.unmodifiable(group));
+                    } else {
+                      widget.onMarkerTap?.call(group.first);
+                    }
                   }
                 : null,
           ),
@@ -690,6 +726,8 @@ class _MiniTimelinePainter extends CustomPainter {
   final double viewportWidth;
   final int currentTick;
   final double? playheadX;
+  final bool showPlayhead;
+  final String? selectedMarkerId;
   final double rulerHeight;
   final ColorScheme scheme;
   final TextStyle labelStyle;
@@ -702,6 +740,8 @@ class _MiniTimelinePainter extends CustomPainter {
     required this.viewportWidth,
     required this.currentTick,
     this.playheadX,
+    this.showPlayhead = true,
+    this.selectedMarkerId,
     required this.rulerHeight,
     required this.scheme,
     required this.labelStyle,
@@ -757,7 +797,8 @@ class _MiniTimelinePainter extends CustomPainter {
       axis.tickAt(offset + viewportWidth) + step,
     );
     final indicatorXs = [
-      if (axis.window.contains(currentTick)) playheadX ?? axis.x(currentTick),
+      if (showPlayhead && axis.window.contains(currentTick))
+        playheadX ?? axis.x(currentTick),
       ...markers.map((m) => axis.x(m.tick)),
     ];
     var previousRight = double.negativeInfinity;
@@ -791,8 +832,18 @@ class _MiniTimelinePainter extends CustomPainter {
           ..close(),
         Paint()..color = marker.color ?? scheme.secondary,
       );
+      if (marker.id == selectedMarkerId) {
+        canvas.drawCircle(
+          Offset(x, y),
+          11,
+          Paint()
+            ..color = scheme.primary
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
     }
-    if (axis.window.contains(currentTick)) {
+    if (showPlayhead && axis.window.contains(currentTick)) {
       final x = playheadX ?? axis.x(currentTick);
       final y = rulerHeight / 2;
       canvas.drawLine(
@@ -823,6 +874,8 @@ class _MiniTimelinePainter extends CustomPainter {
       horizontalScrollController != oldDelegate.horizontalScrollController ||
       currentTick != oldDelegate.currentTick ||
       playheadX != oldDelegate.playheadX ||
+      showPlayhead != oldDelegate.showPlayhead ||
+      selectedMarkerId != oldDelegate.selectedMarkerId ||
       rulerHeight != oldDelegate.rulerHeight ||
       scheme != oldDelegate.scheme ||
       labelStyle != oldDelegate.labelStyle ||

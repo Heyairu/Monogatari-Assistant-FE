@@ -6,6 +6,8 @@ import "feedback.dart";
 import "layout.dart";
 import "list_style.dart";
 import "surface_shape.dart";
+import "neon_icon_button.dart";
+import "neon_ui_theme.dart";
 
 /// One list item with its own surface. The parent owns spacing between cards.
 /// Unlike ListTile, this layout does not cap the height of action controls.
@@ -197,6 +199,7 @@ class ItemAction {
 /// Compact and consistently styled row of per-item actions.
 class ItemActionBar extends StatelessWidget {
   final List<ItemAction> actions;
+  final bool useNeonStyle;
   final double iconSize;
   final VisualDensity visualDensity;
   final MainAxisAlignment alignment;
@@ -204,6 +207,7 @@ class ItemActionBar extends StatelessWidget {
   const ItemActionBar({
     super.key,
     required this.actions,
+    this.useNeonStyle = false,
     this.iconSize = AppControlSize.smallIcon,
     this.visualDensity = VisualDensity.standard,
     this.alignment = MainAxisAlignment.end,
@@ -213,6 +217,7 @@ class ItemActionBar extends StatelessWidget {
     super.key,
     required VoidCallback? onEdit,
     required VoidCallback? onDelete,
+    this.useNeonStyle = false,
     String editTooltip = "重新命名",
     String deleteTooltip = "刪除",
     this.iconSize = AppControlSize.smallIcon,
@@ -231,6 +236,23 @@ class ItemActionBar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: alignment,
       children: actions.map((action) {
+        if (useNeonStyle && action.color == null) {
+          return NeonIconButton(
+            icon: action.icon,
+            iconSize: iconSize,
+            label: action.tooltip,
+            onPressed: action.onPressed,
+            destructive: action.tone == AppFeedbackTone.error,
+            accent:
+                action.icon == Icons.add ||
+                    action.tone == AppFeedbackTone.success
+                ? NeonAccent.green
+                : NeonAccent.neutral,
+            status: action.tone == AppFeedbackTone.warning
+                ? NeonStatus.warning
+                : NeonStatus.idle,
+          );
+        }
         final semanticColor = switch (action.tone) {
           AppFeedbackTone.error => scheme.error,
           AppFeedbackTone.warning => scheme.secondary,

@@ -1,6 +1,7 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:monogatari_assistant/bin/ui_library.dart" show NeonIconButton;
 import "package:monogatari_assistant/models/item_data.dart";
 import "package:monogatari_assistant/models/item_snapshot_data.dart";
 import "package:monogatari_assistant/models/location_snapshot_data.dart";
@@ -37,11 +38,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    tester
+        .widget<NeonIconButton>(
+          find.byKey(const ValueKey("snapshot-preview-follow")),
+        )
+        .onPressed!();
+    await tester.pumpAndSettle();
     final region = find.byKey(const ValueKey("world-name-ime-location"));
     final field = find.descendant(
       of: region,
       matching: find.byType(TextFormField),
     );
+    await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pump();
     tester.testTextInput.updateEditingValue(
@@ -247,6 +255,12 @@ void main() {
         .read(itemWorkspaceProvider.notifier)
         .putClass(ItemClassData(classId: "relic", name: "石碑"));
     await tester.pumpAndSettle();
+    tester
+        .widget<NeonIconButton>(
+          find.byKey(const ValueKey("snapshot-preview-follow")),
+        )
+        .onPressed!();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key("location-link-item")));
     await tester.pumpAndSettle();
     await tester.tap(find.text("石碑"));
@@ -262,13 +276,11 @@ void main() {
       isTrue,
     );
 
-    container.read(itemWorkspaceProvider.notifier).putClass(
-      ItemClassData(
-        classId: "water",
-        name: "飲水",
-        mode: ItemMode.generic,
-      ),
-    );
+    container
+        .read(itemWorkspaceProvider.notifier)
+        .putClass(
+          ItemClassData(classId: "water", name: "飲水", mode: ItemMode.generic),
+        );
     await tester.pumpAndSettle();
     final assignButton = find.byKey(const Key("location-assign-item"));
     await tester.ensureVisible(assignButton);
@@ -395,7 +407,7 @@ void main() {
     final deleteSnapshot = find.byKey(
       const Key("location-delete-selected-snapshot-harbor"),
     );
-    expect(tester.widget<IconButton>(deleteSnapshot).onPressed, isNotNull);
+    expect(tester.widget<NeonIconButton>(deleteSnapshot).onPressed, isNotNull);
     await tester.tap(deleteSnapshot);
     await tester.pumpAndSettle();
     expect(find.text("刪除整批地點快照？"), findsOneWidget);
