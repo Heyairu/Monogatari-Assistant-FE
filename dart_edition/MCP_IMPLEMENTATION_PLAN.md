@@ -213,7 +213,7 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 0：設計凍結與基線（2–3 人日）
 
-執行結果與凍結決策見 [MCP_PHASE0_BASELINE.md](MCP_PHASE0_BASELINE.md)。
+目前採用的工具、版本與授權契約見 [統一 MCP API](../docs/API.md#2-mcp-唯讀-api)。
 
 1. 確認 desktop-only、stdio sidecar、readonly-only 與不讀磁碟 fallback 四項決策。
 2. 盤點每種資料的 stable ID；未穩定的 `foreshadow` / `updatePlan` 從 v1 移除。
@@ -225,7 +225,7 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 1：抽出共用唯讀讀取層（4–6 人日）
 
-執行結果與共用 API 見 [MCP_PHASE1_IMPLEMENTATION.md](MCP_PHASE1_IMPLEMENTATION.md)。
+目前共用讀取 API 見 [統一 API 文件](../docs/API.md#5-copilot-provider-與共用讀取-api)。
 
 1. 建立 `story_read` domain models、`ProjectReadBudget` 與 immutable snapshot builder。
 2. 將 `CopilotProjectContextBuilder` 的資源選取、排序、UTF-8 截斷與 overview 組裝遷移至共用層。
@@ -237,7 +237,7 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 2：唯讀 MCP protocol server（4–6 人日）
 
-執行結果與 protocol contract 見 [MCP_PHASE2_IMPLEMENTATION.md](MCP_PHASE2_IMPLEMENTATION.md)。
+目前 protocol contract、參數與回傳值見 [統一 MCP API](../docs/API.md#2-mcp-唯讀-api)。
 
 1. 選定並 pin Dart MCP library；確認其支援目標 MCP protocol version、stdio、tools、resources、structured output 與 cancellation。
 2. 建立 `monoashi-mcp` executable，實作 initialization、`tools/list`、`tools/call`、resources list/read 與 graceful shutdown。
@@ -249,7 +249,7 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 3：App ↔ sidecar secure bridge（4–7 人日）
 
-執行結果與安全邊界見 [MCP_PHASE3_IMPLEMENTATION.md](MCP_PHASE3_IMPLEMENTATION.md)。
+目前 App bridge、handshake 與授權邊界見 [統一 MCP API](../docs/API.md#2-mcp-唯讀-api)。
 
 1. 在 App 建立 session lifecycle notifier：啟用、停止、專案切換、App dispose、secret rotation。
 2. 實作 localhost IPC endpoint、app-private session descriptor 與 sidecar handshake；endpoint、token、project scope 都必須綁定同一 generation。
@@ -261,7 +261,7 @@ monoashi://session/{sessionId}/{type}/{id}
 
 ### Phase 4：Plan 驗證與 Copilot parity（3–4 人日）
 
-執行結果與唯讀保證見 [MCP_PHASE4_IMPLEMENTATION.md](MCP_PHASE4_IMPLEMENTATION.md)。
+目前唯讀 Plan schema、驗證規則與 stale context 處理見 [統一 MCP API](../docs/API.md#2-mcp-唯讀-api)。
 
 1. 抽取或重用 `CopilotPlan` parser / semantic validator 為共用 readonly plan validator。
 2. 實作 `validate_readonly_plan`，回傳可機器讀取的 validation errors 與 resolved target metadata。

@@ -1,5 +1,7 @@
 # 物品與 Scene 快照使用及遷移說明
 
+> 文件入口：[統一說明文件](../docs/GUIDE.md#5-角色地點物品與-scene-快照)；本文件承接物品與 Scene 快照的詳細操作與遷移規則。
+
 本文件適用於專案格式 **1.18**。物品、角色與地點共用時間軸的 Scene placement；使用者在時間軸移動播放頭後，各頁會投影該 Tick 當下的狀態。狀態變更以 Scene UUID 為主要連結，Tick 只作排序與 placement 遺失時的 fallback。
 
 ## 物品模式

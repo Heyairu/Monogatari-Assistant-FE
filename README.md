@@ -2,14 +2,22 @@
 
 ![Monogatari Assistant title](Title.png "Title")
 
-> 一款專為故事創作者設計的跨平台寫作助手，協助整理章節、正文、角色、世界觀、大綱與校稿資料。
+> 一款為故事創作者設計的跨平台寫作助手，集中整理正文、章節、大綱、角色、世界觀、物品與時間軸。
 
-[![License](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE.md)
-[![Dart](https://img.shields.io/badge/Dart-%5E3.9.2-0175C2?logo=dart)](https://dart.dev)
-[![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-green)](#支援平台與需求)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.md)
+[![Dart](https://img.shields.io/badge/Dart-%5E3.12.0-0175C2?logo=dart)](dart_edition/pubspec.yaml)
+[![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](dart_edition/pubspec.yaml)
 
-## 專案介紹
+## 文件
+
+| 文件 | 內容 |
+| --- | --- |
+| [統一說明文件](docs/GUIDE.md) | 功能、使用流程、保存與備份、開發環境、架構及發布 |
+| [統一 API 文件](docs/API.md) | MCP、專案檔案、Rhodanthe、Copilot adapter、P2P 與協作介面 |
+| [文件中心](docs/README.md) | 文件分工、版本依據與維護規範 |
+| [參考文件索引](docs/SOURCES.md) | 保留的專題規格、使用指南、設計與發布驗收文件 |
+
+## 畫面預覽
 
 <details>
 <summary><h2>App Preview</h2></summary>
@@ -28,62 +36,19 @@
 </tr>
 </table>
 </details>
+## 功能概覽
 
-「物語 Assistant」是一款面向小說家、輕小說作者與故事創作者的輕量級編輯工具。它把創作流程中的章節、角色、世界觀、大綱、術語與校稿資料集中在同一個工作區，讓創作者能在寫作時同步維護設定與結構，降低後期反覆修正的成本。
+- 章節與正文編輯、大綱、故事設定、角色與關係圖、世界觀及術語。
+- 物品管理、Scene 狀態快照、主時間軸與微型時間軸。
+- 搜尋與取代、正文標記、專案短語庫、校稿與修訂追蹤。
+- 本機專案、匯入匯出、自動備份、內網 P2P 同步與即時協作。
+- Copilot 與本機 MCP 唯讀整合；Ask／Plan 依 build 旗標開放，Plan 只提供提案與驗證。
 
-相較於一般文字編輯器，本工具更重視結構化資料與視覺化整理。你可以先建立故事骨架，再逐步補上角色、地點、事件、衝突點與補充設定；也可以從正文開始寫，再回頭整理設定資料。
+目前 App 版本為 `0.9.31`，專案 XML 格式為 `1.18`。各功能的限制與平台驗收狀態見[說明文件](docs/GUIDE.md)。
 
-## 功能總覽
+## 快速啟動
 
-| 模組 | 說明 |
-| --- | --- |
-| 故事設定 | 管理故事名稱、作者、類型、簡介與目標讀者等基本資訊。 |
-| 章節與正文 | 以分部和章節組織稿件，支援拖曳排序、快速切換與章節內容同步。 |
-| 大綱調整 | 建立故事線、事件、場景、衝突點與備註，適合規劃長篇故事結構。 |
-| 世界設定 | 管理地點、歷史背景、文化特色與地理環境等世界觀資料。 |
-| 角色設定 | 維護角色基本資料、外觀、性格、能力、社交特質與補充註記。 |
-| 術語表 | 管理作品中的專有名詞、設定詞與用語資料，協助維持文字一致性。 |
-| 企劃與校稿 | 提供企劃整理、校稿輔助與寫作檢查相關視圖。 |
-| 搜尋與取代 | 支援正則表達式、大小寫敏感，以及全形半形不敏感搜尋。 |
-
-## 基本使用流程
-
-1. 建立或開啟故事專案。
-2. 在「故事設定」填寫作品基本資料。
-3. 到「章節選擇」建立分部與章節架構。
-4. 在編輯器中撰寫正文，並依需要整理大綱、角色、世界觀與術語表。
-5. 使用搜尋、取代與校稿相關功能檢查稿件一致性。
-
-## 支援平台與需求
-
-### Windows / macOS / Linux
-
-| Items | Minimum Requirements | Recommended |
-| --- | --- | --- |
-| CPU | x64/Arm64, 1GHz up, Intel Celeron | i5-4570 equivalent & greater |
-| RAM | 4 GiB up | 8 GiB up |
-| Storage | 500 MiB Available | 1 GiB Available |
-| System | Win10(1809) / macOS 10.14 / Ubuntu 20.04 | Win10(22H2)+ / macOS 14+ / Ubuntu 20.04+ |
-
-### Android
-
-| Items | Minimum Requirements | Recommended |
-| --- | --- | --- |
-| System | Android 5 (API Level 21) | Android 8+ |
-| RAM | 4 GiB up | 6 GiB up |
-| Storage | 200 MiB Available | 500 MiB Available |
-
-### iOS
-
-| Items | Minimum Requirements | Recommended |
-| --- | --- | --- |
-| System | iOS 12.0 | iOS 15+ |
-| Device | iPhone 7 equivalent & greater | iPhone 11 equivalent & greater |
-| Storage | 200 MiB Available | 500 MiB Available |
-
-## 開發環境
-
-主要 Flutter 專案位於 `dart_edition/`。
+主要 Flutter 專案位於 `dart_edition/`。目前要求 Dart `^3.12.0`；`pubspec.yaml` 的 Flutter Quill 相依註記要求 Flutter 3.44 以上。原生 Rhodanthe 另需 Rust／Cargo，工具鏈以 `dart_edition/rust/rust-toolchain.toml` 為準。
 
 ```powershell
 cd dart_edition
@@ -91,84 +56,23 @@ flutter pub get
 flutter run
 ```
 
-常用檢查指令：
+常用檢查：
 
 ```powershell
 flutter analyze
 flutter test
 ```
 
-如果修改了 Freezed 或 Riverpod annotation 相關檔案，請重新產生程式碼：
+修改 Freezed 或 Riverpod annotation 後：
 
 ```powershell
 dart run build_runner build --delete-conflicting-outputs
 ```
 
-## 技術架構
-
-| 類別 | 使用技術 |
-| --- | --- |
-| Framework | Flutter |
-| Language | Dart `^3.9.2` |
-| State Management | Riverpod / Riverpod Generator |
-| Data Model | Freezed |
-| Editor | Flutter Quill、Code Text Field |
-| File / Data Format | XML、JSON assets |
-| UI | Material Design 3 |
-
-### 設計規格
-
-- [元件尺寸規範](dart_edition/COMPONENT_SIZE_GUIDELINES.md)：共用元件尺寸、間距、點擊區與文字縮放規則。
-- [List、ListCard 顯示規範](dart_edition/LIST_DISPLAY_GUIDELINES.md)：清單與卡片的文字層級、留白、選取狀態及窄版操作布局。
-- [MonoAshi™ Rhodanthe* 即時 RichText 引擎](dart_edition/RHODANTHE_SPEC.md)：Rust 文字分析、Ring 0–8 優先級、搜尋、贅字與 Mention 標註協定。
-
-### 主要依賴
-
-```yaml
-dependencies:
-  flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
-  freezed_annotation: ^2.4.4
-  file_picker: ^8.1.2
-  path_provider: ^2.1.4
-  intl: ^0.20.0
-  uuid: ^4.5.0
-  shared_preferences: ^2.3.3
-  http: ^1.6.0
-  window_manager: ^0.4.3
-  xml: ^6.6.1
-  flutter_quill: ^11.5.0
-```
-
-## 專案結構
-
-```text
-.
-├── README.md
-├── LICENSE.md
-├── Title.png
-├── AppPreview/
-└── dart_edition/
-    ├── lib/
-    │   ├── main.dart
-    │   ├── bin/                    # App shell、工具列、檔案與編輯器輔助
-    │   ├── data/repositories/      # 資料存取與 repository
-    │   ├── domain/usecases/        # 應用流程與專案檔案 use case
-    │   ├── models/                 # Freezed data models
-    │   ├── modules/                # 各功能頁面
-    │   ├── presentation/providers/ # Riverpod providers
-    │   └── utils/                  # 文字索引與 debounce 等工具
-    ├── assets/                     # 圖示、字型與 JSON 資料
-    ├── test/
-    └── pubspec.yaml
-```
+更多格式、政策、Rust 與發布檢查見[開發與驗證說明](docs/GUIDE.md#10-驗證建置與發布)。
 
 ## 授權與致謝
 
-本專案在 Build 919 後由 `BSL 1.1` 改採為 [Apache License 2.0](LICENSE.md)。
-
-Source code is licensed under the Apache License 2.0. See [LICENSE](LICENSE.md) and [TRADEMARKS.md](TRADEMARKS.md) for details.
-
-Monogatari Assistant™ and its logo are trademarks of Heyairu（部屋伊琉）.
+原始碼採 [Apache License 2.0](LICENSE.md)，另見 [NOTICE](NOTICE.md) 與[商標說明](TRADEMARKS.md)。Monogatari Assistant™ 與其標誌是 Heyairu（部屋伊琉）的商標。
 
 Logo 靈感來源於 ProgrammingVTuberLogos / GitHub@Aikoyori。

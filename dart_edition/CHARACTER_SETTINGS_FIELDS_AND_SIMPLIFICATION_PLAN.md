@@ -1,7 +1,7 @@
 # 角色設定欄位盤點與簡化計畫
 
 > 盤點日期：2026-08-01  
-> 盤點範圍：`dart_edition/lib/models/character_data.dart`、`dart_edition/lib/modules/characterview.dart`、`dart_edition/CHARACTER_SAVE_FEATURE.md`、`BETA8_DEVELOPMENT_PLAN.md`  
+> 盤點範圍：`dart_edition/lib/models/character_data.dart`、`dart_edition/lib/modules/characterview.dart`、[現行檔案 API](../docs/API.md#3-專案與檔案-api)、`BETA8_DEVELOPMENT_PLAN.md`
 > 目的：完整列出現有角色資料，並提出不遺失舊專案內容的表單與資料模型簡化方案。
 
 ## 1. 結論摘要

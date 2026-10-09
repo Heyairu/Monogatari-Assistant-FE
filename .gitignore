@@ -164,3 +164,28 @@ app.*.symbols
 .python-version
 .gclient_previous_custom_vars
 .gclient_previous_sync_commits
+
+# Dependency lockfiles
+!/dart_edition/pubspec.lock
+!/dart_edition/rust/Cargo.lock
+!/dart_edition/ios/Podfile.lock
+!/dart_edition/macos/Podfile.lock
+
+# Local configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+/.aws/
+/dart_edition/android/local-*.properties
+/dart_edition/*flutter-plugins-dependencies
+
+# Build and packaging outputs
+/dart_edition/android/.kotlin/
+/dart_edition/android/app/src/main/jniLibs/**/librhodanthe_bridge.so
+/nsExec/Release/
+/nsExec/*.exe
+/nsExec/*.zip
+
+# Local test artifacts
+/artifacts/manual-test-*/

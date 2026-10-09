@@ -1,7 +1,10 @@
 # Rhodanthe Rust workspace
 
 This workspace contains the platform-neutral core, text analyzers, and C ABI
-bridge of MonoAshi™ Rhodanthe*. The Flutter adapter is not connected yet.
+bridge of MonoAshi™ Rhodanthe*. The Flutter adapter is connected through the
+Dart worker, editor session, and validated render-plan adapter. See the
+[unified API reference](../../docs/API.md#4-rhodanthe-原生-api) and
+[Dart infrastructure guide](../lib/infrastructure/rhodanthe/README.md).
 
 ## Implemented
 
@@ -46,6 +49,8 @@ Verified on 2026-08-26 with Rust/Cargo 1.75.0:
 - `cargo clippy --workspace --all-targets -- -D warnings`: passed with zero warnings.
 
 The regular-expression syntax is Rust `regex` syntax. Look-around and
-backreferences are intentionally unsupported. End-to-end deadline cancellation
-will be enforced by the future Dart worker adapter; the current synchronous API
+backreferences are intentionally unsupported. Logical deadlines and stale-result
+rejection are enforced at the Dart coordinator/worker boundary; the native API
 enforces pattern, input, and visible-result limits.
+
+Timeout and invalidation do not interrupt an already-running native call.
