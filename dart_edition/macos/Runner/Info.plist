@@ -30,6 +30,10 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Flutter 3.47 enables Impeller by default. Use Skia on macOS to
+	     avoid text corruption on Intel Metal GPUs during hover animations. -->
+	<key>FLTEnableImpeller</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

@@ -1,6 +1,6 @@
 # 參考文件索引
 
-更新日期：2026-10-09
+更新日期：2026-10-18
 
 [文件中心](README.md) · [統一說明文件](GUIDE.md) · [統一 API 文件](API.md)
 
@@ -14,7 +14,7 @@
 
 `MNPROJ_FILE_STRUCTURE.md` 是 App 使用的內建 asset，維持原路徑。授權、商標及平台資源說明亦保留。
 
-目前有 **4** 份統一入口文件與 **46** 份參考文件，共 **50** 份 Markdown。
+目前有 **4** 份統一入口文件與 **47** 份參考文件，共 **51** 份 Markdown。
 
 ## 專題規格與開發參考
 
@@ -62,6 +62,7 @@
 | [ITEM_PAGE_EVALUATION.md](../dart_edition/ITEM_PAGE_EVALUATION.md) | 物品三種管理模式與物品／地點時間軸快照評估 |
 | [ITEM_SNAPSHOT_IMPLEMENTATION_PLAN.md](../dart_edition/ITEM_SNAPSHOT_IMPLEMENTATION_PLAN.md) | 物品管理與物品／地點快照實作計畫 |
 | [MCP_IMPLEMENTATION_PLAN.md](../dart_edition/MCP_IMPLEMENTATION_PLAN.md) | MonoAshi MCP 唯讀整合實作計畫 |
+| [MATERIAL_RIBBON_ADOPTION_PLAN.md](MATERIAL_RIBBON_ADOPTION_PLAN.md) | Material Ribbon 導入評估、實測限制與分階段計畫（提案） |
 | [MINI_TIMELINE_SNAPSHOT_PREVIEW_ROADMAP.md](../dart_edition/MINI_TIMELINE_SNAPSHOT_PREVIEW_ROADMAP.md) | 微型時間軸快照預覽替換路線圖 |
 | [P2P_LAN_SYNC_DESIGN.md](../dart_edition/P2P_LAN_SYNC_DESIGN.md) | 物語 Assistant：內網 P2P 同步設計 |
 | [PALETTESVIEW_MODULE_PLAN.md](../dart_edition/PALETTESVIEW_MODULE_PLAN.md) | PalettesView Module（文字調色盤）規劃 |
