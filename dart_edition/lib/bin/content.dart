@@ -14,6 +14,8 @@
  * limitations under the License.
  ************************************************************/
 
+import "../features/help/help_scope.dart";
+import "../features/help/help_topic.dart";
 import "dart:async";
 import "dart:math" as math;
 
@@ -667,42 +669,48 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     };
     return showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title ?? "新增$label"),
-        content: SizedBox(
-          width: 320,
-          child: TextField(
-            key: const ValueKey("mosaic-create-target-name"),
-            autofocus: true,
-            decoration: appFieldDecoration(
-              context,
-              decoration: InputDecoration(labelText: fieldLabel, isDense: true),
+      builder: (dialogContext) => HelpTarget(
+        topicId: HelpTopicId.annotations,
+        child: AlertDialog(
+          title: Text(title ?? "新增$label"),
+          content: SizedBox(
+            width: 320,
+            child: TextField(
+              key: const ValueKey("mosaic-create-target-name"),
+              autofocus: true,
+              decoration: appFieldDecoration(
+                context,
+                decoration: InputDecoration(
+                  labelText: fieldLabel,
+                  isDense: true,
+                ),
+              ),
+              onChanged: (value) => draftName = value,
+              onSubmitted: (value) {
+                final trimmed = value.trim();
+                if (trimmed.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(trimmed);
+                }
+              },
             ),
-            onChanged: (value) => draftName = value,
-            onSubmitted: (value) {
-              final trimmed = value.trim();
-              if (trimmed.isNotEmpty) {
-                Navigator.of(dialogContext).pop(trimmed);
-              }
-            },
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text("取消"),
+            ),
+            FilledButton(
+              key: const ValueKey("mosaic-create-target-submit"),
+              onPressed: () {
+                final trimmed = draftName.trim();
+                if (trimmed.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(trimmed);
+                }
+              },
+              child: Text(submitLabel),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text("取消"),
-          ),
-          FilledButton(
-            key: const ValueKey("mosaic-create-target-submit"),
-            onPressed: () {
-              final trimmed = draftName.trim();
-              if (trimmed.isNotEmpty) {
-                Navigator.of(dialogContext).pop(trimmed);
-              }
-            },
-            child: Text(submitLabel),
-          ),
-        ],
       ),
     );
   }
@@ -984,53 +992,58 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
     return showDialog<PhraseMentionResolution>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, update) => AlertDialog(
-          title: Text('重新連結「${annotation.displayText}」'),
-          content: SizedBox(
-            width: 420,
-            height: 360,
-            child: Column(
-              children: [
-                TextField(
-                  autofocus: true,
-                  decoration: appFieldDecoration(
-                    context,
-                    decoration: const InputDecoration(labelText: '搜尋對象'),
+        builder: (dialogContext, update) => HelpTarget(
+          topicId: HelpTopicId.phrases,
+          child: AlertDialog(
+            title: Text('重新連結「${annotation.displayText}」'),
+            content: SizedBox(
+              width: 420,
+              height: 360,
+              child: Column(
+                children: [
+                  TextField(
+                    autofocus: true,
+                    decoration: appFieldDecoration(
+                      context,
+                      decoration: const InputDecoration(labelText: '搜尋對象'),
+                    ),
+                    onChanged: (value) =>
+                        update(() => query = value.toLowerCase()),
                   ),
-                  onChanged: (value) =>
-                      update(() => query = value.toLowerCase()),
-                ),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      for (final target in targets)
-                        if (target.primaryName.toLowerCase().contains(query) ||
-                            target.id.toLowerCase().contains(query))
-                          ListTile(
-                            title: Text(target.primaryName),
-                            subtitle: Text(target.path ?? target.id),
-                            onTap: () => Navigator.pop(
-                              dialogContext,
-                              RelinkPhraseMention(target.id),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final target in targets)
+                          if (target.primaryName.toLowerCase().contains(
+                                query,
+                              ) ||
+                              target.id.toLowerCase().contains(query))
+                            ListTile(
+                              title: Text(target.primaryName),
+                              subtitle: Text(target.path ?? target.id),
+                              onTap: () => Navigator.pop(
+                                dialogContext,
+                                RelinkPhraseMention(target.id),
+                              ),
                             ),
-                          ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消插入'),
+              ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(dialogContext, const FlattenPhraseMention()),
+                child: const Text('改為純文字'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消插入'),
-            ),
-            TextButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext, const FlattenPhraseMention()),
-              child: const Text('改為純文字'),
-            ),
-          ],
         ),
       ),
     );
@@ -1069,39 +1082,45 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
         .toList();
     final selected = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('插入短語'),
-        children: [
-          for (final phrase in phrases)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, phrase.id),
-              child: Text('${phrase.shortcut} · ${phrase.name}'),
-            ),
-        ],
+      builder: (dialogContext) => HelpTarget(
+        topicId: HelpTopicId.phrases,
+        child: SimpleDialog(
+          title: const Text('插入短語'),
+          children: [
+            for (final phrase in phrases)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, phrase.id),
+                child: Text('${phrase.shortcut} · ${phrase.name}'),
+              ),
+          ],
+        ),
       ),
     );
     if (mounted && selected != null) await _insertPhraseById(selected);
   }
 
-  Widget _phraseActions() => Material(
-    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-    borderRadius: BorderRadius.circular(12),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          key: const ValueKey('phrase-library-button'),
-          tooltip: '短語庫',
-          onPressed: () => unawaited(_openPhraseLibrary()),
-          icon: const Icon(Icons.library_books_outlined),
-        ),
-        IconButton(
-          key: const ValueKey('insert-phrase-button'),
-          tooltip: '插入短語',
-          onPressed: () => unawaited(_showPhrasePicker()),
-          icon: const Icon(Icons.add_comment_outlined),
-        ),
-      ],
+  Widget _phraseActions() => HelpTarget(
+    topicId: HelpTopicId.phrases,
+    child: Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: const ValueKey('phrase-library-button'),
+            tooltip: '短語庫',
+            onPressed: () => unawaited(_openPhraseLibrary()),
+            icon: const Icon(Icons.library_books_outlined),
+          ),
+          IconButton(
+            key: const ValueKey('insert-phrase-button'),
+            tooltip: '插入短語',
+            onPressed: () => unawaited(_showPhrasePicker()),
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+        ],
+      ),
     ),
   );
 
@@ -1466,19 +1485,22 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                           ? completionAnchor.dy + 4
                           : math.max(8, completionAnchor.dy - 264),
                       width: math.min(360, constraints.maxWidth - 16),
-                      child: PoppinPanel<MosaicCompletionCandidate>(
-                        items: completionCandidates,
-                        selectedIndex: _poppin.selectedIndex,
-                        parentLabel: _poppin.parentPath,
-                        keyPrefix: "mosaic-completion",
-                        idOf: (candidate) => candidate.id,
-                        labelOf: (candidate) => candidate.label,
-                        detailOf: (candidate) => candidate.detail,
-                        hasChildren: (candidate) =>
-                            candidate.children.isNotEmpty,
-                        onBack: _exitCompletionLevel,
-                        onExpanded: _enterCompletionLevel,
-                        onSelected: _selectCompletion,
+                      child: HelpTarget(
+                        topicId: HelpTopicId.annotations,
+                        child: PoppinPanel<MosaicCompletionCandidate>(
+                          items: completionCandidates,
+                          selectedIndex: _poppin.selectedIndex,
+                          parentLabel: _poppin.parentPath,
+                          keyPrefix: "mosaic-completion",
+                          idOf: (candidate) => candidate.id,
+                          labelOf: (candidate) => candidate.label,
+                          detailOf: (candidate) => candidate.detail,
+                          hasChildren: (candidate) =>
+                              candidate.children.isNotEmpty,
+                          onBack: _exitCompletionLevel,
+                          onExpanded: _enterCompletionLevel,
+                          onSelected: _selectCompletion,
+                        ),
                       ),
                     ),
                 ],
@@ -1872,19 +1894,22 @@ class _EditorTextBoxState extends ConsumerState<EditorTextBox> {
                                     ? completionAnchor.dy + 4
                                     : math.max(8, completionAnchor.dy - 264),
                                 width: math.min(360, constraints.maxWidth - 16),
-                                child: PoppinPanel<MosaicCompletionCandidate>(
-                                  items: completionCandidates,
-                                  selectedIndex: _poppin.selectedIndex,
-                                  parentLabel: _poppin.parentPath,
-                                  keyPrefix: "mosaic-completion",
-                                  idOf: (candidate) => candidate.id,
-                                  labelOf: (candidate) => candidate.label,
-                                  detailOf: (candidate) => candidate.detail,
-                                  hasChildren: (candidate) =>
-                                      candidate.children.isNotEmpty,
-                                  onBack: _exitCompletionLevel,
-                                  onExpanded: _enterCompletionLevel,
-                                  onSelected: _selectCompletion,
+                                child: HelpTarget(
+                                  topicId: HelpTopicId.annotations,
+                                  child: PoppinPanel<MosaicCompletionCandidate>(
+                                    items: completionCandidates,
+                                    selectedIndex: _poppin.selectedIndex,
+                                    parentLabel: _poppin.parentPath,
+                                    keyPrefix: "mosaic-completion",
+                                    idOf: (candidate) => candidate.id,
+                                    labelOf: (candidate) => candidate.label,
+                                    detailOf: (candidate) => candidate.detail,
+                                    hasChildren: (candidate) =>
+                                        candidate.children.isNotEmpty,
+                                    onBack: _exitCompletionLevel,
+                                    onExpanded: _enterCompletionLevel,
+                                    onSelected: _selectCompletion,
+                                  ),
                                 ),
                               ),
                           ],

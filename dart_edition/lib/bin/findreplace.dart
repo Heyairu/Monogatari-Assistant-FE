@@ -14,6 +14,8 @@
  * limitations under the License.
  ************************************************************/
 
+import "../features/help/help_scope.dart";
+import "../features/help/help_topic.dart";
 import "package:flutter/foundation.dart" show kIsWeb;
 import "package:flutter/material.dart";
 import 'dart:async';
@@ -41,6 +43,15 @@ final RegExp _punctuationRegex = RegExp(
 
 final RegExp _whitespaceRegex = RegExp(r"\s");
 
+enum FindReplaceOption {
+  matchCase,
+  wholeWord,
+  useRegexp,
+  matchWidth,
+  ignorePunctuation,
+  ignoreWhitespace,
+}
+
 // 搜尋選項類別
 class FindReplaceOptions {
   bool matchCase; // 大小寫相同
@@ -58,6 +69,78 @@ class FindReplaceOptions {
     this.ignorePunctuation = false,
     this.ignoreWhitespace = false,
   });
+
+  FindReplaceOptions copy() => FindReplaceOptions(
+    matchCase: matchCase,
+    wholeWord: wholeWord,
+    useRegexp: useRegexp,
+    matchWidth: matchWidth,
+    ignorePunctuation: ignorePunctuation,
+    ignoreWhitespace: ignoreWhitespace,
+  );
+
+  bool sameAs(FindReplaceOptions other) =>
+      matchCase == other.matchCase &&
+      wholeWord == other.wholeWord &&
+      useRegexp == other.useRegexp &&
+      matchWidth == other.matchWidth &&
+      ignorePunctuation == other.ignorePunctuation &&
+      ignoreWhitespace == other.ignoreWhitespace;
+
+  bool valueFor(FindReplaceOption option) => switch (option) {
+    FindReplaceOption.matchCase => matchCase,
+    FindReplaceOption.wholeWord => wholeWord,
+    FindReplaceOption.useRegexp => useRegexp,
+    FindReplaceOption.matchWidth => matchWidth,
+    FindReplaceOption.ignorePunctuation => ignorePunctuation,
+    FindReplaceOption.ignoreWhitespace => ignoreWhitespace,
+  };
+
+  static bool supportsWholeWord(String query) =>
+      !query.codeUnits.any(
+        (code) =>
+            (code >= 0xFF00 && code <= 0xFFEF) ||
+            (code >= 0x4E00 && code <= 0x9FFF) ||
+            (code >= 0x3000 && code <= 0x303F),
+      ) &&
+      !_whitespaceRegex.hasMatch(query) &&
+      !_punctuationRegex.hasMatch(query);
+
+  bool enabledFor(FindReplaceOption option, String query) => switch (option) {
+    FindReplaceOption.matchCase || FindReplaceOption.matchWidth => !useRegexp,
+    FindReplaceOption.wholeWord => !useRegexp && supportsWholeWord(query),
+    _ => true,
+  };
+
+  /// Keep the same constraints as the search engine and existing options UI.
+  void setOption(FindReplaceOption option, bool value, String query) {
+    if (!enabledFor(option, query)) return;
+    switch (option) {
+      case FindReplaceOption.matchCase:
+        matchCase = value;
+      case FindReplaceOption.wholeWord:
+        wholeWord = value;
+      case FindReplaceOption.useRegexp:
+        useRegexp = value;
+      case FindReplaceOption.matchWidth:
+        matchWidth = value;
+      case FindReplaceOption.ignorePunctuation:
+        ignorePunctuation = value;
+      case FindReplaceOption.ignoreWhitespace:
+        ignoreWhitespace = value;
+    }
+    normalizeForQuery(query);
+  }
+
+  void normalizeForQuery(String query) {
+    if (useRegexp) {
+      matchCase = true;
+      matchWidth = true;
+      wholeWord = false;
+    } else if (!supportsWholeWord(query)) {
+      wholeWord = false;
+    }
+  }
 }
 
 // ==================== 自定義 UI Controller ====================
@@ -2659,6 +2742,8 @@ class FindReplaceBar extends StatefulWidget {
   final int? currentMatchIndex;
   final int? totalMatches;
   final VoidCallback? onClose;
+  final VoidCallback? onOptionsRequested;
+  final int optionsRevision;
 
   const FindReplaceBar({
     super.key,
@@ -2673,6 +2758,8 @@ class FindReplaceBar extends StatefulWidget {
     this.currentMatchIndex,
     this.totalMatches,
     this.onClose,
+    this.onOptionsRequested,
+    this.optionsRevision = 0,
   });
 
   @override
@@ -2689,6 +2776,19 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
     super.initState();
     // 監聽搜尋框內容變化
     widget.findController.addListener(_onFindTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant FindReplaceBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.findController != widget.findController) {
+      oldWidget.findController.removeListener(_onFindTextChanged);
+      widget.findController.addListener(_onFindTextChanged);
+      _debounceTimer?.cancel();
+    }
+    if (oldWidget.optionsRevision != widget.optionsRevision) {
+      _debounceTimer?.cancel();
+    }
   }
 
   @override
@@ -2765,348 +2865,380 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 4,
-      color: Theme.of(context).colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          border: Border(
-            bottom: BorderSide(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.2),
+    return HelpScope(
+      topicId: HelpTopicId.search,
+      child: Material(
+        elevation: 4,
+        color: Theme.of(context).colorScheme.surface,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.2),
+              ),
             ),
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 主搜尋列
-            Row(
-              children: [
-                Icon(Icons.search_rounded),
-                SizedBox(width: 8),
-                // 尋找輸入框
-                Expanded(
-                  flex: 3,
-                  child: SizedBox(
-                    height: 36,
-                    child: AppTextField(
-                      controller: widget.findController,
-                      decoration: InputDecoration(
-                        labelText: "搜尋……",
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.sm,
-                        ),
-                        isDense: true,
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                      ),
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                // 匹配數量顯示
-                if (widget.totalMatches != null && widget.totalMatches! > 0)
-                  Container(
-                    padding: AppSpacing.badgePadding,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(width: 2),
-
-                // 導航按鈕組
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward, size: 16),
-                  onPressed: () {
-                    widget.onFindPrevious?.call(
-                      widget.findController.text,
-                      widget.replaceController.text,
-                      widget.options,
-                    );
-                  },
-                  color: Theme.of(context).colorScheme.onSurface,
-                  tooltip: "上一個",
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_downward, size: 16),
-                  onPressed: () {
-                    widget.onFindNext?.call(
-                      widget.findController.text,
-                      widget.replaceController.text,
-                      widget.options,
-                    );
-                  },
-                  color: Theme.of(context).colorScheme.onSurface,
-                  tooltip: "下一個",
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
-
-                // 展開/收合取代欄
-                IconButton(
-                  icon: Icon(
-                    _isExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _isExpanded = !_isExpanded;
-                    });
-                  },
-                  color: Theme.of(context).colorScheme.onSurface,
-                  tooltip: _isExpanded ? "收合" : "展開取代",
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
-
-                // 選項按鈕
-                IconButton(
-                  icon: const Icon(Icons.tune, size: 16),
-                  onPressed: () {
-                    setState(() {
-                      _showOptions = !_showOptions;
-                    });
-                  },
-                  color: _showOptions
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
-                  tooltip: "搜尋選項",
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
-              ],
-            ),
-
-            // 取代列（可展開）
-            if (_isExpanded) ...[
-              const SizedBox(height: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 主搜尋列
               Row(
                 children: [
-                  Icon(Icons.find_replace_rounded),
+                  Icon(Icons.search_rounded),
                   SizedBox(width: 8),
-                  // 取代輸入框
+                  // 尋找輸入框
                   Expanded(
                     flex: 3,
                     child: SizedBox(
                       height: 36,
-                      child: AppTextField(
-                        controller: widget.replaceController,
-                        decoration: InputDecoration(
-                          labelText: "取代為……",
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
-                            vertical: AppSpacing.sm,
+                      child: HelpTarget(
+                        topicId: HelpTopicId.findInput,
+                        child: AppTextField(
+                          controller: widget.findController,
+                          decoration: InputDecoration(
+                            labelText: "搜尋……",
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md,
+                              vertical: AppSpacing.sm,
+                            ),
+                            isDense: true,
+                            filled: true,
+                            fillColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
                           ),
-                          isDense: true,
-                          filled: true,
-                          fillColor: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
+                          style: Theme.of(context).textTheme.labelMedium,
                         ),
-                        style: Theme.of(context).textTheme.labelMedium,
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
 
-                  // 取代按鈕
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      widget.onReplace?.call(
-                        widget.findController.text,
-                        widget.replaceController.text,
-                        widget.options,
-                      );
-                    },
-                    icon: const Icon(Icons.find_replace, size: 16),
-                    label: Text(
-                      "取代",
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
+                  // 匹配數量顯示
+                  if (widget.totalMatches != null && widget.totalMatches! > 0)
+                    Container(
+                      padding: AppSpacing.badgePadding,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.secondaryContainer,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSecondaryContainer,
+                      child: Text(
+                        "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(width: 2),
+
+                  // 導航按鈕組
+                  HelpTarget(
+                    topicId: HelpTopicId.previous,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_upward, size: 16),
+                      onPressed: () {
+                        widget.onFindPrevious?.call(
+                          widget.findController.text,
+                          widget.replaceController.text,
+                          widget.options,
+                        );
+                      },
+                      color: Theme.of(context).colorScheme.onSurface,
+                      tooltip: "上一個",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 4),
-
-                  // 全部取代按鈕
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      widget.onReplaceAll?.call(
-                        widget.findController.text,
-                        widget.replaceController.text,
-                        widget.options,
-                      );
-                    },
-                    icon: const Icon(Icons.library_add_check, size: 16),
-                    label: Text(
-                      "全部",
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
+                  HelpTarget(
+                    topicId: HelpTopicId.next,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_downward, size: 16),
+                      onPressed: () {
+                        widget.onFindNext?.call(
+                          widget.findController.text,
+                          widget.replaceController.text,
+                          widget.options,
+                        );
+                      },
+                      color: Theme.of(context).colorScheme.onSurface,
+                      tooltip: "下一個",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
                       ),
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.tertiaryContainer,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+
+                  // 展開/收合取代欄
+                  HelpTarget(
+                    topicId: HelpTopicId.replaceInput,
+                    child: IconButton(
+                      icon: Icon(
+                        _isExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 16,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isExpanded = !_isExpanded;
+                        });
+                      },
+                      color: Theme.of(context).colorScheme.onSurface,
+                      tooltip: _isExpanded ? "收合" : "展開取代",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    ),
+                  ),
+
+                  // 選項按鈕
+                  HelpTarget(
+                    topicId: HelpTopicId.search,
+                    child: IconButton(
+                      icon: const Icon(Icons.tune, size: 16),
+                      onPressed: () {
+                        final request = widget.onOptionsRequested;
+                        if (request != null) {
+                          request();
+                        } else {
+                          setState(() => _showOptions = !_showOptions);
+                        }
+                      },
+                      color: _showOptions
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                      tooltip: "搜尋選項",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                   ),
                 ],
               ),
+
+              // 取代列（可展開）
+              if (_isExpanded) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.find_replace_rounded),
+                    SizedBox(width: 8),
+                    // 取代輸入框
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 36,
+                        child: HelpTarget(
+                          topicId: HelpTopicId.replaceInput,
+                          child: AppTextField(
+                            controller: widget.replaceController,
+                            decoration: InputDecoration(
+                              labelText: "取代為……",
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
+                                vertical: AppSpacing.sm,
+                              ),
+                              isDense: true,
+                              filled: true,
+                              fillColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                            ),
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // 取代按鈕
+                    HelpTarget(
+                      topicId: HelpTopicId.replace,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          widget.onReplace?.call(
+                            widget.findController.text,
+                            widget.replaceController.text,
+                            widget.options,
+                          );
+                        },
+                        icon: const Icon(Icons.find_replace, size: 16),
+                        label: Text(
+                          "取代",
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                          ),
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+
+                    // 全部取代按鈕
+                    HelpTarget(
+                      topicId: HelpTopicId.replaceAll,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          widget.onReplaceAll?.call(
+                            widget.findController.text,
+                            widget.replaceController.text,
+                            widget.options,
+                          );
+                        },
+                        icon: const Icon(Icons.library_add_check, size: 16),
+                        label: Text(
+                          "全部",
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                          ),
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.tertiaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // 選項區域（可展開）
+              if (_showOptions && widget.onOptionsRequested == null) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Builder(
+                  builder: (context) {
+                    final findText = widget.findController.text;
+                    final hasFullWidth = _containsFullWidth(findText);
+                    final hasPunctuationOrSpace = _containsPunctuationOrSpace(
+                      findText,
+                    );
+                    final useRegexp = widget.options.useRegexp;
+
+                    final disableWholeWord =
+                        hasFullWidth || hasPunctuationOrSpace || useRegexp;
+                    final disableMatchCase = useRegexp;
+                    final disableMatchWidth = useRegexp;
+
+                    return Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _buildOptionChip(
+                          label: "大小寫需相同",
+                          tooltip: "大小寫需相同",
+                          value: useRegexp ? true : widget.options.matchCase,
+                          enabled: !disableMatchCase,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.matchCase = value;
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                        _buildOptionChip(
+                          label: "全字拼寫相符",
+                          tooltip: "全字拼寫相符",
+                          value: widget.options.wholeWord,
+                          enabled: !disableWholeWord,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.wholeWord = value;
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                        _buildOptionChip(
+                          label: "使用正則表示",
+                          tooltip: "使用正則表示",
+                          value: widget.options.useRegexp,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.useRegexp = value;
+                              if (value) {
+                                widget.options.matchCase = true;
+                                widget.options.wholeWord = false;
+                                widget.options.matchWidth = true;
+                              }
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                        _buildOptionChip(
+                          label: "全半形須相符",
+                          tooltip: "全半形須相符",
+                          value: useRegexp ? true : widget.options.matchWidth,
+                          enabled: !disableMatchWidth,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.matchWidth = value;
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                        _buildOptionChip(
+                          label: "略過標點符號",
+                          tooltip: "略過標點符號",
+                          value: widget.options.ignorePunctuation,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.ignorePunctuation = value;
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                        _buildOptionChip(
+                          label: "略過空白字元",
+                          tooltip: "略過空白字元",
+                          value: widget.options.ignoreWhitespace,
+                          onChanged: (value) {
+                            setState(() {
+                              widget.options.ignoreWhitespace = value;
+                            });
+                            _notifySearchChanged();
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ],
-
-            // 選項區域（可展開）
-            if (_showOptions) ...[
-              const SizedBox(height: 8),
-              const Divider(height: 1),
-              const SizedBox(height: 8),
-              Builder(
-                builder: (context) {
-                  final findText = widget.findController.text;
-                  final hasFullWidth = _containsFullWidth(findText);
-                  final hasPunctuationOrSpace = _containsPunctuationOrSpace(
-                    findText,
-                  );
-                  final useRegexp = widget.options.useRegexp;
-
-                  final disableWholeWord =
-                      hasFullWidth || hasPunctuationOrSpace || useRegexp;
-                  final disableMatchCase = useRegexp;
-                  final disableMatchWidth = useRegexp;
-
-                  return Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      _buildOptionChip(
-                        label: "大小寫需相同",
-                        tooltip: "大小寫需相同",
-                        value: useRegexp ? true : widget.options.matchCase,
-                        enabled: !disableMatchCase,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.matchCase = value;
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                      _buildOptionChip(
-                        label: "全字拼寫相符",
-                        tooltip: "全字拼寫相符",
-                        value: widget.options.wholeWord,
-                        enabled: !disableWholeWord,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.wholeWord = value;
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                      _buildOptionChip(
-                        label: "使用正則表示",
-                        tooltip: "使用正則表示",
-                        value: widget.options.useRegexp,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.useRegexp = value;
-                            if (value) {
-                              widget.options.matchCase = true;
-                              widget.options.wholeWord = false;
-                              widget.options.matchWidth = true;
-                            }
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                      _buildOptionChip(
-                        label: "全半形須相符",
-                        tooltip: "全半形須相符",
-                        value: useRegexp ? true : widget.options.matchWidth,
-                        enabled: !disableMatchWidth,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.matchWidth = value;
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                      _buildOptionChip(
-                        label: "略過標點符號",
-                        tooltip: "略過標點符號",
-                        value: widget.options.ignorePunctuation,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.ignorePunctuation = value;
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                      _buildOptionChip(
-                        label: "略過空白字元",
-                        tooltip: "略過空白字元",
-                        value: widget.options.ignoreWhitespace,
-                        onChanged: (value) {
-                          setState(() {
-                            widget.options.ignoreWhitespace = value;
-                          });
-                          _notifySearchChanged();
-                        },
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -3290,189 +3422,31 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned(
-          right: 40,
-          top: 40,
-          child: Material(
-            elevation: 8,
-            borderRadius: AppSurfaceShape.borderRadius,
-            color: Theme.of(context).colorScheme.surface,
-            child: Container(
-              width: 520,
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 尋找內容列
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 80,
-                        child: Text(
-                          "尋找內容:",
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                        ),
-                      ),
-                      Expanded(
-                        child: SizedBox(
-                          height: 32,
-                          child: AppTextField(
-                            controller: widget.findController,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
-                                vertical: AppSpacing.sm,
-                              ),
-                              isDense: true,
-                              filled: true,
-                              fillColor: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                            ),
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 顯示匹配數量
-                      if (widget.totalMatches != null &&
-                          widget.totalMatches! > 0)
-                        Container(
-                          padding: AppSpacing.badgePadding,
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimaryContainer,
-                                ),
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      // 尋找上一個按鈕
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            widget.onFindPrevious?.call(
-                              widget.findController.text,
-                              widget.replaceController.text,
-                              widget.options,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Icon(Icons.arrow_upward, size: 16),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      // 尋找下一個按鈕
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            widget.onFindNext?.call(
-                              widget.findController.text,
-                              widget.replaceController.text,
-                              widget.options,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Icon(Icons.arrow_downward, size: 16),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      // 折疊/展開按鈕
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _isExpanded = !_isExpanded;
-                            });
-                          },
-                          color: Theme.of(context).colorScheme.onSurface,
-                          padding: EdgeInsets.zero,
-                          icon: Icon(
-                            _isExpanded ? Icons.expand_less : Icons.expand_more,
-                            size: 20,
-                          ),
-                          tooltip: _isExpanded ? "摺疊" : "展開取代",
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      // 選項按鈕
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _showOptions = !_showOptions;
-                            });
-                          },
-                          color: _showOptions
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurface,
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.tune, size: 18),
-                          tooltip: "搜尋選項",
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      // 關閉按鈕
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed:
-                              widget.onClose ??
-                              () => Navigator.of(context).pop(),
-                          color: Theme.of(context).colorScheme.onSurface,
-                          padding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // 可折疊的取代區域
-                  if (_isExpanded) ...[
-                    const SizedBox(height: 12),
-
-                    // 取代為列
+    return HelpScope(
+      topicId: HelpTopicId.search,
+      child: Stack(
+        children: [
+          Positioned(
+            right: 40,
+            top: 40,
+            child: Material(
+              elevation: 8,
+              borderRadius: AppSurfaceShape.borderRadius,
+              color: Theme.of(context).colorScheme.surface,
+              child: Container(
+                width: 520,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 尋找內容列
                     Row(
                       children: [
                         SizedBox(
                           width: 80,
                           child: Text(
-                            "取代為:",
+                            "尋找內容:",
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(
                                   color: Theme.of(
@@ -3484,200 +3458,394 @@ class _FindReplaceFloatingWindowState extends State<FindReplaceFloatingWindow> {
                         Expanded(
                           child: SizedBox(
                             height: 32,
-                            child: AppTextField(
-                              controller: widget.replaceController,
-                              decoration: InputDecoration(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm,
-                                  vertical: AppSpacing.sm,
+                            child: HelpTarget(
+                              topicId: HelpTopicId.findInput,
+                              child: AppTextField(
+                                controller: widget.findController,
+                                decoration: InputDecoration(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm,
+                                    vertical: AppSpacing.sm,
+                                  ),
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                                 ),
-                                isDense: true,
-                                filled: true,
-                                fillColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
+                                style: Theme.of(context).textTheme.labelSmall,
                               ),
-                              style: Theme.of(context).textTheme.labelSmall,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // 取代按鈕（圖標）
+                        // 顯示匹配數量
+                        if (widget.totalMatches != null &&
+                            widget.totalMatches! > 0)
+                          Container(
+                            padding: AppSpacing.badgePadding,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              "${(widget.currentMatchIndex ?? -1) + 1}/${widget.totalMatches}",
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
+                                  ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        // 尋找上一個按鈕
                         SizedBox(
                           width: 32,
                           height: 32,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              widget.onReplace?.call(
-                                widget.findController.text,
-                                widget.replaceController.text,
-                                widget.options,
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          child: HelpTarget(
+                            topicId: HelpTopicId.previous,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                widget.onFindPrevious?.call(
+                                  widget.findController.text,
+                                  widget.replaceController.text,
+                                  widget.options,
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.secondaryContainer,
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onSecondaryContainer,
-                            ),
-                            child: Tooltip(
-                              message: "取代",
-                              child: const Icon(Icons.find_replace, size: 16),
+                              child: const Icon(Icons.arrow_upward, size: 16),
                             ),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        // 全部取代按鈕（圖標）
+                        // 尋找下一個按鈕
                         SizedBox(
                           width: 32,
                           height: 32,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              widget.onReplaceAll?.call(
-                                widget.findController.text,
-                                widget.replaceController.text,
-                                widget.options,
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
+                          child: HelpTarget(
+                            topicId: HelpTopicId.next,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                widget.onFindNext?.call(
+                                  widget.findController.text,
+                                  widget.replaceController.text,
+                                  widget.options,
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Icon(Icons.arrow_downward, size: 16),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // 折疊/展開按鈕
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: HelpTarget(
+                            topicId: HelpTopicId.replaceInput,
+                            child: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _isExpanded = !_isExpanded;
+                                });
+                              },
+                              color: Theme.of(context).colorScheme.onSurface,
                               padding: EdgeInsets.zero,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                              icon: Icon(
+                                _isExpanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                size: 20,
                               ),
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.tertiaryContainer,
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onTertiaryContainer,
+                              tooltip: _isExpanded ? "摺疊" : "展開取代",
                             ),
-                            child: Tooltip(
-                              message: "全部取代",
-                              child: const Icon(
-                                Icons.library_add_check,
-                                size: 16,
-                              ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // 選項按鈕
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: HelpTarget(
+                            topicId: HelpTopicId.search,
+                            child: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _showOptions = !_showOptions;
+                                });
+                              },
+                              color: _showOptions
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              padding: EdgeInsets.zero,
+                              icon: Icon(Icons.tune, size: 18),
+                              tooltip: "搜尋選項",
                             ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // 關閉按鈕
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed:
+                                widget.onClose ??
+                                () => Navigator.of(context).pop(),
+                            color: Theme.of(context).colorScheme.onSurface,
+                            padding: EdgeInsets.zero,
                           ),
                         ),
                       ],
                     ),
+
+                    // 可折疊的取代區域
+                    if (_isExpanded) ...[
+                      const SizedBox(height: 12),
+
+                      // 取代為列
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 80,
+                            child: Text(
+                              "取代為:",
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
+                            ),
+                          ),
+                          Expanded(
+                            child: SizedBox(
+                              height: 32,
+                              child: HelpTarget(
+                                topicId: HelpTopicId.replaceInput,
+                                child: AppTextField(
+                                  controller: widget.replaceController,
+                                  decoration: InputDecoration(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.sm,
+                                      vertical: AppSpacing.sm,
+                                    ),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
+                                  ),
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 取代按鈕（圖標）
+                          SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: HelpTarget(
+                              topicId: HelpTopicId.replace,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  widget.onReplace?.call(
+                                    widget.findController.text,
+                                    widget.replaceController.text,
+                                    widget.options,
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.secondaryContainer,
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onSecondaryContainer,
+                                ),
+                                child: Tooltip(
+                                  message: "取代",
+                                  child: const Icon(
+                                    Icons.find_replace,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          // 全部取代按鈕（圖標）
+                          SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: HelpTarget(
+                              topicId: HelpTopicId.replaceAll,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  widget.onReplaceAll?.call(
+                                    widget.findController.text,
+                                    widget.replaceController.text,
+                                    widget.options,
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.tertiaryContainer,
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onTertiaryContainer,
+                                ),
+                                child: Tooltip(
+                                  message: "全部取代",
+                                  child: const Icon(
+                                    Icons.library_add_check,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    // 搜尋選項區域
+                    if (_showOptions) ...[
+                      const SizedBox(height: 12),
+                      const Divider(height: 1),
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (context) {
+                          // 檢查搜尋框內容
+                          final findText = widget.findController.text;
+                          final hasFullWidth = _containsFullWidth(findText);
+                          final hasPunctuationOrSpace =
+                              _containsPunctuationOrSpace(findText);
+                          final useRegexp = widget.options.useRegexp;
+
+                          // 計算禁用狀態
+                          final disableWholeWord =
+                              hasFullWidth ||
+                              hasPunctuationOrSpace ||
+                              useRegexp;
+                          final disableMatchCase = useRegexp;
+                          final disableMatchWidth = useRegexp;
+
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              _buildOptionChip(
+                                label: "大小寫需相同",
+                                value: useRegexp
+                                    ? true
+                                    : widget.options.matchCase,
+                                enabled: !disableMatchCase,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.matchCase = value;
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                              _buildOptionChip(
+                                label: "全字拼寫相符",
+                                value: widget.options.wholeWord,
+                                enabled: !disableWholeWord,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.wholeWord = value;
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                              _buildOptionChip(
+                                label: "使用正則表示",
+                                value: widget.options.useRegexp,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.useRegexp = value;
+                                    // 當啟用正則表示時，強制啟用大小寫和全半形相符選項
+                                    if (value) {
+                                      widget.options.matchCase = true;
+                                      widget.options.wholeWord = false;
+                                      widget.options.matchWidth = true;
+                                    }
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                              _buildOptionChip(
+                                label: "全半形須相符",
+                                value: useRegexp
+                                    ? true
+                                    : widget.options.matchWidth,
+                                enabled: !disableMatchWidth,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.matchWidth = value;
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                              _buildOptionChip(
+                                label: "略過標點符號",
+                                value: widget.options.ignorePunctuation,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.ignorePunctuation = value;
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                              _buildOptionChip(
+                                label: "略過空白字元",
+                                value: widget.options.ignoreWhitespace,
+                                onChanged: (value) {
+                                  setState(() {
+                                    widget.options.ignoreWhitespace = value;
+                                  });
+                                  _notifySearchChanged();
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
                   ],
-
-                  // 搜尋選項區域
-                  if (_showOptions) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1),
-                    const SizedBox(height: 8),
-                    Builder(
-                      builder: (context) {
-                        // 檢查搜尋框內容
-                        final findText = widget.findController.text;
-                        final hasFullWidth = _containsFullWidth(findText);
-                        final hasPunctuationOrSpace =
-                            _containsPunctuationOrSpace(findText);
-                        final useRegexp = widget.options.useRegexp;
-
-                        // 計算禁用狀態
-                        final disableWholeWord =
-                            hasFullWidth || hasPunctuationOrSpace || useRegexp;
-                        final disableMatchCase = useRegexp;
-                        final disableMatchWidth = useRegexp;
-
-                        return Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            _buildOptionChip(
-                              label: "大小寫需相同",
-                              value: useRegexp
-                                  ? true
-                                  : widget.options.matchCase,
-                              enabled: !disableMatchCase,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.matchCase = value;
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                            _buildOptionChip(
-                              label: "全字拼寫相符",
-                              value: widget.options.wholeWord,
-                              enabled: !disableWholeWord,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.wholeWord = value;
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                            _buildOptionChip(
-                              label: "使用正則表示",
-                              value: widget.options.useRegexp,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.useRegexp = value;
-                                  // 當啟用正則表示時，強制啟用大小寫和全半形相符選項
-                                  if (value) {
-                                    widget.options.matchCase = true;
-                                    widget.options.wholeWord = false;
-                                    widget.options.matchWidth = true;
-                                  }
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                            _buildOptionChip(
-                              label: "全半形須相符",
-                              value: useRegexp
-                                  ? true
-                                  : widget.options.matchWidth,
-                              enabled: !disableMatchWidth,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.matchWidth = value;
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                            _buildOptionChip(
-                              label: "略過標點符號",
-                              value: widget.options.ignorePunctuation,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.ignorePunctuation = value;
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                            _buildOptionChip(
-                              label: "略過空白字元",
-                              value: widget.options.ignoreWhitespace,
-                              onChanged: (value) {
-                                setState(() {
-                                  widget.options.ignoreWhitespace = value;
-                                });
-                                _notifySearchChanged();
-                              },
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

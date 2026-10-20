@@ -1,3 +1,5 @@
+import "../help/help_scope.dart";
+import "../help/help_topic.dart";
 import "package:flutter/material.dart";
 
 import "../../ui_library/spacing.dart";
@@ -21,10 +23,13 @@ abstract final class InlineAnnotationEditDialog {
       anchor: anchor,
       width: 460,
       barrierDismissible: false,
-      builder: (_) => _InlineAnnotationEditForm(
-        annotation: annotation,
-        rawSyntax: rawSyntax,
-        anchored: anchor != null,
+      builder: (_) => HelpTarget(
+        topicId: HelpTopicId.annotations,
+        child: _InlineAnnotationEditForm(
+          annotation: annotation,
+          rawSyntax: rawSyntax,
+          anchored: anchor != null,
+        ),
       ),
     );
   }

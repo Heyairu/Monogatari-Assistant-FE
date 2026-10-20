@@ -5,9 +5,28 @@ import "../../bin/settings_manager.dart";
 import "../../bin/ui_library.dart";
 import "../../models/app_state_data.dart";
 import "../../models/navigation_style.dart";
+import "../../models/toolbar_mode.dart";
 import "repository_providers.dart";
 
 export "../../models/app_state_data.dart";
+
+/// A device-local presentation preference, independent of project state.
+class ToolbarModeNotifier extends AsyncNotifier<ToolbarMode?> {
+  @override
+  Future<ToolbarMode?> build() async =>
+      (await ref.read(settingsRepositoryProvider).load()).toolbarMode;
+
+  Future<void> setMode(ToolbarMode? value) async {
+    await future;
+    state = AsyncData(value);
+    await ref.read(settingsRepositoryProvider).saveToolbarMode(value);
+  }
+}
+
+final toolbarModeProvider =
+    AsyncNotifierProvider<ToolbarModeNotifier, ToolbarMode?>(
+      ToolbarModeNotifier.new,
+    );
 
 class ThemeStateNotifier extends AsyncNotifier<AppThemeStateData> {
   @override
@@ -304,5 +323,6 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
     // re-enter app-level loading and replace the whole UI tree.
     ref.read(themeStateProvider.future),
     ref.read(settingsStateProvider.future),
+    ref.read(toolbarModeProvider.future),
   ]);
 });

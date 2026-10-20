@@ -1,5 +1,7 @@
 analyzer:
   exclude:
+    # Vendored dependency; behavior is covered by the host's ribbon tests.
+    - packages/material_ribbon/**
     - build/**
     - android/**
     - ios/**

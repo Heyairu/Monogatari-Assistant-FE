@@ -2,9 +2,11 @@ import "package:shared_preferences/shared_preferences.dart";
 
 import "../../bin/settings_manager.dart";
 import "../../models/navigation_style.dart";
+import "../../models/toolbar_mode.dart";
 
 class SettingsSnapshot {
   final NavigationStyle navigationStyle;
+  final ToolbarMode? toolbarMode;
   final bool showExitWarning;
   final double fontSize;
   final WordCountMode wordCountMode;
@@ -24,6 +26,7 @@ class SettingsSnapshot {
 
   const SettingsSnapshot({
     this.navigationStyle = NavigationStyle.railLabel,
+    this.toolbarMode,
     required this.showExitWarning,
     required this.fontSize,
     required this.wordCountMode,
@@ -47,6 +50,8 @@ abstract class SettingsRepository {
   Future<SettingsSnapshot> load();
 
   Future<void> saveNavigationStyle(NavigationStyle value);
+
+  Future<void> saveToolbarMode(ToolbarMode? value);
 
   Future<void> saveShowExitWarning(bool value);
 
@@ -171,6 +176,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
       navigationStyle: NavigationStyle.fromPreference(
         prefs.getString("navigation_style"),
       ),
+      toolbarMode: ToolbarMode.fromPreference(prefs.getString("toolbar_mode")),
       showExitWarning: showExitWarning,
       fontSize: fontSize,
       wordCountMode: mode,
@@ -197,6 +203,16 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   Future<void> saveNavigationStyle(NavigationStyle value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString("navigation_style", value.name);
+  }
+
+  @override
+  Future<void> saveToolbarMode(ToolbarMode? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null) {
+      await prefs.remove("toolbar_mode");
+    } else {
+      await prefs.setString("toolbar_mode", value.name);
+    }
   }
 
   @override

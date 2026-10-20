@@ -16,6 +16,9 @@
  * 
  ************************************************************/
 
+import "features/help/help_controller.dart";
+import "features/help/help_scope.dart";
+import "features/help/help_topic.dart";
 import "dart:math";
 import "dart:async"; // Added for Timer
 import "dart:convert";
@@ -30,9 +33,11 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:intl/intl.dart"; // Add intl for date formatting
 import "package:window_manager/window_manager.dart";
 import "bin/appbar.dart";
+import "package:material_ribbon/material_ribbon.dart";
 import "bin/statusbar.dart";
 import "bin/slidebar.dart";
 import "models/navigation_style.dart";
+import "models/toolbar_mode.dart";
 import "bin/content.dart";
 import "bin/mobile_function_page.dart";
 import "bin/file.dart";
@@ -206,6 +211,7 @@ class MainApp extends ConsumerStatefulWidget {
 }
 
 class _MainAppState extends ConsumerState<MainApp> {
+  final _helpNavigatorKey = GlobalKey<NavigatorState>();
   static const _desktopSplashMinimumDuration = Duration(seconds: 5);
 
   Timer? _splashTimer;
@@ -280,6 +286,9 @@ class _MainAppState extends ConsumerState<MainApp> {
 
     return MaterialApp(
       title: "物語Assistant",
+      navigatorKey: _helpNavigatorKey,
+      builder: (context, child) =>
+          AppHelpHost(navigatorKey: _helpNavigatorKey, child: child!),
       theme: AppTheme.getLightTheme(theme.fontSize, theme.color),
       darkTheme: AppTheme.getDarkTheme(theme.fontSize, theme.color),
       themeMode: _convertThemeMode(theme.mode),
@@ -608,6 +617,9 @@ class _ContentViewState extends ConsumerState<ContentView>
   final TextEditingController findController = TextEditingController();
   final TextEditingController replaceController = TextEditingController();
   final FindReplaceOptions findReplaceOptions = FindReplaceOptions();
+  final RibbonController _ribbonController = RibbonController();
+  int _findOptionsRevision = 0;
+  String _ribbonSearchQuery = "";
   final FocusNode editorFocusNode = FocusNode();
 
   // 搜尋狀態
@@ -698,8 +710,14 @@ class _ContentViewState extends ConsumerState<ContentView>
   // 追蹤最後一個焦點輸入框
   FocusNode? _lastFocusedEditableNode;
   bool _preserveEditableFocusForEditorAction = false;
+  int _editorToolbarInteractionVersion = 0;
 
   void _onFocusChange() {
+    // Help temporarily owns focus without changing editor selection/history.
+    final help = HelpController.maybeOf(context);
+    if (help?.ownsFocus == true) {
+      return;
+    }
     final node = WidgetsBinding.instance.focusManager.primaryFocus;
     final previousEditableNode = _lastFocusedEditableNode;
     final focusChangedFromEditable =
@@ -718,7 +736,9 @@ class _ContentViewState extends ConsumerState<ContentView>
     } else if (node != null && node.canRequestFocus) {
       // 焦點轉移到其他可請求焦點的 widget（非編輯框、非功能按鈕）
       debugPrint("[DEBUG] Focus moved away from editable to: $node");
-      if (_preserveEditableFocusForEditorAction) {
+      if (_preserveEditableFocusForEditorAction ||
+          node.context?.findAncestorWidgetOfExactType<MonogatariTopAppBar>() !=
+              null) {
         debugPrint("[DEBUG] Preserving editable focus for editor action");
         return;
       }
@@ -727,12 +747,16 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   void _prepareEditorToolbarAction() {
+    _editorToolbarInteractionVersion += 1;
     _preserveEditableFocusForEditorAction = true;
   }
 
   void _finishEditorToolbarAction() {
+    final version = _editorToolbarInteractionVersion;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _preserveEditableFocusForEditorAction = false;
+      if (version == _editorToolbarInteractionVersion) {
+        _preserveEditableFocusForEditorAction = false;
+      }
     });
   }
 
@@ -1335,6 +1359,7 @@ class _ContentViewState extends ConsumerState<ContentView>
   @override
   void initState() {
     super.initState();
+    findController.addListener(_onRibbonSearchQueryChanged);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1758,6 +1783,8 @@ class _ContentViewState extends ConsumerState<ContentView>
     unawaited(_rhodantheRolloutEvidence.dispose());
     textController.dispose();
     _quillSearchController.dispose();
+    findController.removeListener(_onRibbonSearchQueryChanged);
+    _ribbonController.dispose();
     findController.dispose();
     replaceController.dispose();
     editorFocusNode.dispose();
@@ -2354,12 +2381,26 @@ class _ContentViewState extends ConsumerState<ContentView>
     final lastSavedTime = ref.watch(
       editorCoordinatorProvider.select((state) => state.lastSavedTime),
     );
+    final toolbarPreference = ref.watch(
+      toolbarModeProvider.select((state) => state.valueOrNull),
+    );
+    final toolbarMode =
+        toolbarPreference ?? ToolbarMode.defaultFor(Theme.of(context).platform);
+    final projectIoBusy = ref.watch(
+      projectIoControllerProvider.select(
+        (state) => state.valueOrNull?.isBusy ?? true,
+      ),
+    );
 
     // 根據平台判斷快捷鍵修飾符 (Apple 設備使用 Command，其他使用 Control)
     final bool isApple =
         !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.iOS);
+
+    HelpController.maybeOf(context)?.pageTopic = HelpTopicId.forPage(
+      slidePageIndexNow,
+    );
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
@@ -2444,12 +2485,22 @@ class _ContentViewState extends ConsumerState<ContentView>
           child: Scaffold(
             appBar: MonogatariTopAppBar(
               iconSize: fontSize + 8,
+              mode: toolbarMode,
+              controller: _ribbonController,
+              searchOptions: findReplaceOptions.copy(),
+              searchQuery: _ribbonSearchQuery,
+              onSearchOptionChanged: _changeFindOption,
+              modePreference: toolbarPreference,
+              onModeChanged: (value) =>
+                  ref.read(toolbarModeProvider.notifier).setMode(value),
+              isProjectIoBusy: projectIoBusy,
               statusIndicator: const _ProjectIoBusyIndicator(),
               showPunctuationPanel: showPunctuationPanel,
               showFindReplaceWindow: showFindReplaceWindow,
               onFileAction: _handleFileAction,
               onEditorAction: _performEditorAction,
               onEditorActionPointerDown: _prepareEditorToolbarAction,
+              onEditorActionInteractionEnd: _finishEditorToolbarAction,
               onTogglePunctuationPanel: _togglePunctuationPanel,
               onToggleFindReplaceWindow: _toggleFindReplaceWindow,
             ),
@@ -2470,6 +2521,99 @@ class _ContentViewState extends ConsumerState<ContentView>
         ),
       ),
     );
+  }
+
+  void _onRibbonSearchQueryChanged() {
+    final value = findController.value;
+    if (value.composing.isValid && !value.composing.isCollapsed) return;
+    if (_ribbonSearchQuery == value.text) return;
+    setState(() {
+      _ribbonSearchQuery = value.text;
+      findReplaceOptions.normalizeForQuery(value.text);
+    });
+  }
+
+  void _changeFindOption(FindReplaceOption option) {
+    final query = findController.text;
+    if (!findReplaceOptions.enabledFor(option, query)) return;
+    setState(() {
+      findReplaceOptions.setOption(
+        option,
+        !findReplaceOptions.valueFor(option),
+        query,
+      );
+      _findOptionsRevision += 1;
+    });
+    unawaited(_refreshSearchResults(query, findReplaceOptions.copy()));
+  }
+
+  Future<void> _refreshSearchResults(
+    String findText,
+    FindReplaceOptions options,
+  ) async {
+    // Reject debounced callbacks from before a Ribbon option change or IME commit.
+    final composing = findController.value.composing;
+    if (!showFindReplaceWindow ||
+        findText != findController.text ||
+        !options.sameAs(findReplaceOptions) ||
+        (composing.isValid && !composing.isCollapsed)) {
+      return;
+    }
+    // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
+    if (findText.isNotEmpty) {
+      if (textController.text.isNotEmpty) {
+        // Async search (background isolate + precomputed index)
+        final searchResult = await findAllMatchesLatest(
+          textController,
+          findText,
+          options,
+          maxResults: HighlightTextEditingController.maxSearchResults,
+        );
+        if (!mounted ||
+            searchResult == null ||
+            !searchResult.isCurrent(
+              textController,
+              findController.text,
+              findReplaceOptions,
+              maxResults: HighlightTextEditingController.maxSearchResults,
+            )) {
+          return;
+        }
+
+        setState(() {
+          // 更新高亮顯示（使用預編譯的索引）
+          searchResult.applyHighlights(
+            textController,
+            currentIndex: _currentMatchIndex,
+          );
+          _searchMatches = textController.searchMatches;
+          // 如果當前選中的匹配項仍然有效，保持它
+          if (_currentMatchIndex >= _searchMatches.length) {
+            _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
+            textController.updateCurrentSearchMatchIndex(_currentMatchIndex);
+          }
+        });
+        _syncFindRangesToQuill(findText, selectCurrent: false);
+        unawaited(
+          _analyzeRhodantheSearch(
+            findText,
+            options,
+            _searchMatches,
+            _currentMatchIndex,
+          ),
+        );
+      }
+    } else {
+      cancelFindAllMatches(textController);
+      setState(() {
+        _searchMatches = [];
+        _currentMatchIndex = -1;
+        textController.clearAllHighlights();
+        textController.clearRhodantheRenderPlan(notify: false);
+      });
+      _quillSearchController.clearSearchResults();
+      _quillSearchController.clearProofreadingRanges();
+    }
   }
 
   void _togglePunctuationPanel() {
@@ -2574,7 +2718,7 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 特定頁面內容建構（用於 IndexedStack）
   Widget _buildSpecificPageContent(int pageIndex) {
-    late final Widget page;
+    late Widget page;
     switch (pageIndex) {
       case 0:
         page = _buildWelcomeView();
@@ -2630,6 +2774,8 @@ class _ContentViewState extends ConsumerState<ContentView>
       default:
         page = Center(child: Text("Page ${pageIndex + 1}"));
     }
+
+    page = HelpScope(topicId: HelpTopicId.forPage(pageIndex), child: page);
 
     if (!_projectBackedPageIndexes.contains(pageIndex)) {
       return page;
@@ -3282,232 +3428,184 @@ class _ContentViewState extends ConsumerState<ContentView>
 
   // 編輯器
   Widget _buildEditor() {
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: Column(
-        children: [
-          // 標點符號列（當開啟時）- 放在最上方
-          if (showPunctuationPanel)
-            PunctuationPanel(
-              onInsert: _insertText,
-              onClose: () {
-                setState(() {
-                  showPunctuationPanel = false;
-                });
-              },
-            ),
+    return HelpScope(
+      topicId: HelpTopicId.editor,
+      child: Container(
+        color: Theme.of(context).colorScheme.surface,
+        child: Column(
+          children: [
+            // 標點符號列（當開啟時）- 放在最上方
+            if (showPunctuationPanel)
+              HelpTarget(
+                topicId: HelpTopicId.punctuation,
+                child: PunctuationPanel(
+                  onInsert: _insertText,
+                  onClose: () {
+                    setState(() {
+                      showPunctuationPanel = false;
+                    });
+                  },
+                ),
+              ),
 
-          // 搜尋列（當開啟時）- 放在標點符號列下方
-          if (showFindReplaceWindow)
-            FindReplaceBar(
-              findController: findController,
-              replaceController: replaceController,
-              options: findReplaceOptions,
-              currentMatchIndex: _searchMatches.isNotEmpty
-                  ? _currentMatchIndex
-                  : null,
-              totalMatches: _searchMatches.length,
-              onFindNext: (findText, replaceText, options) async {
-                await performFind(
-                  textController,
-                  findText,
-                  options,
-                  editorFocusNode,
-                  _searchMatches,
-                  _currentMatchIndex,
-                  (matches, index) {
-                    setState(() {
-                      _searchMatches = matches;
-                      _currentMatchIndex = index;
-                    });
-                  },
-                  forward: true,
-                );
-                _syncFindRangesToQuill(findText);
-                await _analyzeRhodantheSearch(
-                  findText,
-                  options,
-                  _searchMatches,
-                  _currentMatchIndex,
-                );
-              },
-              onFindPrevious: (findText, replaceText, options) async {
-                await performFind(
-                  textController,
-                  findText,
-                  options,
-                  editorFocusNode,
-                  _searchMatches,
-                  _currentMatchIndex,
-                  (matches, index) {
-                    setState(() {
-                      _searchMatches = matches;
-                      _currentMatchIndex = index;
-                    });
-                  },
-                  forward: false,
-                );
-                _syncFindRangesToQuill(findText);
-                await _analyzeRhodantheSearch(
-                  findText,
-                  options,
-                  _searchMatches,
-                  _currentMatchIndex,
-                );
-              },
-              onReplace: (findText, replaceText, options) async {
-                await performReplace(
-                  context,
-                  textController,
-                  findText,
-                  replaceText,
-                  options,
-                  editorFocusNode,
-                  _searchMatches,
-                  _currentMatchIndex,
-                  (matches, index) {
-                    setState(() {
-                      _searchMatches = matches;
-                      _currentMatchIndex = index;
-                    });
-                  },
-                  (_) {
-                    setState(() {
-                      contentText = textController.rawText;
-                      _textChangeDebouncer.onTextChanged(
-                        textController.rawText,
-                      );
-                    });
-                  },
-                );
-                _syncFindRangesToQuill(findText);
-                await _analyzeRhodantheSearch(
-                  findText,
-                  options,
-                  _searchMatches,
-                  _currentMatchIndex,
-                );
-              },
-              onReplaceAll: (findText, replaceText, options) async {
-                await performReplaceAll(
-                  context,
-                  textController,
-                  findText,
-                  replaceText,
-                  options,
-                  (matches, index) {
-                    setState(() {
-                      _searchMatches = matches;
-                      _currentMatchIndex = index;
-                    });
-                  },
-                  (_) {
-                    setState(() {
-                      contentText = textController.rawText;
-                      _textChangeDebouncer.onTextChanged(
-                        textController.rawText,
-                      );
-                    });
-                  },
-                );
-                _syncFindRangesToQuill(findText);
-                await _analyzeRhodantheSearch(
-                  findText,
-                  options,
-                  _searchMatches,
-                  _currentMatchIndex,
-                );
-              },
-              onSearchChanged: (findText, options) async {
-                // 當搜尋內容或選項變化時，重新搜尋所有匹配項（但不移動光標）
-                if (findText.isNotEmpty) {
-                  if (textController.text.isNotEmpty) {
-                    // Async search (background isolate + precomputed index)
-                    final searchResult = await findAllMatchesLatest(
+            // 搜尋列（當開啟時）- 放在標點符號列下方
+            if (showFindReplaceWindow)
+              HelpTarget(
+                topicId: HelpTopicId.search,
+                child: FindReplaceBar(
+                  findController: findController,
+                  replaceController: replaceController,
+                  options: findReplaceOptions,
+                  currentMatchIndex: _searchMatches.isNotEmpty
+                      ? _currentMatchIndex
+                      : null,
+                  totalMatches: _searchMatches.length,
+                  onFindNext: (findText, replaceText, options) async {
+                    await performFind(
                       textController,
                       findText,
                       options,
-                      maxResults:
-                          HighlightTextEditingController.maxSearchResults,
+                      editorFocusNode,
+                      _searchMatches,
+                      _currentMatchIndex,
+                      (matches, index) {
+                        setState(() {
+                          _searchMatches = matches;
+                          _currentMatchIndex = index;
+                        });
+                      },
+                      forward: true,
                     );
-                    if (!mounted ||
-                        searchResult == null ||
-                        !searchResult.isCurrent(
-                          textController,
-                          findController.text,
-                          findReplaceOptions,
-                          maxResults:
-                              HighlightTextEditingController.maxSearchResults,
-                        )) {
-                      return;
-                    }
-
+                    _syncFindRangesToQuill(findText);
+                    await _analyzeRhodantheSearch(
+                      findText,
+                      options,
+                      _searchMatches,
+                      _currentMatchIndex,
+                    );
+                  },
+                  onFindPrevious: (findText, replaceText, options) async {
+                    await performFind(
+                      textController,
+                      findText,
+                      options,
+                      editorFocusNode,
+                      _searchMatches,
+                      _currentMatchIndex,
+                      (matches, index) {
+                        setState(() {
+                          _searchMatches = matches;
+                          _currentMatchIndex = index;
+                        });
+                      },
+                      forward: false,
+                    );
+                    _syncFindRangesToQuill(findText);
+                    await _analyzeRhodantheSearch(
+                      findText,
+                      options,
+                      _searchMatches,
+                      _currentMatchIndex,
+                    );
+                  },
+                  onReplace: (findText, replaceText, options) async {
+                    await performReplace(
+                      context,
+                      textController,
+                      findText,
+                      replaceText,
+                      options,
+                      editorFocusNode,
+                      _searchMatches,
+                      _currentMatchIndex,
+                      (matches, index) {
+                        setState(() {
+                          _searchMatches = matches;
+                          _currentMatchIndex = index;
+                        });
+                      },
+                      (_) {
+                        setState(() {
+                          contentText = textController.rawText;
+                          _textChangeDebouncer.onTextChanged(
+                            textController.rawText,
+                          );
+                        });
+                      },
+                    );
+                    _syncFindRangesToQuill(findText);
+                    await _analyzeRhodantheSearch(
+                      findText,
+                      options,
+                      _searchMatches,
+                      _currentMatchIndex,
+                    );
+                  },
+                  onReplaceAll: (findText, replaceText, options) async {
+                    await performReplaceAll(
+                      context,
+                      textController,
+                      findText,
+                      replaceText,
+                      options,
+                      (matches, index) {
+                        setState(() {
+                          _searchMatches = matches;
+                          _currentMatchIndex = index;
+                        });
+                      },
+                      (_) {
+                        setState(() {
+                          contentText = textController.rawText;
+                          _textChangeDebouncer.onTextChanged(
+                            textController.rawText,
+                          );
+                        });
+                      },
+                    );
+                    _syncFindRangesToQuill(findText);
+                    await _analyzeRhodantheSearch(
+                      findText,
+                      options,
+                      _searchMatches,
+                      _currentMatchIndex,
+                    );
+                  },
+                  onOptionsRequested: () =>
+                      _ribbonController.selectTab("search"),
+                  optionsRevision: _findOptionsRevision,
+                  onSearchChanged: _refreshSearchResults,
+                  onClose: () {
+                    cancelFindAllMatches(textController);
+                    cancelReplaceAll(textController);
                     setState(() {
-                      // 更新高亮顯示（使用預編譯的索引）
-                      searchResult.applyHighlights(
-                        textController,
-                        currentIndex: _currentMatchIndex,
-                      );
-                      _searchMatches = textController.searchMatches;
-                      // 如果當前選中的匹配項仍然有效，保持它
-                      if (_currentMatchIndex >= _searchMatches.length) {
-                        _currentMatchIndex = _searchMatches.isEmpty ? -1 : 0;
-                        textController.updateCurrentSearchMatchIndex(
-                          _currentMatchIndex,
-                        );
-                      }
+                      showFindReplaceWindow = false;
+                      // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
+                      _searchMatches = [];
+                      _currentMatchIndex = -1;
+                      textController.clearAllHighlights();
+                      textController.clearRhodantheRenderPlan(notify: false);
+                      // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
                     });
-                    _syncFindRangesToQuill(findText, selectCurrent: false);
-                    unawaited(
-                      _analyzeRhodantheSearch(
-                        findText,
-                        options,
-                        _searchMatches,
-                        _currentMatchIndex,
-                      ),
-                    );
-                  }
-                } else {
-                  cancelFindAllMatches(textController);
-                  setState(() {
-                    _searchMatches = [];
-                    _currentMatchIndex = -1;
-                    textController.clearAllHighlights();
-                    textController.clearRhodantheRenderPlan(notify: false);
-                  });
-                  _quillSearchController.clearSearchResults();
-                  _quillSearchController.clearProofreadingRanges();
-                }
-              },
-              onClose: () {
-                cancelFindAllMatches(textController);
-                cancelReplaceAll(textController);
-                setState(() {
-                  showFindReplaceWindow = false;
-                  // 清除搜尋高亮，但保留編輯器的光標位置和選擇狀態
-                  _searchMatches = [];
-                  _currentMatchIndex = -1;
-                  textController.clearAllHighlights();
-                  textController.clearRhodantheRenderPlan(notify: false);
-                  // 不清除編輯器的選擇，讓用戶可以繼續從當前位置編輯
-                });
-                _quillSearchController.clearSearchResults();
-                _quillSearchController.clearProofreadingRanges();
-              },
-            ),
+                    _quillSearchController.clearSearchResults();
+                    _quillSearchController.clearProofreadingRanges();
+                  },
+                ),
+              ),
 
-          // 文本編輯器 - 使用 Expanded 填充剩餘空間
-          Expanded(
-            child: EditorTextBox(
-              controller: textController,
-              focusNode: editorFocusNode,
-              onUndo: _undoProjectHistory,
-              onRedo: _redoProjectHistory,
-              onInteractionOffset: _handleInlineAnnotationInteraction,
-              quillSearchController: _quillSearchController,
+            // 文本編輯器 - 使用 Expanded 填充剩餘空間
+            Expanded(
+              child: EditorTextBox(
+                controller: textController,
+                focusNode: editorFocusNode,
+                onUndo: _undoProjectHistory,
+                onRedo: _redoProjectHistory,
+                onInteractionOffset: _handleInlineAnnotationInteraction,
+                quillSearchController: _quillSearchController,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -4262,31 +4360,31 @@ class _ContentViewState extends ConsumerState<ContentView>
   }
 
   // 檔案操作處理
-  void _handleFileAction(String action) {
+  Future<void> _handleFileAction(String action) async {
     switch (action) {
       case "new":
-        _newProject();
+        await _newProject();
         break;
       case "open":
-        _openProject();
+        await _openProject();
         break;
       case "save":
-        _saveProject();
+        await _saveProject();
         break;
       case "saveAs":
-        _saveProjectAs();
+        await _saveProjectAs();
         break;
       case "export_selective":
-        _showExportDialog();
+        await _showExportDialog();
         break;
       case "import_selective":
-        _importSelective();
+        await _importSelective();
         break;
       case "export_txt":
-        _exportAs("txt");
+        await _exportAs("txt");
         break;
       case "export_md":
-        _exportAs("md");
+        await _exportAs("md");
         break;
     }
   }
@@ -4333,74 +4431,77 @@ class _ContentViewState extends ConsumerState<ContentView>
                 selectedModules: selected,
               );
             }
-            return AppDialog(
-              title: "匯入模組",
-              icon: Icons.input,
-              content: SizedBox(
-                width: 560,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("來源：${sourceFile.fullFileName}"),
-                      const SizedBox(height: 8),
-                      const Text("勾選的模組會取代目前專案中的對應資料。"),
-                      const SizedBox(height: 12),
-                      for (final module in SelectiveProjectModule.values)
-                        if (manifest.availableModules.contains(module))
-                          CheckboxListTile(
-                            key: Key("selective-import-${module.id}"),
-                            title: Text(module.label),
-                            value: selected.contains(module),
-                            dense: true,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            contentPadding: EdgeInsets.zero,
-                            onChanged: (value) => setDialogState(() {
-                              if (value == true) {
-                                selected.add(module);
-                              } else {
-                                selected.remove(module);
-                              }
-                            }),
-                          ),
-                      if (preview != null && preview.warnings.isNotEmpty) ...[
-                        const Divider(),
-                        Text(
-                          "需要稍後修復的引用：${preview.warnings.length}",
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                        ),
-                        const SizedBox(height: 6),
-                        for (final warning in preview.warnings)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.xs,
+            return HelpTarget(
+              topicId: HelpTopicId.importFiles,
+              child: AppDialog(
+                title: "匯入模組",
+                icon: Icons.input,
+                content: SizedBox(
+                  width: 560,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("來源：${sourceFile.fullFileName}"),
+                        const SizedBox(height: 8),
+                        const Text("勾選的模組會取代目前專案中的對應資料。"),
+                        const SizedBox(height: 12),
+                        for (final module in SelectiveProjectModule.values)
+                          if (manifest.availableModules.contains(module))
+                            CheckboxListTile(
+                              key: Key("selective-import-${module.id}"),
+                              title: Text(module.label),
+                              value: selected.contains(module),
+                              dense: true,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                              onChanged: (value) => setDialogState(() {
+                                if (value == true) {
+                                  selected.add(module);
+                                } else {
+                                  selected.remove(module);
+                                }
+                              }),
                             ),
-                            child: Text("• ${warning.message}"),
+                        if (preview != null && preview.warnings.isNotEmpty) ...[
+                          const Divider(),
+                          Text(
+                            "需要稍後修復的引用：${preview.warnings.length}",
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
                           ),
+                          const SizedBox(height: 6),
+                          for (final warning in preview.warnings)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
+                              ),
+                              child: Text("• ${warning.message}"),
+                            ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text("取消"),
+                  ),
+                  FilledButton(
+                    key: const Key("selective-import-apply"),
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () => Navigator.of(
+                            dialogContext,
+                          ).pop(Set<SelectiveProjectModule>.from(selected)),
+                    child: const Text("套用匯入"),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text("取消"),
-                ),
-                FilledButton(
-                  key: const Key("selective-import-apply"),
-                  onPressed: selected.isEmpty
-                      ? null
-                      : () => Navigator.of(
-                          dialogContext,
-                        ).pop(Set<SelectiveProjectModule>.from(selected)),
-                  child: const Text("套用匯入"),
-                ),
-              ],
             );
           },
         ),
@@ -4453,99 +4554,102 @@ class _ContentViewState extends ConsumerState<ContentView>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AppDialog(
-              title: "匯出選項",
-              icon: Icons.ios_share_outlined,
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "選擇匯出格式：",
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    Row(
-                      children: [
-                        Radio<String>(
-                          value: "xml",
-                          groupValue: selectedFormat,
-                          onChanged: (val) =>
-                              setDialogState(() => selectedFormat = val!),
-                        ),
-                        const Text("XML"),
-                        const SizedBox(width: 16),
-                        Radio<String>(
-                          value: "md",
-                          groupValue: selectedFormat,
-                          onChanged: (val) =>
-                              setDialogState(() => selectedFormat = val!),
-                        ),
-                        const Text("Markdown"),
-                      ],
-                    ),
-                    const Divider(),
-                    Text(
-                      "選擇匯出模組：",
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    // Modules checkboxes
-                    ...[
-                      "BaseInfo",
-                      "Chapters",
-                      "Outline",
-                      "Plans",
-                      "WorldSettings",
-                      "Characters",
-                      "Items",
-                      "Phrases",
-                    ].map((module) {
-                      final displayNames = {
-                        "BaseInfo": "故事設定",
-                        "Chapters": "章節內容",
-                        "Outline": "大綱",
-                        "Plans": "更新計畫與伏筆",
-                        "WorldSettings": "世界設定",
-                        "Characters": "角色設定",
-                        "Items": "物品設定與快照",
-                        "Phrases": "短語庫",
-                      };
-                      return CheckboxListTile(
-                        title: Text(displayNames[module] ?? module),
-                        value: selectedModules.contains(module),
-                        onChanged: (bool? value) {
-                          setDialogState(() {
-                            if (value == true) {
-                              selectedModules.add(module);
-                            } else {
-                              if (selectedModules.length > 1) {
-                                selectedModules.remove(module);
+            return HelpTarget(
+              topicId: HelpTopicId.exportFiles,
+              child: AppDialog(
+                title: "匯出選項",
+                icon: Icons.ios_share_outlined,
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "選擇匯出格式：",
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      Row(
+                        children: [
+                          Radio<String>(
+                            value: "xml",
+                            groupValue: selectedFormat,
+                            onChanged: (val) =>
+                                setDialogState(() => selectedFormat = val!),
+                          ),
+                          const Text("XML"),
+                          const SizedBox(width: 16),
+                          Radio<String>(
+                            value: "md",
+                            groupValue: selectedFormat,
+                            onChanged: (val) =>
+                                setDialogState(() => selectedFormat = val!),
+                          ),
+                          const Text("Markdown"),
+                        ],
+                      ),
+                      const Divider(),
+                      Text(
+                        "選擇匯出模組：",
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      // Modules checkboxes
+                      ...[
+                        "BaseInfo",
+                        "Chapters",
+                        "Outline",
+                        "Plans",
+                        "WorldSettings",
+                        "Characters",
+                        "Items",
+                        "Phrases",
+                      ].map((module) {
+                        final displayNames = {
+                          "BaseInfo": "故事設定",
+                          "Chapters": "章節內容",
+                          "Outline": "大綱",
+                          "Plans": "更新計畫與伏筆",
+                          "WorldSettings": "世界設定",
+                          "Characters": "角色設定",
+                          "Items": "物品設定與快照",
+                          "Phrases": "短語庫",
+                        };
+                        return CheckboxListTile(
+                          title: Text(displayNames[module] ?? module),
+                          value: selectedModules.contains(module),
+                          onChanged: (bool? value) {
+                            setDialogState(() {
+                              if (value == true) {
+                                selectedModules.add(module);
+                              } else {
+                                if (selectedModules.length > 1) {
+                                  selectedModules.remove(module);
+                                }
                               }
-                            }
-                          });
-                        },
-                        dense: true,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        contentPadding: EdgeInsets.zero,
-                      );
-                    }).toList(),
-                  ],
+                            });
+                          },
+                          dense: true,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                        );
+                      }).toList(),
+                    ],
+                  ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text("取消"),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _exportSelective(selectedModules, selectedFormat);
+                    },
+                    child: const Text("匯出"),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("取消"),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    _exportSelective(selectedModules, selectedFormat);
-                  },
-                  child: const Text("匯出"),
-                ),
-              ],
             );
           },
         );

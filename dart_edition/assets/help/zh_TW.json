@@ -1,0 +1,1175 @@
+{
+  "topics": [
+    {
+      "id": "help.home",
+      "title": "快速開始與說明首頁",
+      "category": "開始使用",
+      "keywords": [
+        "入門",
+        "快速開始",
+        "首頁"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "物語Assistant 將正文、章節、大綱、角色、世界、物品與時間軸整理在同一個作品工作區。說明內容隨 App 提供，離線也能閱讀。"
+          ],
+          "steps": [
+            "新建或開啟 .mnproj 專案，填寫故事設定。",
+            "在章節選擇建立並選取章節，於正文區撰寫。",
+            "依需要補上角色、大綱、地點與物品，並定期儲存。",
+            "使用目錄或搜尋查找功能；F1 查看目前操作的說明。"
+          ]
+        }
+      ],
+      "relatedIds": [
+        "help.using",
+        "help.shortcuts",
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "help.using",
+      "title": "如何使用說明",
+      "category": "開始使用",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "F1 依目前焦點開啟控制項或功能區說明，沒有特定情境時顯示目前頁面。",
+            "Shift+F1 進入「這是什麼？」模式。問號游標下點選項目只會開啟說明，不會執行原操作；按 Esc 或再次按 Shift+F1 可取消。",
+            "工具列「說明」選單可開啟首頁、目前功能說明或點選求助。使用搜尋與目錄切換主題，上一頁／下一頁回顧本次瀏覽。",
+            "Esc、關閉按鈕或系統返回會關閉說明，原本的操作對話框會保留。原生檔案選擇器由作業系統提供，不屬於 App 內點選求助範圍。"
+          ],
+          "steps": [
+            "輸入功能名稱、畫面文字或關鍵字。",
+            "選擇搜尋結果或相關說明，閱讀操作步驟。"
+          ]
+        }
+      ],
+      "relatedIds": [
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "help.shortcuts",
+      "title": "鍵盤快捷鍵",
+      "category": "開始使用",
+      "keywords": [
+        "F1",
+        "Shift+F1",
+        "Ctrl+F1",
+        "鍵盤"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "F1：查看目前情境說明。Shift+F1：開始／取消點選求助。Esc：取消求助或關閉說明。",
+            "Ctrl+F1：焦點在 Ribbon 時展開／收合工具列。Alt／F10：焦點在 Ribbon 時進入 KeyTip 導覽。",
+            "主畫面：Ctrl+N 新建、Ctrl+O 開啟、Ctrl+S 儲存、Ctrl+F 搜尋、Ctrl+Z 復原、Ctrl+Shift+Z 重做。Apple 平台的這些字母組合使用 Command。",
+            "文字欄位支援標準全選、複製、剪下、貼上；實際作用依目前焦點而定。",
+            "部分鍵盤需配合 Fn 才會送出 F1。若功能鍵被系統攔截，可使用工具列說明選單。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "toolbar.mode",
+        "help.using"
+      ]
+    },
+    {
+      "id": "files.recovery",
+      "title": "保存、備份與復原",
+      "category": "開始使用",
+      "keywords": [
+        "復原",
+        "備份",
+        "checkpoint"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "完整作品以 .mnproj 專案保存。正文 .txt／.md 匯出只用於閱讀或交稿，不能取代完整專案備份。",
+            "自動儲存寫回已知位置；AutoBackup 另外建立副本，維持原專案位置與未儲存狀態。",
+            "Undo／Redo 用於目前工作階段；跨啟動復原使用已保存的專案、備份或支援的 checkpoint。"
+          ],
+          "steps": [
+            "在批次取代、匯入或模式轉換前先另存副本。",
+            "在設定確認 AutoBackup 目錄與容量。",
+            "要復原備份時，先保存目前作品副本，再從備份目錄開啟需要的 .mnproj。"
+          ]
+        }
+      ],
+      "relatedIds": [
+        "files.saveAs",
+        "settings.backup",
+        "pages.proofreading"
+      ]
+    },
+    {
+      "id": "help.faq",
+      "title": "常見問題",
+      "category": "開始使用",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "無法自動儲存：先手動儲存到可存取的位置，再確認權限及設定。",
+            "找不到搜尋結果：先以一般文字搜尋，再確認大小寫、全半形與忽略選項。",
+            "找不到備份：到設定檢查備份目錄，確認已啟用且有可用空間。",
+            "看不到 Copilot Ask／Plan：這些功能依建置旗標提供；Plan 提供提案及驗證，沒有自動套用入口。",
+            "舊版專案開啟時先在記憶體中遷移，儲存前保留原檔；不支援的新版格式會被拒絕。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery",
+        "search.overview",
+        "pages.copilot"
+      ]
+    },
+    {
+      "id": "pages.welcome",
+      "title": "首頁與建立作品",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "從首頁開始建立或開啟作品；建立後先填寫故事設定，再新增章節。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.new",
+        "files.open"
+      ]
+    },
+    {
+      "id": "pages.story",
+      "title": "故事設定",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "保存作品名稱、作者、簡介、類型與企劃資料。修改後使用儲存保留完整專案。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.save"
+      ]
+    },
+    {
+      "id": "pages.chapters",
+      "title": "章節選擇",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "以資料夾與章節樹組織稿件。建立或選取章節後於正文區編輯；排序與重新命名會影響作品結構。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "files.export_selective"
+      ]
+    },
+    {
+      "id": "pages.outline",
+      "title": "大綱調整",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "整理故事線、事件、Scene 與 placement。將內容放到時間軸後，可依 Tick 檢視故事狀態。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.timeline",
+        "pages.plans"
+      ]
+    },
+    {
+      "id": "pages.timeline",
+      "title": "時間軸",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "使用 placement 決定 Scene 的位置。角色、地點與物品快照以 Scene UUID 連結，並依目前 Tick 顯示狀態。",
+            "Scene 移動後快照跟隨新位置；移除 placement 時仍保留快照資料。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.outline",
+        "pages.items",
+        "pages.world"
+      ]
+    },
+    {
+      "id": "pages.characters",
+      "title": "角色設定",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "建立角色檔案、屬性與故事中的狀態。使用物件選擇器建立正式關聯；快照連結 Scene，以查看不同時刻的變化。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.relationships",
+        "pages.timeline"
+      ]
+    },
+    {
+      "id": "pages.relationships",
+      "title": "關係設定",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "檢視並整理角色之間的關係。先建立角色，再依介面選擇來源與目標角色；關係引用以 ID 維持連結。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.characters"
+      ]
+    },
+    {
+      "id": "pages.world",
+      "title": "世界設定",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "建立階層式地點與設定欄位，並以 Scene 快照記錄地點狀態。各節點的狀態獨立保存。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.timeline",
+        "pages.items"
+      ]
+    },
+    {
+      "id": "pages.items",
+      "title": "物品設定與快照",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "專用模式追蹤唯一 instance；半專用模式可為同類物品追蹤個別 instance；非專用模式以分配量統計歸屬。",
+            "使用物件選擇器連結人物、地點、事件或 Scene。新增快照先選 Scene；同一 Scene 有多個 placement 時可選來源。",
+            "模式轉換前先查看預覽並備份。永久刪除可能影響引用，請依確認介面檢查。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.timeline",
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "pages.plans",
+      "title": "計畫規劃",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "整理伏筆與更新計畫，將企劃資料和故事中的事件、章節或其他物件建立連結，方便回顧。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.outline",
+        "editor.annotations"
+      ]
+    },
+    {
+      "id": "pages.glossary",
+      "title": "詞語參考",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "查閱詞語與寫作參考資料。先選分類或查找需要的詞語，再回到正文使用。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body"
+      ]
+    },
+    {
+      "id": "pages.palettes",
+      "title": "文字色票",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "查看與選擇文字色彩參考。以介面提供的色票核對需要的顏色與數值。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body"
+      ]
+    },
+    {
+      "id": "pages.proofreading",
+      "title": "文本校正與修訂",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "查看正文檢查結果，依提示定位內容並自行確認修改。修訂追蹤可比較正文與結構化資料，並保存本機 checkpoint。",
+            "只有介面提供支援的差異能直接處理；操作前確認目標與目前內容是否仍有效。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "pages.copilot",
+      "title": "Copilot",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "設定 provider、API URL 與模型，確認目的 host 再送出請求。API Key 保存在本機安全儲存；作品內容直接傳送到選擇的 provider。",
+            "Chat 傳送對話。依建置開放的 Ask 可附目前章節與選定資源；Plan 產生唯讀提案、提供驗證及匯出。",
+            "送出前檢查內容範圍，對話與 Plan 不跨 App 啟動保存。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "pages.settings",
+        "help.faq"
+      ]
+    },
+    {
+      "id": "pages.settings",
+      "title": "設定",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "調整外觀、工具列、導覽、編輯、自動儲存與備份。MCP、P2P 等整合依平台及授權狀態提供，請先閱讀所在區域的提示。",
+            "MCP 讓已授權的本機 Host 唯讀查看作品；停止授權或切換專案後需要重新建立連線。P2P 連線前確認同一內網與對方服務。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "toolbar.mode",
+        "settings.autoSave",
+        "settings.backup"
+      ]
+    },
+    {
+      "id": "pages.about",
+      "title": "關於物語Assistant",
+      "category": "功能導覽",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "查看應用程式名稱、版本與作者資訊。回報問題時附上版本、平台與可重現的操作步驟。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "help.home",
+        "help.faq"
+      ]
+    },
+    {
+      "id": "toolbar.overview",
+      "title": "工具列與常用操作",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "工具列提供檔案、常用及搜尋頁籤。三種呈現模式共用命令；找不到按鈕時先確認目前頁籤與橫向捲動位置。",
+            "檔案操作忙碌時部分命令會停用；停用的控制項仍可使用點選求助。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "toolbar.mode",
+        "search.overview"
+      ]
+    },
+    {
+      "id": "toolbar.mode",
+      "title": "工具列模式",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "Full 顯示完整 Ribbon。Moderate 使用單行圖示與文字。Concise 使用圖示並提供 tooltip。",
+            "使用「工具列模式」選單或設定切換。自動模式依平台採桌面 Full、手機 Moderate；手動選擇會保存在本機，重新啟動後保留。",
+            "展開按鈕切至 Full；Full 的收合按鈕切至 Concise。切換模式保留目前頁籤，不修改作品。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "toolbar.overview",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.body",
+      "title": "正文編輯",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "先在章節選擇選取章節，再於正文區輸入。文字編輯命令作用於目前焦點欄位；工具列也支援正文編輯。",
+            "標記的畫面文字與保存語法可能不同，請透過標記介面建立連結。",
+            "Enter 換行，若啟用自動縮排會插入設定空格；Shift+Enter 僅換行。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.annotations",
+        "editor.phrases",
+        "search.overview",
+        "files.save"
+      ]
+    },
+    {
+      "id": "editor.punctuation",
+      "title": "標點符號面板",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "開啟標點面板後，選擇全形／半形及需要的符號，插入正文選區。先確認正文章節與游標位置。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body"
+      ]
+    },
+    {
+      "id": "editor.annotations",
+      "title": "正文標記與註記",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "使用標記選單建立人物、地點、事件、伏筆或計畫的 UUID 關聯，也可加入註記與高亮。",
+            "畫面顯示投影文字，保存時保留完整語法；重新命名以 UUID 維持連結。請用介面選擇目標，避免手動拼接語法。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.phrases",
+        "editor.body"
+      ]
+    },
+    {
+      "id": "editor.phrases",
+      "title": "專案短語庫",
+      "category": "編輯工具",
+      "keywords": [
+        "PoppinSense",
+        ";;",
+        "短碼"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "短語庫保存可重複插入的內容、短碼與標籤，可建立、編輯、複製、停用及刪除。正文選區也可存成短語。",
+            "輸入 ;; 查詢，或從反斜線／斜線手動選單進入短語分類。接受候選會替換對應範圍；Esc 取消候選並保留輸入。",
+            "貼上與 IME 組字不觸發候選；刪除短語不會刪除已插入的正文。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "editor.annotations"
+      ]
+    },
+    {
+      "id": "editor.selectAll",
+      "title": "全選",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "選取目前焦點欄位或正文中的全部文字。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.cut",
+      "title": "剪下",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "將目前選取文字複製到剪貼簿並從欄位移除。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.copy",
+      "title": "複製",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "將目前選取文字複製到剪貼簿，不改變作品。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.paste",
+      "title": "貼上",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "將剪貼簿文字插入或取代目前選區；正文依純文字編輯規則處理。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.undo",
+      "title": "復原",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "撤回目前編輯工作階段中可復原的操作；實際作用依焦點與專案歷史而定。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "editor.redo",
+      "title": "重做",
+      "category": "編輯工具",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "重新套用已復原且仍可重做的操作；新的編輯可能清除重做分支。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "editor.body",
+        "help.shortcuts"
+      ]
+    },
+    {
+      "id": "files.new",
+      "title": "新建檔案",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "建立新的作品。若目前作品有未儲存變更，依提示保存或確認後再繼續。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "files.open",
+      "title": "開啟檔案",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "透過系統檔案選擇器選取 .mnproj。舊格式會在記憶體中遷移，儲存前不覆寫原檔。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "files.save",
+      "title": "儲存檔案",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "將完整作品寫回目前位置。首次儲存需選擇位置；若存取授權失效，依提示重新選取。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "files.saveAs",
+      "title": "另存新檔",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "選擇新的名稱或位置保存完整作品副本，後續儲存使用新的位置。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "files.import_selective",
+      "title": "局部匯入與確認",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "選擇來源檔案後，勾選要匯入的模組，閱讀引用警告再確認。勾選模組會取代目前專案中對應的資料，建議先另存副本。",
+            "在確認介面取消或開啟說明不會套用匯入。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "files.export_selective",
+      "title": "局部匯出與確認",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "選擇要匯出的模組及支援格式，再選擇目的位置。局部 Markdown 可包含可讀內容與 lossless XML 區塊。",
+            "一般正文 .txt／.md 匯出不等同完整專案備份；完整保存請使用 .mnproj。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "settings.autoSave",
+      "title": "自動儲存與間隔",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "在設定啟用自動儲存並設定間隔。自動儲存使用已知檔案位置，請先完成一次手動儲存。",
+            "自動儲存會寫回目前作品，與另建副本的 AutoBackup 不同；重要操作前仍可手動另存。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "files.save",
+        "settings.backup"
+      ]
+    },
+    {
+      "id": "settings.backup",
+      "title": "自動備份與間隔",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "啟用 AutoBackup 後依設定間隔另建專案備份，不改變目前專案位置。",
+            "檢查目錄是否可存取及有足夠空間；備份受到總容量限制。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "settings.backupDirectory",
+        "settings.backupCapacity",
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "settings.backupDirectory",
+      "title": "備份目錄與管理",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "在自動備份區域選擇、開啟或重設備份目錄。依介面檢查檔案數量、容量與最近備份資訊。",
+            "清空備份會刪除該備份集合，請先保留需要的檔案。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "settings.backup",
+        "files.recovery"
+      ]
+    },
+    {
+      "id": "settings.backupCapacity",
+      "title": "備份容量上限",
+      "category": "檔案與備份",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "設定 AutoBackup 的總容量上限。系統會依設定整理備份，請選擇足以容納多個完整專案的容量。",
+            "這是備份集合的容量限制，不是目前作品的大小限制。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "settings.backup",
+        "settings.backupDirectory"
+      ]
+    },
+    {
+      "id": "search.overview",
+      "title": "搜尋與取代",
+      "category": "搜尋與取代",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "從工具列搜尋開啟搜尋列，六個搜尋選項位於 Ribbon「搜尋」頁。輸入文字後以上一個／下一個巡覽匹配結果。",
+            "先確認匹配範圍再執行取代。大量取代前可先儲存副本。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.input",
+        "search.replacement",
+        "search.replaceAll",
+        "search.useRegexp"
+      ]
+    },
+    {
+      "id": "search.input",
+      "title": "搜尋文字",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "輸入要尋找的文字，結果依目前六個搜尋選項更新。中文輸入法組字期間不以未完成文字更新結果。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.replacement",
+      "title": "取代文字",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "展開取代列後輸入替換內容；空白內容可用於刪除匹配文字，請先確認搜尋結果。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.previous",
+      "title": "上一個搜尋結果",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "移動到上一個匹配項目，依畫面確認目前位置與結果數量。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.next",
+      "title": "下一個搜尋結果",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "移動到下一個匹配項目，不修改正文。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.replace",
+      "title": "取代目前結果",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "以取代欄位的文字替換目前匹配項目。先確認目前選取結果，再執行。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.replaceAll",
+      "title": "全部取代",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "依目前搜尋條件批次替換所有匹配項目。執行前確認查詢、選項與替換內容，並先保存副本。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.matchCase",
+      "title": "大小寫需相同",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "開啟時區分 Hero 與 hero。正則模式固定開啟，此時不能手動切換。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.wholeWord",
+      "title": "全字拼寫相符",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "只匹配完整詞邊界。正則模式停用此選項；查詢包含全形字元、中文、標點或空白時也不能啟用。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.useRegexp",
+      "title": "使用正則表示式",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "使用正則語法搜尋，?／* 不再是一般文字。正則模式固定大小寫與全半形相符，停用全字拼寫；略過標點與空白僅影響一般文字搜尋。",
+            "Rust 原生搜尋不支援 look-around 與 backreference。先以簡單查詢確認結果。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.matchWidth",
+      "title": "全半形須相符",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "開啟時區分 １ 與 1 等全半形形式。正則模式固定開啟，無法手動切換。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.ignorePunctuation",
+      "title": "略過標點符號",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "一般文字搜尋可略過標點進行比對。此設定不影響正則搜尋；請確認結果後再取代。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "search.ignoreWhitespace",
+      "title": "略過空白字元",
+      "category": "搜尋與取代",
+      "keywords": [
+        "搜尋",
+        "取代"
+      ],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "一般文字搜尋可略過空格、Tab 與換行進行比對。此設定不影響正則搜尋。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "search.overview"
+      ]
+    },
+    {
+      "id": "dialogs.overview",
+      "title": "操作對話框",
+      "category": "其他說明",
+      "keywords": [],
+      "sections": [
+        {
+          "heading": "",
+          "paragraphs": [
+            "閱讀目前對話框的標題、選項與提示，確認後才套用操作。取消或返回可離開尚未確認的流程。",
+            "F1 可查看所屬操作說明；關閉說明後會返回原對話框並保留尚未確認的選擇。"
+          ],
+          "steps": []
+        }
+      ],
+      "relatedIds": [
+        "help.using",
+        "files.recovery"
+      ]
+    }
+  ]
+}

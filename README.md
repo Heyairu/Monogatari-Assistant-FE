@@ -5,7 +5,7 @@
 > 一款為故事創作者設計的跨平台寫作助手，集中整理正文、章節、大綱、角色、世界觀、物品與時間軸。
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.md)
-[![Dart](https://img.shields.io/badge/Dart-%5E3.12.0-0175C2?logo=dart)](dart_edition/pubspec.yaml)
+[![Dart](https://img.shields.io/badge/Dart-%5E3.12.1-0175C2?logo=dart)](dart_edition/pubspec.yaml)
 [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](dart_edition/pubspec.yaml)
 
 ## 文件
@@ -48,7 +48,7 @@
 
 ## 快速啟動
 
-主要 Flutter 專案位於 `dart_edition/`。目前要求 Dart `^3.12.0`；`pubspec.yaml` 的 Flutter Quill 相依註記要求 Flutter 3.44 以上。原生 Rhodanthe 另需 Rust／Cargo，工具鏈以 `dart_edition/rust/rust-toolchain.toml` 為準。
+主要 Flutter 專案位於 `dart_edition/`。目前要求 Dart `^3.12.1`；`pubspec.yaml` 的 Flutter Quill 相依註記要求 Flutter 3.44 以上。原生 Rhodanthe 另需 Rust／Cargo，工具鏈以 `dart_edition/rust/rust-toolchain.toml` 為準。
 
 ```powershell
 cd dart_edition

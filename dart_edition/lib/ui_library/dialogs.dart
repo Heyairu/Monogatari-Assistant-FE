@@ -1,3 +1,5 @@
+import "../features/help/help_scope.dart";
+import "../features/help/help_topic.dart";
 import "package:flutter/material.dart";
 
 import "control_size.dart";
@@ -58,21 +60,24 @@ class AppDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: _buildTitle(context),
-      content: content == null
-          ? null
-          : ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth),
-              child: content,
-            ),
-      actions: actions,
-      scrollable: scrollable,
-      insetPadding: insetPadding,
-      titlePadding: AppSpacing.dialogTitle,
-      contentPadding: contentPadding,
-      actionsPadding: AppSpacing.dialogActions,
-      buttonPadding: const EdgeInsets.only(left: AppSpacing.sm),
+    return HelpScope(
+      topicId: HelpScope.topicOf(context) ?? HelpTopicId.dialog,
+      child: AlertDialog(
+        title: _buildTitle(context),
+        content: content == null
+            ? null
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: content,
+              ),
+        actions: actions,
+        scrollable: scrollable,
+        insetPadding: insetPadding,
+        titlePadding: AppSpacing.dialogTitle,
+        contentPadding: contentPadding,
+        actionsPadding: AppSpacing.dialogActions,
+        buttonPadding: const EdgeInsets.only(left: AppSpacing.sm),
+      ),
     );
   }
 

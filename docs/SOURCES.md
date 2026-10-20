@@ -1,6 +1,6 @@
 # 參考文件索引
 
-更新日期：2026-10-18
+更新日期：2026-10-20
 
 [文件中心](README.md) · [統一說明文件](GUIDE.md) · [統一 API 文件](API.md)
 
@@ -88,3 +88,10 @@
 | [TRADEMARKS.md](../TRADEMARKS.md) | Monogatari Assistant Trademark Policy |
 | [README.md](../dart_edition/ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md) | Launch Screen Assets |
 
+
+
+## App 內建說明
+
+- 操作入口：[F1 與離線說明](GUIDE.md#離線說明與-f1)。
+- 開發介面與內容維護：[Help API](API.md#9-app-內-help-介面)。
+- 隨 App 發布的內容：[zh_TW.json](../dart_edition/assets/help/zh_TW.json)。

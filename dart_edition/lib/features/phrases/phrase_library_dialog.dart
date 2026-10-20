@@ -1,3 +1,5 @@
+import "../help/help_scope.dart";
+import "../help/help_topic.dart";
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -158,19 +160,22 @@ final class _PhraseLibraryDialogState
   Future<void> _delete(PhraseEntry phrase, PhraseScope scope) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('刪除短語？'),
-        content: Text('短碼「${phrase.shortcut}」會從短語庫移除。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('刪除'),
-          ),
-        ],
+      builder: (context) => HelpTarget(
+        topicId: HelpTopicId.phrases,
+        child: AlertDialog(
+          title: const Text('刪除短語？'),
+          content: Text('短碼「${phrase.shortcut}」會從短語庫移除。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('刪除'),
+            ),
+          ],
+        ),
       ),
     );
     if (!mounted || confirmed != true) return;
@@ -225,34 +230,37 @@ final class _PhraseLibraryDialogState
     String newShortcut,
   ) => showDialog<PhraseImportChoice>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text('短碼「${incoming.shortcut}」發生衝突'),
-      content: Text(
-        '匯入項目與現有短語的 ID 或短碼相同：\n'
-        '${conflicts.map((item) => '${item.phrase.shortcut}（${item.scope == PhraseScope.global ? '所有專案' : '目前專案'}）').join('、')}\n\n'
-        '可以保留現有項目、覆蓋，或以「$newShortcut」另存一份。',
+    builder: (dialogContext) => HelpTarget(
+      topicId: HelpTopicId.phrases,
+      child: AlertDialog(
+        title: Text('短碼「${incoming.shortcut}」發生衝突'),
+        content: Text(
+          '匯入項目與現有短語的 ID 或短碼相同：\n'
+          '${conflicts.map((item) => '${item.phrase.shortcut}（${item.scope == PhraseScope.global ? '所有專案' : '目前專案'}）').join('、')}\n\n'
+          '可以保留現有項目、覆蓋，或以「$newShortcut」另存一份。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消匯入'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PhraseImportChoice.skip),
+            child: const Text('保留現有'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PhraseImportChoice.copy),
+            child: const Text('另存一份'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PhraseImportChoice.replace),
+            child: const Text('覆蓋'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('取消匯入'),
-        ),
-        TextButton(
-          onPressed: () =>
-              Navigator.pop(dialogContext, PhraseImportChoice.skip),
-          child: const Text('保留現有'),
-        ),
-        TextButton(
-          onPressed: () =>
-              Navigator.pop(dialogContext, PhraseImportChoice.copy),
-          child: const Text('另存一份'),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.pop(dialogContext, PhraseImportChoice.replace),
-          child: const Text('覆蓋'),
-        ),
-      ],
     ),
   );
 
@@ -358,105 +366,108 @@ final class _PhraseLibraryDialogState
                 (tag) => tag.toLowerCase().contains(_search.text.toLowerCase()),
               ));
     });
-    return Dialog(
-      child: SizedBox(
-        width: 680,
-        height: editing ? 680 : 560,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.space20),
-          child: editing
-              ? _PhraseEditForm(
-                  key: ValueKey(_editing?.id ?? 'new'),
-                  original: _editing,
-                  initialBody: _newBody,
-                  initialTags: _newTags,
-                  initialScope: _editingScope,
-                  globalReady: globalState.hasValue,
-                  existing: scoped.map((item) => item.phrase).toList(),
-                  onCancel: _closeEditor,
-                  onSave: (entry) => _save(
-                    entry,
-                    originalScope: _editing == null ? null : _editingScope,
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('短語庫', style: TextStyle(fontSize: 20)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Wrap(
-                            alignment: WrapAlignment.end,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: AppSpacing.sm,
-                            runSpacing: AppSpacing.sm,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: globalState.hasValue
-                                    ? _import
-                                    : null,
-                                icon: const Icon(Icons.file_open_outlined),
-                                label: const Text('匯入'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: globalState.hasValue
-                                    ? _export
-                                    : null,
-                                icon: const Icon(Icons.save_alt),
-                                label: const Text('匯出'),
-                              ),
-                              FilledButton.icon(
-                                onPressed: () => _openEditor(null, ''),
-                                icon: const Icon(Icons.add),
-                                label: const Text('新增短語'),
-                              ),
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.close),
-                                tooltip: '關閉',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+    return HelpScope(
+      topicId: HelpTopicId.phrases,
+      child: Dialog(
+        child: SizedBox(
+          width: 680,
+          height: editing ? 680 : 560,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.space20),
+            child: editing
+                ? _PhraseEditForm(
+                    key: ValueKey(_editing?.id ?? 'new'),
+                    original: _editing,
+                    initialBody: _newBody,
+                    initialTags: _newTags,
+                    initialScope: _editingScope,
+                    globalReady: globalState.hasValue,
+                    existing: scoped.map((item) => item.phrase).toList(),
+                    onCancel: _closeEditor,
+                    onSave: (entry) => _save(
+                      entry,
+                      originalScope: _editing == null ? null : _editingScope,
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (globalState.hasError)
-                      Text(
-                        '全域短語庫讀取失敗：${globalState.error}',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    TextField(
-                      controller: _search,
-                      decoration: appFieldDecoration(
-                        context,
-                        decoration: const InputDecoration(
-                          labelText: '搜尋內容、短碼或標籤',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView(
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         children: [
-                          for (final result in results)
-                            _tile(
-                              result.phrase,
-                              scopeByPhrase[result.phrase]!,
-                              result.preview,
+                          const Text('短語庫', style: TextStyle(fontSize: 20)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Wrap(
+                              alignment: WrapAlignment.end,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.sm,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: globalState.hasValue
+                                      ? _import
+                                      : null,
+                                  icon: const Icon(Icons.file_open_outlined),
+                                  label: const Text('匯入'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: globalState.hasValue
+                                      ? _export
+                                      : null,
+                                  icon: const Icon(Icons.save_alt),
+                                  label: const Text('匯出'),
+                                ),
+                                FilledButton.icon(
+                                  onPressed: () => _openEditor(null, ''),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('新增短語'),
+                                ),
+                                IconButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(Icons.close),
+                                  tooltip: '關閉',
+                                ),
+                              ],
                             ),
-                          for (final item in disabled)
-                            _tile(item.phrase, item.scope, '已停用'),
+                          ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (globalState.hasError)
+                        Text(
+                          '全域短語庫讀取失敗：${globalState.error}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      TextField(
+                        controller: _search,
+                        decoration: appFieldDecoration(
+                          context,
+                          decoration: const InputDecoration(
+                            labelText: '搜尋內容、短碼或標籤',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            for (final result in results)
+                              _tile(
+                                result.phrase,
+                                scopeByPhrase[result.phrase]!,
+                                result.preview,
+                              ),
+                            for (final item in disabled)
+                              _tile(item.phrase, item.scope, '已停用'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );

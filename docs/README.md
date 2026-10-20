@@ -1,6 +1,6 @@
 # Monogatari Assistant 文件中心
 
-更新日期：2026-10-09
+更新日期：2026-10-20
 
 適用範圍：本儲存庫的 Flutter 應用程式與隨附整合介面
 
@@ -38,3 +38,10 @@
 | 讀取容量限制 | [ProjectReadBudget](../dart_edition/lib/features/story_read/domain/project_read_models.dart) |
 | 原生文字分析協定 | [Rhodanthe protocol](../dart_edition/lib/infrastructure/rhodanthe/rhodanthe_protocol.dart) |
 | 即時協作版本 | [CollaborationSchema](../dart_edition/lib/domain/collaboration/collaboration_operation.dart) |
+
+
+## App 內建說明
+
+- 操作入口：[F1 與離線說明](GUIDE.md#離線說明與-f1)。
+- 開發介面與內容維護：[Help API](API.md#9-app-內-help-介面)。
+- 隨 App 發布的內容：[zh_TW.json](../dart_edition/assets/help/zh_TW.json)。

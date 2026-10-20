@@ -16,6 +16,8 @@
  * 
  ************************************************************/
 
+import "../features/help/help_scope.dart";
+import "../features/help/help_topic.dart";
 import "dart:async";
 
 import "package:flutter/material.dart";
@@ -26,6 +28,7 @@ import "../bin/file.dart" show AutoBackupDirectoryInfo;
 import "../bin/ui_library.dart";
 import "../bin/settings_manager.dart";
 import "../models/navigation_style.dart";
+import "../models/toolbar_mode.dart";
 import "../presentation/providers/core_providers.dart";
 import "../presentation/providers/global_state_providers.dart";
 import "../presentation/providers/mcp_providers.dart";
@@ -217,6 +220,12 @@ class _SettingViewState extends ConsumerState<SettingView>
                     _buildNavigationStyleSetting(),
 
                     const SizedBox(height: 24),
+                    HelpTarget(
+                      topicId: HelpTopicId.toolbarMode,
+                      child: _buildToolbarModeSetting(),
+                    ),
+
+                    const SizedBox(height: 24),
 
                     // 字體大小設定
                     _buildFontSizeSetting(),
@@ -371,9 +380,15 @@ class _SettingViewState extends ConsumerState<SettingView>
                           .setEnabled(value),
                     ),
                     const SizedBox(height: 16),
-                    _buildAutoSaveSetting(),
+                    HelpTarget(
+                      topicId: HelpTopicId.autoSave,
+                      child: _buildAutoSaveSetting(),
+                    ),
                     const SizedBox(height: 16),
-                    _buildAutoBackupSetting(),
+                    HelpTarget(
+                      topicId: HelpTopicId.backup,
+                      child: _buildAutoBackupSetting(),
+                    ),
                     const SizedBox(height: 8),
                     _buildAndroidBackgroundExecutionSetting(),
                     _buildPlaceholderSetting("語言設定", Icons.language),
@@ -683,6 +698,45 @@ class _SettingViewState extends ConsumerState<SettingView>
     );
   }
 
+  Widget _buildToolbarModeSetting() {
+    final preference = ref.watch(
+      toolbarModeProvider.select((state) => state.valueOrNull),
+    );
+    final resolved =
+        preference ?? ToolbarMode.defaultFor(Theme.of(context).platform);
+    return Column(
+      key: const Key("toolbar-mode-setting"),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("工具列模式", style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        AppDropdownField<String>(
+          value: preference?.name ?? "automatic",
+          labelText: "工具列模式",
+          options: [
+            const DropdownOption(
+              value: "automatic",
+              label: "自動（桌面 Full／手機 Moderate）",
+            ),
+            for (final mode in ToolbarMode.values)
+              DropdownOption(value: mode.name, label: mode.label),
+          ],
+          onChanged: (value) async {
+            if (value == null) return;
+            await ref
+                .read(toolbarModeProvider.notifier)
+                .setMode(ToolbarMode.fromPreference(value));
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          resolved.description,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
   Widget _buildThemeModeSetting() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,110 +950,116 @@ class _SettingViewState extends ConsumerState<SettingView>
           opacity: enabled ? 1 : 0.5,
           child: IgnorePointer(
             ignoring: !enabled,
-            child: LabeledSlider(
-              title: "備份最高上限",
-              icon: Icons.storage_outlined,
-              value: maxSizeMb.clamp(16, 4096).toDouble(),
-              min: 16,
-              max: 4096,
-              divisions: 255,
-              layout: LabeledSliderLayout.stacked,
-              valueLabelBuilder: (value) => "${value.round()} MB",
-              onChanged: (value) async {
-                await ref
-                    .read(settingsStateProvider.notifier)
-                    .setAutoBackupMaxSizeMb(value.round());
-              },
+            child: HelpTarget(
+              topicId: HelpTopicId.backupCapacity,
+              child: LabeledSlider(
+                title: "備份最高上限",
+                icon: Icons.storage_outlined,
+                value: maxSizeMb.clamp(16, 4096).toDouble(),
+                min: 16,
+                max: 4096,
+                divisions: 255,
+                layout: LabeledSliderLayout.stacked,
+                valueLabelBuilder: (value) => "${value.round()} MB",
+                onChanged: (value) async {
+                  await ref
+                      .read(settingsStateProvider.notifier)
+                      .setAutoBackupMaxSizeMb(value.round());
+                },
+              ),
             ),
           ),
         ),
         const SizedBox(height: 4),
-        FutureBuilder<AutoBackupDirectoryInfo>(
-          future: _autoBackupDirectoryInfoFuture,
-          builder: (context, snapshot) {
-            final info = snapshot.data;
-            final isLoading =
-                snapshot.connectionState == ConnectionState.waiting &&
-                info == null;
+        HelpTarget(
+          topicId: HelpTopicId.backupDirectory,
+          child: FutureBuilder<AutoBackupDirectoryInfo>(
+            future: _autoBackupDirectoryInfoFuture,
+            builder: (context, snapshot) {
+              final info = snapshot.data;
+              final isLoading =
+                  snapshot.connectionState == ConnectionState.waiting &&
+                  info == null;
 
-            if (isLoading) {
-              return const Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            }
-
-            if (info == null || (info.isAndroid && !info.isConfigured)) {
-              return TextButton.icon(
-                onPressed: _selectAutoBackupDirectory,
-                icon: const Icon(Icons.folder_open),
-                label: const Text("選擇自動備份資料夾"),
-              );
-            }
-
-            return Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                TextButton.icon(
-                  onPressed: _openAutoBackupDirectory,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text("開啟"),
-                ),
-                if (info.isAndroid)
-                  TextButton.icon(
-                    onPressed: _selectAutoBackupDirectory,
-                    icon: const Icon(Icons.drive_folder_upload_outlined),
-                    label: const Text("重新選擇"),
-                  )
-                else if (info.isDefault)
-                  TextButton.icon(
-                    onPressed: _selectAutoBackupDirectory,
-                    icon: const Icon(Icons.drive_folder_upload_outlined),
-                    label: const Text("選擇"),
-                  )
-                else
-                  PopupMenuButton<String>(
-                    tooltip: "AutoBackup 目錄選項",
-                    icon: const Icon(Icons.more_horiz),
-                    onSelected: (value) async {
-                      if (value == "select") {
-                        await _selectAutoBackupDirectory();
-                      } else if (value == "reset") {
-                        await _resetAutoBackupDirectory();
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(value: "select", child: Text("選擇")),
-                      PopupMenuItem(value: "reset", child: Text("重設")),
-                    ],
+              if (isLoading) {
+                return const Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                if (info.path.trim().isNotEmpty)
+                );
+              }
+
+              if (info == null || (info.isAndroid && !info.isConfigured)) {
+                return TextButton.icon(
+                  onPressed: _selectAutoBackupDirectory,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text("選擇自動備份資料夾"),
+                );
+              }
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: _openAutoBackupDirectory,
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text("開啟"),
+                  ),
+                  if (info.isAndroid)
+                    TextButton.icon(
+                      onPressed: _selectAutoBackupDirectory,
+                      icon: const Icon(Icons.drive_folder_upload_outlined),
+                      label: const Text("重新選擇"),
+                    )
+                  else if (info.isDefault)
+                    TextButton.icon(
+                      onPressed: _selectAutoBackupDirectory,
+                      icon: const Icon(Icons.drive_folder_upload_outlined),
+                      label: const Text("選擇"),
+                    )
+                  else
+                    PopupMenuButton<String>(
+                      tooltip: "AutoBackup 目錄選項",
+                      icon: const Icon(Icons.more_horiz),
+                      onSelected: (value) async {
+                        if (value == "select") {
+                          await _selectAutoBackupDirectory();
+                        } else if (value == "reset") {
+                          await _resetAutoBackupDirectory();
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: "select", child: Text("選擇")),
+                        PopupMenuItem(value: "reset", child: Text("重設")),
+                      ],
+                    ),
+                  if (info.path.trim().isNotEmpty)
+                    Text(
+                      info.path,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   Text(
-                    info.path,
+                    "${_formatBytes(info.totalBytes)} / $maxSizeMb MB ・ ${info.fileCount} 份",
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
-                Text(
-                  "${_formatBytes(info.totalBytes)} / $maxSizeMb MB ・ ${info.fileCount} 份",
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                  TextButton.icon(
+                    onPressed: info.fileCount == 0 ? null : _clearAutoBackups,
+                    icon: const Icon(Icons.cleaning_services_outlined),
+                    label: const Text("清理全部備份"),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: info.fileCount == 0 ? null : _clearAutoBackups,
-                  icon: const Icon(Icons.cleaning_services_outlined),
-                  label: const Text("清理全部備份"),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ],
     );

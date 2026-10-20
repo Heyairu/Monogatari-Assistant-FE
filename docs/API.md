@@ -1,6 +1,6 @@
 # Monogatari Assistant 統一 API 文件
 
-更新日期：2026-10-09
+更新日期：2026-10-20
 
 適用範圍：目前儲存庫已實作的整合與主要開發介面
 
@@ -539,8 +539,84 @@ timeout 為可選 named `Duration`。事件由 `inboundProbes`、`inboundProject
 
 同步設計脈絡見 [P2P 設計](../dart_edition/P2P_LAN_SYNC_DESIGN.md) 與 [即時協作設計](../dart_edition/REALTIME_COLLABORATION_DESIGN.md)。歷史設計的欄位或版本若與上述程式不同，以現行 codec 為準。
 
-## 7. API 變更與驗證
+## 7. 工具列模式（App 內部）
+
+`ToolbarMode` 定義 `full`、`moderate`、`concise`。`ToolbarMode.defaultFor(TargetPlatform)` 在 Android／iOS 回傳 `moderate`，其餘平台回傳 `full`。`fromPreference(String?)` 解析穩定名稱，未知值與 `null` 回傳 `null`，代表自動選擇。
+
+`toolbarModeProvider` 是 `AsyncNotifierProvider<ToolbarModeNotifier, ToolbarMode?>`，初始化時由 settings repository 讀取偏好；`setMode(ToolbarMode?)` 更新 UI 並等待本機保存。SharedPreferences key 為 `toolbar_mode`，值為 enum 名稱；設為 `null` 時移除該 key。啟動初始化會等待第一次載入，避免已保存模式在啟動時閃回預設。
+
+`MonogatariTopAppBar` 接收已解析的 `mode`、可為 null 的 `modePreference` 與 `onModeChanged`。檔案／編輯命令 callback 均回傳 `Future<void>`，操作完成前維持 busy 並防止同一命令重入；檔案命令另共用 I/O busy。命令沿用現有檔案與編輯器流程，沒有新增 MCP、專案格式或協作介面。
+
+三種模式共用受控的 `MaterialRibbon` 頁籤及命令定義。Full 高 210，命令群組靠左；Moderate／Concise 高 108（52 的 Ribbon 頁籤列＋56 的可捲動指令列），只呈現目前頁籤的指令。頁籤選取由宿主保留，切換模式不重設選取，切換頁籤會將指令捲動位置歸零。相依使用 `packages/material_ribbon` 的最小版面修正，來源與差異見該套件 README。
+
+頁籤順序與預設選取分開處理：清單順序為 `file`、`home`、`search`，預設選取 ID 為 `home`。僅 Full 的 `project` 群組使用 `save`、`new`、`open`、`saveAs`；其他模式使用 `new`、`open`、`save`、`saveAs`。
+
+實作：[模式模型](../dart_edition/lib/models/toolbar_mode.dart)、[偏好 provider](../dart_edition/lib/presentation/providers/global_state_providers.dart)、[工具列](../dart_edition/lib/bin/appbar.dart)。
+
+### 搜尋頁與選項
+
+`MonogatariTopAppBar.controller` 接受宿主 `RibbonController`，搜尋列開啟時切換至 `search` 頁籤；原「搜尋選項」入口亦透過 `selectTab("search")` 開啟同一頁。`searchOptions` 為宿主目前選項快照、`searchQuery` 為已提交的搜尋字串，`onSearchOptionChanged(FindReplaceOption)` 要求宿主切換選項。輸入／取代欄位仍由 `FindReplaceBar` 管理。
+
+`FindReplaceOption` 列出六項設定；`FindReplaceOptions.valueFor`、`enabledFor`、`setOption`、`normalizeForQuery` 共用搜尋選項與互斥規則，`copy` 產生獨立快照，`sameAs` 比較所有搜尋條件。改變選項後宿主即時重新搜尋；過期的 debounce、尚未提交的 IME 與過時結果不會覆蓋目前選項。
+
+`FindReplaceBar.onOptionsRequested` 非 null 時，選項按鈕委派給 Ribbon，停用內嵌設定區。`optionsRevision` 變動會取消舊的 debounce；宿主負責以新快照重新搜尋。未提供委派 callback 的獨立搜尋列保留原本的內嵌選項介面。
+
+## 8. API 變更與驗證
 
 新增介面時同步更新版本、輸入 schema、DTO／codec、allowlist、budget、失敗路徑與本文件。調整專案格式時同步處理 XML、遷移、歷史、匯入匯出、snapshot 與協作；只改 serializer 不足以維持一致性。
 
 MCP 發布流程包含 focused tests、sidecar build、manifest 與 Host／平台 gate。Rhodanthe 包含 Rust tests、Dart protocol／worker／render tests 與 profile benchmark。P2P／檔案變更需依影響範圍驗證讀寫往返、失效授權、錯誤版本及中斷恢復。實際命令與發布手冊見 [說明文件](GUIDE.md#10-驗證建置與發布)。
+
+
+## 9. App 內 Help 介面
+
+來源：[HelpController 與全域宿主](../dart_edition/lib/features/help/help_controller.dart)、[情境標記](../dart_edition/lib/features/help/help_scope.dart)、[離線內容](../dart_edition/assets/help/zh_TW.json)。
+
+`AppHelpHost(navigatorKey, child, loadCatalog?)` 安裝於 `MaterialApp.builder`、包住 Navigator；其生命週期管理 FocusManager early key handler，讓主畫面、選單及對話框共用 F1 行為。`loadCatalog` 可在測試注入離線 catalog。
+
+| 介面 | 契約 |
+| --- | --- |
+| `HelpTopicId` | 穩定字串 ID；`pages` 依實際頁面 switch 排列，`commands` 對應工具列命令。未知主題回退首頁。 |
+| `HelpScope(topicId, child)` | 頁面／區域／對話框的預設主題，較內層標記優先。 |
+| `HelpTarget(topicId, child)` | 控制項主題；不增加焦點節點或手勢辨識器。 |
+| `HelpPopupMenuItem<T>(topicId, value?, child, ...)` | 包住完整 PopupMenuItem，包括焦點與留白命中區。 |
+| `HelpController.maybeOf(context)` | 取得宿主 controller；未安裝時回傳 null。 |
+| `showHome()`／`showContext()`／`showTopic(id)` | 開啟或重用單一說明對話框；`showTopic` 回傳關閉視窗後完成的 Future，重用現有視窗時立即完成。 |
+| `ownsFocus`／`beginMenu()`／`endMenu()` | 說明選單、點選模式或視窗取得焦點時，主畫面暫停清除選區及因焦點切換而提交歷史。選單在 pointer-down 捕捉來源，關閉後交接給 Help 或還原一般焦點處理。 |
+| `captureContext()`／`showCapturedContext()` | 在選單奪取焦點前捕捉來源，供選單命令使用。 |
+| `togglePicking(useCapturedContext: false)`／`cancelPicking()` | 進入／取消問號游標模式。只有點選求助期間攔截一般鍵盤及指標操作。 |
+| `HelpCatalog.load(bundle?)`／`parse(source)`／`search(query)` | 本機載入、驗證與搜尋；重複 ID、失效相關連結及缺少首頁會拋出 FormatException。 |
+
+`assets/help/zh_TW.json` 的 `topics` 每筆包含 `id`、`title`、`category`、`keywords`、`sections` 與 `relatedIds`；每個 section 包含 `heading`、`paragraphs`、`steps`。新增內容時同步建立 topic ID 與 UI 標記，維持 ID 穩定並執行 `flutter test test/help_test.dart`。
+
+搜尋以所有空白分隔詞皆命中為條件，標題命中優先於關鍵字與正文；空查詢顯示分類目錄。catalog 載入失敗顯示重試，不進行網路下載。焦點位於沒有控制項選取的 App 對話框時使用該對話框 scope，未標記對話框使用通用說明。
+
+本地 `MaterialRibbon.commandWrapperBuilder(context, command, child)` 可裝飾一般命令、Quick Access 與其溢位項目；省略時呈現原 child。App 用命令 ID 接入 HelpTarget，裝飾器不改變命令 dispatch、enabled 或 busy 規則。`MonogatariTopAppBar.onHelpAction` 為可選回呼，值為 `home`／`context`／`pick`；省略時使用目前宿主。
+
+Help 不寫入作品、設定或同步 schema。快捷鍵及點選的自動化覆蓋見 [Help 測試](../dart_edition/test/help_test.dart)；Windows 實機、系統功能鍵及平台 IME 需另行人工驗收。
+
+### 9.1 Help 驗證紀錄（2026-10-20）
+
+本次於 macOS 執行 Flutter widget／unit tests；未宣稱已完成 Windows 實機驗收。
+
+| 檢查 | 結果 |
+| --- | --- |
+| `flutter test --no-pub test/help_test.dart` | 21 項通過，包含離線內容、F1、點選隔離、停用控制項、Ctrl+F1、溢位選單、鍵盤選單、取消既有指標手勢與窄視窗兩倍字級。 |
+| `flutter test --no-pub test/help_editor_integration_test.dart` | 1 項通過；真實 ContentView／Quill、工具列說明選單及搜尋欄保留正文、選區、dirty state 與 Undo／Redo stack。 |
+| 既有 toolbar_modes_widget、search_ribbon、editor_toolbar_quill、findreplace_ime 四組測試 | 22 項通過。 |
+| `flutter test --no-pub --concurrency=6 --reporter expanded` | 1,092 項通過、4 項跳過、9 項既有失敗；Help 測試全部通過。 |
+| `flutter analyze` | 原有 211 項診斷；按訊息及檔案核對修改前後，沒有新增診斷。 |
+| 本次修改的 Dart 檔案格式檢查／initState provider guardrail／`git diff --check` | 通過。 |
+| 版面渲染 | 1280×900 桌面淺色，以及 390×800 深色／兩倍字級皆已目視確認。 |
+
+上述 9 項失敗均在保留原先未提交修改、移除本次 Help 接線的暫存副本中重現：
+
+| 測試檔 | 失敗數 | 既有問題 |
+| --- | --- | --- |
+| `outline_draft_commit_test.dart` | 1 | 測試找不到第二大箱的預期圖示。 |
+| `project_session_reset_test.dart` | 1 | 測試找不到舊工具列的「檔案」tooltip。 |
+| `phase4_phase5_guardrails_test.dart` | 5 | 角色重新命名、自訂欄位、關係刪除與人物／組織選擇的既有斷言不符。 |
+| `character_relationship_layers_test.dart` | 1 | 人物關係表格的編輯控制項斷言不符。 |
+| `character_collaboration_selection_test.dart` | 1 | 角色切換案例的焦點斷言不符。 |
+
+發布前仍需在 Windows 實機驗證實體 F1／Shift+F1／Ctrl+F1、問號游標、原生對話框邊界及中文 IME。測試數量僅代表此工作目錄於記錄日期的結果。
